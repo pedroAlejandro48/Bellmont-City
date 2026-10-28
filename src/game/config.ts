@@ -1,0 +1,480 @@
+// Pure, browser-safe world config + generation (no randomness at module scope).
+export const DAY_SECONDS = 600; // 10 minutes of daylight
+export const NIGHT_SECONDS = 600; // 10 minutes of night
+export const CYCLE = DAY_SECONDS + NIGHT_SECONDS;
+export const START_ELAPSED = 45; // early morning
+
+export const BLOCK = 40;
+export const STREET = 12;
+export const PITCH = BLOCK + STREET;
+export const N = 41;
+export const HALF = Math.floor(N / 2);
+export const WORLD_HALF = HALF * PITCH + PITCH / 2;
+export const SIDEWALK_H = 0.15;
+
+export type TimeInfo = {
+  day: number;
+  isDay: boolean;
+  progress: number; // 0..1 through current day or night
+  angle: number;
+  elevation: number; // sin(angle) of the visible body (sun by day, moon by night)
+  darkness: number; // 0 bright day .. 1 night
+  hours: number; // 0..24 clock
+};
+
+export function timeInfo(elapsed: number): TimeInfo {
+  const t = ((elapsed % CYCLE) + CYCLE) % CYCLE;
+  const isDay = t < DAY_SECONDS;
+  const progress = isDay ? t / DAY_SECONDS : (t - DAY_SECONDS) / NIGHT_SECONDS;
+  const angle = Math.PI * progress;
+  const elevation = Math.sin(angle);
+  // Twilight straddles both horizons; every light uses this continuous blend.
+  const solarElevation = Math.sin(t / CYCLE * Math.PI * 2);
+  const daylight = Math.max(0, Math.min(1, (solarElevation + 0.12) / 0.42));
+  const darkness = 1 - daylight * daylight * (3 - 2 * daylight);
+  const hours = isDay ? 6 + 12 * progress : (18 + 12 * progress) % 24;
+  return { day: Math.floor(elapsed / CYCLE) + 1, isDay, progress, angle, elevation, darkness, hours };
+}
+
+export function formatClock(hours: number) {
+  const h = Math.floor(hours);
+  const m = Math.floor((hours - h) * 60);
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${m.toString().padStart(2, "0")} ${ampm}`;
+}
+
+export function rng(seed: number) {
+  let s = seed | 0;
+  return () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+export const PARK_SEED = 2026;
+export const PARK_RING_RADIUS = 6;
+export const PARK_PATH_WIDTH = 2;
+export const PARK_OBELISK_HEIGHT = 1.8 * 5;
+export const GREEN_BLOCK_CHANCE = 0.02;
+export const SIDEWALK_TREE_CENTER = 17.65;
+export const TREE_BED_RADIUS = 1.5;
+export const SIDEWALK_CANOPY_RADIUS = 2.15;
+export const BUILDING_ENTRANCE = { doors: 2, accessible: false, floorHeight: 3 } as const;
+export const PARK_CORNERS: [number, number][] = [[-17, -17], [17, -17], [17, 17], [-17, 17]];
+export const PARK_BENCHES = PARK_CORNERS.map(([x, z]) => {
+  const angle = Math.atan2(x, z);
+  return { x: Math.sin(angle) * 12 + Math.cos(angle) * 2.2, z: Math.cos(angle) * 12 - Math.sin(angle) * 2.2, rot: angle - Math.PI / 2 };
+});
+export const PARK_TREES = PARK_CORNERS.flatMap(([x, z], i) => [
+  { x: Math.sign(x) * 13, z: Math.sign(z) * 6.5, rot: i * 1.4, s: 1, sidewalk: false },
+  { x: Math.sign(x) * 6.5, z: Math.sign(z) * 13, rot: i * 1.8, s: 1, sidewalk: false },
+]);
+
+export const PARK_ARCH = { z: 14.2, spring: 1.4, inner: 1.65, outer: 2.2, depth: 0.75, height: 3.6 } as const;
+export const BENCH_SIT_SECONDS = 0.5;
+export const BENCH_STAND_SECONDS = 0.5;
+export const BENCH_REACH = 1;
+export const BENCH_SEATS = PARK_BENCHES.flatMap((b, bench) => [-0.62, 0.62].map((side, slot) => ({
+  id: bench * 2 + slot, bench, slot, x: b.x + Math.cos(b.rot) * side,
+  z: b.z - Math.sin(b.rot) * side, yaw: b.rot,
+})));
+export function nearestBenchSeat(x: number, z: number, occupied: ReadonlyMap<number, string>, owner = "player") {
+  let nearest: typeof BENCH_SEATS[number] | null = null, distance = BENCH_REACH;
+  for (const seat of BENCH_SEATS) {
+    if (occupied.has(seat.id) && occupied.get(seat.id) !== owner) continue;
+    const d = Math.hypot(x - seat.x - Math.sin(seat.yaw) * 0.45, z - seat.z - Math.cos(seat.yaw) * 0.45);
+    if (d <= distance) { distance = d; nearest = seat; }
+  }
+  return nearest;
+}
+export type SolidBox = { x: number; z: number; hx: number; hz: number; yaw: number };
+export const PARK_SOLIDS: SolidBox[] = [
+  ...PARK_BENCHES.map((b) => ({ x: b.x, z: b.z, hx: 1.3, hz: 0.4, yaw: b.rot })),
+  { x: 0, z: 0, hx: 1.25, hz: 1.25, yaw: 0 },
+  ...[-1, 1].map((side) => ({ x: side * (PARK_ARCH.inner + PARK_ARCH.outer) / 2, z: PARK_ARCH.z, hx: (PARK_ARCH.outer - PARK_ARCH.inner) / 2, hz: PARK_ARCH.depth / 2, yaw: 0 })),
+];
+// Bench geometry is modelled in absolute height on the raised park ground; these are heights above that ground.
+export const BENCH_SEAT_TOP = 0.7425 - SIDEWALK_H;
+export const BENCH_BACK_TOP = 1.44 - SIDEWALK_H;
+/** Height above ground of the bench surface under feet at (x, z) that is at or below feetY (+ small step), else 0. */
+export function benchStandHeight(x: number, z: number, feetY: number) {
+  let best = 0;
+  for (const b of PARK_BENCHES) {
+    const c = Math.cos(b.rot), s = Math.sin(b.rot), dx = x - b.x, dz = z - b.z;
+    const lx = dx * c - dz * s, lz = dx * s + dz * c;
+    if (Math.abs(lx) > 1.25) continue;
+    if (Math.abs(lz) < 0.33 && feetY >= BENCH_SEAT_TOP - 0.08) best = Math.max(best, BENCH_SEAT_TOP);
+    // Backrest top cap board is 26cm deep: a small forward hop lands on it, one more step drops off.
+    if (Math.abs(lz + 0.32) < 0.13 && feetY >= BENCH_BACK_TOP - 0.08) best = Math.max(best, BENCH_BACK_TOP);
+  }
+  return best;
+}
+/** Thin backrest walls: solid until the feet are above the backrest top (too high to jump from the ground). */
+export const BENCH_BACKRESTS: SolidBox[] = PARK_BENCHES.map((b) => ({ x: b.x - Math.sin(b.rot) * 0.32, z: b.z - Math.cos(b.rot) * 0.32, hx: 1.25, hz: 0.0425, yaw: b.rot }));
+/** Minimum translation out of an oriented obstacle, shared by feet and bike. */
+export function circleBoxPush(x: number, z: number, radius: number, box: SolidBox): [number, number] {
+  const c = Math.cos(box.yaw), s = Math.sin(box.yaw), dx = x - box.x, dz = z - box.z;
+  const lx = dx * c - dz * s, lz = dx * s + dz * c;
+  const nx = Math.max(-box.hx, Math.min(box.hx, lx)), nz = Math.max(-box.hz, Math.min(box.hz, lz));
+  let px = lx - nx, pz = lz - nz;
+  const d = Math.hypot(px, pz);
+  if (d >= radius) return [0, 0];
+  if (d > 0.00001) { px *= (radius - d) / d; pz *= (radius - d) / d; }
+  else if (box.hx - Math.abs(lx) < box.hz - Math.abs(lz)) { px = (lx >= 0 ? 1 : -1) * (box.hx - Math.abs(lx) + radius); pz = 0; }
+  else { px = 0; pz = (lz >= 0 ? 1 : -1) * (box.hz - Math.abs(lz) + radius); }
+  return [px * c + pz * s, -px * s + pz * c];
+}
+export const PERSON_MASS = 81;
+export const SCOOTER_MASS = 110;
+export function bikePushShare() { return PERSON_MASS / (PERSON_MASS + SCOOTER_MASS); }
+
+export const MAIN_ROAD_CENTER = PITCH / 2;
+export const ROAD_LANE_WIDTH = 3;
+export const TRAFFIC_SPAWN_GAP = 11.1;
+export function roadLaneOffsets(main: boolean) { return main ? [1.5, 4.5] : [3]; }
+export function roadLane(axis: "x" | "z", dir: 1 | -1, center: number, slot = 0) {
+  const main = Math.abs(center - MAIN_ROAD_CENTER) < 0.1;
+  const offset = roadLaneOffsets(main)[slot] ?? 3;
+  return center + (axis === "x" ? dir : -dir) * offset;
+}
+export function isTrafficRoad(x: number, z: number, seed: number) {
+  if (Math.max(Math.abs(x), Math.abs(z)) > WORLD_HALF + 6) return isWildernessRoad(x, z, seed, 6);
+  const distance = (v: number) => Math.abs(v - (Math.round((v - PITCH / 2) / PITCH) * PITCH + PITCH / 2));
+  return distance(x) <= 6 || distance(z) <= 6 || Math.abs(Math.abs(x) - WORLD_HALF) <= 6 || Math.abs(Math.abs(z) - WORLD_HALF) <= 6;
+}
+export function trafficSpawnClear(x: number, z: number, length: number, all: { x: number; z: number; kind: VehicleKind }[]) {
+  return all.every((v) => Math.hypot(x - v.x, z - v.z) >= (length + VEHICLE_SIZE[v.kind][0]) / 2 + TRAFFIC_SPAWN_GAP);
+}
+
+export type Building = { x: number; z: number; w: number; d: number; h: number; variant: number };
+export type Prop = { x: number; z: number; rot: number; s: number; sidewalk?: boolean };
+export type City = {
+  blocks: { x: number; z: number; park: boolean }[];
+  buildings: Building[];
+  trees: Prop[];
+  lamps: Prop[];
+};
+
+/** Local marking window: each orientation is bounded independently. */
+export function cityRoadDashes(x: number, z: number) {
+  const dashes: { x: number; z: number; rot: number; divider?: boolean }[] = [];
+  for (const axis of ["x", "z"] as const) {
+    const along = axis === "x" ? x : z, across = axis === "x" ? z : x;
+    const cell = Math.round(across / PITCH);
+    for (let k = Math.max(-HALF - 1, cell - 4); k <= Math.min(HALF, cell + 4); k++) {
+      const street = k * PITCH + PITCH / 2;
+      for (let p = Math.ceil(Math.max(-WORLD_HALF, along - 220) / 6) * 6; p < Math.min(WORLD_HALF, along + 220); p += 6) {
+        const local = ((p + PITCH / 2) % PITCH + PITCH) % PITCH;
+        if (local < STREET / 2 + 1 || local > PITCH - STREET / 2 - 1) continue;
+        dashes.push({ x: axis === "x" ? p : street, z: axis === "x" ? street : p, rot: axis === "x" ? 0 : Math.PI / 2 });
+        if (Math.abs(street - MAIN_ROAD_CENTER) < 0.1) for (const offset of [-3, 3]) dashes.push({ x: axis === "x" ? p : street + offset, z: axis === "x" ? street + offset : p, rot: axis === "x" ? 0 : Math.PI / 2, divider: true });
+      }
+    }
+  }
+  return dashes;
+}
+
+export function generateCity(seed = 1337, focusX = 0, focusZ = 0): City {
+  const fi = Math.round(focusX / PITCH);
+  const fj = Math.round(focusZ / PITCH);
+  const city: City = { blocks: [], buildings: [], trees: [], lamps: [] };
+  for (let i = Math.max(-HALF, fi - 3); i <= Math.min(HALF, fi + 3); i++) {
+    for (let j = Math.max(-HALF, fj - 3); j <= Math.min(HALF, fj + 3); j++) {
+      const r = rng(i === 0 && j === 0 ? PARK_SEED : seed ^ Math.imul(i + 101, 73856093) ^ Math.imul(j + 101, 19349663));
+      const cx = i * PITCH;
+      const cz = j * PITCH;
+      const center = i === 0 && j === 0;
+      const park = center || r() < GREEN_BLOCK_CHANCE;
+      city.blocks.push({ x: cx, z: cz, park });
+      const dist = Math.hypot(i, j);
+      if (!park) {
+        for (const sx of [-1, 1])
+          for (const sz of [-1, 1]) {
+            const w = 11 + r() * 3.5;
+            const d = 11 + r() * 3.5;
+            const floors = Math.floor(3 + r() * (dist < 1.5 ? 18 : dist < 3 ? 10 : 6));
+            city.buildings.push({ x: cx + sx * 8, z: cz + sz * 8, w, d, h: floors * 3, variant: Math.floor(r() * 4) });
+          }
+      } else if (!center) {
+        for (let a = -2; a <= 2; a++)
+          for (let b = -2; b <= 2; b++)
+            if (r() < 0.7)
+              city.trees.push({ x: cx + a * 6 + (r() - 0.5) * 2, z: cz + b * 6 + (r() - 0.5) * 2, rot: r() * 6, s: 0.98 + r() * 0.04 });
+      }
+      // sidewalk props on each of the four edges
+      const edges: [number, number, number][] = [
+        [0, 1, 0],
+        [0, -1, Math.PI],
+        [1, 0, Math.PI / 2],
+        [-1, 0, -Math.PI / 2],
+      ];
+      for (const [ex, ez, rot] of edges) {
+        for (const k of [-15, 15]) {
+          const px = ex !== 0 ? cx + ex * 19.2 : cx + k;
+          const pz = ez !== 0 ? cz + ez * 19.2 : cz + k;
+          city.lamps.push({ x: px, z: pz, rot, s: 1 });
+        }
+        for (const k of [-6, 6]) {
+          // Center the full bed in the pavement between buildings and curb.
+          const px = ex !== 0 ? cx + ex * SIDEWALK_TREE_CENTER : cx + k;
+          const pz = ez !== 0 ? cz + ez * SIDEWALK_TREE_CENTER : cz + k;
+          city.trees.push({ x: px, z: pz, rot: r() * 6, s: 0.98 + r() * 0.04, sidewalk: true });
+        }
+      }
+    }
+  }
+  // Stable, individually generated forest cells, streamed around the player.
+  if (Math.max(Math.abs(focusX), Math.abs(focusZ)) > WORLD_HALF - 300) {
+    const gx = Math.floor(focusX / 14), gz = Math.floor(focusZ / 14);
+    for (let i = gx - 18; i <= gx + 18; i++) for (let j = gz - 18; j <= gz + 18; j++) {
+      const r = rng(seed ^ Math.imul(i, 83492791) ^ Math.imul(j, 2971215073));
+      const x = i * 14 + (r() - 0.5) * 8, z = j * 14 + (r() - 0.5) * 8;
+      if (Math.max(Math.abs(x), Math.abs(z)) < WORLD_HALF + 9 || isWildernessRoad(x, z, seed, 12)) continue;
+      city.trees.push({ x, z, rot: r() * Math.PI * 2, s: 0.98 + r() * 0.04 });
+    }
+  }
+  if (city.blocks.some((b) => b.x === 0 && b.z === 0)) city.trees.push(...PARK_TREES);
+  return city;
+}
+
+export function floorHeight(x: number, z: number) {
+  const i = Math.round(x / PITCH);
+  const j = Math.round(z / PITCH);
+  if (Math.abs(i) > HALF || Math.abs(j) > HALF) return 0;
+  if (Math.abs(x - i * PITCH) <= BLOCK / 2 && Math.abs(z - j * PITCH) <= BLOCK / 2) return SIDEWALK_H;
+  return 0;
+}
+
+export type SaveData = {
+  health: number;
+  elapsed: number;
+  pos: [number, number, number];
+  rotY: number;
+  camYaw: number;
+  accident?: SavedAccident | null;
+  worldSeed?: number;
+  camPitch?: number;
+  scooter?: SavedScooter | null;
+  benchSeat?: number | null;
+};
+
+export type SavedScooter = { pos: [number, number, number]; yaw: number; fallen: boolean; riding: boolean };
+
+export type SavedAccident = { phase: "down" | "rising"; remaining: number; direction: [number, number]; seed: number };
+
+export const DEFAULT_SAVE: SaveData = {
+  health: 100,
+  elapsed: START_ELAPSED,
+  pos: [0, SIDEWALK_H, 18],
+  rotY: 0,
+  camYaw: 0,
+  camPitch: 0.22,
+  worldSeed: 1337,
+  scooter: null,
+  benchSeat: null,
+};
+
+export const VEHICLE_DAMAGE = 20;
+export const DEATH_SCREEN_SECONDS = 5;
+export const TURN_SPEED = 2.4;
+
+export function healthAfterImpact(health: number) {
+  return Math.max(0, health - VEHICLE_DAMAGE);
+}
+
+export function deathScreenFinished(startedAt: number, now: number) {
+  return now - startedAt >= DEATH_SCREEN_SECONDS * 1000;
+}
+
+export function resetProgress(previousSeed = 1337): SaveData {
+  let worldSeed = Math.floor(Math.random() * 2147483646) + 1;
+  if (worldSeed === previousSeed) worldSeed = (worldSeed % 2147483646) + 1;
+  return { ...DEFAULT_SAVE, elapsed: 0, worldSeed, pos: [...DEFAULT_SAVE.pos] };
+}
+
+export function groundedHeading(yaw: number, left: boolean, right: boolean, dt: number) {
+  return yaw + (Number(left) - Number(right)) * TURN_SPEED * dt;
+}
+
+export function headingVelocity(yaw: number, speed: number): [number, number] {
+  return [Math.sin(yaw) * speed, Math.cos(yaw) * speed];
+}
+
+// camYaw is the target-to-camera azimuth; walking faces the opposite direction.
+export function cameraRelativeVelocity(camYaw: number, forward: number, right: number, speed: number): [number, number] {
+  const length = Math.hypot(forward, right);
+  if (length === 0) return [0, 0];
+  const yaw = camYaw + Math.PI;
+  return [(Math.sin(yaw) * forward - Math.cos(yaw) * right) * speed / length,
+    (Math.cos(yaw) * forward + Math.sin(yaw) * right) * speed / length];
+}
+
+export function cameraRecenterReady(forwardSince: number | null, lastMouseLookAt: number, now: number) {
+  return forwardSince !== null && now - forwardSince > 1000 && now - lastMouseLookAt > 1000;
+}
+
+export type VehicleKind = "car" | "taxi" | "bus" | "truck";
+export const VEHICLE_SIZE: Record<VehicleKind, [number, number, number]> = {
+  car: [4.4, 1.75, 1.9], taxi: [4.4, 2.05, 1.9], bus: [11.1, 3.4, 2.55], truck: [8.8, 3.5, 2.5],
+};
+
+export const PLAYER_HEIGHT = 1.95;
+export const THROW_DISTANCE = PLAYER_HEIGHT * 2;
+export const ACCIDENT_STOP_SECONDS = 5;
+export const QUEUE_RELEASE_SECONDS = 5;
+export const KNOCKDOWN_SECONDS = 2;
+export const GET_UP_SECONDS = 2.6;
+export const CRASH_STOP_SECONDS = 3.5;
+export const VEHICLE_MASS: Record<VehicleKind, number> = { car: 1400, taxi: 1400, bus: 11000, truck: 19000 };
+
+export type RoadPath = { axis: "x" | "z"; dir: 1 | -1; lane: number };
+export function roadForward(path: RoadPath): [number, number] { return path.axis === "x" ? [path.dir, 0] : [0, path.dir]; }
+export function roadLeft(path: RoadPath): [number, number] { return path.axis === "x" ? [0, -path.dir] : [path.dir, 0]; }
+export function forwardDistance(path: RoadPath, from: [number, number], to: [number, number]) {
+  return path.dir * (path.axis === "x" ? to[0] - from[0] : to[1] - from[1]);
+}
+export function sameRoad(a: RoadPath, b: RoadPath) { return a.axis === b.axis && a.dir === b.dir && Math.abs(a.lane - b.lane) < 0.2; }
+export function queueMayResume(stoodUpAt: number | null, now: number) { return stoodUpAt !== null && now >= stoodUpAt + QUEUE_RELEASE_SECONDS; }
+export function brakingGap(speed: number) { return 2.5 + speed * 0.55 + speed * speed / 16; }
+export function collisionVelocity(massA: number, massB: number, velocityA: number, velocityB: number, restitution = 0.12): [number, number] {
+  const momentum = massA * velocityA + massB * velocityB;
+  return [(momentum - massB * restitution * (velocityA - velocityB)) / (massA + massB), (momentum + massA * restitution * (velocityA - velocityB)) / (massA + massB)];
+}
+
+// Ramp to full turn speed in ~0.7s; releasing stops steering immediately.
+export function rampTurn(rate: number, input: number, dt: number) {
+  if (!input) return 0;
+  const start = Math.sign(rate) === Math.sign(input) ? rate : 0;
+  return Math.sign(input) * Math.min(TURN_SPEED, Math.abs(start) + 3.4 * dt);
+}
+export function wildernessCenter(axis: "x" | "z", distance: number, seed: number) {
+  const beyond = Math.max(0, Math.abs(distance) - WORLD_HALF);
+  const phase = (seed % 1000) * 0.01 + (axis === "x" ? 0 : 2);
+  const fade = 1 - Math.exp(-beyond / 150);
+  return PITCH / 2 + fade * (45 * Math.sin(beyond / 240 + phase) + 20 * Math.sin(beyond / 97 + phase));
+}
+export function isWildernessRoad(x: number, z: number, seed: number, halfWidth = 6) {
+  return (Math.abs(x) >= WORLD_HALF && Math.abs(z - wildernessCenter("x", x, seed)) < halfWidth) ||
+    (Math.abs(z) >= WORLD_HALF && Math.abs(x - wildernessCenter("z", z, seed)) < halfWidth);
+}
+
+export const MPH_TO_MPS = 0.44704;
+export const TRAFFIC_MPH = 30;
+export const SCOOTER_MAX_MPH = 45;
+export const SCOOTER_REVERSE_MPH = 8;
+export const TRAFFIC_SPEED = TRAFFIC_MPH * MPH_TO_MPS;
+export const SCOOTER_MAX_SPEED = SCOOTER_MAX_MPH * MPH_TO_MPS;
+export const SCOOTER_REVERSE_SPEED = SCOOTER_REVERSE_MPH * MPH_TO_MPS;
+export const SCOOTER_INTERACT_METERS = 0.5;
+export const SCOOTER_PROMPT_FADE_SECONDS = 0.2;
+export const SCOOTER_BYPASS_WAIT_SECONDS = 15;
+export const SCOOTER_MOUNT_SECONDS = 1.6;
+export const SCOOTER_PICKUP_SECONDS = 2;
+export const TRAFFIC_CORNER_SPEED = 6;
+// Local compound bounds hug visible wheels and leave the air below the chassis empty.
+export const SCOOTER_COLLISION_PARTS = [
+  { half: [0.075, 0.275, 0.275], center: [0, 0.28, -0.65] },
+  { half: [0.075, 0.275, 0.275], center: [0, 0.28, 0.65] },
+  { half: [0.24, 0.05, 0.475], center: [0, 0.36, 0] },
+  { half: [0.3, 0.26, 0.5], center: [0, 0.47, -0.42] },
+  { half: [0.29, 0.48, 0.1], center: [0, 0.73, 0.42] },
+  { half: [0.4, 0.05, 0.075], center: [0, 1.1, 0.46] },
+] as const;
+export function scooterFootprint(x: number, z: number, yaw: number, fallen: boolean, side: 1 | -1 = 1): SolidBox {
+  const offset = fallen ? 0.6 * side : 0;
+  return { x: x + Math.cos(yaw) * offset, z: z - Math.sin(yaw) * offset, hx: fallen ? 0.65 : 0.3, hz: 0.925, yaw };
+}
+
+// Distance to the scooter's side/seat footprint, not its distant front wheel.
+export function scooterInteractionDistance(player: [number, number], bike: [number, number], yaw: number) {
+  const dx = player[0] - bike[0], dz = player[1] - bike[1];
+  const forward = dx * Math.sin(yaw) + dz * Math.cos(yaw);
+  const side = dx * Math.cos(yaw) - dz * Math.sin(yaw);
+  return Math.hypot(Math.max(0, Math.abs(forward) - 0.55), Math.max(0, Math.abs(side) - 0.3));
+}
+// Parked scooter tipping: a stand-like restoring spring holds small tilts; past the
+// critical angle gravity wins and it falls on that side.
+export const SCOOTER_TIP = { stiffness: 40, damping: 3, critical: 0.35, impulsePerSpeed: 0.7 } as const;
+export function scooterTipStep(angle: number, vel: number, dt: number): { angle: number; vel: number; fallen: 0 | 1 | -1 } {
+  const acc = -SCOOTER_TIP.stiffness * angle - SCOOTER_TIP.damping * vel;
+  vel += acc * dt; angle += vel * dt;
+  if (Math.abs(angle) >= SCOOTER_TIP.critical) return { angle, vel, fallen: angle > 0 ? 1 : -1 };
+  return { angle, vel, fallen: 0 };
+}
+export function canInteractScooter(player: [number, number], bike: [number, number], yaw: number, fallen = false, side: 1 | -1 = 1) {
+  if (fallen) {
+    // A fallen bike is lifted only from the side it fell toward.
+    if (scooterSide(player, bike, yaw) !== side) return false;
+    const box = scooterFootprint(...bike, yaw, true, side), dx = player[0] - box.x, dz = player[1] - box.z;
+    return Math.hypot(Math.max(0, Math.abs(dx * Math.cos(yaw) - dz * Math.sin(yaw)) - box.hx), Math.max(0, Math.abs(dx * Math.sin(yaw) + dz * Math.cos(yaw)) - box.hz)) <= SCOOTER_INTERACT_METERS;
+  }
+  return scooterInteractionDistance(player, bike, yaw) <= SCOOTER_INTERACT_METERS;
+}
+/** +1 = scooter's left (local +x), -1 = right. Dismounting always uses the right. */
+export function scooterSide(player: [number, number], bike: [number, number], yaw: number): 1 | -1 {
+  return (player[0] - bike[0]) * Math.cos(yaw) - (player[1] - bike[1]) * Math.sin(yaw) >= 0 ? 1 : -1;
+}
+export function scooterNextAction(fallen: boolean, riding: boolean): "pickup" | "mount" | "dismount" {
+  return riding ? "dismount" : fallen ? "pickup" : "mount";
+}
+export function scooterBypassReady(startedAt: number, now: number) { return now - startedAt >= SCOOTER_BYPASS_WAIT_SECONDS; }
+export function scooterCanDismount(speed: number) { return speed === 0; }
+/** Fixed-radius steering: tightest at or below 10 mph, a clean 90° street corner at 25 mph, wider above. */
+export const SCOOTER_MIN_RADIUS = 4;
+export const SCOOTER_CORNER_RADIUS = 9;
+export function scooterTurnRadius(speed: number) {
+  const mph = Math.abs(speed) / MPH_TO_MPS;
+  if (mph <= 10) return SCOOTER_MIN_RADIUS;
+  if (mph <= 25) return SCOOTER_MIN_RADIUS + (mph - 10) / 15 * (SCOOTER_CORNER_RADIUS - SCOOTER_MIN_RADIUS);
+  return SCOOTER_CORNER_RADIUS + (mph - 25) * 0.6;
+}
+/** steer is -1..1 (smoothed key input); the bike only rotates while it rolls forward/back. */
+export function scooterTurn(yaw: number, steer: number, speed: number, dt: number) {
+  return speed === 0 ? yaw : yaw + Math.max(-1, Math.min(1, steer)) * speed / scooterTurnRadius(speed) * dt;
+}
+export function smoothSteer(steer: number, input: number, dt: number) {
+  return steer + (input - steer) * (1 - Math.exp(-10 * dt));
+}
+export function recenterOrbit(orbit: number, movingForward: boolean, dt: number) {
+  if (!movingForward) return orbit;
+  const shortest = Math.atan2(Math.sin(orbit), Math.cos(orbit));
+  return shortest * Math.exp(-4 * dt);
+}
+export function scooterSpeed(current: number, forward: boolean, reverse: boolean, dt: number) {
+  const requested = forward === reverse ? 0 : reverse ? -SCOOTER_REVERSE_SPEED : SCOOTER_MAX_SPEED;
+  // Brake completely before changing direction; never jump across zero in one step.
+  const braking = current * requested < 0;
+  const target = braking ? 0 : requested;
+  const acceleration = braking || (forward && reverse) ? 14 : reverse ? 2.4 : forward ? 3.8 : 1.8;
+  return Math.max(-SCOOTER_REVERSE_SPEED, Math.min(SCOOTER_MAX_SPEED, current + Math.sign(target - current) * Math.min(Math.abs(target - current), acceleration * dt)));
+}
+
+/** Facade styles (window size/shape families) available per wall colour. */
+export const FACADE_STYLES = 3;
+export type BuildingLayout = {
+  /** Street-facing directions on each axis (buildings sit in block corners). */
+  sx: 1 | -1; sz: 1 | -1;
+  /** Y rotation that maps local +X/+Z faces onto the two street sides. */
+  rot: number; swap: boolean;
+  /** Which street side carries the single main door. */
+  door: "x" | "z";
+  /** Optional single wooden back door on one interior side. */
+  backDoor: "x" | "z" | null;
+  style: number;
+  /** Ground-floor interior lights on at night (random per building). */
+  groundLit: boolean;
+};
+/** Deterministic per-building facade layout derived from its position only (keeps world RNG unchanged). */
+export function buildingLayout(b: { x: number; z: number }): BuildingLayout {
+  const sx = b.x - Math.round(b.x / PITCH) * PITCH >= 0 ? 1 : -1;
+  const sz = b.z - Math.round(b.z / PITCH) * PITCH >= 0 ? 1 : -1;
+  let h = (Math.imul(Math.round(b.x * 10), 73856093) ^ Math.imul(Math.round(b.z * 10), 19349663)) >>> 0;
+  // Avalanche-mix so low bits (door side, style) are not tied to coordinate parity.
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b) >>> 0; h = Math.imul(h ^ (h >>> 16), 0x45d9f3b) >>> 0; h = (h ^ (h >>> 16)) >>> 0;
+  const rot = sx === 1 ? (sz === 1 ? 0 : Math.PI / 2) : sz === 1 ? -Math.PI / 2 : Math.PI;
+  const back = (h >>> 3) % 8;
+  return { sx, sz, rot, swap: sx !== sz, door: h % 2 ? "x" : "z", backDoor: back === 0 ? "x" : back === 1 ? "z" : null, style: (h >>> 7) % FACADE_STYLES, groundLit: ((h >>> 11) & 1) === 1 };
+}
