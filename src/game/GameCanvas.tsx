@@ -37,7 +37,7 @@ const GameScene = memo(function GameScene({ state, x, z }: { state: GameState; x
   </Canvas>;
 });
 
-export function GameCanvas({ state, onSignOut, onDeath, onReset, saving }: { state: GameState; onSignOut: () => void; onDeath: () => void; onReset: () => void; saving: boolean }) {
+export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLabel = "Save & sign out" }: { state: GameState; onSignOut: () => void; onDeath: () => void; onReset: () => void; saving: boolean; exitLabel?: string }) {
   const [focus, setFocus] = useState(() => [Math.round(state.pos.x / PITCH) * PITCH, Math.round(state.pos.z / PITCH) * PITCH]);
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -112,7 +112,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving }: { sta
         <div className="absolute right-4 top-20 flex items-center gap-3 sm:top-4">
           {saving && <span className="text-xs text-muted-foreground">Saving…</span>}
           <Button disabled={dead} onClick={onSignOut} className="pointer-events-auto">
-            Save & sign out
+            {exitLabel}
           </Button>
         </div>
         {riding && <div className="hud-panel absolute bottom-24 left-1/2 flex h-16 w-40 -translate-x-1/2 items-baseline justify-center gap-2 px-4 py-3" aria-label="Scooter speed"><span className="font-display text-3xl tabular-nums">{speed}</span><span className="text-xs text-muted-foreground">MPH</span></div>}
