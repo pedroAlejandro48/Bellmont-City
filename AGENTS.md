@@ -1,21 +1,10 @@
-<!-- LOVABLE:BEGIN -->
-> [!IMPORTANT]
-> This project is connected to [Lovable](https://lovable.dev). Avoid rewriting
-> published git history — force pushing, or rebasing/amending/squashing commits
-> that are already pushed — as it rewrites history on Lovable's side and the
-> user will likely lose their project history.
->
-> Commits you push to the connected branch sync back to Lovable and show up in
-> the editor, so keep the branch in a working state.
-<!-- LOVABLE:END -->
-
 ## Project rules
 - 3D game code lives in src/game (React Three Fiber); pure world/time logic stays in src/game/config.ts so it can be unit-tested without WebGL.
-- Player progress is one JSON blob per user in `game_saves.data` (SaveData type in config.ts); add new saved fields there with defaults in DEFAULT_SAVE so old saves still load.
+- The app is a static Vite SPA hosted as a claude.ai artifact; there is no server. Accounts and saves go through src/platform (the artifact runtime's `user` and `db` capabilities); see README for the declared capabilities and db rules.
+- Player progress is one JSON blob per user at `data/users/<id>/save` (SaveData type in config.ts); add new saved fields there with defaults in DEFAULT_SAVE so old saves still load.
 - Save loading validates known fields, retains unknown fields, and blocks gameplay on cloud read failures; user-scoped timestamped local backups recover newer unsynced progress without changing save ownership.
-- Usernames are normalized through src/lib/usernames.ts and a unique database constraint; username credential resolution is service-role-only inside a server function and never returns email addresses.
-- Players without usernames complete the shared UsernameForm before gameplay; email and Google keep the same auth user ID and existing save.
-- The game page lives under src/routes/_authenticated (client-only); the sign-in screen is `/`.
+- Sign-in is the viewer's claude.ai identity (no passwords). Usernames are normalized through src/lib/usernames.ts and claimed in `players/<id>` under a short `claims/<name>` lease so two players cannot take one name.
+- Guests (and anyone outside claude.ai) play with a browser-local save in GuestGame.
 - Health and death reset rules stay pure in config.ts; runtime impact/death state lives in GameState, and saves are serialized so old writes cannot overwrite a reset.
 - On-foot movement is ground-only and camera-relative; player facing does not rotate the view. CameraRig owns mouse inactivity and forward-travel timers, saved camera azimuth, and sphere-swept Rapier collision; scooter steering remains heading-based so vehicle controls and obstacles stay coherent.
 - CameraRig binds native hold-to-look pointer lock through mouseLook.ts; document-level release, lock-loss and pending-request cleanup prevent stuck hidden cursors and preserve the native cursor return position.
@@ -27,7 +16,7 @@
 - Keep scenery instance capacities stable, collider keys coordinate-based, and the Canvas subtree memoized independently of HUD ticks; bounded per-axis road markings and reused traffic scratch data avoid generation and animation churn.
 - Tree props carry a sidewalk flag: only sidewalk trees render beds, with narrower foliage; ground-floor glazing overlays retain solid building colliders and existing upper-floor facades.
 - Save scooter position, orientation, fallen and mounted state in the account save; runtime action phases own E pickup/mount/dismount, while pure interaction, speed and waiting rules stay in config.ts for tests.
-- Strip development source-inspection DOM attributes from src/game JSX after injection and before React compilation; R3F interprets hyphenated attributes as nested Three.js properties and crashes, while other pages retain source inspection.
+- Never add hyphenated DOM-style attributes to src/game JSX: R3F interprets them as nested Three.js properties and crashes.
 - Park seats and oriented obstacle footprints are shared pure configuration; a seat is claimed before animation and saved by index, while one interaction dispatcher owns E and all actions share InteractionPrompt to prevent duplicate prompts or conflicting actions.
 - Traffic route curves and road membership are pure helpers; seeded road-bound, clearance-checked spawn/recycle and heading-aligned velocity keep random corner turns reproducible and avoid lateral sliding. Vehicle headlights are real local spotlights, and character materials are non-emissive shadow-receiving materials.
 

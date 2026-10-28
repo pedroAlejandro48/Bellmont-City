@@ -1,23 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
 import { resetProgress, type SaveData } from "@/game/config";
 import { createState, toSave, type GameState } from "@/game/state";
 import { mergeSave, newerBackup, readSave, saveRecord } from "@/game/saves";
-import type { Json } from "@/integrations/supabase/types";
+import { readCloudSave, writeCloudSave, type Account } from "@/platform/account";
 import { GameCanvas } from "@/game/GameCanvas";
-import { UsernameForm } from "@/components/UsernameForm";
 import { Button } from "@/components/ui/button";
 
 // Signed-in game session: loads the account save (with local backup recovery) and keeps it synced.
-function useCloudGame() {
+function useCloudGame(account: Account) {
   const [state, setState] = useState<GameState | null>(null);
   const [saving, setSaving] = useState(false);
   const [round, setRound] = useState(0);
-  const userId = useRef<string | null>(null);
   const writes = useRef<Promise<void>>(Promise.resolve());
   const retained = useRef<Record<string, unknown>>({});
   const activeState = useRef<GameState | null>(null);
-  const [needsUsername, setNeedsUsername] = useState<string | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -27,43 +23,30 @@ function useCloudGame() {
     setLoadError(false);
     (async () => {
       try {
-      const { data: u } = await supabase.auth.getUser();
-      if (!u.user) return;
-      userId.current = u.user.id;
-      const profile = await supabase.from("profiles").select("username").eq("id", u.user.id).maybeSingle();
-      if (profile.error) throw profile.error;
-      if (!profile.data?.username) { if (!cancelled) setNeedsUsername(u.user.id); return; }
-      const { data, error } = await supabase.from("game_saves").select("data, updated_at").eq("user_id", u.user.id).maybeSingle();
-      if (error) throw error; // Never overwrite an unread save with defaults.
+      const data = await readCloudSave(account); // Throws on read failure: never overwrite an unread save with defaults.
       if (cancelled) return;
       let backup = null;
-      try { backup = newerBackup(JSON.parse(localStorage.getItem(`linewalker-save:${u.user.id}`) ?? "null"), data?.updated_at); } catch { /* Cloud remains authoritative without a valid backup. */ }
+      try { backup = newerBackup(JSON.parse(localStorage.getItem(`bellmont-save:${account.id}`) ?? "null"), data?.updated_at); } catch { /* Cloud remains authoritative without a valid backup. */ }
       retained.current = { ...saveRecord(data?.data), ...saveRecord(backup?.data) };
       const parsed = readSave(retained.current);
       if (!data && !backup) parsed.worldSeed = resetProgress().worldSeed ?? 1337;
       const loaded = createState(parsed);
       activeState.current = loaded;
-      setNeedsUsername(null);
       setState(loaded);
       } catch { if (!cancelled) setLoadError(true); }
     })();
     return () => { cancelled = true; };
-  }, [loadAttempt]);
+  }, [account, loadAttempt]);
 
   const persist = useCallback((snapshot: SaveData) => {
-    const id = userId.current;
-    if (!id) return Promise.resolve();
     const data = mergeSave(retained.current, snapshot);
     const updated_at = new Date().toISOString();
     retained.current = data;
-    try { localStorage.setItem(`linewalker-save:${id}`, JSON.stringify({ data, updated_at })); } catch { /* Cloud saving still works if local storage is unavailable. */ }
+    try { localStorage.setItem(`bellmont-save:${account.id}`, JSON.stringify({ data, updated_at })); } catch { /* Cloud saving still works if local storage is unavailable. */ }
     writes.current = writes.current.catch(() => {}).then(async () => {
       setSaving(true);
       try {
-        const { error } = await supabase.from("game_saves").upsert({
-          user_id: id, data: data as unknown as Json, updated_at,
-        });
-        if (error) throw error;
+        await writeCloudSave(account, data, updated_at);
         setSaveError(false);
       } catch (error) {
         setSaveError(true);
@@ -71,7 +54,7 @@ function useCloudGame() {
       } finally { setSaving(false); }
     });
     return writes.current;
-  }, []);
+  }, [account]);
 
   const save = useCallback(async () => {
     const current = activeState.current;
@@ -103,15 +86,14 @@ function useCloudGame() {
   }, [state, save]);
 
   return {
-    state, saving, round, needsUsername, loadError, saveError, setSaveError, save, reset,
+    state, saving, round, loadError, saveError, setSaveError, save, reset,
     retryLoad: () => setLoadAttempt((n) => n + 1),
   };
 }
 
-/** The signed-in game screen; `onSignOut` must end the Supabase session and leave the game. */
-export function CloudGame({ onSignOut: signOut }: { onSignOut: () => Promise<void> }) {
-  const { state, saving, round, needsUsername, loadError, saveError, setSaveError, save, reset, retryLoad } = useCloudGame();
-  if (needsUsername) return <UsernameForm userId={needsUsername} onComplete={() => retryLoad()} onSignOut={signOut} />;
+/** The signed-in game screen; `onExit` leaves the game after its final save. */
+export function CloudGame({ account, onExit }: { account: Account; onExit: () => void }) {
+  const { state, saving, round, loadError, saveError, setSaveError, save, reset, retryLoad } = useCloudGame(account);
   if (loadError) return <div className="auth-bg flex min-h-screen flex-col items-center justify-center gap-4 text-foreground">
     <p>Could not load your progress. Your saved game has not been changed.</p>
     <Button onClick={() => retryLoad()}>Retry loading</Button>
@@ -129,10 +111,11 @@ export function CloudGame({ onSignOut: signOut }: { onSignOut: () => Promise<voi
       key={round}
       state={state}
       saving={saving}
+      exitLabel="Save & exit"
       onDeath={() => { void save().catch(() => {}); }}
       onReset={reset}
       onSignOut={async () => {
-        try { await save(); await signOut(); } catch { setSaveError(true); }
+        try { await save(); onExit(); } catch { setSaveError(true); }
       }}
     />{saveError && <div role="alert" className="hud-panel fixed left-4 top-20 z-30 max-w-[calc(100%-2rem)] space-y-2 p-3 text-sm text-foreground">
       <p>Cloud save failed. Retrying; keep this tab open.</p>

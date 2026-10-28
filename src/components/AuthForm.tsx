@@ -1,90 +1,49 @@
-import { useState, type ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import type { z } from "zod";
-import { usernameLoginSchema } from "@/lib/usernames";
-import { supabase } from "@/integrations/supabase/client";
-import { lovable } from "@/integrations/lovable/index";
+import { usernameSchema } from "@/lib/usernames";
+import { claimUsername, type Account } from "@/platform/account";
 
-// Supabase reports an unreachable server as a bare "Failed to fetch".
-const authMessage = (error: { message: string; name?: string }) =>
-  error.name === "AuthRetryableFetchError" || error.message === "Failed to fetch"
-    ? "Could not reach the Bellmont server. Check your connection and try again."
-    : error.message;
-
-type UsernameLogin = z.infer<typeof usernameLoginSchema>;
-type UsernameLoginResult = { error: string | null; tokens: { access_token: string; refresh_token: string } | null };
 type AuthFormProps = {
-  onSignedIn: () => unknown;
-  /** Server-side username lookup; when absent, username sign-in asks the player to use email. */
-  usernameLogin?: (data: UsernameLogin) => Promise<UsernameLoginResult>;
-  passwordReset?: boolean;
-  google?: boolean;
+  /** The claude.ai viewer; null when the page runs outside claude.ai, where only guest play works. */
+  account: Account | null;
+  loading: boolean;
+  onEnter: (account: Account) => void;
   children?: ReactNode;
 };
 
-export function AuthForm({ children, onSignedIn, usernameLogin, passwordReset = true, google: googleEnabled = true }: AuthFormProps) {
-  const [mode, setMode] = useState<"in" | "up">("in");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+// Sign-in is the viewer's claude.ai login, so there is no password to type or store here;
+// "Sign up" reserves the player's unique Bellmont username for that login.
+export function AuthForm({ account, loading, onEnter, children }: AuthFormProps) {
+  const [mode, setMode] = useState<"in" | "up">(account && !account.username ? "up" : "in");
+  const [username, setUsername] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [method, setMethod] = useState<"username" | "email">(usernameLogin ? "username" : "email");
-  const [username, setUsername] = useState("");
-  async function submit(e: React.FormEvent) {
+
+  async function submit(e: FormEvent) {
     e.preventDefault();
-    setBusy(true);
     setMsg(null);
-    try {
-    if (mode === "up") {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { emailRedirectTo: window.location.origin },
-      });
-      if (error) setMsg(authMessage(error));
-      else if (data.user && data.user.identities && data.user.identities.length === 0)
-        setMsg("This email already has an account. Sign in instead, or use “Forgot password” to set a new one.");
-      else if (!data.session) setMsg("Check your email to confirm your account, then sign in.");
-    } else if (method === "email") {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) setMsg(authMessage(error));
-    } else {
-      const parsed = usernameLoginSchema.safeParse({ username, password });
-      if (!parsed.success) { setMsg("Enter a valid username and password."); return; }
-      if (!usernameLogin) { setMsg("Username sign-in isn't available here. Choose Email to sign in."); return; }
-      const result = await usernameLogin(parsed.data);
-      if (result.error) setMsg(result.error);
-      else if (result.tokens) {
-        const { error } = await supabase.auth.setSession(result.tokens);
-        if (error) setMsg("Could not complete sign-in. Please try again.");
-      }
+    if (!account) return;
+    if (mode === "in") {
+      if (account.username) onEnter(account);
+      else { setMode("up"); setMsg("No Bellmont account for this login yet. Choose a username to create one."); }
+      return;
     }
-    await onSignedIn();
-    } catch { setMsg("Could not sign in. Please try again."); }
-    finally { setBusy(false); }
-  }
-
-  async function forgotPassword() {
-    if (!email) { setMsg("Enter your email above, then tap “Forgot password”."); return; }
+    const parsed = usernameSchema.safeParse(username);
+    if (!parsed.success) { setMsg("Use 3–24 letters, numbers, or underscores."); return; }
     setBusy(true);
-    setMsg(null);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
-      setMsg(error ? error.message : "Check your email for a password reset link.");
-    } catch { setMsg("Could not send the reset email. Please try again."); }
+      const result = await claimUsername(account, parsed.data);
+      if (result === "claimed") onEnter({ ...account, username: parsed.data });
+      else if (result === "taken") setMsg("That username is already taken.");
+      else if (result === "busy") setMsg("Someone is claiming that username right now. Try again in a moment.");
+      else setMsg("Your access to this game is view-only. Ask its owner to make you a Contributor.");
+    } catch { setMsg("Could not create your account. Please try again."); }
     finally { setBusy(false); }
   }
 
-  async function google() {
-    setMsg(null);
-    try {
-    const r = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
-    if (r.error) setMsg(r.error.message ?? "Google sign-in failed");
-    else if (!r.redirected) await onSignedIn();
-    } catch { setMsg("Google sign-in failed. Please try again."); }
-  }
+  const signedInAs = account && <p className="text-center text-xs text-muted-foreground">
+    Signed in with Claude{account.displayName ? <> as <span className="text-foreground">{account.displayName}</span></> : null}
+  </p>;
 
   return (
     <div className="auth-bg flex min-h-screen items-center justify-center px-4">
@@ -105,25 +64,20 @@ export function AuthForm({ children, onSignedIn, usernameLogin, passwordReset = 
               </Button>
             ))}
           </div>
-          {mode === "in" && <div className="flex gap-1 rounded-md bg-muted p-1" aria-label="Sign-in method">
-            {(["username", "email"] as const).map((value) => <Button key={value} type="button" variant={method === value ? "default" : "ghost"} className="flex-1" aria-pressed={method === value} onClick={() => { setMethod(value); setMsg(null); }}>{value === "username" ? "Username" : "Email"}</Button>)}
-          </div>}
-          {mode === "up" || method === "email" ? <input aria-label="Email" className="auth-input" type="email" autoComplete="email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} /> : <input aria-label="Username" className="auth-input" autoComplete="username" required minLength={3} maxLength={24} placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />}
-          <input aria-label="Password" className="auth-input" type="password" autoComplete={mode === "up" ? "new-password" : "current-password"} required minLength={mode === "up" ? 6 : 1} maxLength={256} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          <Button disabled={busy} className="w-full">
+          {loading ? <p className="py-3 text-center text-sm text-muted-foreground">Connecting…</p>
+            : !account ? <p className="text-center text-sm text-muted-foreground">Accounts work when Bellmont City is opened on claude.ai while you're signed in there. You can still play as a guest.</p>
+            : mode === "in" ? <>
+              <input aria-label="Username" className="auth-input" readOnly placeholder="No account yet — sign up" value={account.username ?? ""} />
+              {signedInAs}
+            </>
+            : account.username ? <p className="text-center text-sm text-muted-foreground">This login already has the account <span className="text-foreground">{account.username}</span>. Sign in to play.</p>
+            : <>
+              <input aria-label="Username" className="auth-input" autoComplete="username" required minLength={3} maxLength={24} placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
+              {signedInAs}
+            </>}
+          {account && !(mode === "up" && account.username) && <Button disabled={busy || loading} className="w-full">
             {busy ? "…" : mode === "in" ? "Enter the city" : "Create account"}
-          </Button>
-          {passwordReset && mode === "in" && method === "email" && (
-            <button type="button" onClick={forgotPassword} disabled={busy} className="w-full text-center text-xs text-muted-foreground underline-offset-2 hover:underline">
-              Forgot password?
-            </button>
-          )}
-          {googleEnabled && <>
-            <div className="text-center text-xs text-muted-foreground">or</div>
-            <Button variant="outline" type="button" onClick={google} className="w-full">
-              Continue with Google
-            </Button>
-          </>}
+          </Button>}
           {msg && <p className="text-center text-sm text-accent">{msg}</p>}
           {children}
         </form>

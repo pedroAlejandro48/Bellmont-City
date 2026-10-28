@@ -1,29 +1,37 @@
-# Welcome to your Lovable project
+# Bellmont City
 
-This project was built with [Lovable](https://lovable.dev).
+An open-world 3D downtown with a day and night cycle, built with React Three Fiber and Rapier physics.
 
-## Build with Lovable
+## Hosting and accounts
 
-Open your project in the [Lovable editor](https://lovable.dev) and keep building.
+The game is a static single-page app. It is published as a claude.ai artifact, and the claude.ai
+artifact runtime provides accounts and saves (`src/platform/`):
 
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: connect the project to GitHub and every change made in Lovable is committed straight to your repository.
-- **Full ownership**: this code is yours. Push to your repository and your changes sync back into Lovable, ready for your next prompt.
+- **Sign in** is the viewer's claude.ai login (`user` capability); no passwords are stored.
+- **Sign up** reserves a unique Bellmont username in the shared `players/<viewer id>` documents.
+- **Saves** go to `data/users/<viewer id>/save` in the artifact's `db`, which is private to each player.
+- **Guests** play with progress kept in their own browser.
+
+Players need Contributor access (or above) to the artifact to save; view-only access can only play as a guest.
+Opened outside claude.ai (e.g. `npm run dev`), only guest play is available.
+
+Publish with these capabilities:
+
+```json
+{
+  "db": { "rules": [
+    { "path": "players", "read": "view", "write": "owner" },
+    { "path": "players/{self}", "read": "view", "write": "interact" }
+  ] },
+  "user": { "scopes": ["profile"] }
+}
+```
 
 ## Development
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
-
 ```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
+npm install
+npm run dev      # local dev server (guest play)
+npm test         # unit tests
+npm run build    # static build in dist/
 ```
-
-## Built with
-
-- TanStack Start
-- TypeScript
-- React
-- Tailwind CSS
