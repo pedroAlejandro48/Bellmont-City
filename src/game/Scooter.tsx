@@ -125,7 +125,7 @@ export function Scooter({ state }: { state: GameState }) {
       if (bike.pos.y < floor) { bike.pos.y = floor; bike.throwVelocity.y = Math.abs(bike.throwVelocity.y) * 0.12; bike.throwVelocity.x *= Math.exp(-5 * dt); bike.throwVelocity.z *= Math.exp(-5 * dt); }
     }
     const actionProgress = bike.action === "pickup" ? Math.min(1, (now - bike.actionAt) / SCOOTER_PICKUP_SECONDS) : 0;
-    const lift = Math.max(0, Math.min(1, (actionProgress - 0.35) / 0.65));
+    const lift = Math.max(0, Math.min(1, (actionProgress - 0.3) / 0.5));
     // Bike stays down while he bends to it, then rises as he straightens.
     const desiredLean = bike.fallen ? (1 - lift * lift * (3 - 2 * lift)) * -Math.PI / 2 * bike.fallSide : bike.riding ? -turnRate.current * bike.speed * 0.014 : -0.08 - bike.tip;
     lean.current += (desiredLean - lean.current) * (1 - Math.exp(-9 * dt));

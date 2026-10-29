@@ -28,7 +28,27 @@ const STAND: Pose = {
 export const STAND_FORWARD = 0.46;
 export const FOURS_END = 0.3;
 const KEYS: [number, Pose][] = [[FOURS_END, FOURS], [0.55, KNEEL], [0.82, PUSH], [1, STAND]];
-const smooth = (t: number) => t * t * (3 - 2 * t);
+const JOINTS = Object.keys(FOURS) as Joint[];
+
+// Tangent (pose velocity) at each keyframe so the motion flows through the
+// intermediate poses instead of easing to a stop at each one. Interior keys
+// use the slope between their neighbors (Catmull-Rom style); the first and
+// last keys ease from/to rest.
+const TANGENTS: Pose[] = KEYS.map(([tk, pose], k) => {
+  const out = {} as Pose;
+  if (k === 0 || k === KEYS.length - 1) {
+    for (const j of JOINTS) out[j] = [0, 0, 0];
+    return out;
+  }
+  const [tPrev, prev] = KEYS[k - 1]!;
+  const [tNext, next] = KEYS[k + 1]!;
+  const scale = 1 / (tNext - tPrev);
+  for (const j of JOINTS) {
+    const p = prev[j]; const n = next[j];
+    out[j] = [(n[0] - p[0]) * scale, (n[1] - p[1]) * scale, (n[2] - p[2]) * scale];
+  }
+  return out;
+});
 
 /** Pose for progress in [FOURS_END, 1]; earlier progress blends from the ragdoll toward all fours. */
 export function getUpPose(progress: number): Pose {
@@ -36,9 +56,23 @@ export function getUpPose(progress: number): Pose {
   for (let k = 1; k < KEYS.length; k++) {
     const [t1, b] = KEYS[k]!; const [t0, a] = KEYS[k - 1]!;
     if (t <= t1) {
-      const u = smooth((t - t0) / (t1 - t0));
+      const dt = t1 - t0;
+      const u = (t - t0) / dt;
+      const u2 = u * u; const u3 = u2 * u;
+      // Cubic Hermite: passes through both key poses with matching velocity,
+      // so segments join into one continuous movement.
+      const h00 = 2 * u3 - 3 * u2 + 1; const h10 = u3 - 2 * u2 + u;
+      const h01 = -2 * u3 + 3 * u2; const h11 = u3 - u2;
+      const m0 = TANGENTS[k - 1]!; const m1 = TANGENTS[k]!;
       const out = {} as Pose;
-      for (const j of Object.keys(a) as Joint[]) out[j] = [a[j][0] + (b[j][0] - a[j][0]) * u, a[j][1] + (b[j][1] - a[j][1]) * u, a[j][2] + (b[j][2] - a[j][2]) * u];
+      for (const j of JOINTS) {
+        const pa = a[j]; const pb = b[j]; const ta = m0[j]; const tb = m1[j];
+        out[j] = [
+          h00 * pa[0] + h10 * ta[0] * dt + h01 * pb[0] + h11 * tb[0] * dt,
+          h00 * pa[1] + h10 * ta[1] * dt + h01 * pb[1] + h11 * tb[1] * dt,
+          h00 * pa[2] + h10 * ta[2] * dt + h01 * pb[2] + h11 * tb[2] * dt,
+        ];
+      }
       return out;
     }
   }

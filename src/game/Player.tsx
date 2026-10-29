@@ -273,14 +273,17 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       const right = new THREE.Vector3(Math.cos(bike.yaw), 0, -Math.sin(bike.yaw));
       const ahead = new THREE.Vector3(Math.sin(bike.yaw), 0, Math.cos(bike.yaw));
       if (bike.action === "pickup") {
-        // Step beside the bike, squat with a long back and straight arms, then drive up through the legs.
+        // One flow: step in and squat, grab, drive up through the legs with the torso close, then stand tall.
         const side = bike.actionSide;
-        const stance = bike.pos.clone().addScaledVector(right, side * 1.45).addScaledVector(ahead, 0.1);
+        const liftT = ease((progress - 0.3) / 0.5);
+        // Start right by the lying bike, then step in as it rises so the torso stays close to it.
+        const stance = bike.pos.clone().addScaledVector(right, side * (1.0 - 0.42 * liftT)).addScaledVector(ahead, 0.05);
         p.lerpVectors(bike.actionOrigin, stance, ease(progress / 0.2));
+        if (progress > 0.2) p.copy(stance);
         p.y = floorHeight(p.x, p.z);
-        const bend = progress < 0.35 ? ease(progress / 0.35) : 1 - ease((progress - 0.35) / 0.65);
-        hipL = hipR = -1.25 * bend; kneeL = kneeR = 1.85 * bend;
-        lean = 0.7 * bend + 0.05; bob = 0; riderOffset = -0.42 * bend;
+        const bend = progress < 0.3 ? ease(progress / 0.3) : 1 - liftT;
+        hipL = hipR = -1.3 * bend; kneeL = kneeR = 1.9 * bend;
+        lean = 0.75 * bend + 0.22 * Math.sin(Math.PI * liftT); bob = 0; riderOffset = -0.44 * bend;
         state.rotY = Math.atan2(-side * right.x, -side * right.z);
       } else {
         // Mount and dismount share one path; dismount (always right side) plays it backward.
@@ -380,9 +383,10 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       const gripWorld = (side: number) => {
         const grip = new THREE.Vector3(side * 0.34, 1.1, 0.46);
         if (pickup) {
-          // Facing the bike, the hand toward its front takes the handlebar and the other the seat.
-          const frontHand = bike.actionSide > 0 ? -1 : 1;
-          grip.set(0.25 * bike.actionSide, side === frontHand ? 1.1 : 0.8, side === frontHand ? 0.46 : -0.35);
+          // Facing the bike, the hand toward its front takes the handlebar and the other the seat:
+          // on the bike's left side the left hand holds the handle, on its right side the right hand.
+          const frontHand = bike.actionSide;
+          grip.set(0.22 * bike.actionSide, side === frontHand ? 1.08 : 0.82, side === frontHand ? 0.46 : -0.3);
         } else if (side === 1) {
           // Left hand follows a lifted arc to the pillion seat; right hand stays on its grip.
           grip.lerp(new THREE.Vector3(0.2, 0.85, -0.5), s.reverseBlend);
@@ -390,15 +394,20 @@ export function Player({ state, city }: { state: GameState; city: City }) {
         }
         return grip.applyEuler(new THREE.Euler(0, bike.yaw, bike.lean, "YXZ")).add(bike.pos).add(new THREE.Vector3(0, 0.3 * Math.abs(bike.lean) / (Math.PI / 2), 0));
       };
+      // After the bike settles upright, the arms let go and ease back down to rest.
+      const pickupProgress = pickup ? Math.min(1, (state.simulationTime - bike.actionAt) / SCOOTER_PICKUP_SECONDS) : 0;
+      const hold = pickup ? 1 - Math.max(0, Math.min(1, (pickupProgress - 0.88) / 0.12)) ** 2 : 1;
       const reach = (upper: THREE.Group | null, lower: THREE.Group | null, side: number) => {
         if (!upper || !lower) return;
         const parent = upper.parent;
         if (!parent) return;
+        const restUpper = upper.quaternion.clone(), restLower = lower.quaternion.clone();
         const target = parent.worldToLocal(gripWorld(side));
         const delta = target.clone().sub(upper.position);
         const distance = Math.min(0.579, Math.max(0.08, delta.length()));
         const forward = delta.normalize();
-        const pole = new THREE.Vector3(side * 0.4, -0.3, -0.3);
+        // Pickup bends the elbows out and back like a hard pull; riding keeps them low.
+        const pole = pickup ? new THREE.Vector3(side * 0.6, 0.1, -0.5) : new THREE.Vector3(side * 0.4, -0.3, -0.3);
         pole.addScaledVector(forward, -pole.dot(forward)).normalize();
         const along = (0.3 * 0.3 - 0.28 * 0.28 + distance * distance) / (2 * distance);
         const height = Math.sqrt(Math.max(0, 0.3 * 0.3 - along * along));
@@ -406,6 +415,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
         upper.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), elbowPoint.clone().sub(upper.position).normalize());
         const foreDirection = target.sub(elbowPoint).normalize().applyQuaternion(upper.quaternion.clone().invert());
         lower.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), foreDirection);
+        if (hold < 1) { upper.quaternion.slerpQuaternions(restUpper, upper.quaternion.clone(), hold); lower.quaternion.slerpQuaternions(restLower, lower.quaternion.clone(), hold); }
       };
       reach(armL.current, foreL.current, 1); reach(armR.current, foreR.current, -1);
     }
