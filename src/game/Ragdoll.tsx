@@ -41,7 +41,7 @@ export function Ragdoll({ state }: { state: GameState }) {
   const resting = useRef<{ p: THREE.Vector3; q: THREE.Quaternion }[]>([]);
   const standOrigin = useRef(new THREE.Vector3());
   const riseYaw = useRef(0);
-  const mat = useMemo(() => new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.72 }), []);
+  const mat = useMemo(() => new THREE.MeshStandardMaterial({ color: state.bodyColor, roughness: 0.72 }), [state.bodyColor]);
   const rotation = useMemo(() => new THREE.Quaternion(), []);
   const temp = useMemo(() => new THREE.Vector3(), []);
 

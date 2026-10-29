@@ -19,11 +19,11 @@ export function useBodyRig(): BodyRig {
 }
 
 /** The animated character's meshes; the rig's groups are posed by Player (or by a remote player's pose). */
-export function CharacterBody({ rig }: { rig: BodyRig }) {
-  const lineMat = useMemo(() => new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.72, metalness: 0 }), []);
+export function CharacterBody({ rig, color = "#ffffff" }: { rig: BodyRig; color?: string }) {
+  const lineMat = useMemo(() => new THREE.MeshStandardMaterial({ color, roughness: 0.72, metalness: 0 }), [color]);
   const headMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.4 }),
-    [],
+    () => new THREE.MeshStandardMaterial({ color, roughness: 0.4 }),
+    [color],
   );
 
   return (

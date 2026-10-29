@@ -17,12 +17,18 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // One username per account, matching the claim made in the same write.
+    // One username and gender per account, set once: the username matches the claim made in the same write.
     match /players/{uid} {
+      function validGender(g) { return g == 'female' || g == 'male'; }
       allow read: if signedIn();
       allow create: if signedIn() && request.auth.uid == uid
+        && validGender(request.resource.data.gender)
         && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.username)).data.uid == uid;
-      allow update, delete: if false;
+      // Accounts made before genders existed may choose one, once.
+      allow update: if signedIn() && request.auth.uid == uid && !('gender' in resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['gender'])
+        && validGender(request.resource.data.gender);
+      allow delete: if false;
     }
 
     // Saves: only their owner reads or writes them.

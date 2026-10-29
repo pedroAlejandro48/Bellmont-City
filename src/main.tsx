@@ -43,13 +43,13 @@ function App() {
   if (!account) return (
     <AuthForm onSignedIn={(signedIn, typed) => {
       if (!isSignedIn(signedIn.id)) return;
-      setAccount(signedIn); setPassword(signedIn.username ? null : typed); toMenu();
+      setAccount(signedIn); setPassword(signedIn.username && signedIn.gender ? null : typed); toMenu();
     }}>
       <Button type="button" variant="ghost" className="w-full text-muted-foreground" onClick={() => setView({ name: "guest" })}>Play as guest</Button>
       <p className="text-center text-xs text-muted-foreground"><b>WASD</b> move · <b>Shift</b> run · <b>Space</b> jump · <b>E</b> interact · hold mouse to look</p>
     </AuthForm>
   );
-  if (!account.username) return <UsernameForm account={account} password={password} onSignOut={() => void signOut()} onComplete={(named) => { setAccount(named); setPassword(null); toMenu(); }} />;
+  if (!account.username || !account.gender) return <UsernameForm account={account} password={password} onSignOut={() => void signOut()} onComplete={(named) => { setAccount(named); setPassword(null); toMenu(); }} />;
 
   if (view.name === "city") return <CloudGame account={account} onExit={() => toMenu()} />;
   if (view.name === "room") return <RoomEntry account={account} request={view.request} onExit={toMenu} />;

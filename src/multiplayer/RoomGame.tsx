@@ -3,7 +3,7 @@ import { ChevronDown, User } from "lucide-react";
 import { CloudGame, type GameExtras, type WorldSlot } from "@/game/CloudGame";
 import { DEFAULT_SAVE } from "@/game/config";
 import type { GameState } from "@/game/state";
-import { usernameOf, type Account } from "@/platform/account";
+import { playerOf, type Account } from "@/platform/account";
 import type { NamedRoom, Peer } from "@/platform/realtime";
 import { createRoom, deleteRoom, findRoom, joinRoomChannel, ROOM_CAPACITY, type RoomInfo } from "@/platform/rooms";
 import { isPoseWire } from "./pose";
@@ -120,7 +120,7 @@ function useUsernames(ids: readonly string[]) {
     for (const id of ids) {
       if (asked.current.has(id)) continue;
       asked.current.add(id);
-      void usernameOf(id).then((name) => {
+      void playerOf(id).then(({ username: name }) => {
         if (name) setNames((old) => ({ ...old, [id]: name }));
       }).catch(() => asked.current.delete(id));
     }

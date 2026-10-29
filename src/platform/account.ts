@@ -9,10 +9,18 @@ import { doc, getDoc, runTransaction, setDoc, updateDoc } from "firebase/firesto
 import { auth, firestore } from "./firebase";
 import { isEmailLock, lockEmail, unlockEmail } from "./emailLock";
 
+export type Gender = "female" | "male";
+export const isGender = (value: unknown): value is Gender => value === "female" || value === "male";
+/** Character colours: light pink for female players, light blue for male ones (white before choosing). */
+export const BODY_COLORS: Record<Gender, string> = { female: "#f5b3cc", male: "#a6cdf2" };
+export const bodyColor = (gender: Gender | null | undefined) => (gender ? BODY_COLORS[gender] : "#ffffff");
+
 export type Account = {
   id: string;
   email: string | null;
   username: string | null;
+  /** Chosen with the username when the account is created; neither can change afterwards. */
+  gender: Gender | null;
   /** Signs in with a password (so username sign-in can work), rather than only with Google. */
   usesPassword: boolean;
 };
@@ -46,12 +54,12 @@ async function attempt<T>(run: () => Promise<T>): Promise<T> {
 }
 
 async function toAccount(user: User): Promise<Account> {
-  const player = await getDoc(doc(firestore, "players", user.uid));
-  const username = player.exists() ? player.data()["username"] : null;
+  const profile = await playerOf(user.uid);
   return {
     id: user.uid,
     email: user.email,
-    username: typeof username === "string" ? username : null,
+    username: profile.username,
+    gender: profile.gender,
     usesPassword: user.providerData.some((p) => p.providerId === "password"),
   };
 }
@@ -116,9 +124,10 @@ export function signOutAccount() {
  * Reserves a (normalized) username for the signed-in account. Password accounts confirm their password,
  * which also locks their email into the record for username sign-in.
  */
-export async function claimUsername(account: Account, username: string, password: string | null): Promise<Account> {
+export async function claimUsername(account: Account, username: string, gender: Gender, password: string | null): Promise<Account> {
   const user = auth.currentUser;
   if (!user || user.uid !== account.id) throw new AccountError("Your sign-in expired. Please sign in again.");
+  if (account.username) return chooseGender(account, gender);
   let lock = null;
   if (account.usesPassword) {
     if (!password || !account.email) throw new AccountError("Enter your password.");
@@ -130,18 +139,25 @@ export async function claimUsername(account: Account, username: string, password
     const name = doc(firestore, "usernames", username);
     if ((await tx.get(name)).exists()) return true;
     tx.set(name, { uid: account.id, ...(lock ? { lock } : {}) });
-    tx.set(doc(firestore, "players", account.id), { username, createdAt: Date.now() });
+    tx.set(doc(firestore, "players", account.id), { username, gender, createdAt: Date.now() });
     return false;
   }).catch(() => { throw new AccountError("Could not create your account. Please try again."); });
   if (taken) throw new AccountError("That username is already taken.");
-  return { ...account, username };
+  return { ...account, username, gender };
 }
 
-/** Bellmont usernames by account id, for showing who is in a room. */
-export async function usernameOf(uid: string): Promise<string | null> {
+/** For an account made before genders existed: the one-time choice (the rules refuse any later change). */
+async function chooseGender(account: Account, gender: Gender): Promise<Account> {
+  await updateDoc(doc(firestore, "players", account.id), { gender })
+    .catch(() => { throw new AccountError("Could not save your choice. Please try again."); });
+  return { ...account, gender };
+}
+
+/** A player's public profile (username and gender), for showing who is in a room. */
+export async function playerOf(uid: string): Promise<{ username: string | null; gender: Gender | null }> {
   const player = await getDoc(doc(firestore, "players", uid));
-  const name = player.exists() ? player.data()["username"] : null;
-  return typeof name === "string" ? name : null;
+  const data = player.exists() ? player.data() : {};
+  return { username: typeof data["username"] === "string" ? data["username"] : null, gender: isGender(data["gender"]) ? data["gender"] : null };
 }
 
 export type CloudSave = { data: Record<string, unknown>; updated_at: string } | null;

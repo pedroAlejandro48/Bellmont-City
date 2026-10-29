@@ -408,5 +408,5 @@ export function Player({ state, city }: { state: GameState; city: City }) {
 
   });
 
-  return <CharacterBody rig={rig} />;
+  return <CharacterBody rig={rig} color={state.bodyColor} />;
 }

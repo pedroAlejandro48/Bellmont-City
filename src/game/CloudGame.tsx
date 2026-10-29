@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ComponentType } from "re
 import { resetProgress, type SaveData } from "@/game/config";
 import { createState, toSave, type GameState } from "@/game/state";
 import { mergeSave, newerBackup, readSave, saveRecord } from "@/game/saves";
-import { readCloudSave, writeCloudSave, type Account } from "@/platform/account";
+import { bodyColor, readCloudSave, writeCloudSave, type Account } from "@/platform/account";
 import { GameCanvas } from "@/game/GameCanvas";
 import { Button } from "@/components/ui/button";
 
@@ -54,6 +54,7 @@ function useCloudGame(account: Account, world?: WorldSlot) {
       if (!data && !backup) parsed = freshSave(world);
       else if (world) parsed = { ...parsed, worldSeed: world.seed, elapsed: world.elapsed() };
       const loaded = createState(parsed);
+      loaded.bodyColor = bodyColor(account.gender);
       activeState.current = loaded;
       setState(loaded);
       } catch { if (!cancelled) setLoadError(true); }
@@ -88,11 +89,12 @@ function useCloudGame(account: Account, world?: WorldSlot) {
     const fresh = freshSave(world, activeState.current?.worldSeed);
     retained.current = {};
     const newState = createState(fresh);
+    newState.bodyColor = bodyColor(account.gender);
     activeState.current = newState;
     setState(newState);
     setRound((value) => value + 1);
     void persist(fresh).catch(() => {});
-  }, [persist, world]);
+  }, [persist, world, account.gender]);
 
   useEffect(() => {
     if (!state) return;

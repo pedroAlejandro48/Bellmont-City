@@ -10,7 +10,7 @@ import type { NamedRoom, Peer } from "@/platform/realtime";
 import { applyPose, capturePose, isPoseWire, PoseBuffer, RENDER_DELAY_MS, SEND_HZ, type RemoteRig } from "./pose";
 import { spawnBeside, standingFromPose, type Standing } from "./spawn";
 import { NameLabel } from "./NameLabel";
-import { usernameOf } from "@/platform/account";
+import { bodyColor, playerOf, type Gender } from "@/platform/account";
 
 /** How long after entering a late-arriving position can still move a player who has not moved yet. */
 const SPAWN_FIX_MS = 8000;
@@ -120,16 +120,17 @@ export function RoomScene({ state, channel, remotes, joinedAt }: { state: GameSt
 }
 
 const RemoteAvatar = memo(function RemoteAvatar({ id, uid, remotes, state }: { id: string; uid: string; remotes: RemotePlayers; state: GameState }) {
-  const [name, setName] = useState<string | null>(null);
+  const [profile, setProfile] = useState<{ username: string | null; gender: Gender | null }>({ username: null, gender: null });
   useEffect(() => {
     let live = true;
-    if (uid) void usernameOf(uid).then((n) => { if (live) setName(n); }).catch(() => {});
+    if (uid) void playerOf(uid).then((p) => { if (live) setProfile(p); }).catch(() => {});
     return () => { live = false; };
   }, [uid]);
+  const name = profile.username, color = bodyColor(profile.gender);
   const body = useBodyRig();
   const rig = useRef<RemoteRig>({ body: [], ragdoll: Array(RAGDOLL_PART_COUNT).fill(null), scooter: null, front: null });
   const look = useMemo<ScooterLook>(() => ({ darkness: 0, scooter: { riding: false, steering: 0, braking: false } }), []);
-  const ragdollMat = useMemo(() => new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.72 }), []);
+  const ragdollMat = useMemo(() => new THREE.MeshStandardMaterial({ color, roughness: 0.72 }), [color]);
   const group = useRef<THREE.Group>(null);
 
   useFrame(() => {
@@ -146,7 +147,7 @@ const RemoteAvatar = memo(function RemoteAvatar({ id, uid, remotes, state }: { i
   });
 
   return <group ref={group} visible={false}>
-    <CharacterBody rig={body} />
+    <CharacterBody rig={body} color={color} />
     {name && <NameLabel name={name} follow={() => body.root.current} />}
     <RagdollMeshes mat={ragdollMat} groupRef={(i, el) => { rig.current.ragdoll[i] = el; }} />
     <group ref={(el) => { rig.current.scooter = el; }}>

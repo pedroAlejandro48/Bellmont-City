@@ -57,6 +57,8 @@ export type GameState = {
   seatOccupants: Map<number, string>;
   interactQueued: boolean;
   avatar: AvatarRig;
+  /** The character's colour (from the account's gender; white for guests). */
+  bodyColor: string;
   others: OtherBody[];
   /** Other players' parked scooters: solid, but only their owners can move them. */
   otherBikes: SolidBox[];
@@ -89,6 +91,7 @@ export function createState(save: SaveData): GameState {
     incidents: [],
     interactQueued: false,
     avatar: { body: [], ragdoll: [], scooter: [] },
+    bodyColor: "#ffffff",
     others: [],
     otherBikes: [],
     parkedBikes: [],
