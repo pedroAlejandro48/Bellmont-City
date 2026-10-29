@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { healthAfterImpact, type SaveData, type SolidBox, type VehicleKind, type RoadPath, GET_UP_SECONDS, KNOCKDOWN_SECONDS, floorHeight, BENCH_SEATS } from "./config";
+import { THROW_DISTANCE, healthAfterImpact, type SaveData, type SolidBox, type VehicleKind, type RoadPath, GET_UP_SECONDS, KNOCKDOWN_SECONDS, floorHeight, BENCH_SEATS } from "./config";
 
 export type Accident = {
   phase: "down" | "rising";
@@ -25,10 +25,19 @@ export type ScooterState = {
   tip: number; tipVel: number;
 };
 
+/** The hardest a crash throws the rider (m/s), matching a full-speed traffic hit. */
+const THROW_LAUNCH_MAX = THROW_DISTANCE * 1.75;
+
 /** Scene objects whose transforms describe how this player looks right now (streamed to room peers). */
 export type AvatarRig = { body: THREE.Object3D[]; ragdoll: THREE.Object3D[]; scooter: THREE.Object3D[] };
-/** Another player's body on the ground plane, for bumping. */
-export type OtherBody = { x: number; z: number; r: number };
+/** Another player's body on the ground plane, for bumping (`id` is their open tab in the room). */
+export type OtherBody = { x: number; z: number; r: number; id?: string };
+/** Another bike in the room (held by someone else, or parked and free), solid to this player. */
+export type OtherBike = { id: string; box: SolidBox };
+/** Something this player's bike crashed into that another player must hear about. */
+export type Impact =
+  | { kind: "bike"; id: string; side: 1 | -1 }
+  | { kind: "player"; id: string; direction: [number, number]; speed: number };
 
 /** A traffic vehicle's footprint this frame, for walking and riding into it. */
 export type VehicleSolid = { index: number; kind: VehicleKind; box: SolidBox; speed: number };
@@ -61,9 +70,11 @@ export type GameState = {
   bodyColor: string;
   others: OtherBody[];
   /** Other players' parked scooters: solid, but only their owners can move them. */
-  otherBikes: SolidBox[];
+  otherBikes: OtherBike[];
   /** Parked room bikes nobody controls: solid until someone walks up and takes one. */
-  parkedBikes: SolidBox[];
+  parkedBikes: OtherBike[];
+  /** Crashes into other players and their bikes, waiting for the room code to send them. */
+  impacts: Impact[];
   vehicles: VehicleSolid[];
   /** Bike shoves on vehicles this frame, by vehicle index: a world-space velocity Traffic applies. */
   vehiclePushes: Map<number, [number, number]>;
@@ -95,6 +106,7 @@ export function createState(save: SaveData): GameState {
     others: [],
     otherBikes: [],
     parkedBikes: [],
+    impacts: [],
     vehicles: [],
     vehiclePushes: new Map(),
     seatOccupants: new Map(save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? [[save.benchSeat, "player"]] : []),
@@ -141,6 +153,31 @@ export function knockDown(state: GameState, vehicleId: number, path: RoadPath, p
     if (incident) incident.scooterCrash = true;
   }
   return true;
+}
+
+/**
+ * The player's own bike crashes into something at speed: the rider is thrown along `direction` (unit, ground
+ * plane) like any accident, losing health, and the bike tumbles back from the impact. No vehicle is involved,
+ * so traffic does not queue for it.
+ */
+export function crashBike(state: GameState, direction: [number, number], speed: number, seed: number) {
+  if (state.accident || !hitByVehicle(state, performance.now())) return false;
+  state.keys.clear(); state.jumpQueued = false;
+  const launchSpeed = Math.min(THROW_LAUNCH_MAX, Math.abs(speed) * 0.55);
+  state.accident = { phase: "down", startedAt: state.simulationTime, riseStartedAt: null, vehicleId: null, direction, launchSpeed, seed };
+  const bike = state.scooter;
+  if (bike.riding || bike.action === "mount") {
+    bike.riding = false; bike.action = null; bike.fallen = true;
+    bike.fallenAt = state.simulationTime; bike.speed = 0;
+    bike.throwVelocity.set(-direction[0] * 2.2, 2.4, -direction[1] * 2.2);
+    bike.throwRemaining = 1.2;
+  }
+  return true;
+}
+
+/** Knocked down by another player's crash (they hit this player at speed, or this player hit them). */
+export function knockedByPlayer(state: GameState, direction: [number, number], speed: number, seed: number) {
+  return crashBike(state, direction, speed, seed);
 }
 
 export function hitByVehicle(state: GameState, now: number) {

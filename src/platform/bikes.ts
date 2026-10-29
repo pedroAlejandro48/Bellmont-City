@@ -5,7 +5,8 @@ import { onDisconnect, onValue, ref, runTransaction, update } from "firebase/dat
 import { realtime } from "./firebase";
 
 export type BikeSpot = { pos: [number, number, number]; yaw: number; fallen: boolean; fallSide: 1 | -1 };
-export type BikeRecord = BikeSpot & { owner: string; holder: string | null; updatedAt: number };
+/** `knock` is when another player last crashed into the bike, knocking it onto `knockSide`. */
+export type BikeRecord = BikeSpot & { owner: string; holder: string | null; updatedAt: number; knock: number; knockSide: 1 | -1 };
 
 const bikeRef = (code: string, id: string) => ref(realtime, `rooms/${code}/bikes/${id}`);
 
@@ -18,6 +19,7 @@ function readBike(value: unknown): BikeRecord | null {
   return {
     pos: pos as [number, number, number], yaw: v["yaw"], fallen: v["fallen"] === true, fallSide: v["fallSide"] === -1 ? -1 : 1,
     owner: v["owner"], holder: typeof v["holder"] === "string" ? v["holder"] : null, updatedAt: typeof v["updatedAt"] === "number" ? v["updatedAt"] : 0,
+    knock: typeof v["knock"] === "number" ? v["knock"] : 0, knockSide: v["knockSide"] === -1 ? -1 : 1,
   };
 }
 
@@ -49,6 +51,11 @@ export async function claimBike(code: string, id: string, me: string, isPresent:
 
 export function saveBike(code: string, id: string, spot: BikeSpot) {
   return update(bikeRef(code, id), { ...spot, updatedAt: Date.now() });
+}
+
+/** Another player crashed into this bike: it falls onto `side` (its controller, if any, applies the knock). */
+export function knockBike(code: string, id: string, side: 1 | -1) {
+  return update(bikeRef(code, id), { fallen: true, fallSide: side, knock: Date.now(), knockSide: side });
 }
 
 export async function releaseBike(code: string, id: string, spot: BikeSpot) {

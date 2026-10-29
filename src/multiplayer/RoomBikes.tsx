@@ -2,9 +2,9 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import type * as THREE from "three";
 import { ScooterModel, type ScooterLook } from "@/game/Scooter";
-import { scooterFootprint, type SolidBox } from "@/game/config";
-import { dropScooter, takeScooter, type GameState } from "@/game/state";
-import { bringBike, claimBike, releaseBike, saveBike, watchBikes, type BikeRecord, type BikeSpot } from "@/platform/bikes";
+import { scooterFootprint } from "@/game/config";
+import { dropScooter, takeScooter, type GameState, type OtherBike } from "@/game/state";
+import { bringBike, claimBike, knockBike, releaseBike, saveBike, watchBikes, type BikeRecord, type BikeSpot } from "@/platform/bikes";
 import type { NamedRoom } from "@/platform/realtime";
 import { isPoseWire } from "./pose";
 
@@ -55,6 +55,7 @@ export function RoomBikes({ state, code, uid, channel }: { state: GameState; cod
   const bikes = useRef<Bikes>(new Map());
   const [parked, setParked] = useState<string[]>([]);
   const busy = useRef(false);
+  const knocks = useRef(new Map<string, number>());
   const saved = useRef({ at: 0, spot: "" });
 
   useEffect(() => {
@@ -78,6 +79,18 @@ export function RoomBikes({ state, code, uid, channel }: { state: GameState; cod
     const bike = state.scooter;
     const isFree = (id: string, rec: BikeRecord) => id !== bike.id && !heldElsewhere.has(id) && (rec.holder === null || rec.holder === me || !present.has(rec.holder));
     const free = [...bikes.current].filter(([id, rec]) => isFree(id, rec));
+
+    // This player crashed into other bikes: knock them over (whoever controls one applies it below).
+    for (const impact of state.impacts) if (impact.kind === "bike") void knockBike(code, impact.id, impact.side).catch(() => {});
+    state.impacts = state.impacts.filter((impact) => impact.kind !== "bike");
+    // Someone crashed into the bike this player controls (and isn't using): it falls over.
+    const heldRec = bike.id ? bikes.current.get(bike.id) : undefined;
+    if (bike.id && heldRec && heldRec.knock > (knocks.current.get(bike.id) ?? 0)) {
+      knocks.current.set(bike.id, heldRec.knock);
+      if (!bike.riding && !bike.action && !bike.fallen && Date.now() - heldRec.knock < 10_000) {
+        bike.fallen = true; bike.fallSide = heldRec.knockSide; bike.fallenAt = state.simulationTime; bike.tip = 0; bike.tipVel = 0;
+      }
+    }
 
     // Let go of a bike left behind, or one another player has walked up to, so they can ride it.
     const idle = !bike.riding && !bike.action && bike.throwRemaining <= 0;
@@ -111,6 +124,7 @@ export function RoomBikes({ state, code, uid, channel }: { state: GameState; cod
         if (state.scooter.riding || state.scooter.action) { void releaseBike(code, target, rec); return; }
         if (state.scooter.id) void releaseBike(code, state.scooter.id, spotOf(state)).catch(() => {});
         takeScooter(state, target, rec);
+        knocks.current.set(target, rec.knock);
         saved.current = { at: Date.now(), spot: JSON.stringify(spotOf(state)) };
         void channel.presence({ bike: target }).catch(() => {});
       }).catch(() => {}).finally(() => { busy.current = false; });
@@ -123,8 +137,8 @@ export function RoomBikes({ state, code, uid, channel }: { state: GameState; cod
     }
 
     // Parked bikes are solid for walking into, and drawn below.
-    const boxes: SolidBox[] = [];
-    for (const [, rec] of free) boxes.push(scooterFootprint(rec.pos[0], rec.pos[2], rec.yaw, rec.fallen, rec.fallSide));
+    const boxes: OtherBike[] = [];
+    for (const [id, rec] of free) boxes.push({ id, box: scooterFootprint(rec.pos[0], rec.pos[2], rec.yaw, rec.fallen, rec.fallSide) });
     state.parkedBikes = boxes;
     const ids = free.map(([id]) => id);
     setParked((old) => (old.length === ids.length && old.every((id, i) => id === ids[i]) ? old : ids));

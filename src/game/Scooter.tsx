@@ -4,8 +4,8 @@ import { useRapier } from "@react-three/rapier";
 import { InteractionPrompt } from "./InteractionPrompt";
 import { Headlight } from "./Headlight";
 import * as THREE from "three";
-import { canInteractScooter, scooterSide, floorHeight, headingVelocity, smoothSteer, scooterNextAction, scooterSpeed, scooterCanDismount, scooterTurn, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, nearestBenchSeat, scooterTipStep, SCOOTER_MASS, SCOOTER_COLLISION_PARTS, SCOOTER_COLLISION_GROUPS, bikeOutOfBoxes, bikeCanPushVehicle, BIKE_PUSH_SPEED } from "./config";
-import type { GameState } from "./state";
+import { canInteractScooter, scooterSide, floorHeight, headingVelocity, smoothSteer, scooterNextAction, scooterSpeed, scooterCanDismount, scooterTurn, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, nearestBenchSeat, scooterTipStep, SCOOTER_MASS, SCOOTER_COLLISION_PARTS, SCOOTER_COLLISION_GROUPS, bikeOutOfBoxes, bikeCanPushVehicle, BIKE_PUSH_SPEED, bikeImpactCrashes, bikeTouchesCircle, footprintBlocked, scooterFootprint } from "./config";
+import { crashBike, type GameState } from "./state";
 
 /** What the model reads to draw lights and steering; a remote player's scooter passes its own copy. */
 export type ScooterLook = { darkness: number; scooter: { riding: boolean; steering: number; braking: boolean } };
@@ -100,11 +100,36 @@ export function Scooter({ state }: { state: GameState }) {
       turnRate.current = smoothSteer(turnRate.current, Number(left) - Number(right), dt);
       bike.steering += ((Number(left) - Number(right)) * 0.5 - bike.steering) * (1 - Math.exp(-8 * dt));
       bike.yaw = scooterTurn(bike.yaw, turnRate.current, bike.speed, dt);
-      // Riding into traffic: cars and taxis are shoved slowly (the bike slows to match); buses and trucks don't budge.
+      // What the bike runs into: above 20 mph anything (vehicles, people, bikes, buildings, trees, lamps)
+      // makes it crash; slower, cars and taxis are shoved slowly, and everything else just stops it.
       const [hx, hz] = headingVelocity(bike.yaw, 1);
-      const ahead = bikeOutOfBoxes(bike.pos.x + hx * Math.sign(bike.speed) * 0.08, bike.pos.z + hz * Math.sign(bike.speed) * 0.08, bike.yaw, state.vehicles.map((v) => v.box));
+      const impactSpeed = bike.speed, fast = bikeImpactCrashes(impactSpeed);
+      const probeX = bike.pos.x + hx * Math.sign(bike.speed) * 0.08, probeZ = bike.pos.z + hz * Math.sign(bike.speed) * 0.08;
+      const crash = (id: string | null = null) => {
+        const direction: [number, number] = [hx * Math.sign(impactSpeed), hz * Math.sign(impactSpeed)];
+        if (crashBike(state, direction, impactSpeed, Math.floor(Math.random() * 1e8)) && id) {
+          state.impacts.push({ kind: "player", id, direction, speed: Math.abs(impactSpeed) });
+        }
+      };
+      const person = bike.speed !== 0 ? state.others.find((o) => bikeTouchesCircle(probeX, probeZ, bike.yaw, o)) : undefined;
+      if (person) {
+        if (fast) crash(person.id ?? null); else bike.speed = 0;
+      }
+      const bikes = [...state.otherBikes, ...state.parkedBikes];
+      const bikeHit = bike.speed !== 0 ? bikeOutOfBoxes(probeX, probeZ, bike.yaw, bikes.map((b) => b.box)).hit : -1;
+      const otherBike = bikes[bikeHit];
+      if (otherBike) {
+        if (fast) {
+          // Knocked over away from the side it was hit on.
+          const side = scooterSide([bike.pos.x, bike.pos.z], [otherBike.box.x, otherBike.box.z], otherBike.box.yaw);
+          state.impacts.push({ kind: "bike", id: otherBike.id, side: side === 1 ? -1 : 1 });
+          crash();
+        } else bike.speed = 0;
+      }
+      const ahead = bikeOutOfBoxes(probeX, probeZ, bike.yaw, state.vehicles.map((v) => v.box));
       const touched = ahead.hit >= 0 ? state.vehicles[ahead.hit] : undefined;
-      if (touched && bike.speed !== 0) {
+      if (touched && bike.speed !== 0 && fast) crash();
+      else if (touched && bike.speed !== 0) {
         if (bikeCanPushVehicle(touched.kind)) {
           bike.speed = Math.sign(bike.speed) * Math.min(Math.abs(bike.speed), BIKE_PUSH_SPEED);
           state.vehiclePushes.set(touched.index, [hx * bike.speed, hz * bike.speed]);
@@ -114,8 +139,11 @@ export function Scooter({ state }: { state: GameState }) {
       const next = bike.pos.clone().add(new THREE.Vector3(vx * dt, 0, vz * dt));
       const blocked = world.intersectionWithShape({ x: next.x, y: next.y + 0.55, z: next.z }, new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), bike.yaw), new rapier.Cuboid(0.26, 0.35, 0.8), undefined, undefined, undefined, bodyRef.current ?? undefined,
         (collider) => { const owner = collider.parent(); return owner?.userData !== "ragdoll" && owner?.userData !== "vehicle" && owner?.userData !== "scooter" && (collider.shape.type !== rapier.ShapeType.Cuboid || collider.halfExtents().y > 0.2 && collider.halfExtents().y < 100); });
-      if (blocked) bike.speed = 0; else bike.pos.copy(next);
-      bike.pos.y = floorHeight(bike.pos.x, bike.pos.z); state.pos.copy(bike.pos); state.rotY = bike.yaw;
+      if (blocked && fast && bike.riding) crash();
+      else if (blocked) bike.speed = 0;
+      else bike.pos.copy(next);
+      bike.pos.y = floorHeight(bike.pos.x, bike.pos.z);
+      if (bike.riding) { state.pos.copy(bike.pos); state.rotY = bike.yaw; }
     }
     // A slow vehicle rolling into the bike (ridden or not) shoves it aside; fast ones crash it in Traffic.
     if (!bike.action && bike.throwRemaining <= 0) {
@@ -132,8 +160,12 @@ export function Scooter({ state }: { state: GameState }) {
     if (!bike.riding && !bike.action && bike.throwRemaining <= 0) {
       bike.braking = false;
       const next = bike.pos.clone().addScaledVector(bike.pushVelocity, dt);
-      const blocked = world.intersectionWithShape({ x: next.x, y: next.y + 0.5, z: next.z }, new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), bike.yaw), new rapier.Cuboid(0.3, 0.35, 0.85), undefined, undefined, undefined, bodyRef.current ?? undefined,
-        (c) => c.parent()?.userData !== "ragdoll" && (c.shape.type !== rapier.ShapeType.Cuboid || c.halfExtents().y > 0.2));
+      // A pushed bike (lying down or standing) stops against walls, trees, lamps, vehicles, people and other bikes.
+      const box = scooterFootprint(next.x, next.z, bike.yaw, bike.fallen, bike.fallSide);
+      const moving = bike.pushVelocity.lengthSq() > 1e-8;
+      const blocked = moving && (world.intersectionWithShape({ x: box.x, y: next.y + 0.5, z: box.z }, new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), bike.yaw), new rapier.Cuboid(box.hx, 0.35, box.hz), undefined, undefined, undefined, bodyRef.current ?? undefined,
+        (c) => c.parent()?.userData !== "ragdoll" && (c.shape.type !== rapier.ShapeType.Cuboid || c.halfExtents().y > 0.2))
+        || footprintBlocked(box, state.others, [...state.vehicles.map((v) => v.box), ...state.otherBikes.map((b) => b.box), ...state.parkedBikes.map((b) => b.box)]));
       if (!blocked) bike.pos.copy(next); else bike.pushVelocity.set(0, 0, 0);
       bike.pos.y = floorHeight(bike.pos.x, bike.pos.z); bike.pushVelocity.multiplyScalar(Math.exp(-7 * dt));
     }

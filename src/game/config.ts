@@ -349,6 +349,28 @@ export function bikeOutOfBoxes(x: number, z: number, yaw: number, boxes: readonl
   return { dx, dz, hit };
 }
 
+/** Whether a bike (three circles along its length) overlaps a round body such as a person. */
+export function bikeTouchesCircle(x: number, z: number, yaw: number, body: { x: number; z: number; r: number }) {
+  const fx = Math.sin(yaw), fz = Math.cos(yaw);
+  return [0.6, 0, -0.6].some((along) => Math.hypot(x + fx * along - body.x, z + fz * along - body.z) < 0.3 + body.r);
+}
+
+/** Whether a bike's footprint would overlap any of these round bodies (people) or boxes (vehicles, bikes). */
+export function footprintBlocked(box: SolidBox, bodies: readonly { x: number; z: number; r: number }[], boxes: readonly SolidBox[]) {
+  if (bodies.some((b) => { const [dx, dz] = circleBoxPush(b.x, b.z, b.r, box); return dx !== 0 || dz !== 0; })) return true;
+  // A box is checked as circles along its length, each as wide as the box.
+  return boxes.some((other) => {
+    const fx = Math.sin(other.yaw), fz = Math.cos(other.yaw);
+    const steps = Math.max(1, Math.ceil(other.hz / Math.max(0.2, other.hx)));
+    for (let i = -steps; i <= steps; i++) {
+      const along = (i / steps) * Math.max(0, other.hz - other.hx);
+      const [dx, dz] = circleBoxPush(other.x + fx * along, other.z + fz * along, other.hx, box);
+      if (dx !== 0 || dz !== 0) return true;
+    }
+    return false;
+  });
+}
+
 /** Only cars and taxis give way to a bike pushing them; buses and trucks are too heavy to move. */
 export function bikeCanPushVehicle(kind: VehicleKind) { return kind === "car" || kind === "taxi"; }
 /** Rapier collision groups: traffic and bikes never touch through physics; the game resolves those contacts
@@ -400,6 +422,10 @@ export const SCOOTER_REVERSE_SPEED = SCOOTER_REVERSE_MPH * MPH_TO_MPS;
 export const HARMLESS_CONTACT_MPH = 10;
 export const HARMLESS_CONTACT_SPEED = HARMLESS_CONTACT_MPH * MPH_TO_MPS;
 export function vehicleContactHurts(vehicleSpeed: number) { return vehicleSpeed > HARMLESS_CONTACT_SPEED; }
+/** A bike going faster than this crashes into whatever it hits (and both people crash if it hits a person). */
+export const BIKE_CRASH_MPH = 20;
+export const BIKE_CRASH_SPEED = BIKE_CRASH_MPH * MPH_TO_MPS;
+export function bikeImpactCrashes(bikeSpeed: number) { return Math.abs(bikeSpeed) > BIKE_CRASH_SPEED; }
 export const SCOOTER_INTERACT_METERS = 0.5;
 export const SCOOTER_PROMPT_FADE_SECONDS = 0.2;
 export const SCOOTER_BYPASS_WAIT_SECONDS = 15;
