@@ -34,7 +34,8 @@ function ribbon(axis: "x" | "z", from: number, to: number, offset: number, width
     }
     if (rows > 0) {
       const i = base + (rows - 1) * 2;
-      out.indices.push(i, i + 2, i + 1, i + 1, i + 2, i + 3);
+      // Counter-clockwise seen from above, so the surface faces up.
+      out.indices.push(i, i + 1, i + 2, i + 1, i + 3, i + 2);
     }
     rows++;
     if (t >= to) break;

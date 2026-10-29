@@ -57,29 +57,33 @@ function drawName(canvas: HTMLCanvasElement, name: string, crown: boolean) {
  */
 export function NameLabel({ name, crown = false, follow }: { name: string; crown?: boolean; follow: () => THREE.Object3D | null }) {
   const sprite = useRef<THREE.Sprite>(null);
-  const { material, canvas, texture } = useMemo(() => {
-    const canvas = document.createElement("canvas");
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = 4;
-    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: true, depthWrite: false });
-    return { material, canvas, texture };
-  }, []);
+  const material = useMemo(() => new THREE.SpriteMaterial({ transparent: true, depthTest: true, depthWrite: false }), []);
 
   useEffect(() => {
     let live = true;
+    // Each paint gets a fresh image and texture (never re-uploading into an old one), and replaces the last.
     const paint = () => {
       if (!live) return;
+      const canvas = document.createElement("canvas");
       const aspect = drawName(canvas, name, crown);
-      texture.needsUpdate = true;
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = 4;
+      const old = material.map;
+      material.map = texture;
+      material.needsUpdate = true;
+      old?.dispose();
       sprite.current?.scale.set(TEXT_HEIGHT * 1.5 * aspect, TEXT_HEIGHT * 1.5, 1);
     };
     paint();
-    // Repaint once the typewriter font has loaded (the first paint may use the fallback).
+    // Repaint once the typewriter font has loaded (the first paint may use the fallback): when asked for it,
+    // and whenever fonts finish loading, in case the font's stylesheet was not ready when first asked.
     void document.fonts?.load(`${PX}px ${FONT}`).then(paint, () => {});
-    return () => { live = false; };
-  }, [name, crown, canvas, texture]);
-  useEffect(() => () => { material.dispose(); texture.dispose(); }, [material, texture]);
+    const onFonts = () => paint();
+    document.fonts?.addEventListener("loadingdone", onFonts);
+    return () => { live = false; document.fonts?.removeEventListener("loadingdone", onFonts); };
+  }, [name, crown, material]);
+  useEffect(() => () => { material.map?.dispose(); material.dispose(); }, [material]);
 
   useFrame(() => {
     const target = follow(), s = sprite.current;
