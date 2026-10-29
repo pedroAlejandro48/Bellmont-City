@@ -13,6 +13,8 @@ export type Accident = {
 export type RoadIncident = { vehicleId: number; path: RoadPath; origin: [number, number]; startedAt: number; passed: boolean; stoodUpAt: number | null; scooterCrash?: boolean };
 
 export type ScooterState = {
+  /** Which bike this player controls: "own" in their city, a room bike's id in a room, null for none. */
+  id: string | null;
   pos: THREE.Vector3; yaw: number; fallen: boolean; riding: boolean; speed: number;
   action: "mount" | "pickup" | "dismount" | null; actionAt: number; actionOrigin: THREE.Vector3;
   actionSide: 1 | -1; fallenAt: number | null; interactQueued: boolean; promptVisible: boolean;
@@ -58,6 +60,8 @@ export type GameState = {
   others: OtherBody[];
   /** Other players' parked scooters: solid, but only their owners can move them. */
   otherBikes: SolidBox[];
+  /** Parked room bikes nobody controls: solid until someone walks up and takes one. */
+  parkedBikes: SolidBox[];
   vehicles: VehicleSolid[];
   /** Bike shoves on vehicles this frame, by vehicle index: a world-space velocity Traffic applies. */
   vehiclePushes: Map<number, [number, number]>;
@@ -87,11 +91,13 @@ export function createState(save: SaveData): GameState {
     avatar: { body: [], ragdoll: [], scooter: [] },
     others: [],
     otherBikes: [],
+    parkedBikes: [],
     vehicles: [],
     vehiclePushes: new Map(),
     seatOccupants: new Map(save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? [[save.benchSeat, "player"]] : []),
     bench: save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? { seat: save.benchSeat, phase: "seated", startedAt: 0, origin: new THREE.Vector3(...save.pos), originYaw: save.rotY } : null,
     scooter: {
+      id: "own",
       pos: save.scooter ? new THREE.Vector3(...save.scooter.pos) : new THREE.Vector3(save.pos[0] + 0.75, floorHeight(save.pos[0] + 0.75, save.pos[2]), save.pos[2]),
       yaw: save.scooter?.yaw ?? save.rotY, fallen: save.scooter?.fallen ?? false,
       riding: (save.scooter?.riding ?? false) && !save.scooter?.fallen && !save.accident,
@@ -144,4 +150,25 @@ export function hitByVehicle(state: GameState, now: number) {
     state.jumpQueued = false;
   }
   return true;
+}
+
+/** Where a bike nobody here controls is parked in this player's simulation: far away, so nothing touches it. */
+const NO_BIKE = 100_000;
+
+/** Lets go of the controlled bike (a room bike becomes someone else's to take). */
+export function dropScooter(state: GameState) {
+  const bike = state.scooter;
+  Object.assign(bike, { id: null, riding: false, action: null, speed: 0, fallen: false, fallenAt: null, tip: 0, tipVel: 0, throwRemaining: 0, lean: 0, steering: 0, braking: false, promptVisible: false });
+  bike.pos.set(NO_BIKE, 0, NO_BIKE);
+  bike.pushVelocity.set(0, 0, 0); bike.throwVelocity.set(0, 0, 0);
+}
+
+/** Takes control of a parked bike. */
+export function takeScooter(state: GameState, id: string, at: { pos: [number, number, number]; yaw: number; fallen: boolean; fallSide: 1 | -1 }) {
+  dropScooter(state);
+  const bike = state.scooter;
+  bike.id = id;
+  bike.pos.set(...at.pos);
+  bike.yaw = at.yaw; bike.fallen = at.fallen; bike.fallSide = at.fallSide;
+  bike.fallenAt = at.fallen ? state.simulationTime - 60 : null;
 }

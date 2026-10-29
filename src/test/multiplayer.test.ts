@@ -7,7 +7,7 @@ import { createRoomWith, normalizeRoomCode, randomRoomCode, ROOM_CODE_LENGTH } f
 
 const pose = (ts: number, x: number, yaw = 0): PoseWire => {
   const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0, "YXZ"));
-  return { ts, b: [x, 0, 0, q.x, q.y, q.z, q.w], bv: 1, s: [x + 0.75, 0, 0, 0, 0, 0, 1, 0], sf: 0 };
+  return { ts, b: [x, 0, 0, q.x, q.y, q.z, q.w], bv: 1, s: [x + 0.75, 0, 0, 0, 0, 0, 1, 0], sf: 4 };
 };
 
 describe("room codes", () => {
@@ -88,9 +88,9 @@ describe("remote poses", () => {
   it("round-trip a rig and blend between updates", () => {
     const part = (x: number) => { const o = new THREE.Group(); o.position.x = x; return o; };
     const body = [part(1), part(0)];
-    const captured = capturePose({ body, ragdoll: [], scooter: [part(1.75), part(0)] }, { riding: true, braking: false }, 100)!;
+    const captured = capturePose({ body, ragdoll: [], scooter: [part(1.75), part(0)] }, { riding: true, braking: false, id: "b1" }, 100)!;
     expect(captured.b.slice(0, 3)).toEqual([1, 0, 0]);
-    expect(captured.sf).toBe(1);
+    expect(captured.sf).toBe(1 | 4);
     const target = { body: [new THREE.Group(), new THREE.Group()], ragdoll: [], scooter: new THREE.Group(), front: new THREE.Group() };
     applyPose(target, pose(0, 0), pose(100, 2), 0.25);
     expect(target.body[0]!.position.x).toBeCloseTo(0.5);

@@ -71,7 +71,7 @@ export function RoomScene({ state, channel, remotes, joinedAt }: { state: GameSt
         const ax = at.a.b[0]!, az = at.a.b[2]!, bx = at.b.b[0]!, bz = at.b.b[2]!;
         others.push({ x: ax + (bx - ax) * at.t, z: az + (bz - az) * at.t, r: at.b.sf & 1 ? RIDER_RADIUS : BODY_RADIUS });
       }
-      if (at && !(at.b.sf & 1)) {
+      if (at && (at.b.sf & 4) && !(at.b.sf & 1)) {
         const [x, , z, qx, qy, qz, qw] = at.b.s;
         if (x !== undefined && z !== undefined && qx !== undefined && qy !== undefined && qz !== undefined && qw !== undefined) {
           const { y: yaw, z: lean } = bikeTilt.setFromQuaternion(bikeQuat.set(qx, qy, qz, qw), "YXZ");

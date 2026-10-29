@@ -8,6 +8,7 @@ import type { NamedRoom, Peer } from "@/platform/realtime";
 import { createRoom, deleteRoom, findRoom, joinRoomChannel, ROOM_CAPACITY, type RoomInfo } from "@/platform/rooms";
 import { isPoseWire } from "./pose";
 import { remotePeers, RoomScene, type RemotePlayers } from "./RoomScene";
+import { RoomBikes } from "./RoomBikes";
 import { spawnBeside, standingFromPose, type Standing } from "./spawn";
 
 /** How long a new arrival listens for who is already here before deciding the room is not full. */
@@ -100,7 +101,10 @@ function RoomGame({ account, session, onExit }: { account: Account; session: Ses
   }), [room, channel]);
 
   const extras = useMemo<GameExtras>(() => ({
-    Scene: ({ state }: { state: GameState }) => <RoomScene state={state} channel={live} remotes={remotes} joinedAt={session.joinedAt} />,
+    Scene: ({ state }: { state: GameState }) => <>
+      <RoomScene state={state} channel={live} remotes={remotes} joinedAt={session.joinedAt} />
+      <RoomBikes state={state} code={room.code} uid={account.id} channel={live} />
+    </>,
     Overlay: () => <OnlinePanel account={account} channel={live} />,
     exitNote: `ROOM CODE: ${room.code}`,
   }), [account, live, remotes, room.code, session.joinedAt]);

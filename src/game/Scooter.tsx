@@ -153,7 +153,7 @@ export function Scooter({ state }: { state: GameState }) {
     const desiredLean = bike.fallen ? (1 - lift * lift * (3 - 2 * lift)) * -Math.PI / 2 * bike.fallSide : bike.riding ? -turnRate.current * bike.speed * 0.014 : -0.08 - bike.tip;
     lean.current += (desiredLean - lean.current) * (1 - Math.exp(-9 * dt));
     bike.lean = lean.current;
-    if (root.current) { root.current.position.copy(bike.pos); root.current.position.y += 0.3 * Math.abs(lean.current) / (Math.PI / 2); root.current.rotation.set(0, bike.yaw, lean.current); }
+    if (root.current) { root.current.visible = bike.id !== null; root.current.position.copy(bike.pos); root.current.position.y += 0.3 * Math.abs(lean.current) / (Math.PI / 2); root.current.rotation.set(0, bike.yaw, lean.current); }
     const body = bodyRef.current;
     if (body) {
       body.setNextKinematicTranslation({ x: bike.pos.x, y: bike.pos.y + 0.3 * Math.abs(lean.current) / (Math.PI / 2), z: bike.pos.z });

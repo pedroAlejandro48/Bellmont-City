@@ -7,15 +7,16 @@ import { connectFirestoreEmulator, getFirestore } from "firebase/firestore";
 import { connectDatabaseEmulator, getDatabase } from "firebase/database";
 
 const env = import.meta.env;
-const projectId = env["VITE_FIREBASE_PROJECT_ID"] || "demo-bellmont";
 const emulators = env["VITE_FIREBASE_EMULATORS"] === "1";
+// Emulator builds always use the demo project, so a test can never reach the real one.
+const projectId = emulators ? "demo-bellmont" : env["VITE_FIREBASE_PROJECT_ID"] || "demo-bellmont";
 
 export const app = initializeApp({
-  apiKey: env["VITE_FIREBASE_API_KEY"] || "demo-key",
+  apiKey: emulators ? "demo-key" : env["VITE_FIREBASE_API_KEY"] || "demo-key",
   authDomain: env["VITE_FIREBASE_AUTH_DOMAIN"] || `${projectId}.firebaseapp.com`,
   projectId,
-  databaseURL: env["VITE_FIREBASE_DATABASE_URL"] || `https://${projectId}-default-rtdb.firebaseio.com`,
-  appId: env["VITE_FIREBASE_APP_ID"] || undefined,
+  databaseURL: (!emulators && env["VITE_FIREBASE_DATABASE_URL"]) || `https://${projectId}-default-rtdb.firebaseio.com`,
+  appId: (!emulators && env["VITE_FIREBASE_APP_ID"]) || undefined,
 });
 
 export const auth = getAuth(app);

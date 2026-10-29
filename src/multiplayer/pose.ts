@@ -6,7 +6,8 @@ import type { AvatarRig } from "@/game/state";
  * Each transform is 7 numbers: position xyz then quaternion xyzw.
  * - `b`: the animated body, one transform per BODY_PARTS group (root first); `bv` 0 while it is hidden.
  * - `r`: the ragdoll's part transforms, only while it is shown (knocked down / getting up).
- * - `s`: the scooter root transform, then the front wheel's steering angle; `sf` riding/braking bits.
+ * - `s`: the controlled bike's root transform, then its front wheel's steering angle; `sf` bits: 1 riding,
+ *   2 braking, 4 controls a bike (else `s` is meaningless and no bike is drawn with this player).
  */
 export type PoseWire = { ts: number; b: number[]; bv: 0 | 1; r?: number[]; s: number[]; sf: number };
 
@@ -21,7 +22,7 @@ function pushTransform(out: number[], o: THREE.Object3D) {
   out.push(round(p.x), round(p.y), round(p.z), round(q.x), round(q.y), round(q.z), round(q.w));
 }
 
-export function capturePose(rig: AvatarRig, scooter: { riding: boolean; braking: boolean }, ts: number): PoseWire | null {
+export function capturePose(rig: AvatarRig, scooter: { riding: boolean; braking: boolean; id: string | null }, ts: number): PoseWire | null {
   const root = rig.body[0];
   const bike = rig.scooter[0];
   if (!root || !bike) return null;
@@ -30,7 +31,7 @@ export function capturePose(rig: AvatarRig, scooter: { riding: boolean; braking:
   const s: number[] = [];
   pushTransform(s, bike);
   s.push(round(rig.scooter[1]?.rotation.y ?? 0));
-  const pose: PoseWire = { ts, b, bv: root.visible ? 1 : 0, s, sf: (scooter.riding ? 1 : 0) | (scooter.braking ? 2 : 0) };
+  const pose: PoseWire = { ts, b, bv: root.visible ? 1 : 0, s, sf: (scooter.riding ? 1 : 0) | (scooter.braking ? 2 : 0) | (scooter.id !== null ? 4 : 0) };
   if (rig.ragdoll[1]?.visible) {
     const r: number[] = [];
     for (const part of rig.ragdoll) pushTransform(r, part);
@@ -76,7 +77,11 @@ export function applyPose(rig: RemoteRig, a: PoseWire, b: PoseWire, t: number) {
     o.visible = !!ragdoll;
     if (ragdoll) blendTransform(o, a.r ?? ragdoll, ragdoll, i, t);
   });
-  if (rig.scooter) blendTransform(rig.scooter, a.s, b.s, 0, t);
+  if (rig.scooter) {
+    rig.scooter.visible = (b.sf & 4) === 4;
+    // Never slide a bike across the map when its rider swaps bikes: snap instead.
+    blendTransform(rig.scooter, (a.sf & 4) === 4 && Math.hypot(a.s[0]! - b.s[0]!, a.s[2]! - b.s[2]!) < 3 ? a.s : b.s, b.s, 0, t);
+  }
   if (rig.front) rig.front.rotation.y = THREE.MathUtils.lerp(a.s[7] ?? 0, b.s[7] ?? 0, t);
 }
 

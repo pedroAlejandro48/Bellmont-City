@@ -164,7 +164,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
         p.x += dx; p.z += dz;
       }
       s.bikeContact = !!(dx || dz);
-      for (const other of state.otherBikes) { const [ox, oz] = circleBoxPush(p.x, p.z, RADIUS, other); p.x += ox; p.z += oz; }
+      for (const other of [...state.otherBikes, ...state.parkedBikes]) { const [ox, oz] = circleBoxPush(p.x, p.z, RADIUS, other); p.x += ox; p.z += oz; }
     }
 
     const ground = floorHeight(p.x, p.z);

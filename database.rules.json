@@ -2,10 +2,22 @@
   "rules": {
     "rooms": {
       "$code": {
+        ".write": "auth != null && !newData.exists() && data.child('owner').val() === auth.uid",
+        "owner": {
+          ".read": "auth != null",
+          ".write": "auth != null && !data.exists() && newData.val() === auth.uid"
+        },
         "peers": {
           ".read": "auth != null",
           "$peer": {
             ".write": "auth != null && (!data.exists() || data.child('uid').val() === auth.uid) && (!newData.exists() || newData.child('uid').val() === auth.uid)"
+          }
+        },
+        "bikes": {
+          ".read": "auth != null",
+          "$bike": {
+            ".write": "auth != null && newData.exists() && (data.exists() || $bike === auth.uid)",
+            ".validate": "newData.child('owner').isString() && (data.exists() ? newData.child('owner').val() === data.child('owner').val() : newData.child('owner').val() === auth.uid)"
           }
         }
       }
