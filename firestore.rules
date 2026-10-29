@@ -36,15 +36,15 @@ service cloud.firestore {
       allow read, write: if signedIn() && request.auth.uid == uid;
     }
 
-    // Multiplayer rooms: a code is taken while its document exists. Entering a room pushes back its expiry
-    // (a TTL policy on expiresAt deletes rooms unvisited for 30 days); only the creator may delete one.
+    // Multiplayer rooms: a code is taken while its document exists. Entering a room pushes back its expiry; the
+    // creator may delete a room at any time, and anyone may remove one unvisited for 30 days (expired).
     match /rooms/{code} {
       allow read: if signedIn();
       allow create: if signedIn() && code.matches('^[A-Z0-9]{6}$')
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.keys().hasOnly(['seed', 'createdAt', 'createdBy', 'lastActiveAt', 'expiresAt']);
       allow update: if signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastActiveAt', 'expiresAt']);
-      allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
+      allow delete: if signedIn() && (resource.data.createdBy == request.auth.uid || resource.data.expiresAt <= request.time);
     }
   }
 }

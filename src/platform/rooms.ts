@@ -1,8 +1,8 @@
 // Multiplayer rooms: `rooms/<CODE>` holds each room's world. A code stays taken while its document exists:
-// until its creator deletes it, or until it has gone ROOM_LIFETIME_DAYS without anyone entering (Firestore's
-// TTL policy on `expiresAt` removes it). Live data (players, bikes) is in the Realtime Database under the room's
+// until its creator deletes it, or until it has gone ROOM_LIFETIME_DAYS without anyone entering (`expiresAt`
+// passed: it then counts as gone, and the next room created sweeps it away; no paid TTL policy needed). Live data (players, bikes) is in the Realtime Database under the room's
 // `key` (code + creation time), so a code reused after expiry starts clean.
-import { deleteDoc, doc, getDoc, onSnapshot, runTransaction, Timestamp, updateDoc } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, query, runTransaction, Timestamp, updateDoc, where } from "firebase/firestore";
 import { ref, remove, set } from "firebase/database";
 import { firestore, realtime } from "./firebase";
 import { joinRealtimeRoom } from "./realtime";
@@ -37,6 +37,18 @@ export function normalizeRoomCode(input: string) {
   return /^[A-Z0-9]{6}$/.test(code) ? code : null;
 }
 
+/** A room nobody has entered for ROOM_LIFETIME_DAYS. */
+export function roomExpired(body: Record<string, unknown> | undefined, now = Date.now()) {
+  const expires = body?.["expiresAt"];
+  return expires instanceof Timestamp && expires.toMillis() <= now;
+}
+
+/** Deletes some rooms that have expired (the rules let any player remove an expired room). */
+async function sweepExpiredRooms() {
+  const expired = await getDocs(query(collection(firestore, "rooms"), where("expiresAt", "<=", Timestamp.now()), limit(25)));
+  await Promise.all(expired.docs.map((d) => deleteDoc(d.ref).catch(() => {})));
+}
+
 function readRoom(code: string, body: Record<string, unknown> | undefined): RoomInfo | null {
   const seed = body?.["seed"], createdAt = body?.["createdAt"], createdBy = body?.["createdBy"];
   return typeof seed === "number" && typeof createdAt === "number" && typeof createdBy === "string"
@@ -55,8 +67,10 @@ export async function createRoomWith(claim: (room: RoomInfo) => Promise<boolean>
 
 /** Creates a room with a fresh random world under a code no live room has. */
 export async function createRoom(account: Account, random: () => number = Math.random): Promise<RoomInfo> {
+  await sweepExpiredRooms().catch(() => {});
   const room = await createRoomWith((r) => runTransaction(firestore, async (tx) => {
     const at = doc(firestore, "rooms", r.code);
+    // A code stays taken until its room is actually removed, even if it has just expired.
     if ((await tx.get(at)).exists()) return false;
     tx.set(at, { seed: r.seed, createdAt: r.createdAt, createdBy: account.id, ...activity(r.createdAt) });
     return true;
@@ -68,7 +82,12 @@ export async function createRoom(account: Account, random: () => number = Math.r
 
 export async function findRoom(code: string): Promise<RoomInfo | null> {
   const snap = await getDoc(doc(firestore, "rooms", code));
-  return snap.exists() ? readRoom(code, snap.data()) : null;
+  if (!snap.exists()) return null;
+  if (roomExpired(snap.data())) {
+    await deleteDoc(snap.ref).catch(() => {});
+    return null;
+  }
+  return readRoom(code, snap.data());
 }
 
 /** Someone is in the room: it lives another ROOM_LIFETIME_DAYS from now. */
