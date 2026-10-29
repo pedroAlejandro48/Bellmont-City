@@ -20,5 +20,7 @@ elif [ -n "${FIREBASE_CLIENT_EMAIL:-}" ]; then
   export GOOGLE_APPLICATION_CREDENTIALS="$creds"
 fi
 npm run build
-npx firebase deploy --project "$VITE_FIREBASE_PROJECT_ID" --only hosting,firestore:rules,database --non-interactive
+# DEPLOY_ONLY narrows what is published, e.g. "hosting,firestore:rules" when the Realtime Database rules are pasted
+# in the console instead (Realtime Database → Rules).
+npx firebase deploy --project "$VITE_FIREBASE_PROJECT_ID" --only "${DEPLOY_ONLY:-hosting,firestore:rules,database}" --non-interactive
 echo "Live at https://${VITE_FIREBASE_PROJECT_ID}.web.app"
