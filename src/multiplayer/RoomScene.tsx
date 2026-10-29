@@ -6,7 +6,7 @@ import { RagdollMeshes, RAGDOLL_PART_COUNT } from "@/game/Ragdoll";
 import { ScooterModel, type ScooterLook } from "@/game/Scooter";
 import type { GameState, OtherBody } from "@/game/state";
 import { scooterFootprint, type SolidBox } from "@/game/config";
-import type { NamedRoom, Peer } from "@/platform/claude";
+import type { NamedRoom, Peer } from "@/platform/realtime";
 import { applyPose, capturePose, isPoseWire, PoseBuffer, RENDER_DELAY_MS, SEND_HZ, type RemoteRig } from "./pose";
 import { spawnBeside, standingFromPose, type Standing } from "./spawn";
 

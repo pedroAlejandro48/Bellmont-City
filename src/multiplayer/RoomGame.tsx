@@ -3,8 +3,8 @@ import { ChevronDown, User } from "lucide-react";
 import { CloudGame, type GameExtras, type WorldSlot } from "@/game/CloudGame";
 import { DEFAULT_SAVE } from "@/game/config";
 import type { GameState } from "@/game/state";
-import type { Account } from "@/platform/account";
-import type { NamedRoom, Peer } from "@/platform/claude";
+import { usernameOf, type Account } from "@/platform/account";
+import type { NamedRoom, Peer } from "@/platform/realtime";
 import { createRoom, deleteRoom, findRoom, joinRoomChannel, ROOM_CAPACITY, type RoomInfo } from "@/platform/rooms";
 import { isPoseWire } from "./pose";
 import { remotePeers, RoomScene, type RemotePlayers } from "./RoomScene";
@@ -28,9 +28,9 @@ export function RoomEntry({ account, request, onExit }: { account: Account; requ
     (async () => {
       let channel: NamedRoom | null = null;
       try {
-        const room = request.mode === "create" ? await createRoom(account) : await findRoom(account, request.code);
+        const room = request.mode === "create" ? await createRoom(account) : await findRoom(request.code);
         if (!room) return onExit("No room has that code.");
-        channel = await joinRoomChannel(room.code);
+        channel = await joinRoomChannel(room.code, account);
         const joinedAt = Date.now();
         await channel.presence({ uid: account.id, joinedAt });
         await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
@@ -74,7 +74,7 @@ function RoomGame({ account, session, onExit }: { account: Account; session: Ses
     const leave = () => {
       if (left) return;
       left = true;
-      if (remotePeers(channel.peers()).length === 0) void deleteRoom(account, room.code).catch(() => {});
+      if (remotePeers(channel.peers()).length === 0) void deleteRoom(room.code).catch(() => {});
       void channel.leave().catch(() => {});
     };
     return { live, leave };
@@ -109,19 +109,18 @@ function RoomGame({ account, session, onExit }: { account: Account; session: Ses
 }
 
 /** Bellmont usernames by account id, read from each player's own `players/<id>` document. */
-function useUsernames(account: Account, ids: readonly string[]) {
+function useUsernames(ids: readonly string[]) {
   const [names, setNames] = useState<Record<string, string>>({});
   const asked = useRef(new Set<string>());
   useEffect(() => {
     for (const id of ids) {
       if (asked.current.has(id)) continue;
       asked.current.add(id);
-      void account.db.doc(`players/${id}`).get().then((snap) => {
-        const name = snap.data()?.["username"];
-        if (typeof name === "string") setNames((old) => ({ ...old, [id]: name }));
+      void usernameOf(id).then((name) => {
+        if (name) setNames((old) => ({ ...old, [id]: name }));
       }).catch(() => asked.current.delete(id));
     }
-  }, [account, ids]);
+  }, [ids]);
   return names;
 }
 
@@ -144,7 +143,7 @@ function OnlinePanel({ account, channel }: { account: Account; channel: NamedRoo
     return me ? [me, ...others] : others;
   }, [peers]);
   const ids = useMemo(() => people.flatMap((p) => accountOf(p) ?? []), [people]);
-  const names = useUsernames(account, ids);
+  const names = useUsernames(ids);
   const count = Math.max(1, people.length);
 
   return <div className="pointer-events-auto absolute left-4 top-4 z-20">

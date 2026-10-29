@@ -3,9 +3,7 @@ import * as THREE from "three";
 import { bumpOthers, PUSH_SPEED, SQUASH } from "@/multiplayer/bump";
 import { PoseBuffer, RENDER_DELAY_MS, capturePose, applyPose, type PoseWire } from "@/multiplayer/pose";
 import { spawnBeside, SPAWN_SIDE_STEP, standingFromPose } from "@/multiplayer/spawn";
-import { createRoom, normalizeRoomCode, randomRoomCode, ROOM_CODE_LENGTH } from "@/platform/rooms";
-import type { Account } from "@/platform/account";
-import type { Db } from "@/platform/claude";
+import { createRoomWith, normalizeRoomCode, randomRoomCode, ROOM_CODE_LENGTH } from "@/platform/rooms";
 
 const pose = (ts: number, x: number, yaw = 0): PoseWire => {
   const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0, "YXZ"));
@@ -27,23 +25,16 @@ describe("room codes", () => {
   });
 
   it("never reuse the code of a room that still exists", async () => {
-    const docs: Record<string, Record<string, unknown>> = { "rooms/AAAAAA": { seed: 5, createdAt: 1 } };
-    const db = {
-      doc: (path: string) => ({
-        get: async () => ({ id: path, exists: path in docs, data: () => docs[path] }),
-        set: async (data: Record<string, unknown>) => { docs[path] = data; },
-        delete: async () => { delete docs[path]; },
-        acquire: async () => ({ acquired: true }),
-      }),
-      collection: () => { throw new Error("unused"); },
-    } as unknown as Db;
-    const account: Account = { id: "u_1", displayName: "", username: "pat", db };
+    const live = new Set(["AAAAAA"]);
     // The first draw collides with the live room; the next is free.
-    const draws = [...Array(6).fill(0), ...Array(6).fill(0.5), 0.25];
-    const room = await createRoom(account, () => draws.shift() ?? 0.5);
+    const draws = [...Array(6).fill(0), 0.1, ...Array(6).fill(0.5), 0.25];
+    const room = await createRoomWith(async (r) => {
+      if (live.has(r.code)) return false;
+      live.add(r.code);
+      return true;
+    }, () => draws.shift() ?? 0.5);
     expect(room.code).toBe("SSSSSS");
-    expect(docs["rooms/AAAAAA"]).toEqual({ seed: 5, createdAt: 1 });
-    expect(docs["rooms/SSSSSS"]).toMatchObject({ seed: room.seed, createdBy: "u_1" });
+    expect([...live]).toEqual(["AAAAAA", "SSSSSS"]);
   });
 });
 

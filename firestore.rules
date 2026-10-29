@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+
+    // Username claims. Anyone may look up one name (username sign-in needs it before signing in) but never
+    // list them. The record holds the owner's id and their email locked with their password.
+    match /usernames/{name} {
+      allow get: if true;
+      allow list: if false;
+      allow create: if signedIn() && name.matches('^[a-z0-9_]{3,24}$')
+        && request.resource.data.uid == request.auth.uid
+        && !exists(/databases/$(database)/documents/players/$(request.auth.uid));
+      // Only the lock may change (re-locked after a password change), and only by its owner.
+      allow update: if signedIn() && resource.data.uid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lock']);
+      allow delete: if false;
+    }
+
+    // One username per account, matching the claim made in the same write.
+    match /players/{uid} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.auth.uid == uid
+        && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.username)).data.uid == uid;
+      allow update, delete: if false;
+    }
+
+    // Saves: only their owner reads or writes them.
+    match /saves/{uid}/slots/{slot} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Multiplayer rooms: a code is taken while its document exists.
+    match /rooms/{code} {
+      allow read: if signedIn();
+      allow create: if signedIn() && code.matches('^[A-Z0-9]{6}$') && request.resource.data.createdBy == request.auth.uid;
+      allow delete: if signedIn();
+      allow update: if false;
+    }
+  }
+}

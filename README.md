@@ -1,47 +1,46 @@
 # Bellmont City
 
 An open-world 3D downtown with a day and night cycle, built with React Three Fiber and Rapier physics.
+It runs on Firebase (free Spark plan): Authentication for accounts, Firestore for usernames, saves and rooms,
+the Realtime Database for live multiplayer, and Hosting for the website.
 
-## Hosting and accounts
+## Accounts
 
-The game is a static single-page app. It is published as a claude.ai artifact, and the claude.ai
-artifact runtime provides accounts and saves (`src/platform/`):
-
-- **Sign in** is the viewer's claude.ai login (`user` capability); no passwords are stored.
-- **Sign up** reserves a unique Bellmont username in the shared `players/<viewer id>` documents.
-- **Saves** go to `data/users/<viewer id>/save` in the artifact's `db`, which is private to each player.
+- **Sign up** with an email and password, then choose a unique username. **Continue with Google** works too.
+- **Sign in** with username (the default) or email, from any browser. Sessions persist across reloads.
+- Username sign-in has no server code: `usernames/<name>` stores the account's email encrypted with a key
+  derived from its password (src/platform/emailLock.ts), so only the right password recovers it. Signing in
+  by email re-locks it, which keeps username sign-in working after a password reset. Google accounts have no
+  password and sign in with Google.
+- **Saves** are `saves/<uid>/slots/<slot>`: `save` for the player's own city, `room-<CODE>` per room.
 - **Guests** play with progress kept in their own browser.
 
-After signing in, players choose **Go to my city** (their own world and save) or a shared room:
+## Multiplayer
 
-- **Create a room** makes a new random world under a unique 6-character code (`rooms/<CODE>`), shown in game as
-  `ROOM CODE: …`. A code is never reused while its room exists; the room is deleted when its last player leaves.
-- **Join a room** loads the world for a typed code. Rooms hold up to 10 players. Each player's progress in a room
-  is saved separately (`data/users/<id>/room-<CODE>`), and everyone shares the room's time of day.
-- Players see each other live (`room` capability presence: each player's pose, ~15 updates a second, drawn
-  110 ms in the past and interpolated), bump into each other, and the top-left counter lists who is here.
+After signing in, players choose **Go to my city** or a shared room:
 
-Players need Contributor access (or above) to the artifact to save; view-only access can only play as a guest.
-Opened outside claude.ai (e.g. `npm run dev`), only guest play is available.
+- **Create a room** makes a new random world under a unique 6-character code (`rooms/<CODE>` in Firestore),
+  shown in game as `ROOM CODE: …`. A code is never reused while its room exists; the room is deleted when its
+  last player leaves.
+- **Join a room** loads the world for a typed code. Rooms hold up to 10 players, and share the time of day.
+- Each open tab keeps `rooms/<CODE>/peers/<id>` in the Realtime Database (removed on disconnect) with its
+  pose, ~15 updates a second while moving; others draw it 110 ms in the past, interpolated.
 
-Publish with these capabilities:
+## Setup (once)
 
-```json
-{
-  "db": { "rules": [
-    { "path": "players", "read": "view", "write": "owner" },
-    { "path": "players/{self}", "read": "view", "write": "interact" }
-  ] },
-  "user": { "scopes": ["profile"] },
-  "room": {}
-}
-```
+1. Create a project at https://console.firebase.google.com.
+2. **Authentication** → Get started → enable **Email/Password** and **Google**.
+3. **Firestore Database** → Create database (production mode).
+4. **Realtime Database** → Create database (locked mode).
+5. **Project settings** → Your apps → add a **Web app**, and copy its `projectId`, `apiKey` and `appId` into
+   `.env.local` (see `.env.example`).
 
 ## Development
 
 ```sh
 npm install
-npm run dev      # local dev server (guest play)
-npm test         # unit tests
-npm run build    # static build in dist/
+npm test               # unit tests
+npm run emulators      # local Firebase (needs Java), in one terminal
+npm run dev:emulators  # the game against the local Firebase, in another
+npm run deploy         # build and publish to https://<project>.web.app, with the security rules
 ```

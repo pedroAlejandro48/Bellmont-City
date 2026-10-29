@@ -4,7 +4,7 @@ import { normalizeRoomCode } from "@/platform/rooms";
 import type { RoomRequest } from "@/multiplayer/RoomGame";
 
 /** After signing in: your own city, or a shared room (new, or joined by its code). */
-export function MainMenu({ username, message, onCity, onRoom }: { username: string | null; message?: string | undefined; onCity: () => void; onRoom: (request: RoomRequest) => void }) {
+export function MainMenu({ username, message, onCity, onRoom, onSignOut }: { username: string | null; message?: string | undefined; onCity: () => void; onRoom: (request: RoomRequest) => void; onSignOut: () => void }) {
   const [joining, setJoining] = useState(false);
   const [code, setCode] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
@@ -32,6 +32,7 @@ export function MainMenu({ username, message, onCity, onRoom }: { username: stri
             <Button type="submit">Join</Button>
           </form>}
           {(msg ?? message) && <p className="text-center text-sm text-accent">{msg ?? message}</p>}
+          <button type="button" onClick={onSignOut} className="w-full text-center text-xs text-muted-foreground underline-offset-2 hover:underline">Sign out</button>
         </div>
       </div>
     </div>
