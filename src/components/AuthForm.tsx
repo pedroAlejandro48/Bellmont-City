@@ -14,7 +14,7 @@ type AuthFormProps = {
 // Sign-in is the viewer's claude.ai login, so there is no password to type or store here;
 // "Sign up" reserves the player's unique Bellmont username for that login.
 export function AuthForm({ account, loading, onEnter, children }: AuthFormProps) {
-  const [mode, setMode] = useState<"in" | "up">(account && !account.username ? "up" : "in");
+  const [mode, setMode] = useState<"in" | "up">("in");
   const [username, setUsername] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
