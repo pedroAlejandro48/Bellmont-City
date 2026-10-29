@@ -1,8 +1,10 @@
 import { useFrame } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { floorHeight, cameraRelativeVelocity, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, type City, PARK_SOLIDS, circleBoxPush, bikePushShare, scooterFootprint, scooterSide, SCOOTER_TIP, BENCH_SEATS, BENCH_SIT_SECONDS, BENCH_STAND_SECONDS, benchStandHeight, BENCH_SEAT_TOP, BENCH_BACK_TOP, BENCH_BACKRESTS } from "./config";
 import type { GameState } from "./state";
+import { BODY_PARTS, CharacterBody, useBodyRig } from "./CharacterBody";
+import { bumpOthers } from "@/multiplayer/bump";
 
 // feel constants
 const WALK = 2.2;
@@ -13,16 +15,6 @@ const JUMP_V = 7.2;
 const RADIUS = 0.35;
 
 const damp = (a: number, b: number, k: number, dt: number) => a + (b - a) * (1 - Math.exp(-k * dt));
-
-function Bone({ len, mat, r = 0.075 }: { len: number; mat: THREE.Material; r?: number }) {
-  return (
-    <>
-      <mesh material={mat} position={[0, -len / 2, 0]} castShadow receiveShadow>
-        <capsuleGeometry args={[r, Math.max(0.01, len - r * 0.5), 6, 12]} />
-      </mesh>
-    </>
-  );
-}
 
 type Colliders = { boxes: { minX: number; maxX: number; minZ: number; maxZ: number }[]; circles: { x: number; z: number; r: number }[] };
 
@@ -72,24 +64,13 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     [city],
   );
 
-  const lineMat = useMemo(() => new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.72, metalness: 0 }), []);
-  const headMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.4 }),
-    [],
-  );
-
-  const root = useRef<THREE.Group>(null);
-  const hips = useRef<THREE.Group>(null);
-  const torso = useRef<THREE.Group>(null);
-  const head = useRef<THREE.Group>(null);
-  const thighL = useRef<THREE.Group>(null);
-  const thighR = useRef<THREE.Group>(null);
-  const shinL = useRef<THREE.Group>(null);
-  const shinR = useRef<THREE.Group>(null);
-  const armL = useRef<THREE.Group>(null);
-  const armR = useRef<THREE.Group>(null);
-  const foreL = useRef<THREE.Group>(null);
-  const foreR = useRef<THREE.Group>(null);
+  const rig = useBodyRig();
+  const { root, hips, torso, head, thighL, thighR, shinL, shinR, armL, armR, foreL, foreR } = rig;
+  // Peers in a room see this player through these groups' transforms.
+  useEffect(() => {
+    state.avatar.body = BODY_PARTS.map((part) => rig[part].current).filter((g): g is THREE.Group => g !== null);
+    return () => { state.avatar.body = []; };
+  }, [state, rig]);
 
   const sim = useRef({
     vel: new THREE.Vector3(),
@@ -159,6 +140,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     p.z += s.vel.z * dt;
     if (!incapacitated && !usingBike && !sitting) {
       resolve(p, colliders);
+      bumpOthers(p, state.others, RADIUS, dt);
       const ground0 = floorHeight(p.x, p.z);
       for (const [i, box] of PARK_SOLIDS.entries()) { if (i < 4 && p.y - ground0 >= BENCH_SEAT_TOP - 0.1) { const back = BENCH_BACKRESTS[i]; if (back && p.y - ground0 < BENCH_BACK_TOP - 0.05) { const [bx, bz] = circleBoxPush(p.x, p.z, RADIUS, back); p.x += bx; p.z += bz; } continue; } const [dx, dz] = circleBoxPush(p.x, p.z, RADIUS, box); p.x += dx; p.z += dz; }
       const [dx, dz] = circleBoxPush(p.x, p.z, RADIUS, scooterFootprint(bike.pos.x, bike.pos.z, bike.yaw, bike.fallen, bike.fallSide));
@@ -179,6 +161,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
         p.x += dx; p.z += dz;
       }
       s.bikeContact = !!(dx || dz);
+      for (const other of state.otherBikes) { const [ox, oz] = circleBoxPush(p.x, p.z, RADIUS, other); p.x += ox; p.z += oz; }
     }
 
     const ground = floorHeight(p.x, p.z);
@@ -422,53 +405,5 @@ export function Player({ state, city }: { state: GameState; city: City }) {
 
   });
 
-  return (
-    <group ref={root}>
-      <group ref={hips} position={[0, 0.95, 0]}>
-        {([
-          [thighL, shinL, 0.065],
-          [thighR, shinR, -0.065],
-        ] as const).map(([thigh, shin, x], i) => (
-          <group key={i} ref={thigh} position={[x, 0, 0]}>
-            <Bone len={0.46} mat={lineMat} />
-            <group ref={shin} position={[0, -0.46, 0]}>
-              <Bone len={0.46} mat={lineMat} />
-              <mesh material={lineMat} position={[0, -0.46, 0.06]} rotation-x={Math.PI / 2}>
-                <capsuleGeometry args={[0.07, 0.1, 6, 12]} />
-              </mesh>
-            </group>
-          </group>
-        ))}
-        <group ref={torso}>
-          <mesh material={lineMat} position={[0, 0.28, 0]} castShadow receiveShadow>
-            <capsuleGeometry args={[0.16, 0.29, 8, 16]} />
-          </mesh>
-          <group position={[0, 0.55, 0]}>
-            <mesh material={lineMat} rotation-z={Math.PI / 2} castShadow receiveShadow>
-              <capsuleGeometry args={[0.09, 0.25, 6, 12]} />
-            </mesh>
-            {([
-              [armL, foreL, 0.2],
-              [armR, foreR, -0.2],
-            ] as const).map(([arm, fore, x], i) => (
-              <group key={i} ref={arm} position={[x, 0, 0]}>
-                <Bone len={0.3} mat={lineMat} r={0.06} />
-                <group ref={fore} position={[0, -0.3, 0]}>
-                  <Bone len={0.28} mat={lineMat} r={0.055} />
-                </group>
-              </group>
-            ))}
-            <mesh material={lineMat} position={[0, 0.06, 0]}>
-              <cylinderGeometry args={[0.07, 0.07, 0.12, 12]} />
-            </mesh>
-            <group ref={head} position={[0, 0.25, 0]}>
-              <mesh material={headMat} castShadow receiveShadow>
-                <sphereGeometry args={[0.14, 24, 18]} />
-              </mesh>
-            </group>
-          </group>
-        </group>
-      </group>
-    </group>
-  );
+  return <CharacterBody rig={rig} />;
 }

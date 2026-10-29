@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
 import { resetProgress, type SaveData } from "@/game/config";
 import { createState, toSave, type GameState } from "@/game/state";
 import { mergeSave, newerBackup, readSave, saveRecord } from "@/game/saves";
@@ -6,8 +6,30 @@ import { readCloudSave, writeCloudSave, type Account } from "@/platform/account"
 import { GameCanvas } from "@/game/GameCanvas";
 import { Button } from "@/components/ui/button";
 
+/** A shared world (a multiplayer room) instead of the player's own city. */
+export type WorldSlot = {
+  /** Save slot for the player's progress in this world. */
+  slot: string;
+  /** The world every player in it shares; never changes, not even on death. */
+  seed: number;
+  /** The shared time of day, so everyone sees the same sky. */
+  elapsed: () => number;
+  /** Where a fresh (or respawning) player appears. */
+  place: (save: SaveData) => SaveData;
+};
+
+/** Extra HUD and scene content, as stable component types so HUD ticks never rebuild the 3D scene. */
+export type GameExtras = { Overlay?: ComponentType<{ state: GameState }>; Scene?: ComponentType<{ state: GameState }>; exitNote?: string };
+
+function freshSave(world: WorldSlot | undefined, previousSeed?: number): SaveData {
+  const fresh = resetProgress(previousSeed);
+  return world ? world.place({ ...fresh, worldSeed: world.seed, elapsed: world.elapsed() }) : fresh;
+}
+
 // Signed-in game session: loads the account save (with local backup recovery) and keeps it synced.
-function useCloudGame(account: Account) {
+function useCloudGame(account: Account, world?: WorldSlot) {
+  const slot = world?.slot ?? "save";
+  const backupKey = `bellmont-save:${account.id}${world ? `:${slot}` : ""}`;
   const [state, setState] = useState<GameState | null>(null);
   const [saving, setSaving] = useState(false);
   const [round, setRound] = useState(0);
@@ -23,30 +45,31 @@ function useCloudGame(account: Account) {
     setLoadError(false);
     (async () => {
       try {
-      const data = await readCloudSave(account); // Throws on read failure: never overwrite an unread save with defaults.
+      const data = await readCloudSave(account, slot); // Throws on read failure: never overwrite an unread save with defaults.
       if (cancelled) return;
       let backup = null;
-      try { backup = newerBackup(JSON.parse(localStorage.getItem(`bellmont-save:${account.id}`) ?? "null"), data?.updated_at); } catch { /* Cloud remains authoritative without a valid backup. */ }
+      try { backup = newerBackup(JSON.parse(localStorage.getItem(backupKey) ?? "null"), data?.updated_at); } catch { /* Cloud remains authoritative without a valid backup. */ }
       retained.current = { ...saveRecord(data?.data), ...saveRecord(backup?.data) };
-      const parsed = readSave(retained.current);
-      if (!data && !backup) parsed.worldSeed = resetProgress().worldSeed ?? 1337;
+      let parsed = readSave(retained.current);
+      if (!data && !backup) parsed = freshSave(world);
+      else if (world) parsed = { ...parsed, worldSeed: world.seed, elapsed: world.elapsed() };
       const loaded = createState(parsed);
       activeState.current = loaded;
       setState(loaded);
       } catch { if (!cancelled) setLoadError(true); }
     })();
     return () => { cancelled = true; };
-  }, [account, loadAttempt]);
+  }, [account, world, slot, backupKey, loadAttempt]);
 
   const persist = useCallback((snapshot: SaveData) => {
     const data = mergeSave(retained.current, snapshot);
     const updated_at = new Date().toISOString();
     retained.current = data;
-    try { localStorage.setItem(`bellmont-save:${account.id}`, JSON.stringify({ data, updated_at })); } catch { /* Cloud saving still works if local storage is unavailable. */ }
+    try { localStorage.setItem(backupKey, JSON.stringify({ data, updated_at })); } catch { /* Cloud saving still works if local storage is unavailable. */ }
     writes.current = writes.current.catch(() => {}).then(async () => {
       setSaving(true);
       try {
-        await writeCloudSave(account, data, updated_at);
+        await writeCloudSave(account, data, updated_at, slot);
         setSaveError(false);
       } catch (error) {
         setSaveError(true);
@@ -54,7 +77,7 @@ function useCloudGame(account: Account) {
       } finally { setSaving(false); }
     });
     return writes.current;
-  }, [account]);
+  }, [account, slot, backupKey]);
 
   const save = useCallback(async () => {
     const current = activeState.current;
@@ -62,14 +85,14 @@ function useCloudGame(account: Account) {
   }, [persist]);
 
   const reset = useCallback(() => {
-    const fresh = resetProgress(activeState.current?.worldSeed);
+    const fresh = freshSave(world, activeState.current?.worldSeed);
     retained.current = {};
     const newState = createState(fresh);
     activeState.current = newState;
     setState(newState);
     setRound((value) => value + 1);
     void persist(fresh).catch(() => {});
-  }, [persist]);
+  }, [persist, world]);
 
   useEffect(() => {
     if (!state) return;
@@ -92,8 +115,8 @@ function useCloudGame(account: Account) {
 }
 
 /** The signed-in game screen; `onExit` leaves the game after its final save. */
-export function CloudGame({ account, onExit }: { account: Account; onExit: () => void }) {
-  const { state, saving, round, loadError, saveError, setSaveError, save, reset, retryLoad } = useCloudGame(account);
+export function CloudGame({ account, onExit, world, extras }: { account: Account; onExit: () => void; world?: WorldSlot; extras?: GameExtras }) {
+  const { state, saving, round, loadError, saveError, setSaveError, save, reset, retryLoad } = useCloudGame(account, world);
   if (loadError) return <div className="auth-bg flex min-h-screen flex-col items-center justify-center gap-4 text-foreground">
     <p>Could not load your progress. Your saved game has not been changed.</p>
     <Button onClick={() => retryLoad()}>Retry loading</Button>
@@ -112,6 +135,7 @@ export function CloudGame({ account, onExit }: { account: Account; onExit: () =>
       state={state}
       saving={saving}
       exitLabel="Save & exit"
+      extras={extras}
       onDeath={() => { void save().catch(() => {}); }}
       onReset={reset}
       onSignOut={async () => {

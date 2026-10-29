@@ -7,9 +7,12 @@ import * as THREE from "three";
 import { canInteractScooter, scooterSide, floorHeight, headingVelocity, smoothSteer, scooterNextAction, scooterSpeed, scooterCanDismount, scooterTurn, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, nearestBenchSeat, scooterTipStep, SCOOTER_MASS, SCOOTER_COLLISION_PARTS } from "./config";
 import type { GameState } from "./state";
 
-function ScooterModel({ state }: { state: GameState }) {
+/** What the model reads to draw lights and steering; a remote player's scooter passes its own copy. */
+export type ScooterLook = { darkness: number; scooter: { riding: boolean; steering: number; braking: boolean } };
+
+export function ScooterModel({ state, headlight = true, frontRef }: { state: ScooterLook; headlight?: boolean; frontRef?: (group: THREE.Group | null) => void }) {
   const tail = useRef<THREE.MeshStandardMaterial>(null);
-  const front = useRef<THREE.Group>(null);
+  const front = useRef<THREE.Group | null>(null);
   const beam = useRef<THREE.SpotLight>(null);
   useFrame(() => {
     // Headlight only while ridden.
@@ -28,7 +31,7 @@ function ScooterModel({ state }: { state: GameState }) {
       <mesh material={materials.rubber} castShadow><torusGeometry args={[0.21, 0.065, 10, 24]} /></mesh>
       <mesh material={materials.chrome} rotation-x={Math.PI / 2}><cylinderGeometry args={[0.16, 0.16, 0.12, 20]} /></mesh>
     </group>)}
-    <group ref={front} position={[0, 0.28, 0.65]}><group rotation-y={Math.PI / 2}><mesh material={materials.rubber} castShadow><torusGeometry args={[0.21, 0.065, 10, 24]} /></mesh><mesh material={materials.chrome} rotation-x={Math.PI / 2}><cylinderGeometry args={[0.16, 0.16, 0.12, 20]} /></mesh></group></group>
+    <group ref={(el) => { front.current = el; frontRef?.(el); }} position={[0, 0.28, 0.65]}><group rotation-y={Math.PI / 2}><mesh material={materials.rubber} castShadow><torusGeometry args={[0.21, 0.065, 10, 24]} /></mesh><mesh material={materials.chrome} rotation-x={Math.PI / 2}><cylinderGeometry args={[0.16, 0.16, 0.12, 20]} /></mesh></group></group>
     <mesh material={materials.paint} position={[0, 0.47, -0.42]} scale={[0.3, 0.26, 0.5]} castShadow><sphereGeometry args={[1, 20, 12]} /></mesh>
     <mesh material={materials.paint} position={[0, 0.36, 0]} castShadow><boxGeometry args={[0.48, 0.1, 0.95]} /></mesh>
     <mesh material={materials.seat} position={[0, 0.78, -0.27]} scale={[0.29, 0.09, 0.46]} castShadow><sphereGeometry args={[1, 20, 12]} /></mesh>
@@ -44,13 +47,18 @@ function ScooterModel({ state }: { state: GameState }) {
     </group>)}
     <mesh material={materials.chrome} position={[0.22, 0.3, -0.48]} rotation-x={Math.PI / 2}><cylinderGeometry args={[0.06, 0.06, 0.65, 12]} /></mesh>
     <mesh position={[0, 0.6, -0.85]}><boxGeometry args={[0.19, 0.08, 0.025]} /><meshStandardMaterial color="#b93429" emissive="#b93429" ref={tail} emissiveIntensity={0.8} /></mesh>
-    <Headlight position={[0, 1.1, 0.7]} lightRef={beam} />
+    {headlight && <Headlight position={[0, 1.1, 0.7]} lightRef={beam} />}
   </group>;
 }
 
 export function Scooter({ state }: { state: GameState }) {
   const { world, rapier } = useRapier();
   const root = useRef<THREE.Group>(null);
+  const front = useRef<THREE.Group | null>(null);
+  useEffect(() => {
+    state.avatar.scooter = [root.current, front.current].filter((g): g is THREE.Group => g !== null);
+    return () => { state.avatar.scooter = []; };
+  }, [state]);
 
   const bodyRef = useRef<ReturnType<typeof world.createRigidBody> | null>(null);
   const turnRate = useRef(0), lean = useRef(0);
@@ -138,7 +146,7 @@ export function Scooter({ state }: { state: GameState }) {
     }
   });
   return <>
-    <group ref={root}><ScooterModel state={state} /></group>
+    <group ref={root}><ScooterModel state={state} frontRef={(el) => { front.current = el; }} /></group>
     <InteractionPrompt sample={() => ({ visible: state.scooter.promptVisible, x: state.scooter.pos.x, y: state.scooter.pos.y + 1.8, z: state.scooter.pos.z, time: state.simulationTime })} />
   </>;
 }

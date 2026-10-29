@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { healthAfterImpact, type SaveData, type RoadPath, GET_UP_SECONDS, KNOCKDOWN_SECONDS, floorHeight, BENCH_SEATS } from "./config";
+import { healthAfterImpact, type SaveData, type SolidBox, type RoadPath, GET_UP_SECONDS, KNOCKDOWN_SECONDS, floorHeight, BENCH_SEATS } from "./config";
 
 export type Accident = {
   phase: "down" | "rising";
@@ -22,6 +22,11 @@ export type ScooterState = {
   /** Upright tilt (rad, + toward local +x) and its angular velocity while parked. */
   tip: number; tipVel: number;
 };
+
+/** Scene objects whose transforms describe how this player looks right now (streamed to room peers). */
+export type AvatarRig = { body: THREE.Object3D[]; ragdoll: THREE.Object3D[]; scooter: THREE.Object3D[] };
+/** Another player's body on the ground plane, for bumping. */
+export type OtherBody = { x: number; z: number; r: number };
 
 export type GameState = {
   health: number;
@@ -46,6 +51,10 @@ export type GameState = {
   bench: { seat: number; phase: "sit" | "seated" | "stand"; startedAt: number; origin: THREE.Vector3; originYaw: number } | null;
   seatOccupants: Map<number, string>;
   interactQueued: boolean;
+  avatar: AvatarRig;
+  others: OtherBody[];
+  /** Other players' parked scooters: solid, but only their owners can move them. */
+  otherBikes: SolidBox[];
 };
 
 export function createState(save: SaveData): GameState {
@@ -69,6 +78,9 @@ export function createState(save: SaveData): GameState {
     accident: save.accident ? { phase: save.accident.phase, startedAt: -(KNOCKDOWN_SECONDS - save.accident.remaining), riseStartedAt: save.accident.phase === "rising" ? -(GET_UP_SECONDS - save.accident.remaining) : null, vehicleId: null, direction: save.accident.direction, launchSpeed: 0, seed: save.accident.seed } : null,
     incidents: [],
     interactQueued: false,
+    avatar: { body: [], ragdoll: [], scooter: [] },
+    others: [],
+    otherBikes: [],
     seatOccupants: new Map(save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? [[save.benchSeat, "player"]] : []),
     bench: save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? { seat: save.benchSeat, phase: "seated", startedAt: 0, origin: new THREE.Vector3(...save.pos), originYaw: save.rotY } : null,
     scooter: {

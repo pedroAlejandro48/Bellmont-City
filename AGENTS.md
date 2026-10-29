@@ -4,6 +4,8 @@
 - Player progress is one JSON blob per user at `data/users/<id>/save` (SaveData type in config.ts); add new saved fields there with defaults in DEFAULT_SAVE so old saves still load.
 - Save loading validates known fields, retains unknown fields, and blocks gameplay on cloud read failures; user-scoped timestamped local backups recover newer unsynced progress without changing save ownership.
 - Sign-in is the viewer's claude.ai identity (no passwords). Usernames are normalized through src/lib/usernames.ts and claimed in `players/<id>` under a short `claims/<name>` lease so two players cannot take one name.
+- Multiplayer lives in src/multiplayer. Rooms are `rooms/<CODE>` documents (seed, createdAt) plus a named `room` channel; each player streams their whole pose (body groups, ragdoll parts, scooter) in presence, and peers interpolate it (pose.ts). Each computer moves only its own player: bumping (bump.ts) and spawning beside someone (spawn.ts) are resolved locally against other players' streamed positions. Traffic is simulated per player.
+- A room world keeps its seed through deaths, and its clock comes from the room's creation time.
 - Guests (and anyone outside claude.ai) play with a browser-local save in GuestGame.
 - Health and death reset rules stay pure in config.ts; runtime impact/death state lives in GameState, and saves are serialized so old writes cannot overwrite a reset.
 - On-foot movement is ground-only and camera-relative; player facing does not rotate the view. CameraRig owns mouse inactivity and forward-travel timers, saved camera azimuth, and sphere-swept Rapier collision; scooter steering remains heading-based so vehicle controls and obstacles stay coherent.

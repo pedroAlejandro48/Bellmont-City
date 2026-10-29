@@ -151,10 +151,20 @@ export function Ragdoll({ state }: { state: GameState }) {
       state.accident = null; state.keys.clear(); state.jumpQueued = false;
     }
   });
-  return <>{PARTS.map((part, i) => <group key={i} ref={(el) => { meshes.current[i] = el; }} visible={false}>
+  useEffect(() => {
+    state.avatar.ragdoll = meshes.current.filter((m): m is THREE.Group => m !== null);
+    return () => { state.avatar.ragdoll = []; };
+  }, [state]);
+  return <RagdollMeshes mat={mat} groupRef={(i, el) => { meshes.current[i] = el; }} />;
+}
+
+/** The ragdoll's part meshes, each group placed at its part's world transform (hidden until shown). */
+export function RagdollMeshes({ mat, groupRef }: { mat: THREE.Material; groupRef: (index: number, group: THREE.Group | null) => void }) {
+  return <>{PARTS.map((part, i) => <group key={i} ref={(el) => groupRef(i, el)} visible={false}>
     <mesh visible={i !== 0} material={mat} castShadow receiveShadow rotation-z={'sideways' in part ? Math.PI / 2 : 0}>
       {i === 2 ? <sphereGeometry args={[0.14, 20, 14]} /> : <capsuleGeometry args={[i === 0 ? 0.115 : i === 1 ? 0.16 : i >= 7 ? 0.06 : 0.075, Math.max(0.01, part.len - (i === 1 ? 0.22 : i === 0 ? 0.08 : 0.03)), 6, 12]} />}
     </mesh>
-
   </group>)}</>;
 }
+
+export const RAGDOLL_PART_COUNT = PARTS.length;

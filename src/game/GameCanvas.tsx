@@ -16,11 +16,12 @@ import { WorldRoads } from "./WorldRoads";
 import { PITCH, MPH_TO_MPS } from "./config";
 import { Scooter } from "./Scooter";
 import { BenchInteraction } from "./BenchInteraction";
+import type { GameExtras } from "./CloudGame";
 
 const BLOCKED = new Set(["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
 // HUD ticks never reconcile the physics/scene tree. Only a streamed cell does.
-const GameScene = memo(function GameScene({ state, x, z }: { state: GameState; x: number; z: number }) {
+const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameState; x: number; z: number; Extra?: GameExtras["Scene"] }) {
   const city = useMemo(() => generateCity(state.worldSeed, x, z), [state.worldSeed, x, z]);
   return <Canvas shadows dpr={[1, 1.25]} camera={{ fov: 60, near: 0.1, far: 1200 }}>
     <SkyAndLights state={state} />
@@ -32,12 +33,14 @@ const GameScene = memo(function GameScene({ state, x, z }: { state: GameState; x
         <PhysicsGround city={city} x={x} z={z} />
         <BenchInteraction state={state} /><Traffic state={state} /><Scooter state={state} /><Player state={state} city={city} />
         <Ragdoll state={state} /><CameraRig state={state} />
+        {Extra && <Extra state={state} />}
       </Physics>
     </Suspense>
   </Canvas>;
 });
 
-export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLabel = "Save & sign out" }: { state: GameState; onSignOut: () => void; onDeath: () => void; onReset: () => void; saving: boolean; exitLabel?: string }) {
+export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLabel = "Save & sign out", extras }: { state: GameState; onSignOut: () => void; onDeath: () => void; onReset: () => void; saving: boolean; exitLabel?: string; extras?: GameExtras | undefined }) {
+  const Overlay = extras?.Overlay;
   const [focus, setFocus] = useState(() => [Math.round(state.pos.x / PITCH) * PITCH, Math.round(state.pos.z / PITCH) * PITCH]);
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -98,7 +101,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
 
   return (
     <div className="fixed inset-0 bg-background">
-      <GameScene state={state} x={focus[0] ?? 0} z={focus[1] ?? 0} />
+      <GameScene state={state} x={focus[0] ?? 0} z={focus[1] ?? 0} Extra={extras?.Scene} />
 
       <div className="pointer-events-none fixed inset-0 z-10">
         <div className="flex justify-center pt-5">
@@ -109,12 +112,16 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
             </span>
           </div>
         </div>
-        <div className="absolute right-4 top-20 flex items-center gap-3 sm:top-4">
-          {saving && <span className="text-xs text-muted-foreground">Saving…</span>}
-          <Button disabled={dead} onClick={onSignOut} className="pointer-events-auto">
-            {exitLabel}
-          </Button>
+        <div className="absolute right-4 top-20 flex flex-col items-end gap-1.5 sm:top-4">
+          <div className="flex items-center gap-3">
+            {saving && <span className="text-xs text-muted-foreground">Saving…</span>}
+            <Button disabled={dead} onClick={onSignOut} className="pointer-events-auto">
+              {exitLabel}
+            </Button>
+          </div>
+          {extras?.exitNote && <span className="text-sm font-bold tracking-wide text-white">{extras.exitNote}</span>}
         </div>
+        {Overlay && <Overlay state={state} />}
         {riding && <div className="hud-panel absolute bottom-24 left-1/2 flex h-16 w-40 -translate-x-1/2 items-baseline justify-center gap-2 px-4 py-3" aria-label="Scooter speed"><span className="font-display text-3xl tabular-nums">{speed}</span><span className="text-xs text-muted-foreground">MPH</span></div>}
         <div className="absolute bottom-6 left-1/2 w-64 max-w-[calc(100%-2rem)] -translate-x-1/2 hud-panel px-4 py-3">
           <div className="mb-2 flex justify-between text-xs font-bold">
