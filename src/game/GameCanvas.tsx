@@ -40,7 +40,7 @@ const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameS
 });
 
 export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLabel = "Save & sign out", extras }: { state: GameState; onSignOut: () => void; onDeath: () => void; onReset: () => void; saving: boolean; exitLabel?: string; extras?: GameExtras | undefined }) {
-  const Overlay = extras?.Overlay;
+  const Overlay = extras?.Overlay, Actions = extras?.Actions;
   const [focus, setFocus] = useState(() => [Math.round(state.pos.x / PITCH) * PITCH, Math.round(state.pos.z / PITCH) * PITCH]);
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -115,6 +115,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
         <div className="absolute right-4 top-20 flex flex-col items-end gap-1.5 sm:top-4">
           <div className="flex items-center gap-3">
             {saving && <span className="text-xs text-muted-foreground">Saving…</span>}
+            {Actions && <Actions />}
             <Button disabled={dead} onClick={onSignOut} className="pointer-events-auto">
               {exitLabel}
             </Button>

@@ -32,7 +32,7 @@ describe("room codes", () => {
       if (live.has(r.code)) return false;
       live.add(r.code);
       return true;
-    }, () => draws.shift() ?? 0.5);
+    }, "u_1", () => draws.shift() ?? 0.5);
     expect(room.code).toBe("SSSSSS");
     expect([...live]).toEqual(["AAAAAA", "SSSSSS"]);
   });

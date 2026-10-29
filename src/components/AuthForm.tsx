@@ -6,6 +6,8 @@ import {
 } from "@/platform/account";
 
 type AuthFormProps = {
+  /** The room a shared link points to, shown under the title. */
+  room?: string | null;
   /** Signed in (or just signed up); `password` is passed along when one was typed, for choosing a username. */
   onSignedIn: (account: Account, password: string | null) => void;
   children?: ReactNode;
@@ -23,7 +25,7 @@ function GoogleMark() {
 
 const message = (error: unknown) => (error instanceof AccountError ? error.message : "Something went wrong. Please try again.");
 
-export function AuthForm({ onSignedIn, children }: AuthFormProps) {
+export function AuthForm({ room, onSignedIn, children }: AuthFormProps) {
   const [mode, setMode] = useState<"in" | "up">("in");
   const [method, setMethod] = useState<"username" | "email">("username");
   const [email, setEmail] = useState("");
@@ -59,7 +61,9 @@ export function AuthForm({ onSignedIn, children }: AuthFormProps) {
     <div className="auth-bg flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <h1 className="font-display text-center text-5xl tracking-tight text-foreground">Bellmont city</h1>
-        <p className="mt-2 text-center text-sm text-muted-foreground">Ten minutes of sun. Ten minutes of moon. Real life in a game.</p>
+        {room
+          ? <p className="mt-2 text-center font-display text-2xl tracking-[0.12em] text-foreground">Room {room}</p>
+          : <p className="mt-2 text-center text-sm text-muted-foreground">Ten minutes of sun. Ten minutes of moon. Real life in a game.</p>}
         <form onSubmit={submit} className="hud-panel mt-8 space-y-4 p-6">
           <div className="flex gap-1 rounded-md bg-muted p-1">
             {(["in", "up"] as const).map((m) => (

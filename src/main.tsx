@@ -8,9 +8,15 @@ import { CloudGame } from "@/game/CloudGame";
 import { GuestGame } from "@/game/GuestGame";
 import { RoomEntry, type RoomRequest } from "@/multiplayer/RoomGame";
 import { isSignedIn, signOutAccount, watchAccount, type Account } from "@/platform/account";
+import { normalizeRoomCode } from "@/platform/rooms";
 import "./styles.css";
 
 type View = { name: "menu" | "city" | "guest" } | { name: "room"; request: RoomRequest };
+
+/** A shared room link (`?room=CODE`): the room to open once the player is signed in. */
+function linkedRoom() {
+  return normalizeRoomCode(new URLSearchParams(window.location.search).get("room") ?? "");
+}
 
 function App() {
   const [account, setAccount] = useState<Account | null>(null);
@@ -20,12 +26,22 @@ function App() {
   const [password, setPassword] = useState<string | null>(null);
   const [view, setView] = useState<View>({ name: "menu" });
   const [menuMessage, setMenuMessage] = useState<string>();
+  const [pendingRoom, setPendingRoom] = useState(linkedRoom);
   const toMenu = useCallback((message?: string) => { setMenuMessage(message); setView({ name: "menu" }); }, []);
 
   useEffect(() => watchAccount(
     (next) => { setAccount(next); setLoading(false); setLoadFailed(false); },
     () => { setLoading(false); setLoadFailed(true); },
   ), []);
+
+  // Once signed in with a username and gender, a shared link takes the player straight into its room.
+  const ready = !!account?.username && !!account.gender;
+  useEffect(() => {
+    if (!ready || !pendingRoom) return;
+    setView({ name: "room", request: { mode: "join", code: pendingRoom } });
+    setPendingRoom(null);
+    window.history.replaceState(null, "", window.location.pathname);
+  }, [ready, pendingRoom]);
 
   const signOut = useCallback(async () => {
     await signOutAccount();
@@ -41,7 +57,7 @@ function App() {
   </div>;
 
   if (!account) return (
-    <AuthForm onSignedIn={(signedIn, typed) => {
+    <AuthForm room={pendingRoom} onSignedIn={(signedIn, typed) => {
       if (!isSignedIn(signedIn.id)) return;
       setAccount(signedIn); setPassword(signedIn.username && signedIn.gender ? null : typed); toMenu();
     }}>

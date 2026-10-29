@@ -20,12 +20,21 @@ the Realtime Database for live multiplayer, and Hosting for the website.
 After signing in, players choose **Go to my city** or a shared room:
 
 - **Create a room** makes a new random world under a unique 6-character code (`rooms/<CODE>` in Firestore),
-  shown in game as `ROOM CODE: …`. A code is never reused while its room exists; the room is deleted when its
-  last player leaves.
-- **Join a room** loads the world for a typed code. Rooms hold up to 10 players, and share the time of day.
-- Each open tab keeps `rooms/<CODE>/peers/<id>` in the Realtime Database (removed on disconnect) with its
-  pose, ~30 updates a second while moving; others draw it 80 ms in the past, interpolated, with a username
-  label (typewriter font, hidden behind anything in front of it).
+  shown in game as `ROOM CODE: …`, with a one-time reminder to keep the code. A code is never reused while its
+  room exists. Rooms are kept until their creator deletes them (⚙ menu, creator only, which sends everyone
+  inside back to the menu) or until 30 days pass with nobody entering (Firestore TTL on `expiresAt`).
+- **Join a room** loads the world for a typed code, or open a shared link (`/?room=CODE`, ⚙ → Share), which
+  signs the player in and goes straight to the room. Rooms hold up to 10 players and share the time of day.
+- Live data is in the Realtime Database under `rooms/<CODE>-<createdAt>`: each open tab's presence
+  (`peers/<id>`, removed on disconnect) with its pose ~30 times a second while moving, drawn 80 ms in the
+  past and interpolated, with a username label; and the room's bikes (`bikes/<uid>`, one per player who has
+  joined). Anyone can ride any bike: a player takes control of the free bike they walk up to.
+- The online list (top left) shows the creator with a crown.
+
+## Accounts and characters
+
+Signing up ends with choosing a username and Female or Male; both are permanent. Female characters are light
+pink and male ones light blue.
 
 ## Setup (once)
 
@@ -33,7 +42,10 @@ After signing in, players choose **Go to my city** or a shared room:
 2. **Authentication** → Get started → enable **Email/Password** and **Google**.
 3. **Firestore Database** → Create database (production mode).
 4. **Realtime Database** → Create database (locked mode).
-5. **Project settings** → Your apps → add a **Web app**, and copy its `projectId`, `apiKey` and `appId` into
+5. **Firestore** → TTL policies: add one on collection group `rooms`, field `expiresAt` (deletes rooms
+   nobody has entered for 30 days).
+6. **Realtime Database** → Rules: paste `database.rules.json` (the deploy script can also upload it).
+7. **Project settings** → Your apps → add a **Web app**, and copy its `projectId`, `apiKey` and `appId` into
    `.env.local` (see `.env.example`).
 
 ## Development

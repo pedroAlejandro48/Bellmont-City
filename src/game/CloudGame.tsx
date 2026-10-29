@@ -19,7 +19,13 @@ export type WorldSlot = {
 };
 
 /** Extra HUD and scene content, as stable component types so HUD ticks never rebuild the 3D scene. */
-export type GameExtras = { Overlay?: ComponentType<{ state: GameState }>; Scene?: ComponentType<{ state: GameState }>; exitNote?: string };
+export type GameExtras = {
+  Overlay?: ComponentType<{ state: GameState }>;
+  Scene?: ComponentType<{ state: GameState }>;
+  /** Shown just left of the exit button, at its height. */
+  Actions?: ComponentType;
+  exitNote?: string;
+};
 
 function freshSave(world: WorldSlot | undefined, previousSeed?: number): SaveData {
   const fresh = resetProgress(previousSeed);

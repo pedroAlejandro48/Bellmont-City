@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, User } from "lucide-react";
+import { ChevronDown, Crown, User } from "lucide-react";
 import { CloudGame, type GameExtras, type WorldSlot } from "@/game/CloudGame";
 import { DEFAULT_SAVE } from "@/game/config";
 import type { GameState } from "@/game/state";
 import { playerOf, type Account } from "@/platform/account";
 import type { NamedRoom, Peer } from "@/platform/realtime";
-import { createRoom, deleteRoom, findRoom, joinRoomChannel, ROOM_CAPACITY, type RoomInfo } from "@/platform/rooms";
+import { createRoom, deleteRoom, findRoom, joinRoomChannel, ROOM_CAPACITY, touchRoom, watchRoom, type RoomInfo } from "@/platform/rooms";
+import { RoomCreatedNotice, RoomMenu, roomNoticeHidden } from "./RoomMenu";
 import { isPoseWire } from "./pose";
 import { remotePeers, RoomScene, type RemotePlayers } from "./RoomScene";
 import { RoomBikes } from "./RoomBikes";
@@ -17,7 +18,9 @@ const SETTLE_MS = 1500;
 const POSE_WAIT_MS = 4000;
 
 export type RoomRequest = { mode: "create" } | { mode: "join"; code: string };
-type Session = { room: RoomInfo; channel: NamedRoom; joinedAt: number };
+type Session = { room: RoomInfo; channel: NamedRoom; joinedAt: number; created: boolean };
+/** While someone is inside, the room's 30-day expiry keeps being pushed back. */
+const TOUCH_MS = 6 * 60 * 60 * 1000;
 
 /** Creates or joins a room, then runs the game in it. Problems send the player back with a message. */
 export function RoomEntry({ account, request, onExit }: { account: Account; request: RoomRequest; onExit: (message?: string) => void }) {
@@ -31,7 +34,8 @@ export function RoomEntry({ account, request, onExit }: { account: Account; requ
       try {
         const room = request.mode === "create" ? await createRoom(account) : await findRoom(request.code);
         if (!room) return onExit("No room has that code.");
-        channel = await joinRoomChannel(room.code, account);
+        if (request.mode === "join") await touchRoom(room.code).catch(() => {});
+        channel = await joinRoomChannel(room, account);
         const joinedAt = Date.now();
         await channel.presence({ uid: account.id, joinedAt });
         await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
@@ -42,7 +46,7 @@ export function RoomEntry({ account, request, onExit }: { account: Account; requ
           await channel.leave();
           return onExit(`That room is full (${ROOM_CAPACITY} players).`);
         }
-        setSession({ room, channel, joinedAt });
+        setSession({ room, channel, joinedAt, created: request.mode === "create" });
       } catch {
         await channel?.leave().catch(() => {});
         onExit(request.mode === "create" ? "Could not create a room. Please try again." : "Could not join that room. Please try again.");
@@ -56,12 +60,13 @@ export function RoomEntry({ account, request, onExit }: { account: Account; requ
   return <RoomGame account={account} session={session} onExit={onExit} />;
 }
 
-function RoomGame({ account, session, onExit }: { account: Account; session: Session; onExit: () => void }) {
+function RoomGame({ account, session, onExit }: { account: Account; session: Session; onExit: (message?: string) => void }) {
   const { room, channel } = session;
   const remotes = useRef<RemotePlayers>(new Map()).current;
+  const [notice, setNotice] = useState(() => session.created && !roomNoticeHidden());
 
-  // Leaving (Save & exit, or closing the tab) frees the code once nobody else is in the room. After
-  // leaving, nothing more is sent, so a pose still in flight cannot bring this player back on others' lists.
+  // Leaving (Save & exit, or closing the tab) keeps the room for later. After leaving, nothing more is sent,
+  // so a pose still in flight cannot bring this player back on others' lists.
   const { live, leave } = useMemo(() => {
     let left = false;
     const live: NamedRoom = {
@@ -75,15 +80,25 @@ function RoomGame({ account, session, onExit }: { account: Account; session: Ses
     const leave = () => {
       if (left) return;
       left = true;
-      if (remotePeers(channel.peers()).length === 0) void deleteRoom(room.code).catch(() => {});
       void channel.leave().catch(() => {});
     };
     return { live, leave };
-  }, [account, room.code, channel]);
+  }, [channel]);
   useEffect(() => {
     window.addEventListener("pagehide", leave);
     return () => window.removeEventListener("pagehide", leave);
   }, [leave]);
+
+  // When the creator deletes the room, everyone in it goes back to the menu.
+  const deletingHere = useRef(false);
+  useEffect(() => watchRoom(room.code, () => {
+    leave();
+    onExit(deletingHere.current ? "Room deleted." : "This room was deleted by its creator.");
+  }), [room.code, leave, onExit]);
+  useEffect(() => {
+    const id = window.setInterval(() => { void touchRoom(room.code).catch(() => {}); }, TOUCH_MS);
+    return () => window.clearInterval(id);
+  }, [room.code]);
 
   const world = useMemo<WorldSlot>(() => ({
     slot: `room-${room.code}`,
@@ -103,13 +118,17 @@ function RoomGame({ account, session, onExit }: { account: Account; session: Ses
   const extras = useMemo<GameExtras>(() => ({
     Scene: ({ state }: { state: GameState }) => <>
       <RoomScene state={state} channel={live} remotes={remotes} joinedAt={session.joinedAt} />
-      <RoomBikes state={state} code={room.code} uid={account.id} channel={live} />
+      <RoomBikes state={state} code={room.key} uid={account.id} channel={live} />
     </>,
-    Overlay: () => <OnlinePanel account={account} channel={live} />,
+    Overlay: () => <OnlinePanel account={account} channel={live} creator={room.createdBy} />,
+    Actions: () => <RoomMenu code={room.code} canDelete={room.createdBy === account.id} onDelete={async () => { deletingHere.current = true; await deleteRoom(room); }} />,
     exitNote: `ROOM CODE: ${room.code}`,
-  }), [account, live, remotes, room.code, session.joinedAt]);
+  }), [account, live, remotes, room, session.joinedAt]);
 
-  return <CloudGame account={account} world={world} extras={extras} onExit={() => { leave(); onExit(); }} />;
+  return <>
+    <CloudGame account={account} world={world} extras={extras} onExit={() => { leave(); onExit(); }} />
+    {notice && <RoomCreatedNotice code={room.code} onClose={() => setNotice(false)} />}
+  </>;
 }
 
 /** Bellmont usernames by account id, read from each player's own `players/<id>` document. */
@@ -132,7 +151,7 @@ const joinedAt = (p: Peer) => (typeof p.presence["joinedAt"] === "number" ? p.pr
 const accountOf = (p: Peer) => p.by ?? (typeof p.presence["uid"] === "string" ? p.presence["uid"] : null);
 
 /** Top-left "people here" box: you first, then everyone else in the order they arrived. */
-function OnlinePanel({ account, channel }: { account: Account; channel: NamedRoom }) {
+function OnlinePanel({ account, channel, creator }: { account: Account; channel: NamedRoom; creator: string }) {
   const [open, setOpen] = useState(false);
   const [peers, setPeers] = useState<readonly Peer[]>(() => channel.peers());
   useEffect(() => channel.onPeers(({ peers: next, joined, left }) => {
@@ -161,8 +180,9 @@ function OnlinePanel({ account, channel }: { account: Account; channel: NamedRoo
       {people.map((p) => {
         const id = accountOf(p);
         const name = (id && names[id]) || (p.sameTab ? account.username : null) || "Player";
-        return <li key={p.peer} className="truncate px-3 py-1.5">
-          {name}{p.sameTab && <span className="text-muted-foreground"> (you)</span>}
+        return <li key={p.peer} className="flex items-center gap-1.5 truncate px-3 py-1.5">
+          {id === creator && <Crown className="h-3.5 w-3.5 shrink-0 fill-yellow-400 text-yellow-400" aria-label="Room creator" />}
+          <span className="truncate">{name}{p.sameTab && <span className="text-muted-foreground"> (you)</span>}</span>
         </li>;
       })}
     </ul>}
