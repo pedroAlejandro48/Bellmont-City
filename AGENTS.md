@@ -8,6 +8,8 @@
 - A room world keeps its seed through deaths, and its clock comes from the room's creation time.
 - Room bikes: each tab controls at most one bike (`state.scooter`, id null = none, parked far away); RoomBikes claims the free bike a player walks up to with an RTDB transaction, releases it when walked away from or when another player is clearly closer, and draws parked ones. Only the controller simulates a bike.
 - Vehicles: walkers and bikes resolve against traffic footprints (`state.vehicles`); contact only causes an accident above 10 mph (vehicleContactHurts). Bikes push cars/taxis at BIKE_PUSH_SPEED through `state.vehiclePushes`; buses and trucks never move. Traffic and bike Rapier colliders never touch (collision groups).
+- Roads: every lane is ROAD_LANE_WIDTH (6 m). Streets are 12 m; the two main roads (MAIN_ROAD_CENTER on each axis) are 24 m, widening away from the park so blocks just past them (blockSpan(1)) are 28 m. Use streetCenter/nearestStreet/nextStreet/blockSpan rather than PITCH arithmetic. Countryside roads (WorldRoads) are continuous ribbons that start just inside the city's ground and share its asphalt texture and UV mapping (cityAsphalt, CITY_GROUND_SIZE).
+- Bike crashes: above BIKE_CRASH_MPH (20) a ridden bike crashes into anything it hits (crashBike, no vehicle involved); hitting another player or their bike queues `state.impacts`, which the room code sends (presence `hit`, bike `knock`).
 - Player profiles (`players/<uid>`: username, gender) are write-once; gender sets the character colour (bodyColor).
 - Guests play with a browser-local save in GuestGame.
 - Health and death reset rules stay pure in config.ts; runtime impact/death state lives in GameState, and saves are serialized so old writes cannot overwrite a reset.

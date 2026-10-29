@@ -104,6 +104,11 @@ export function makeBackDoor() {
   return map;
 }
 
+/** The streets' asphalt, mapped once across CITY_GROUND_SIZE (shared by city streets and countryside roads). */
+export function cityAsphalt() {
+  return makeNoise("#2f3134", "#8a8a8a", 90);
+}
+
 export function makeNoise(base: string, speck: string, repeat: number, grid?: string) {
   const r = rng(base.length * 31 + repeat);
   const [c, g] = canvas(256, 256);

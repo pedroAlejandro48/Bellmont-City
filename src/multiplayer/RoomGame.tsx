@@ -117,7 +117,7 @@ function RoomGame({ account, session, onExit }: { account: Account; session: Ses
 
   const extras = useMemo<GameExtras>(() => ({
     Scene: ({ state }: { state: GameState }) => <>
-      <RoomScene state={state} channel={live} remotes={remotes} joinedAt={session.joinedAt} />
+      <RoomScene state={state} channel={live} remotes={remotes} joinedAt={session.joinedAt} creator={room.createdBy} />
       <RoomBikes state={state} code={room.key} uid={account.id} channel={live} />
     </>,
     Overlay: () => <OnlinePanel account={account} channel={live} creator={room.createdBy} />,

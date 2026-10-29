@@ -1,52 +1,97 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import * as THREE from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { WORLD_HALF, wildernessCenter } from "./config";
-import { makeNoise } from "./textures";
+import { CITY_GROUND_SIZE, MAIN_ROAD_CENTER, MAIN_ROAD_WIDTH, ROAD_LANE_WIDTH, WORLD_HALF, wildernessCenter } from "./config";
+import { cityAsphalt, makeNoise } from "./textures";
 
+/** Centre-line samples every STEP metres; short enough that the ribbon's curves look smooth. */
+const STEP = 2;
+const REACH = 350;
+/** The countryside road starts just inside the city's own street surface, so the two overlap seamlessly. */
+const START = WORLD_HALF + 6 - 1;
+
+type Ribbon = { positions: number[]; uvs: number[]; indices: number[] };
+
+/**
+ * A strip `width` wide following the curve `centerAt(t)` (t along the axis), sampled every STEP, with
+ * texture coordinates in world space matching the city's ground plane, so its asphalt lines up with the city's.
+ */
+function ribbon(axis: "x" | "z", from: number, to: number, offset: number, width: number, y: number, centerAt: (t: number) => number, out: Ribbon) {
+  const at = (t: number): [number, number] => {
+    const c = centerAt(t) + offset;
+    return axis === "x" ? [t, c] : [c, t];
+  };
+  const base = out.positions.length / 3;
+  let rows = 0;
+  for (let t = from; ; t = Math.min(to, t + STEP)) {
+    const [px, pz] = at(t);
+    const [ax, az] = at(t - 0.5), [bx, bz] = at(t + 0.5);
+    const len = Math.hypot(bx - ax, bz - az) || 1;
+    const nx = -(bz - az) / len, nz = (bx - ax) / len;
+    for (const side of [-1, 1]) {
+      const x = px + nx * side * width / 2, z = pz + nz * side * width / 2;
+      out.positions.push(x, y, z);
+      out.uvs.push(0.5 + x / CITY_GROUND_SIZE, 0.5 - z / CITY_GROUND_SIZE);
+    }
+    if (rows > 0) {
+      const i = base + (rows - 1) * 2;
+      out.indices.push(i, i + 2, i + 1, i + 1, i + 2, i + 3);
+    }
+    rows++;
+    if (t >= to) break;
+  }
+}
+
+/** Dashes along a curve: `dash` metres painted, then the same gap. */
+function dashes(axis: "x" | "z", from: number, to: number, offset: number, width: number, y: number, centerAt: (t: number) => number, dash: number, out: Ribbon) {
+  for (let t = Math.ceil(from / (dash * 2)) * dash * 2; t < to; t += dash * 2) ribbon(axis, t, Math.min(to, t + dash), offset, width, y, centerAt, out);
+}
+
+function toGeometry(r: Ribbon) {
+  if (!r.indices.length) return null;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(r.positions, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(r.uvs, 2));
+  g.setIndex(r.indices);
+  g.computeVertexNormals();
+  return g;
+}
+
+/**
+ * The four-lane main roads continuing from the city into the countryside, in both directions on both axes,
+ * as continuous strips with the city's asphalt and markings. (The ring road around the city is part of the
+ * city's own street surface.)
+ */
 export function WorldRoads({ x, z, seed }: { x: number; z: number; seed: number }) {
   const assets = useMemo(() => {
-    const road: THREE.BufferGeometry[] = [], stripes: THREE.BufferGeometry[] = [], lanes: THREE.BufferGeometry[] = [];
-    function strip(a: [number, number], b: [number, number], width: number, y: number, list: THREE.BufferGeometry[]) {
-      const g = new THREE.BoxGeometry(width, 0.03, Math.hypot(b[0] - a[0], b[1] - a[1]) + 0.15);
-      g.rotateY(Math.atan2(b[0] - a[0], b[1] - a[1])); g.translate((a[0] + b[0]) / 2, y, (a[1] + b[1]) / 2); list.push(g);
-    }
+    const road: Ribbon = { positions: [], uvs: [], indices: [] };
+    const yellow: Ribbon = { positions: [], uvs: [], indices: [] };
+    const white: Ribbon = { positions: [], uvs: [], indices: [] };
     for (const axis of ["x", "z"] as const) {
-      const center = axis === "x" ? x : z;
-      for (let t = Math.floor((center - 350) / 8) * 8; t < center + 350; t += 8) {
-        if (Math.abs(t) < WORLD_HALF) continue;
-        const c1 = wildernessCenter(axis, t, seed), c2 = wildernessCenter(axis, t + 8, seed);
-        const a: [number, number] = axis === "x" ? [t, c1] : [c1, t];
-        const b: [number, number] = axis === "x" ? [t + 8, c2] : [c2, t + 8];
-        strip(a, b, 12, 0.03, road);
-        strip(a, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], 0.15, 0.06, stripes);
-        for (const offset of [-3, 3]) {
-          const aa: [number, number] = axis === "x" ? [a[0], a[1] + offset] : [a[0] + offset, a[1]];
-          const bb: [number, number] = axis === "x" ? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2 + offset] : [(a[0] + b[0]) / 2 + offset, (a[1] + b[1]) / 2];
-          strip(aa, bb, 0.12, 0.06, lanes);
-        }
+      const along = axis === "x" ? x : z;
+      const across = axis === "x" ? z : x;
+      const centerAt = (t: number) => wildernessCenter(axis, t, seed);
+      // Only build what is near the player: a road swings at most ~65 m from the main road's line.
+      if (Math.abs(across - MAIN_ROAD_CENTER) > REACH + 70) continue;
+      for (const sign of [-1, 1]) {
+        const lo = Math.max(START, sign * along - REACH), hi = sign * along + REACH;
+        if (hi <= lo) continue;
+        const span = (from: number, to: number): [number, number] => (sign === 1 ? [from, to] : [-to, -from]);
+        const [a, b] = span(lo, hi);
+        ribbon(axis, a, b, 0, MAIN_ROAD_WIDTH, 0.002, centerAt, road);
+        // Same markings as the city's main roads: a dashed yellow centre line and white lane dividers.
+        dashes(axis, a, b, 0, 0.18, 0.012, centerAt, 2.5, yellow);
+        for (const offset of [-ROAD_LANE_WIDTH, ROAD_LANE_WIDTH]) dashes(axis, a, b, offset, 0.12, 0.012, centerAt, 2.5, white);
       }
     }
-    // Local section of the fully connected square perimeter road.
-    for (const side of [-1, 1]) {
-      const boundary = side * WORLD_HALF;
-      if (Math.abs(z - boundary) < 350) {
-        strip([Math.max(-WORLD_HALF, x - 350), boundary], [Math.min(WORLD_HALF, x + 350), boundary], 12, 0.03, road);
-        for (let t = Math.ceil(Math.max(-WORLD_HALF, x - 350) / 8) * 8; t < Math.min(WORLD_HALF, x + 350); t += 8) strip([t, boundary], [t + 4, boundary], 0.15, 0.06, stripes);
-      }
-      if (Math.abs(x - boundary) < 350) {
-        strip([boundary, Math.max(-WORLD_HALF, z - 350)], [boundary, Math.min(WORLD_HALF, z + 350)], 12, 0.03, road);
-        for (let t = Math.ceil(Math.max(-WORLD_HALF, z - 350) / 8) * 8; t < Math.min(WORLD_HALF, z + 350); t += 8) strip([boundary, t], [boundary, t + 4], 0.15, 0.06, stripes);
-      }
-    }
-    const merge = (g: THREE.BufferGeometry[]) => { if (!g.length) return null; const result = mergeGeometries(g); g.forEach((v) => v.dispose()); return result; };
-    return { road: merge(road), stripes: merge(stripes), lanes: merge(lanes) };
+    return { road: toGeometry(road), yellow: toGeometry(yellow), white: toGeometry(white) };
   }, [x, z, seed]);
-  const textures = useMemo(() => ({ asphalt: makeNoise("#34383a", "#8c9391", 30), ground: makeNoise("#516c42", "#7d895e", 60) }), []);
+  useEffect(() => () => { assets.road?.dispose(); assets.yellow?.dispose(); assets.white?.dispose(); }, [assets]);
+  const textures = useMemo(() => ({ asphalt: cityAsphalt(), ground: makeNoise("#516c42", "#7d895e", 60) }), []);
   return <>
     <mesh position={[x, -0.04, z]} rotation-x={-Math.PI / 2} receiveShadow><planeGeometry args={[900, 900]} /><meshStandardMaterial map={textures.ground} roughness={1} /></mesh>
-    {assets.road && <mesh geometry={assets.road} receiveShadow><meshStandardMaterial map={textures.asphalt} roughness={0.95} /></mesh>}
-    {assets.stripes && <mesh geometry={assets.stripes}><meshStandardMaterial color="#e8c547" roughness={0.8} /></mesh>}
-    {assets.lanes && <mesh geometry={assets.lanes}><meshStandardMaterial color="#d8dcd7" roughness={0.8} /></mesh>}
+    {assets.road && <mesh geometry={assets.road} receiveShadow><meshStandardMaterial map={textures.asphalt} roughness={0.95} polygonOffset polygonOffsetFactor={-1} /></mesh>}
+    {assets.yellow && <mesh geometry={assets.yellow}><meshStandardMaterial color="#e8c547" roughness={0.8} polygonOffset polygonOffsetFactor={-2} /></mesh>}
+    {assets.white && <mesh geometry={assets.white}><meshStandardMaterial color="#d8dcd7" roughness={0.8} polygonOffset polygonOffsetFactor={-2} /></mesh>}
   </>;
 }
+

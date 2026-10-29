@@ -10,6 +10,8 @@ export const PITCH = BLOCK + STREET;
 export const N = 41;
 export const HALF = Math.floor(N / 2);
 export const WORLD_HALF = HALF * PITCH + PITCH / 2;
+/** The city's street surface: a square reaching the outer edge of the ring road. */
+export const CITY_GROUND_SIZE = WORLD_HALF * 2 + 12;
 export const SIDEWALK_H = 0.15;
 
 export type TimeInfo = {
@@ -131,19 +133,48 @@ export const PERSON_MASS = 81;
 export const SCOOTER_MASS = 110;
 export function bikePushShare() { return PERSON_MASS / (PERSON_MASS + SCOOTER_MASS); }
 
-export const MAIN_ROAD_CENTER = PITCH / 2;
-export const ROAD_LANE_WIDTH = 3;
+/**
+ * Streets are 12 m wide with one 6 m lane each way. The two main roads (one per axis, plus their countryside
+ * continuations) have two 6 m lanes each way, so they are 24 m wide: they keep the street's edge on the park's
+ * side and widen away from it, which narrows the blocks just past them (see blockSpan).
+ */
+export const ROAD_LANE_WIDTH = 6;
+export const MAIN_ROAD_WIDTH = 4 * ROAD_LANE_WIDTH;
+export const MAIN_ROAD_CENTER = PITCH / 2 - STREET / 2 + MAIN_ROAD_WIDTH / 2;
 export const TRAFFIC_SPAWN_GAP = 11.1;
-export function roadLaneOffsets(main: boolean) { return main ? [1.5, 4.5] : [3]; }
+export function roadLaneOffsets(main: boolean) { return main ? [ROAD_LANE_WIDTH / 2, ROAD_LANE_WIDTH * 1.5] : [ROAD_LANE_WIDTH / 2]; }
+/** Centre line of street k across one axis (k = 0 is the main road). */
+export function streetCenter(k: number) { return k === 0 ? MAIN_ROAD_CENTER : k * PITCH + PITCH / 2; }
+export function streetHalfWidth(center: number) { return Math.abs(center - MAIN_ROAD_CENTER) < 0.1 ? MAIN_ROAD_WIDTH / 2 : STREET / 2; }
+/** The street centres around coordinate t, in order (a main road can be nearer than the grid suggests). */
+function streetsNear(t: number) {
+  const k = Math.round((t - PITCH / 2) / PITCH);
+  return [k - 1, k, k + 1].map(streetCenter);
+}
+/** The nearest street centre to t across one axis. */
+export function nearestStreet(t: number) {
+  return streetsNear(t).reduce((best, c) => (Math.abs(c - t) < Math.abs(best - t) ? c : best));
+}
+/** The next street centre strictly ahead of t when moving in `dir`. */
+export function nextStreet(t: number, dir: 1 | -1) {
+  const k = Math.floor((t - PITCH / 2) / PITCH);
+  const candidates = [k - 1, k, k + 1, k + 2].map(streetCenter);
+  return dir === 1 ? Math.min(...candidates.filter((c) => c > t + 1e-6)) : Math.max(...candidates.filter((c) => c < t - 1e-6));
+}
+/** Where block i spans across one axis: 40 m, except past a main road, where the wider road takes 12 m. */
+export function blockSpan(i: number): [number, number] {
+  const lo = i * PITCH - BLOCK / 2, hi = i * PITCH + BLOCK / 2;
+  return i === 1 ? [MAIN_ROAD_CENTER + MAIN_ROAD_WIDTH / 2, hi] : [lo, hi];
+}
 export function roadLane(axis: "x" | "z", dir: 1 | -1, center: number, slot = 0) {
   const main = Math.abs(center - MAIN_ROAD_CENTER) < 0.1;
   const offset = roadLaneOffsets(main)[slot] ?? 3;
   return center + (axis === "x" ? dir : -dir) * offset;
 }
 export function isTrafficRoad(x: number, z: number, seed: number) {
-  if (Math.max(Math.abs(x), Math.abs(z)) > WORLD_HALF + 6) return isWildernessRoad(x, z, seed, 6);
-  const distance = (v: number) => Math.abs(v - (Math.round((v - PITCH / 2) / PITCH) * PITCH + PITCH / 2));
-  return distance(x) <= 6 || distance(z) <= 6 || Math.abs(Math.abs(x) - WORLD_HALF) <= 6 || Math.abs(Math.abs(z) - WORLD_HALF) <= 6;
+  if (Math.max(Math.abs(x), Math.abs(z)) > WORLD_HALF + 6) return isWildernessRoad(x, z, seed, MAIN_ROAD_WIDTH / 2);
+  const onStreet = (v: number) => { const c = nearestStreet(v); return Math.abs(v - c) <= streetHalfWidth(c); };
+  return onStreet(x) || onStreet(z) || Math.abs(Math.abs(x) - WORLD_HALF) <= 6 || Math.abs(Math.abs(z) - WORLD_HALF) <= 6;
 }
 export function trafficSpawnClear(x: number, z: number, length: number, all: { x: number; z: number; kind: VehicleKind }[]) {
   return all.every((v) => Math.hypot(x - v.x, z - v.z) >= (length + VEHICLE_SIZE[v.kind][0]) / 2 + TRAFFIC_SPAWN_GAP);
@@ -152,7 +183,8 @@ export function trafficSpawnClear(x: number, z: number, length: number, all: { x
 export type Building = { x: number; z: number; w: number; d: number; h: number; variant: number };
 export type Prop = { x: number; z: number; rot: number; s: number; sidewalk?: boolean };
 export type City = {
-  blocks: { x: number; z: number; park: boolean }[];
+  /** Block centres and sizes (w across x, d across z). */
+  blocks: { x: number; z: number; w: number; d: number; park: boolean }[];
   buildings: Building[];
   trees: Prop[];
   lamps: Prop[];
@@ -165,12 +197,13 @@ export function cityRoadDashes(x: number, z: number) {
     const along = axis === "x" ? x : z, across = axis === "x" ? z : x;
     const cell = Math.round(across / PITCH);
     for (let k = Math.max(-HALF - 1, cell - 4); k <= Math.min(HALF, cell + 4); k++) {
-      const street = k * PITCH + PITCH / 2;
+      const street = streetCenter(k);
       for (let p = Math.ceil(Math.max(-WORLD_HALF, along - 220) / 6) * 6; p < Math.min(WORLD_HALF, along + 220); p += 6) {
-        const local = ((p + PITCH / 2) % PITCH + PITCH) % PITCH;
-        if (local < STREET / 2 + 1 || local > PITCH - STREET / 2 - 1) continue;
+        // No markings inside intersections.
+        const cross = nearestStreet(p);
+        if (Math.abs(p - cross) < streetHalfWidth(cross) + 1) continue;
         dashes.push({ x: axis === "x" ? p : street, z: axis === "x" ? street : p, rot: axis === "x" ? 0 : Math.PI / 2 });
-        if (Math.abs(street - MAIN_ROAD_CENTER) < 0.1) for (const offset of [-3, 3]) dashes.push({ x: axis === "x" ? p : street + offset, z: axis === "x" ? street + offset : p, rot: axis === "x" ? 0 : Math.PI / 2, divider: true });
+        if (Math.abs(street - MAIN_ROAD_CENTER) < 0.1) for (const offset of [-ROAD_LANE_WIDTH, ROAD_LANE_WIDTH]) dashes.push({ x: axis === "x" ? p : street + offset, z: axis === "x" ? street + offset : p, rot: axis === "x" ? 0 : Math.PI / 2, divider: true });
       }
     }
   }
@@ -184,23 +217,26 @@ export function generateCity(seed = 1337, focusX = 0, focusZ = 0): City {
   for (let i = Math.max(-HALF, fi - 3); i <= Math.min(HALF, fi + 3); i++) {
     for (let j = Math.max(-HALF, fj - 3); j <= Math.min(HALF, fj + 3); j++) {
       const r = rng(i === 0 && j === 0 ? PARK_SEED : seed ^ Math.imul(i + 101, 73856093) ^ Math.imul(j + 101, 19349663));
-      const cx = i * PITCH;
-      const cz = j * PITCH;
+      const [x0, x1] = blockSpan(i), [z0, z1] = blockSpan(j);
+      const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, bw = x1 - x0, bd = z1 - z0;
       const center = i === 0 && j === 0;
       const park = center || r() < GREEN_BLOCK_CHANCE;
-      city.blocks.push({ x: cx, z: cz, park });
+      city.blocks.push({ x: cx, z: cz, w: bw, d: bd, park });
       const dist = Math.hypot(i, j);
+      // Full blocks hold a 2×2 of buildings; a block narrowed by a main road holds one row across it.
+      const columns = (size: number) => (size >= BLOCK ? [-8, 8] : [0]);
       if (!park) {
-        for (const sx of [-1, 1])
-          for (const sz of [-1, 1]) {
+        for (const sx of columns(bw))
+          for (const sz of columns(bd)) {
             const w = 11 + r() * 3.5;
             const d = 11 + r() * 3.5;
             const floors = Math.floor(3 + r() * (dist < 1.5 ? 18 : dist < 3 ? 10 : 6));
-            city.buildings.push({ x: cx + sx * 8, z: cz + sz * 8, w, d, h: floors * 3, variant: Math.floor(r() * 4) });
+            city.buildings.push({ x: cx + sx, z: cz + sz, w, d, h: floors * 3, variant: Math.floor(r() * 4) });
           }
       } else if (!center) {
-        for (let a = -2; a <= 2; a++)
-          for (let b = -2; b <= 2; b++)
+        const reach = (size: number) => Math.floor((size / 2 - 8) / 6);
+        for (let a = -reach(bw); a <= reach(bw); a++)
+          for (let b = -reach(bd); b <= reach(bd); b++)
             if (r() < 0.7)
               city.trees.push({ x: cx + a * 6 + (r() - 0.5) * 2, z: cz + b * 6 + (r() - 0.5) * 2, rot: r() * 6, s: 0.98 + r() * 0.04 });
       }
@@ -211,16 +247,19 @@ export function generateCity(seed = 1337, focusX = 0, focusZ = 0): City {
         [1, 0, Math.PI / 2],
         [-1, 0, -Math.PI / 2],
       ];
+      // Props sit the same distance in from each kerb, however wide the block.
+      const inset = (size: number, fromEdge: number) => size / 2 - (BLOCK / 2 - fromEdge);
       for (const [ex, ez, rot] of edges) {
-        for (const k of [-15, 15]) {
-          const px = ex !== 0 ? cx + ex * 19.2 : cx + k;
-          const pz = ez !== 0 ? cz + ez * 19.2 : cz + k;
+        const along = ex !== 0 ? bd : bw;
+        for (const k of [-1, 1].map((sign) => sign * Math.min(15, along / 2 - 5))) {
+          const px = ex !== 0 ? cx + ex * inset(bw, 19.2) : cx + k;
+          const pz = ez !== 0 ? cz + ez * inset(bd, 19.2) : cz + k;
           city.lamps.push({ x: px, z: pz, rot, s: 1 });
         }
         for (const k of [-6, 6]) {
           // Center the full bed in the pavement between buildings and curb.
-          const px = ex !== 0 ? cx + ex * SIDEWALK_TREE_CENTER : cx + k;
-          const pz = ez !== 0 ? cz + ez * SIDEWALK_TREE_CENTER : cz + k;
+          const px = ex !== 0 ? cx + ex * inset(bw, SIDEWALK_TREE_CENTER) : cx + k;
+          const pz = ez !== 0 ? cz + ez * inset(bd, SIDEWALK_TREE_CENTER) : cz + k;
           city.trees.push({ x: px, z: pz, rot: r() * 6, s: 0.98 + r() * 0.04, sidewalk: true });
         }
       }
@@ -232,7 +271,7 @@ export function generateCity(seed = 1337, focusX = 0, focusZ = 0): City {
     for (let i = gx - 18; i <= gx + 18; i++) for (let j = gz - 18; j <= gz + 18; j++) {
       const r = rng(seed ^ Math.imul(i, 83492791) ^ Math.imul(j, 2971215073));
       const x = i * 14 + (r() - 0.5) * 8, z = j * 14 + (r() - 0.5) * 8;
-      if (Math.max(Math.abs(x), Math.abs(z)) < WORLD_HALF + 9 || isWildernessRoad(x, z, seed, 12)) continue;
+      if (Math.max(Math.abs(x), Math.abs(z)) < WORLD_HALF + 9 || isWildernessRoad(x, z, seed, MAIN_ROAD_WIDTH / 2 + 6)) continue;
       city.trees.push({ x, z, rot: r() * Math.PI * 2, s: 0.98 + r() * 0.04 });
     }
   }
@@ -244,8 +283,8 @@ export function floorHeight(x: number, z: number) {
   const i = Math.round(x / PITCH);
   const j = Math.round(z / PITCH);
   if (Math.abs(i) > HALF || Math.abs(j) > HALF) return 0;
-  if (Math.abs(x - i * PITCH) <= BLOCK / 2 && Math.abs(z - j * PITCH) <= BLOCK / 2) return SIDEWALK_H;
-  return 0;
+  const [x0, x1] = blockSpan(i), [z0, z1] = blockSpan(j);
+  return x >= x0 && x <= x1 && z >= z0 && z <= z1 ? SIDEWALK_H : 0;
 }
 
 export type SaveData = {
@@ -404,9 +443,9 @@ export function wildernessCenter(axis: "x" | "z", distance: number, seed: number
   const beyond = Math.max(0, Math.abs(distance) - WORLD_HALF);
   const phase = (seed % 1000) * 0.01 + (axis === "x" ? 0 : 2);
   const fade = 1 - Math.exp(-beyond / 150);
-  return PITCH / 2 + fade * (45 * Math.sin(beyond / 240 + phase) + 20 * Math.sin(beyond / 97 + phase));
+  return MAIN_ROAD_CENTER + fade * (45 * Math.sin(beyond / 240 + phase) + 20 * Math.sin(beyond / 97 + phase));
 }
-export function isWildernessRoad(x: number, z: number, seed: number, halfWidth = 6) {
+export function isWildernessRoad(x: number, z: number, seed: number, halfWidth = MAIN_ROAD_WIDTH / 2) {
   return (Math.abs(x) >= WORLD_HALF && Math.abs(z - wildernessCenter("x", x, seed)) < halfWidth) ||
     (Math.abs(z) >= WORLD_HALF && Math.abs(x - wildernessCenter("z", z, seed)) < halfWidth);
 }

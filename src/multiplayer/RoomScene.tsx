@@ -37,7 +37,7 @@ export function remotePeers(peers: readonly Peer[]) {
 }
 
 /** Streams this player's pose to the room and draws everyone else's. */
-export function RoomScene({ state, channel, remotes, joinedAt }: { state: GameState; channel: NamedRoom; remotes: RemotePlayers; joinedAt: number }) {
+export function RoomScene({ state, channel, remotes, joinedAt, creator }: { state: GameState; channel: NamedRoom; remotes: RemotePlayers; joinedAt: number; creator: string }) {
   // One avatar per other tab, with the account it is signed in as (for its username label).
   const listed = (peers: readonly Peer[]) => remotePeers(peers).map((p) => `${p.peer} ${p.by ?? ""}`);
   const [ids, setIds] = useState<string[]>(() => listed(channel.peers()));
@@ -140,16 +140,24 @@ export function RoomScene({ state, channel, remotes, joinedAt }: { state: GameSt
 
   return <>{ids.map((entry) => {
     const [id = "", uid = ""] = entry.split(" ");
-    return <RemoteAvatar key={entry} id={id} uid={uid} remotes={remotes} state={state} />;
+    return <RemoteAvatar key={entry} id={id} uid={uid} creator={uid !== "" && uid === creator} remotes={remotes} state={state} />;
   })}</>;
 }
 
-const RemoteAvatar = memo(function RemoteAvatar({ id, uid, remotes, state }: { id: string; uid: string; remotes: RemotePlayers; state: GameState }) {
+const RemoteAvatar = memo(function RemoteAvatar({ id, uid, creator, remotes, state }: { id: string; uid: string; creator: boolean; remotes: RemotePlayers; state: GameState }) {
   const [profile, setProfile] = useState<{ username: string | null; gender: Gender | null }>({ username: null, gender: null });
   useEffect(() => {
-    let live = true;
-    if (uid) void playerOf(uid).then((p) => { if (live) setProfile(p); }).catch(() => {});
-    return () => { live = false; };
+    let live = true, retry: number | undefined;
+    // Keep trying until the profile loads, so nobody is left without a name label after a network hiccup.
+    const load = (delay: number) => {
+      if (!uid) return;
+      void playerOf(uid).then((p) => {
+        if (!live) return;
+        if (p.username) setProfile(p); else retry = window.setTimeout(() => load(Math.min(delay * 2, 15000)), delay);
+      }).catch(() => { if (live) retry = window.setTimeout(() => load(Math.min(delay * 2, 15000)), delay); });
+    };
+    load(1000);
+    return () => { live = false; window.clearTimeout(retry); };
   }, [uid]);
   const name = profile.username, color = bodyColor(profile.gender);
   const body = useBodyRig();
@@ -173,7 +181,7 @@ const RemoteAvatar = memo(function RemoteAvatar({ id, uid, remotes, state }: { i
 
   return <group ref={group} visible={false}>
     <CharacterBody rig={body} color={color} />
-    {name && <NameLabel name={name} follow={() => body.root.current} />}
+    {name && <NameLabel name={name} crown={creator} follow={() => body.root.current} />}
     <RagdollMeshes mat={ragdollMat} groupRef={(i, el) => { rig.current.ragdoll[i] = el; }} />
     <group ref={(el) => { rig.current.scooter = el; }}>
       <ScooterModel state={look} headlight={false} frontRef={(el) => { rig.current.front = el; }} />

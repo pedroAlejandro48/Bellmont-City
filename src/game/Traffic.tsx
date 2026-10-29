@@ -2,7 +2,7 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import { useRapier } from "@react-three/rapier";
 import * as THREE from "three";
-import { HALF, PITCH, WORLD_HALF, rng, VEHICLE_SIZE, VEHICLE_MASS, VEHICLE_COLLISION_GROUPS, vehicleContactHurts, vehicleFootprint, THROW_DISTANCE, ACCIDENT_STOP_SECONDS, CRASH_STOP_SECONDS, TRAFFIC_SPEED, TRAFFIC_CORNER_SPEED, brakingGap, scooterBypassReady, wildernessCenter, roadForward, roadLeft, forwardDistance, roadLane, trafficSpawnClear, isTrafficRoad, type VehicleKind } from "./config";
+import { HALF, PITCH, WORLD_HALF, MAIN_ROAD_CENTER, MAIN_ROAD_WIDTH, streetCenter, rng, VEHICLE_SIZE, VEHICLE_MASS, VEHICLE_COLLISION_GROUPS, vehicleContactHurts, vehicleFootprint, THROW_DISTANCE, ACCIDENT_STOP_SECONDS, CRASH_STOP_SECONDS, TRAFFIC_SPEED, TRAFFIC_CORNER_SPEED, brakingGap, scooterBypassReady, wildernessCenter, roadForward, roadLeft, forwardDistance, roadLane, trafficSpawnClear, isTrafficRoad, type VehicleKind } from "./config";
 import { intersectionAhead, makeTrafficTurn, turnSample, mayTurnAt, type TrafficTurn } from "./trafficRoutes";
 
 import { makeText, makeGlow } from "./textures";
@@ -210,7 +210,7 @@ export function Traffic({ state }: { state: GameState }) {
       const cross = axis === "x" ? state.pos.z : state.pos.x;
       const k = Math.max(-HALF - 1, Math.min(HALF, Math.round((cross - PITCH / 2) / PITCH) + Math.floor(r() * 7) - 3));
       const central = i < 32 || outside || k === 0;
-      const s = central ? PITCH / 2 : k * PITCH + PITCH / 2;
+      const s = central ? MAIN_ROAD_CENTER : streetCenter(k);
       const dir = Math.floor(i / 2) % 2 === 0 ? 1 : -1;
       const slot = central ? Math.floor(i / 4) % 2 : 0;
       // right-hand traffic
@@ -220,7 +220,7 @@ export function Traffic({ state }: { state: GameState }) {
       for (let attempt = 0; attempt < 160; attempt++) {
         if (attempt) t = (axis === "x" ? state.pos.x : state.pos.z) + (r() * 2 - 1) * 320;
         if (!central) t = Math.max(-WORLD_HALF + 14, Math.min(WORLD_HALF - 14, t));
-        const crossLane = central && Math.abs(t) > WORLD_HALF ? wildernessCenter(axis, t, state.worldSeed) + lane - PITCH / 2 : lane;
+        const crossLane = central && Math.abs(t) > WORLD_HALF ? wildernessCenter(axis, t, state.worldSeed) + lane - MAIN_ROAD_CENTER : lane;
         x = axis === "x" ? t : crossLane; z = axis === "z" ? t : crossLane;
         if (isTrafficRoad(x, z, state.worldSeed) && trafficSpawnClear(x, z, VEHICLE_SIZE[kind][0], list)) break;
       }
@@ -358,13 +358,13 @@ export function Traffic({ state }: { state: GameState }) {
         }
         const cross = v.axis === "x" ? p.z : p.x;
         const k = Math.max(-HALF - 1, Math.min(HALF, Math.round((cross - PITCH / 2) / PITCH) + (i % 5) - 2));
-        const center = v.central ? PITCH / 2 : k * PITCH + PITCH / 2;
+        const center = v.central ? MAIN_ROAD_CENTER : streetCenter(k);
         const laneBase = roadLane(v.axis, v.dir, center, v.slot);
         const random = rng(state.worldSeed ^ i * 71 ^ Math.floor(now));
         for (let attempt = 0; attempt < 100; attempt++) {
           let t = (v.axis === "x" ? p.x : p.z) - v.dir * (250 + random() * 70);
           if (!v.central) t = Math.max(-WORLD_HALF + 14, Math.min(WORLD_HALF - 14, t));
-          const lane = v.central && Math.abs(t) > WORLD_HALF ? wildernessCenter(v.axis, t, state.worldSeed) + laneBase - PITCH / 2 : laneBase;
+          const lane = v.central && Math.abs(t) > WORLD_HALF ? wildernessCenter(v.axis, t, state.worldSeed) + laneBase - MAIN_ROAD_CENTER : laneBase;
           const x = v.axis === "x" ? t : lane, z = v.axis === "z" ? t : lane;
           if (!isTrafficRoad(x, z, state.worldSeed) || !trafficSpawnClear(x, z, VEHICLE_SIZE[v.kind][0], vehicles.filter((other) => other !== v))) continue;
           v.t = t; v.x = x; v.z = z; v.lane = laneBase; v.turn = null; v.nextIntersection = intersectionAhead(v, t);
@@ -432,7 +432,7 @@ export function Traffic({ state }: { state: GameState }) {
       const bikeOccupied = bike.riding || bike.action !== null || (bike.fallen && (state.accident !== null || Math.hypot(state.pos.x - bike.pos.x, state.pos.z - bike.pos.z) < 2.5));
       let targetSpeed = trafficTargetSpeed(v, vehicles, state.incidents, now);
       let targetLane = v.central && Math.abs(v.t) > WORLD_HALF
-        ? wildernessCenter(v.axis, v.t + v.dir * 10, state.worldSeed) + v.lane - PITCH / 2
+        ? wildernessCenter(v.axis, v.t + v.dir * 10, state.worldSeed) + v.lane - MAIN_ROAD_CENTER
         : v.lane;
       const wait = bikeWait.current.get(i);
       if (bikeObstacle && wait !== undefined) {
@@ -505,7 +505,7 @@ export function Traffic({ state }: { state: GameState }) {
             steerYaw = Math.atan2(-(ahead.z - v.z), ahead.x - v.x);
             if (turn.progress >= 1 && Math.hypot(v.x - turn.end[0], v.z - turn.end[1]) < 1.5) {
               v.axis = turn.next.axis; v.dir = turn.next.dir; v.lane = turn.next.lane;
-              v.central = Math.abs(v.lane - PITCH / 2) < 5;
+              v.central = Math.abs(v.lane - MAIN_ROAD_CENTER) < MAIN_ROAD_WIDTH / 2;
               v.t = v.axis === "x" ? v.x : v.z; v.turn = null; v.nextIntersection = intersectionAhead(v, v.t);
             }
           }

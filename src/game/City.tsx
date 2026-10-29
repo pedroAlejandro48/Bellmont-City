@@ -1,8 +1,8 @@
 import { useFrame } from "@react-three/fiber";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { BLOCK, SIDEWALK_H, WORLD_HALF, cityRoadDashes, BUILDING_ENTRANCE, FACADE_STYLES, buildingLayout, type City as CityT } from "./config";
-import { buildingGeo, makeFacade, makeGlow, makeNoise, makeGroundFloor, makeBlankWall, makeBackDoor } from "./textures";
+import { BLOCK, CITY_GROUND_SIZE, SIDEWALK_H, WORLD_HALF, cityRoadDashes, BUILDING_ENTRANCE, FACADE_STYLES, buildingLayout, type City as CityT } from "./config";
+import { buildingGeo, cityAsphalt, makeFacade, makeGlow, makeNoise, makeGroundFloor, makeBlankWall, makeBackDoor } from "./textures";
 import type { GameState } from "./state";
 import { Trees } from "./Trees";
 import { Park } from "./Park";
@@ -40,7 +40,7 @@ export function City({ city, state }: { city: CityT; state: GameState }) {
   const roofMat = useMemo(() => new THREE.MeshStandardMaterial({ color: "#4a4a4c", roughness: 1 }), []);
   // Box groups: +X, -X, +Y, -Y, +Z, -Z. Instances are rotated so local +X/+Z face the streets; interior sides stay windowless.
   const facadeSets = useMemo(() => facadeMats.map((street, i) => { const blank = blankMats[i % 4] ?? street; return [street, blank, roofMat, roofMat, street, blank]; }), [facadeMats, blankMats, roofMat]);
-  const asphalt = useMemo(() => makeNoise("#2f3134", "#8a8a8a", 90), []);
+  const asphalt = useMemo(() => cityAsphalt(), []);
   const concrete = useMemo(() => makeNoise("#a8a49c", "#5a5650", 20, "#8c887f"), []);
   const grass = useMemo(() => makeNoise("#4f7a3a", "#2e4d22", 12), []);
   const glowTex = useMemo(() => makeGlow(), []);
@@ -70,8 +70,9 @@ export function City({ city, state }: { city: CityT; state: GameState }) {
     groundMatrices.forEach((mats, i) => { const mesh = groundRefs.current[i]; if (!mesh) return; mats.forEach((m, j) => mesh.setMatrixAt(j, m)); mesh.count = mats.length; mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere(); });
   }, [groundMatrices]);
   useInstances(backDoorRef, backDoors);
-  const blockMatrices = useMemo(() => city.blocks.map((b) => mat4(b.x, b.x === 0 && b.z === 0 ? SIDEWALK_H / 2 - 0.016 : SIDEWALK_H / 2, b.z)), [city]);
-  const grassMatrices = useMemo(() => city.blocks.filter((b) => b.park).map((b) => mat4(b.x, b.x === 0 && b.z === 0 ? SIDEWALK_H - 0.0075 : SIDEWALK_H + 0.01, b.z, 0, 1, 1, 1)), [city]);
+  // Blocks beside a main road are narrower than BLOCK; their lawns keep the same pavement margin.
+  const blockMatrices = useMemo(() => city.blocks.map((b) => mat4(b.x, b.x === 0 && b.z === 0 ? SIDEWALK_H / 2 - 0.016 : SIDEWALK_H / 2, b.z, 0, b.w / BLOCK, 1, b.d / BLOCK)), [city]);
+  const grassMatrices = useMemo(() => city.blocks.filter((b) => b.park).map((b) => mat4(b.x, b.x === 0 && b.z === 0 ? SIDEWALK_H - 0.0075 : SIDEWALK_H + 0.01, b.z, 0, (b.w - 7) / 33, 1, (b.d - 7) / 33)), [city]);
   useInstances(blockRef, blockMatrices);
   useInstances(grassRef, grassMatrices);
   const lampHeadMat = useMemo(
@@ -154,7 +155,7 @@ export function City({ city, state }: { city: CityT; state: GameState }) {
     <group>
       {/* ground / streets */}
       <mesh position={[0, 0, 0]} rotation-x={-Math.PI / 2} receiveShadow>
-        <planeGeometry args={[WORLD_HALF * 2 + 12, WORLD_HALF * 2 + 12]} />
+        <planeGeometry args={[CITY_GROUND_SIZE, CITY_GROUND_SIZE]} />
         <meshStandardMaterial map={asphalt} roughness={0.95} />
       </mesh>
       <instancedMesh ref={dashRef} args={[undefined, undefined, 2048]} receiveShadow>

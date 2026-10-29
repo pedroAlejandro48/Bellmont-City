@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SAVE, HALF, N, PITCH, WORLD_HALF, generateCity, isWildernessRoad, rampTurn, resetProgress, wildernessCenter, PARK_TREES, PARK_BENCHES, PARK_CORNERS, PARK_RING_RADIUS, PARK_OBELISK_HEIGHT, GREEN_BLOCK_CHANCE, SIDEWALK_TREE_CENTER, TREE_BED_RADIUS, SIDEWALK_CANOPY_RADIUS, BUILDING_ENTRANCE, cityRoadDashes } from "@/game/config";
+import { BLOCK, DEFAULT_SAVE, HALF, N, PITCH, WORLD_HALF, generateCity, isWildernessRoad, rampTurn, resetProgress, wildernessCenter, PARK_TREES, PARK_BENCHES, PARK_CORNERS, PARK_RING_RADIUS, PARK_OBELISK_HEIGHT, GREEN_BLOCK_CHANCE, SIDEWALK_TREE_CENTER, TREE_BED_RADIUS, SIDEWALK_CANOPY_RADIUS, BUILDING_ENTRANCE, cityRoadDashes } from "@/game/config";
 import { readSave } from "@/game/saves";
 import { createState, toSave } from "@/game/state";
 
@@ -35,9 +35,11 @@ describe("Bellmont world rules", () => {
   it("keeps rock beds fully on sidewalks and foliage clear of buildings", () => {
     const city = generateCity(123);
     for (const t of city.trees.filter((t) => t.sidewalk)) {
-      const lx = Math.abs(t.x - Math.round(t.x / PITCH) * PITCH), lz = Math.abs(t.z - Math.round(t.z / PITCH) * PITCH);
-      expect(Math.max(lx, lz)).toBeCloseTo(SIDEWALK_TREE_CENTER);
-      expect(Math.max(lx, lz) + TREE_BED_RADIUS * t.s).toBeLessThan(20);
+      // Each bed sits the same distance in from its kerb as on a full block, and fully on the pavement.
+      const block = city.blocks.find((b) => Math.abs(t.x - b.x) <= b.w / 2 && Math.abs(t.z - b.z) <= b.d / 2)!;
+      const fromKerb = Math.min(block.w / 2 - Math.abs(t.x - block.x), block.d / 2 - Math.abs(t.z - block.z));
+      expect(fromKerb).toBeCloseTo(BLOCK / 2 - SIDEWALK_TREE_CENTER);
+      expect(fromKerb - TREE_BED_RADIUS * t.s).toBeGreaterThan(0);
       for (const b of city.buildings) {
         const clearance = Math.hypot(Math.max(0, Math.abs(t.x - b.x) - b.w / 2), Math.max(0, Math.abs(t.z - b.z) - b.d / 2));
         expect(clearance).toBeGreaterThan(SIDEWALK_CANOPY_RADIUS * t.s);
@@ -45,6 +47,17 @@ describe("Bellmont world rules", () => {
     }
     expect(PARK_TREES.every((t) => !t.sidewalk)).toBe(true);
     expect(generateCity(123, WORLD_HALF + 300, 0).trees.filter((t) => Math.abs(t.x) > WORLD_HALF).every((t) => !t.sidewalk)).toBe(true);
+  });
+  it("keeps buildings on their blocks, clear of the wider main roads", () => {
+    for (const focus of [[0, 0], [60, 60], [300, -200]] as const) {
+      const city = generateCity(7, focus[0], focus[1]);
+      for (const b of city.buildings) {
+        const block = city.blocks.find((k) => Math.abs(b.x - k.x) <= k.w / 2 && Math.abs(b.z - k.z) <= k.d / 2)!;
+        expect(block).toBeDefined();
+        expect(block.w / 2 - (Math.abs(b.x - block.x) + b.w / 2)).toBeGreaterThan(4);
+        expect(block.d / 2 - (Math.abs(b.z - block.z) + b.d / 2)).toBeGreaterThan(4);
+      }
+    }
   });
   it("keeps double-door entrances closed with glazing only on the ground floor", () => {
     expect(BUILDING_ENTRANCE).toEqual({ doors: 2, accessible: false, floorHeight: 3 });

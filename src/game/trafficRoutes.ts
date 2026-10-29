@@ -1,9 +1,8 @@
-import { PITCH, WORLD_HALF, MAIN_ROAD_CENTER, roadLane, type RoadPath } from "./config";
+import { WORLD_HALF, MAIN_ROAD_CENTER, nextStreet, roadLane, type RoadPath } from "./config";
 
 export type TrafficTurn = { start: [number, number]; corner: [number, number]; end: [number, number]; next: RoadPath; progress: number; radius: number };
 export function intersectionAhead(path: RoadPath, t: number) {
-  const cell = (t - PITCH / 2) / PITCH;
-  return (path.dir === 1 ? Math.floor(cell) + 1 : Math.ceil(cell) - 1) * PITCH + PITCH / 2;
+  return nextStreet(t, path.dir);
 }
 export function makeTrafficTurn(path: RoadPath, intersection: number, newDir: 1 | -1, slot = 0): TrafficTurn {
   const nextAxis = path.axis === "x" ? "z" : "x";
