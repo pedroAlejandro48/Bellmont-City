@@ -24,7 +24,8 @@ After signing in, players choose **Go to my city** or a shared room:
   last player leaves.
 - **Join a room** loads the world for a typed code. Rooms hold up to 10 players, and share the time of day.
 - Each open tab keeps `rooms/<CODE>/peers/<id>` in the Realtime Database (removed on disconnect) with its
-  pose, ~15 updates a second while moving; others draw it 110 ms in the past, interpolated.
+  pose, ~30 updates a second while moving; others draw it 80 ms in the past, interpolated, with a username
+  label (typewriter font, hidden behind anything in front of it).
 
 ## Setup (once)
 

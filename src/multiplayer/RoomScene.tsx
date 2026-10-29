@@ -9,6 +9,8 @@ import { scooterFootprint, type SolidBox } from "@/game/config";
 import type { NamedRoom, Peer } from "@/platform/realtime";
 import { applyPose, capturePose, isPoseWire, PoseBuffer, RENDER_DELAY_MS, SEND_HZ, type RemoteRig } from "./pose";
 import { spawnBeside, standingFromPose, type Standing } from "./spawn";
+import { NameLabel } from "./NameLabel";
+import { usernameOf } from "@/platform/account";
 
 /** How long after entering a late-arriving position can still move a player who has not moved yet. */
 const SPAWN_FIX_MS = 8000;
@@ -26,9 +28,11 @@ export function remotePeers(peers: readonly Peer[]) {
 
 /** Streams this player's pose to the room and draws everyone else's. */
 export function RoomScene({ state, channel, remotes, joinedAt }: { state: GameState; channel: NamedRoom; remotes: RemotePlayers; joinedAt: number }) {
-  const [ids, setIds] = useState<string[]>(() => remotePeers(channel.peers()).map((p) => p.peer));
+  // One avatar per other tab, with the account it is signed in as (for its username label).
+  const listed = (peers: readonly Peer[]) => remotePeers(peers).map((p) => `${p.peer} ${p.by ?? ""}`);
+  const [ids, setIds] = useState<string[]>(() => listed(channel.peers()));
   useEffect(() => channel.onPeers(({ peers }) => {
-    const next = remotePeers(peers).map((p) => p.peer);
+    const next = listed(peers);
     setIds((old) => (old.length === next.length && old.every((id, i) => id === next[i]) ? old : next));
   }), [channel]);
 
@@ -109,10 +113,19 @@ export function RoomScene({ state, channel, remotes, joinedAt }: { state: GameSt
   });
   useEffect(() => () => { state.others = []; state.otherBikes = []; }, [state]);
 
-  return <>{ids.map((id) => <RemoteAvatar key={id} id={id} remotes={remotes} state={state} />)}</>;
+  return <>{ids.map((entry) => {
+    const [id = "", uid = ""] = entry.split(" ");
+    return <RemoteAvatar key={entry} id={id} uid={uid} remotes={remotes} state={state} />;
+  })}</>;
 }
 
-const RemoteAvatar = memo(function RemoteAvatar({ id, remotes, state }: { id: string; remotes: RemotePlayers; state: GameState }) {
+const RemoteAvatar = memo(function RemoteAvatar({ id, uid, remotes, state }: { id: string; uid: string; remotes: RemotePlayers; state: GameState }) {
+  const [name, setName] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    if (uid) void usernameOf(uid).then((n) => { if (live) setName(n); }).catch(() => {});
+    return () => { live = false; };
+  }, [uid]);
   const body = useBodyRig();
   const rig = useRef<RemoteRig>({ body: [], ragdoll: Array(RAGDOLL_PART_COUNT).fill(null), scooter: null, front: null });
   const look = useMemo<ScooterLook>(() => ({ darkness: 0, scooter: { riding: false, steering: 0, braking: false } }), []);
@@ -134,6 +147,7 @@ const RemoteAvatar = memo(function RemoteAvatar({ id, remotes, state }: { id: st
 
   return <group ref={group} visible={false}>
     <CharacterBody rig={body} />
+    {name && <NameLabel name={name} follow={() => body.root.current} />}
     <RagdollMeshes mat={ragdollMat} groupRef={(i, el) => { rig.current.ragdoll[i] = el; }} />
     <group ref={(el) => { rig.current.scooter = el; }}>
       <ScooterModel state={look} headlight={false} frontRef={(el) => { rig.current.front = el; }} />

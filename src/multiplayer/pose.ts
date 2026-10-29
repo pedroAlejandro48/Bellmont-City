@@ -11,9 +11,9 @@ import type { AvatarRig } from "@/game/state";
  */
 export type PoseWire = { ts: number; b: number[]; bv: 0 | 1; r?: number[]; s: number[]; sf: number };
 
-export const SEND_HZ = 15;
+export const SEND_HZ = 30;
 /** Remote players are drawn this far in the past so there is almost always a newer pose to blend toward. */
-export const RENDER_DELAY_MS = 110;
+export const RENDER_DELAY_MS = 80;
 
 const round = (n: number) => Math.round(n * 1000) / 1000;
 
