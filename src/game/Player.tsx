@@ -139,6 +139,9 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     p.x += s.vel.x * dt;
     p.z += s.vel.z * dt;
     if (!incapacitated && !usingBike && !sitting) {
+      // Vehicles are solid: walking never pushes them, and a slow one rolling into the player shoves them along
+      // (fast ones knock the player down in Traffic instead).
+      for (const v of state.vehicles) { const [vx, vz] = circleBoxPush(p.x, p.z, RADIUS, v.box); p.x += vx; p.z += vz; }
       resolve(p, colliders);
       bumpOthers(p, state.others, RADIUS, dt);
       const ground0 = floorHeight(p.x, p.z);

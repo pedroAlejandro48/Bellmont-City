@@ -4,7 +4,7 @@ import { useRapier } from "@react-three/rapier";
 import { InteractionPrompt } from "./InteractionPrompt";
 import { Headlight } from "./Headlight";
 import * as THREE from "three";
-import { canInteractScooter, scooterSide, floorHeight, headingVelocity, smoothSteer, scooterNextAction, scooterSpeed, scooterCanDismount, scooterTurn, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, nearestBenchSeat, scooterTipStep, SCOOTER_MASS, SCOOTER_COLLISION_PARTS } from "./config";
+import { canInteractScooter, scooterSide, floorHeight, headingVelocity, smoothSteer, scooterNextAction, scooterSpeed, scooterCanDismount, scooterTurn, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, nearestBenchSeat, scooterTipStep, SCOOTER_MASS, SCOOTER_COLLISION_PARTS, SCOOTER_COLLISION_GROUPS, bikeOutOfBoxes, bikeCanPushVehicle, BIKE_PUSH_SPEED } from "./config";
 import type { GameState } from "./state";
 
 /** What the model reads to draw lights and steering; a remote player's scooter passes its own copy. */
@@ -66,7 +66,7 @@ export function Scooter({ state }: { state: GameState }) {
     const bike = state.scooter;
     const body = world.createRigidBody(rapier.RigidBodyDesc.kinematicPositionBased().setTranslation(bike.pos.x, bike.pos.y, bike.pos.z));
     body.userData = "scooter";
-    for (const part of SCOOTER_COLLISION_PARTS) world.createCollider(rapier.ColliderDesc.cuboid(part.half[0], part.half[1], part.half[2]).setTranslation(part.center[0], part.center[1], part.center[2]).setFriction(0.85).setMass(SCOOTER_MASS / SCOOTER_COLLISION_PARTS.length), body);
+    for (const part of SCOOTER_COLLISION_PARTS) world.createCollider(rapier.ColliderDesc.cuboid(part.half[0], part.half[1], part.half[2]).setTranslation(part.center[0], part.center[1], part.center[2]).setFriction(0.85).setMass(SCOOTER_MASS / SCOOTER_COLLISION_PARTS.length).setCollisionGroups(SCOOTER_COLLISION_GROUPS), body);
     bodyRef.current = body;
     return () => { try { if (body.isValid()) world.removeRigidBody(body); } catch { /* Physics owner already disposed its world. */ } bodyRef.current = null; };
   }, [world, rapier, state]);
@@ -100,12 +100,27 @@ export function Scooter({ state }: { state: GameState }) {
       turnRate.current = smoothSteer(turnRate.current, Number(left) - Number(right), dt);
       bike.steering += ((Number(left) - Number(right)) * 0.5 - bike.steering) * (1 - Math.exp(-8 * dt));
       bike.yaw = scooterTurn(bike.yaw, turnRate.current, bike.speed, dt);
+      // Riding into traffic: cars and taxis are shoved slowly (the bike slows to match); buses and trucks don't budge.
+      const [hx, hz] = headingVelocity(bike.yaw, 1);
+      const ahead = bikeOutOfBoxes(bike.pos.x + hx * Math.sign(bike.speed) * 0.08, bike.pos.z + hz * Math.sign(bike.speed) * 0.08, bike.yaw, state.vehicles.map((v) => v.box));
+      const touched = ahead.hit >= 0 ? state.vehicles[ahead.hit] : undefined;
+      if (touched && bike.speed !== 0) {
+        if (bikeCanPushVehicle(touched.kind)) {
+          bike.speed = Math.sign(bike.speed) * Math.min(Math.abs(bike.speed), BIKE_PUSH_SPEED);
+          state.vehiclePushes.set(touched.index, [hx * bike.speed, hz * bike.speed]);
+        } else bike.speed = 0;
+      }
       const [vx, vz] = headingVelocity(bike.yaw, bike.speed);
       const next = bike.pos.clone().add(new THREE.Vector3(vx * dt, 0, vz * dt));
       const blocked = world.intersectionWithShape({ x: next.x, y: next.y + 0.55, z: next.z }, new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), bike.yaw), new rapier.Cuboid(0.26, 0.35, 0.8), undefined, undefined, undefined, bodyRef.current ?? undefined,
         (collider) => { const owner = collider.parent(); return owner?.userData !== "ragdoll" && owner?.userData !== "vehicle" && owner?.userData !== "scooter" && (collider.shape.type !== rapier.ShapeType.Cuboid || collider.halfExtents().y > 0.2 && collider.halfExtents().y < 100); });
       if (blocked) bike.speed = 0; else bike.pos.copy(next);
       bike.pos.y = floorHeight(bike.pos.x, bike.pos.z); state.pos.copy(bike.pos); state.rotY = bike.yaw;
+    }
+    // A slow vehicle rolling into the bike (ridden or not) shoves it aside; fast ones crash it in Traffic.
+    if (!bike.action && bike.throwRemaining <= 0) {
+      const out = bikeOutOfBoxes(bike.pos.x, bike.pos.z, bike.yaw, state.vehicles.map((v) => v.box));
+      if (out.dx || out.dz) { bike.pos.x += out.dx; bike.pos.z += out.dz; if (bike.riding) state.pos.copy(bike.pos); }
     }
     if (!bike.fallen) bike.pushVelocity.set(0, 0, 0);
     if (!bike.fallen && !bike.riding && !bike.action && (bike.tip || bike.tipVel)) {

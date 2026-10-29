@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { healthAfterImpact, type SaveData, type SolidBox, type RoadPath, GET_UP_SECONDS, KNOCKDOWN_SECONDS, floorHeight, BENCH_SEATS } from "./config";
+import { healthAfterImpact, type SaveData, type SolidBox, type VehicleKind, type RoadPath, GET_UP_SECONDS, KNOCKDOWN_SECONDS, floorHeight, BENCH_SEATS } from "./config";
 
 export type Accident = {
   phase: "down" | "rising";
@@ -28,6 +28,9 @@ export type AvatarRig = { body: THREE.Object3D[]; ragdoll: THREE.Object3D[]; sco
 /** Another player's body on the ground plane, for bumping. */
 export type OtherBody = { x: number; z: number; r: number };
 
+/** A traffic vehicle's footprint this frame, for walking and riding into it. */
+export type VehicleSolid = { index: number; kind: VehicleKind; box: SolidBox; speed: number };
+
 export type GameState = {
   health: number;
   deathStartedAt: number | null;
@@ -55,6 +58,9 @@ export type GameState = {
   others: OtherBody[];
   /** Other players' parked scooters: solid, but only their owners can move them. */
   otherBikes: SolidBox[];
+  vehicles: VehicleSolid[];
+  /** Bike shoves on vehicles this frame, by vehicle index: a world-space velocity Traffic applies. */
+  vehiclePushes: Map<number, [number, number]>;
 };
 
 export function createState(save: SaveData): GameState {
@@ -81,6 +87,8 @@ export function createState(save: SaveData): GameState {
     avatar: { body: [], ragdoll: [], scooter: [] },
     others: [],
     otherBikes: [],
+    vehicles: [],
+    vehiclePushes: new Map(),
     seatOccupants: new Map(save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? [[save.benchSeat, "player"]] : []),
     bench: save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? { seat: save.benchSeat, phase: "seated", startedAt: 0, origin: new THREE.Vector3(...save.pos), originYaw: save.rotY } : null,
     scooter: {

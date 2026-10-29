@@ -330,6 +330,34 @@ export const GET_UP_SECONDS = 2.6;
 export const CRASH_STOP_SECONDS = 3.5;
 export const VEHICLE_MASS: Record<VehicleKind, number> = { car: 1400, taxi: 1400, bus: 11000, truck: 19000 };
 
+/** A vehicle's ground footprint as a solid box (yaw is its body rotation about Y; it drives along local +x). */
+export function vehicleFootprint(x: number, z: number, yaw: number, kind: VehicleKind): SolidBox {
+  const [length, , width] = VEHICLE_SIZE[kind];
+  return { x, z, hx: width / 2, hz: length / 2, yaw: yaw + Math.PI / 2 };
+}
+/** Resolves a bike (three circles along its length) out of solid boxes. Returns how far it moved and the
+ * first box it touched (-1 when clear). */
+export function bikeOutOfBoxes(x: number, z: number, yaw: number, boxes: readonly SolidBox[]): { dx: number; dz: number; hit: number } {
+  const fx = Math.sin(yaw), fz = Math.cos(yaw);
+  let dx = 0, dz = 0, hit = -1;
+  for (const [i, box] of boxes.entries()) {
+    for (const along of [0.6, 0, -0.6]) {
+      const [px, pz] = circleBoxPush(x + dx + fx * along, z + dz + fz * along, 0.3, box);
+      if (px || pz) { dx += px; dz += pz; if (hit < 0) hit = i; }
+    }
+  }
+  return { dx, dz, hit };
+}
+
+/** Only cars and taxis give way to a bike pushing them; buses and trucks are too heavy to move. */
+export function bikeCanPushVehicle(kind: VehicleKind) { return kind === "car" || kind === "taxi"; }
+/** Rapier collision groups: traffic and bikes never touch through physics; the game resolves those contacts
+ * itself (bikes push cars slowly, buses and trucks not at all). Format: membership << 16 | filter. */
+export const VEHICLE_COLLISION_GROUPS = (0x0004 << 16) | 0xffff;
+export const SCOOTER_COLLISION_GROUPS = (0x0002 << 16) | (0xffff & ~0x0004);
+/** How fast a bike can shove a car (m/s): a slow, heavy push. */
+export const BIKE_PUSH_SPEED = 0.5;
+
 export type RoadPath = { axis: "x" | "z"; dir: 1 | -1; lane: number };
 export function roadForward(path: RoadPath): [number, number] { return path.axis === "x" ? [path.dir, 0] : [0, path.dir]; }
 export function roadLeft(path: RoadPath): [number, number] { return path.axis === "x" ? [0, -path.dir] : [path.dir, 0]; }
@@ -368,6 +396,10 @@ export const SCOOTER_REVERSE_MPH = 8;
 export const TRAFFIC_SPEED = TRAFFIC_MPH * MPH_TO_MPS;
 export const SCOOTER_MAX_SPEED = SCOOTER_MAX_MPH * MPH_TO_MPS;
 export const SCOOTER_REVERSE_SPEED = SCOOTER_REVERSE_MPH * MPH_TO_MPS;
+/** Vehicles at or below this speed only nudge people (on foot or on a bike); faster ones cause an accident. */
+export const HARMLESS_CONTACT_MPH = 10;
+export const HARMLESS_CONTACT_SPEED = HARMLESS_CONTACT_MPH * MPH_TO_MPS;
+export function vehicleContactHurts(vehicleSpeed: number) { return vehicleSpeed > HARMLESS_CONTACT_SPEED; }
 export const SCOOTER_INTERACT_METERS = 0.5;
 export const SCOOTER_PROMPT_FADE_SECONDS = 0.2;
 export const SCOOTER_BYPASS_WAIT_SECONDS = 15;

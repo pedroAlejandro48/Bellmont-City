@@ -2,7 +2,7 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import { useRapier } from "@react-three/rapier";
 import * as THREE from "three";
-import { HALF, PITCH, WORLD_HALF, rng, VEHICLE_SIZE, VEHICLE_MASS, THROW_DISTANCE, ACCIDENT_STOP_SECONDS, CRASH_STOP_SECONDS, TRAFFIC_SPEED, TRAFFIC_CORNER_SPEED, brakingGap, scooterBypassReady, wildernessCenter, roadForward, roadLeft, forwardDistance, roadLane, trafficSpawnClear, isTrafficRoad, type VehicleKind } from "./config";
+import { HALF, PITCH, WORLD_HALF, rng, VEHICLE_SIZE, VEHICLE_MASS, VEHICLE_COLLISION_GROUPS, vehicleContactHurts, vehicleFootprint, THROW_DISTANCE, ACCIDENT_STOP_SECONDS, CRASH_STOP_SECONDS, TRAFFIC_SPEED, TRAFFIC_CORNER_SPEED, brakingGap, scooterBypassReady, wildernessCenter, roadForward, roadLeft, forwardDistance, roadLane, trafficSpawnClear, isTrafficRoad, type VehicleKind } from "./config";
 import { intersectionAhead, makeTrafficTurn, turnSample, mayTurnAt, type TrafficTurn } from "./trafficRoutes";
 
 import { makeText, makeGlow } from "./textures";
@@ -267,7 +267,7 @@ export function Traffic({ state }: { state: GameState }) {
       body.userData = "vehicle";
       body.setEnabledTranslations(true, false, true, false); body.setEnabledRotations(false, true, false, false);
       const [length, height, width] = VEHICLE_SIZE[v.kind];
-      const collider = world.createCollider(rapier.ColliderDesc.cuboid(length / 2, height / 2 - 0.12, width / 2).setMass(VEHICLE_MASS[v.kind]).setRestitution(0.12).setFriction(0.7), body);
+      const collider = world.createCollider(rapier.ColliderDesc.cuboid(length / 2, height / 2 - 0.12, width / 2).setMass(VEHICLE_MASS[v.kind]).setRestitution(0.12).setFriction(0.7).setCollisionGroups(VEHICLE_COLLISION_GROUPS), body);
       body.setLinvel({ x: v.vx, y: 0, z: v.vz }, true);
       bodies.current.push(body); colliders.current.push(collider);
       colliderIndices.current.set(collider.handle, i);
@@ -295,11 +295,24 @@ export function Traffic({ state }: { state: GameState }) {
     const p = state.pos;
     boxes.player.min.set(p.x - 0.35, p.y, p.z - 0.35);
     boxes.player.max.set(p.x + 0.35, p.y + 1.95, p.z + 0.35);
+    // A bike shoving a car moves it slowly; Traffic only ever receives pushes for cars and taxis.
+    for (const [i, [px, pz]] of state.vehiclePushes) {
+      const body = bodies.current[i];
+      if (!body) continue;
+      const at = body.translation();
+      body.setTranslation({ x: at.x + px * dt, y: at.y, z: at.z + pz * dt }, true);
+    }
+    state.vehiclePushes.clear();
+    const solids = state.vehicles;
+    solids.length = 0;
     vehicles.forEach((v, i) => {
       const body = bodies.current[i];
       if (!body) return;
       const position = body.translation(); const velocity = body.linvel();
       v.x = position.x; v.z = position.z; v.vx = velocity.x; v.vz = velocity.z;
+      const q = body.rotation();
+      const yaw = steeringScratch.euler.setFromQuaternion(steeringScratch.quaternion.set(q.x, q.y, q.z, q.w), "YXZ").y;
+      solids.push({ index: i, kind: v.kind, box: vehicleFootprint(v.x, v.z, yaw, v.kind), speed: Math.hypot(v.vx, v.vz) });
     });
     const nextCrashContacts = nextContacts.current;
     nextCrashContacts.clear();
@@ -389,7 +402,8 @@ export function Traffic({ state }: { state: GameState }) {
         boxes.vehicle.max.set(v.x + width / 2, height, hi);
       }
       const ridingContact = state.scooter.riding && Math.hypot(v.x - state.scooter.pos.x, v.z - state.scooter.pos.z) < length / 2 + 0.85;
-      if (!state.accident && (Math.hypot(v.vx, v.vz) > 0.7 || Math.abs(state.scooter.speed) > 0.7) && (boxes.player.intersectsBox(boxes.vehicle) || ridingContact && Math.abs((v.axis === "x" ? state.scooter.pos.z - v.z : state.scooter.pos.x - v.x)) < width / 2 + 0.3)) {
+      // Only a vehicle going faster than 10 mph causes an accident; slower contact just pushes (Player/Scooter).
+      if (!state.accident && vehicleContactHurts(Math.hypot(v.vx, v.vz)) && (boxes.player.intersectsBox(boxes.vehicle) || ridingContact && Math.abs((v.axis === "x" ? state.scooter.pos.z - v.z : state.scooter.pos.x - v.x)) < width / 2 + 0.3)) {
         if (!contacts.current.has(i)) {
           const direction = roadForward(v);
           const success = knockDown(state, i, v, [v.x, v.z], direction, THROW_DISTANCE * 1.75, Math.floor(Math.random() * 1e8));
