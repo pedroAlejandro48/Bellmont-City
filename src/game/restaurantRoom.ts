@@ -15,6 +15,11 @@ export const PUSH = { r: 0.42, y: 1.05, in: -0.05 };
 export const CHAIR = { half: 0.22, seatTop: 0.46, backTop: 0.95, back: 0.2 };
 export const TABLE = { half: 0.45, top: 0.78, leg: 0.39, legHalf: 0.03 };
 export const COUNTER = { depth: 0.7, height: 1.05 };
+/** How deep the dining room is (the kitchen behind it gets the rest of the building). */
+export const DINING = 6.9;
+export const KITCHEN_DOOR = 1.2;
+export const KITCHEN_DOOR_H = 2.3;
+export const WINDOW = { y0: 0.8, y1: 3 };
 const BODY = 0.35;
 const WALK = 2.2;
 
@@ -30,6 +35,13 @@ export type RoomLayout = {
   counter: Box;
   /** Which side wall (local x sign) faces the other street, with windows. */
   windowSide: 1 | -1;
+  /** The wall splitting the dining room (front) from the kitchen (back): its dining-side face, and the doorway. */
+  divider: { z: number; doorX: number };
+  /** Window openings (from x0 to x1, or z0 to z1, along the wall), on the entrance wall and the other street wall. */
+  frontWindows: [number, number][]; sideWindows: [number, number][];
+  /** Everything fixed that people and furniture bump into: the counter, the divider, the plants. */
+  solids: Box[];
+  plants: [number, number][];
 };
 export type Room = RoomLayout & { items: Item[]; doors: { left: number; right: number } };
 
@@ -46,20 +58,35 @@ export function roomLayout(b: Building): RoomLayout {
   const [nx, nz] = alongX ? [0, L.sz] : [L.sx, 0];
   const windowSide = nx * frame.c - nz * frame.s > 0 ? 1 : -1;
   const bounds = { minX: -width / 2 + WALL, maxX: width / 2 - WALL, minZ: -depth + WALL, maxZ: -WALL };
+  // The dining room takes the front DINING metres; the kitchen gets the rest, behind the divider.
+  const dividerZ = bounds.maxZ - DINING;
   const length = Math.min(4, width * 0.34);
-  const counter = { x: -windowSide * (width / 2 - WALL - 0.25 - length / 2), z: bounds.minZ + 1.45, hx: length / 2, hz: COUNTER.depth / 2 };
-  return { key: roomKey(b), kind: b.restaurant ?? "cafe", frame, width, depth, bounds, counter, windowSide };
+  const counter = { x: -windowSide * (width / 2 - WALL - 0.25 - length / 2), z: dividerZ + 1.1 + COUNTER.depth / 2, hx: length / 2, hz: COUNTER.depth / 2 };
+  const doorX = counter.x;
+  const solids: Box[] = [
+    counter,
+    { x: (bounds.minX + doorX - KITCHEN_DOOR / 2) / 2, z: dividerZ - WALL / 2, hx: (doorX - KITCHEN_DOOR / 2 - bounds.minX) / 2, hz: WALL / 2 },
+    { x: (bounds.maxX + doorX + KITCHEN_DOOR / 2) / 2, z: dividerZ - WALL / 2, hx: (bounds.maxX - doorX - KITCHEN_DOOR / 2) / 2, hz: WALL / 2 },
+  ];
+  // Potted plants in the two front corners.
+  const plants: [number, number][] = [[windowSide * (bounds.maxX - 0.4), bounds.maxZ - 0.45], [-windowSide * (bounds.maxX - 0.4), bounds.maxZ - 0.45]];
+  for (const [x, z] of plants) solids.push({ x, z, hx: 0.28, hz: 0.28 });
+  const frontWindows: [number, number][] = [[-width / 2 + 0.7, -LEAF - 0.75], [LEAF + 0.75, width / 2 - 0.7]];
+  // Side windows stay clear of the divider: two in the dining room, one in the kitchen if it is deep enough.
+  const dineFrom = dividerZ + 0.5, dineTo = bounds.maxZ - 0.5, half = (dineTo - dineFrom - 0.6) / 2;
+  const sideWindows: [number, number][] = [[dineFrom, dineFrom + half], [dineTo - half, dineTo]];
+  const kitchenTo = dividerZ - WALL - 0.6, kitchenFrom = bounds.minZ + 0.6;
+  if (kitchenTo - kitchenFrom > 1.2) sideWindows.push([kitchenFrom, kitchenTo]);
+  return { key: roomKey(b), kind: b.restaurant ?? "cafe", frame, width, depth, bounds, counter, windowSide, divider: { z: dividerZ, doorX }, frontWindows, sideWindows, solids, plants };
 }
 
-/** Up to four square tables, two chairs each (facing each other across the table), on the windows' side. */
+/** Four square tables, two chairs each (facing each other across the table), in the dining room by the windows. */
 export function furnish(layout: RoomLayout): Item[] {
   const { bounds, windowSide: m } = layout;
   const edge = m === 1 ? bounds.maxX : -bounds.minX;
   const items: Item[] = [];
-  for (const col of [1.45, 4.15]) for (const row of [3.3, 5.9]) {
+  for (const col of [1.45, 4.15]) for (const row of [3.0, 5.6]) {
     const x = m * (edge - col), z = bounds.maxZ - row;
-    if (z - 0.5 < layout.counter.z + layout.counter.hz + 0.6 && Math.abs(x - layout.counter.x) < layout.counter.hx + 1.4) continue;
-    if (z - 0.5 < bounds.minZ + 0.4) continue;
     items.push({ kind: "table", x, z, f: [0, 1] });
     // Seats tucked under the table: the front of each seat 12 cm under the table top.
     for (const side of [-1, 1] as const) items.push({ kind: "chair", x: x + side * (TABLE.half + CHAIR.half - 0.12), z, f: [-side, 0] });
@@ -115,14 +142,16 @@ export function contacts(a: Item, b: Item): [Box, Box][] {
   return [...tableLegs(a).flatMap((leg): [Box, Box][] => [[leg, chairSeat(b)], [leg, chairBack(b)]]), [tableTop(a), chairBack(b)]];
 }
 
-/** Keeps a piece of furniture inside the walls and out of the counter. */
+/** Keeps a piece of furniture inside the walls and out of the counter, the divider and the plants. */
 function settleStatic(room: RoomLayout, it: Item) {
   const fp = footprint(it), { minX, maxX, minZ, maxZ } = room.bounds;
   const reach = it.kind === "chair" ? Math.max(fp.hx, fp.hz) : fp.hx;
   it.x = Math.max(minX + reach, Math.min(maxX - reach, it.x));
   it.z = Math.max(minZ + reach, Math.min(maxZ - reach, it.z));
-  const out = separation(room.counter, footprint(it));
-  if (out) { it.x += out[0]; it.z += out[1]; }
+  for (const solid of room.solids) {
+    const out = separation(solid, footprint(it));
+    if (out) { it.x += out[0]; it.z += out[1]; }
+  }
 }
 
 /**
@@ -182,8 +211,7 @@ export function stepPerson(room: Room, x: number, z: number, running: boolean, d
       }
       px += ox; pz += oz;
     });
-    const [cx, cz] = circleOut(px, pz, BODY, room.counter);
-    px += cx; pz += cz;
+    for (const solid of room.solids) { const [cx, cz] = circleOut(px, pz, BODY, solid); px += cx; pz += cz; }
     px = Math.max(minX + BODY, Math.min(maxX - BODY, px));
     pz = Math.max(minZ + BODY, Math.min(maxZ - BODY, pz));
   }
@@ -220,6 +248,31 @@ function along(points: [number, number][], t: number): [number, number] {
   return points[points.length - 1]!;
 }
 
+/** Walking pace for scripted steps (m/s). */
+const STEP = 1.25;
+/** How long walking from one spot to another takes, turning included. */
+export const walkTime = (from: [number, number], to: [number, number]) => Math.hypot(to[0] - from[0], to[1] - from[1]) / STEP + 0.35;
+/**
+ * Walking `k` (0..1) of the way from one spot to another: turning to face the way to go, stepping there, then
+ * turning to `endYaw`. A short shuffle (under 0.6 m) is stepped without turning away.
+ */
+export function walkTo(k: number, from: [number, number], to: [number, number], fromYaw: number, endYaw: number) {
+  const at = lerp2(from, to, smooth(k));
+  const dx = to[0] - from[0], dz = to[1] - from[1];
+  if (Math.hypot(dx, dz) < 0.6) return { at, yaw: turn(fromYaw, endYaw, smooth(k / 0.8)) };
+  const heading = Math.atan2(dx, dz);
+  const yaw = k < 0.25 ? turn(fromYaw, heading, smooth(k / 0.25)) : k > 0.72 ? turn(heading, endYaw, smooth((k - 0.72) / 0.28)) : heading;
+  return { at, yaw };
+}
+/**
+ * Scripts start with a walk planned to take `base` seconds; when the walk is longer, the walk stretches and the
+ * rest of the script starts later. Maps real time to script time, and returns the extra time.
+ */
+export function stretch(time: number, walk: number, base: number) {
+  const extra = Math.max(0, walk - base);
+  return { t: time < base + extra ? time * base / (base + extra) : time - extra, extra };
+}
+
 /** One hand reaching for a point (room frame, height above the floor), and the way its elbow points. */
 export type Reach = { at: [number, number, number]; blend: number; pole: "low" | "out" | "back" };
 /** One moment of a scripted movement, in the room frame. */
@@ -238,13 +291,18 @@ export const LOBBY: [number, number] = [0.5, -2.7];
  * Going in: reach for the right door's handle, pull it open while stepping back, let go as it swings wide, walk
  * in while it slowly closes behind, then fade to black.
  */
-export function enterPose(t: number, from: [number, number], fromYaw: number): DoorPose {
-  const stand: [number, number] = [-0.05, 0.48], back: [number, number] = [0, 1.0];
+const ENTER_STAND: [number, number] = [-0.05, 0.48];
+/** Extra seconds going in takes for walking up to the door from further away. */
+export const enterLead = (from: [number, number]) => stretch(0, walkTime(from, ENTER_STAND), 0.7).extra;
+export function enterPose(time: number, from: [number, number], fromYaw: number): DoorPose {
+  const stand = ENTER_STAND, back: [number, number] = [0, 1.0];
+  const { t } = stretch(time, walkTime(from, stand), 0.7);
   const opened = t < ENTER.release ? 35 * seg(t, ENTER.open, ENTER.release) : 35 + 65 * Math.sin(Math.PI / 2 * clamp01((t - ENTER.release) / 0.8));
   const closing = seg(t, ENTER.close[0], ENTER.close[1]);
   const right = (opened * (1 - closing)) * Math.PI / 180;
   let at: [number, number], yaw: number;
-  if (t < ENTER.open) { at = lerp2(from, stand, seg(t, 0, 0.7)); yaw = turn(fromYaw, FACE_IN, seg(t, 0, 0.55)); }
+  if (t < 0.7) ({ at, yaw } = walkTo(t / 0.7, from, stand, fromYaw, FACE_IN));
+  else if (t < ENTER.open) { at = stand; yaw = FACE_IN; }
   else if (t < ENTER.walk[0]) { at = lerp2(stand, back, seg(t, ENTER.open, ENTER.release)); yaw = FACE_IN; }
   else { at = along([back, [0.5, 0.35], LOBBY], seg(t, ENTER.walk[0], ENTER.walk[1])); yaw = FACE_IN; }
   const handle = onLeaf("right", right, HANDLE.r, HANDLE.out);
@@ -264,21 +322,25 @@ export const OUTSIDE: [number, number] = [-0.45, 1.5];
  * Coming out: walk up to the door, push the right-hand door open with the right hand while walking on, let go
  * as it swings wide, stop outside, and fade to black as it closes behind.
  */
-export function leavePose(t: number, from: [number, number], fromYaw: number): DoorPose {
-  const start: [number, number] = [-0.45, -1.0], reach: [number, number] = [-0.45, -0.5];
+const LEAVE_START: [number, number] = [-0.45, -1.0];
+/** Extra seconds coming out takes for walking up to the door from further away. */
+export const leaveLead = (from: [number, number]) => stretch(0, walkTime(from, LEAVE_START), 0.7).extra;
+export function leavePose(time: number, from: [number, number], fromYaw: number): DoorPose {
+  const start = LEAVE_START, reach: [number, number] = [-0.45, -0.5];
+  const { t } = stretch(time, walkTime(from, start), 0.7);
   const pushed = seg(t, LEAVE.push[0], LEAVE.push[1]);
   const coast = clamp01((t - LEAVE.push[1]) / 0.6);
   const opened = (70 * pushed + 25 * Math.sin(Math.PI / 2 * coast)) * (1 - seg(t, LEAVE.close[0], LEAVE.close[1]));
   const left = opened * Math.PI / 180;
   const point = onLeaf("left", left, PUSH.r, PUSH.in);
-  let at: [number, number];
-  if (t < 0.7) at = lerp2(from, start, seg(t, 0, 0.7));
+  let at: [number, number], yaw = FACE_OUT;
+  if (t < 0.7) ({ at, yaw } = walkTo(t / 0.7, from, start, fromYaw, FACE_OUT));
   else if (t < LEAVE.push[0]) at = lerp2(start, reach, seg(t, 0.7, LEAVE.push[0]));
   else if (t < LEAVE.push[1]) at = [reach[0], lerp(reach[1], -0.05, pushed)];
   else at = [reach[0], lerp(-0.05, OUTSIDE[1], smooth((t - LEAVE.push[1]) / (LEAVE.walk[1] - LEAVE.push[1])))];
   const hold = seg(t, 0.4, 0.9) * (1 - seg(t, LEAVE.release, LEAVE.release + 0.4));
   return {
-    x: at[0], z: at[1], yaw: turn(fromYaw, FACE_OUT, seg(t, 0, 0.6)), sit: 0, shuffle: 0, lean: 0.1 * hold,
+    x: at[0], z: at[1], yaw, sit: 0, shuffle: 0, lean: 0.1 * hold,
     right: hold > 0 ? { at: [point[0], PUSH.y, point[1]], blend: hold, pole: "low" } : null, left: null,
     door: { left, right: 0 }, fade: seg(t, LEAVE.black, LEAVE.black + 0.5),
   };
@@ -316,7 +378,7 @@ export function freeSlide(room: Room, index: number, dx: number, dz: number, dis
   for (let d = 0.02; d <= distance + 1e-6; d += 0.02) {
     const moved = { ...it, x: it.x + dx / len * d, z: it.z + dz / len * d };
     const fp = footprint(moved), { minX, maxX, minZ, maxZ } = room.bounds;
-    if (fp.x - fp.hx < minX || fp.x + fp.hx > maxX || fp.z - fp.hz < minZ || fp.z + fp.hz > maxZ || separation(room.counter, fp)) break;
+    if (fp.x - fp.hx < minX || fp.x + fp.hx > maxX || fp.z - fp.hz < minZ || fp.z + fp.hz > maxZ || room.solids.some((solid) => separation(solid, fp))) break;
     if (room.items.some((o, j) => j !== index && contacts(moved, o).some(([a, b]) => separation(a, b)))) break;
     free = d;
   }
@@ -329,6 +391,8 @@ export type SitPlan = {
   /** Chair: where it was, pulled out, and slid back in to the table. */
   c0: [number, number]; c1: [number, number]; c2: [number, number];
   table: number | null;
+  /** Extra seconds for walking up to the chair from further away. */
+  extra: number;
 };
 
 export const SIT = { approach: 0.7, pull: [0.9, 1.7] as const, around: [1.9, 3.4] as const, down: [3.4, 4.3] as const, scoot: [4.3, 5.3] as const, hands: [5.3, 6.1] as const, done: 6.1 };
@@ -353,11 +417,13 @@ export function planSit(room: Room, chair: number, x: number, z: number, yaw: nu
     return Math.min(sx - minX, maxX - sx, sz - minZ, maxZ - sz, ...near);
   };
   const side = clearance(1) >= clearance(-1) ? 1 : -1;
-  return { chair, f: [fx, fz], side, start: [x, z], startYaw: yaw, c0, c1, c2, table: table?.index ?? null };
+  const extra = stretch(0, walkTime([x, z], [c.x - fx * 0.64, c.z - fz * 0.64]), SIT.approach).extra;
+  return { chair, f: [fx, fz], side, start: [x, z], startYaw: yaw, c0, c1, c2, table: table?.index ?? null, extra };
 }
 
 /** Sitting down, `t` seconds in (standing up plays it backward). Returns the person and where the chair is. */
-export function sitPose(plan: SitPlan, t: number, room: Room): Pose & { chair: [number, number] } {
+export function sitPose(plan: SitPlan, time: number, room: Room): Pose & { chair: [number, number] } {
+  const t = time < SIT.approach + plan.extra ? time * SIT.approach / (SIT.approach + plan.extra) : time - plan.extra;
   const [fx, fz] = plan.f, rx = fz * plan.side, rz = -fx * plan.side;
   const face = Math.atan2(fx, fz);
   const behind = (c: [number, number], extra = 0): [number, number] => [c[0] - fx * (0.64 + extra), c[1] - fz * (0.64 + extra)];
@@ -367,7 +433,8 @@ export function sitPose(plan: SitPlan, t: number, room: Room): Pose & { chair: [
   const front: [number, number] = [plan.c1[0] + fx * 0.5, plan.c1[1] + fz * 0.5];
   const seatAt = (c: [number, number]): [number, number] => [c[0] - fx * 0.04, c[1] - fz * 0.04];
   let at: [number, number], yaw = face;
-  if (t < SIT.pull[0]) { at = lerp2(plan.start, behind(plan.c0), seg(t, 0, SIT.approach)); yaw = turn(plan.startYaw, face, seg(t, 0, 0.6)); }
+  if (t < SIT.approach) ({ at, yaw } = walkTo(t / SIT.approach, plan.start, behind(plan.c0), plan.startYaw, face));
+  else if (t < SIT.pull[0]) at = behind(plan.c0);
   else if (t < SIT.around[0]) at = behind(chair);
   else if (t < SIT.down[0]) {
     const k = seg(t, SIT.around[0], SIT.around[1]);
@@ -429,5 +496,8 @@ export function roomShell(b: Building) {
     piece(-width / 2 + WALL / 2, -depth / 2, WALL / 2, depth / 2, fh / 2, fh / 2),
     piece(width / 2 - WALL / 2, -depth / 2, WALL / 2, depth / 2, fh / 2, fh / 2),
     piece(0, -depth / 2, width / 2, depth / 2, (CEILING + fh) / 2, (fh - CEILING) / 2),
+    // The divider either side of the kitchen doorway, and above it.
+    ...layout.solids.slice(1, 3).map((w) => piece(w.x, w.z, w.hx, w.hz, CEILING / 2, CEILING / 2)),
+    piece(layout.divider.doorX, layout.divider.z - WALL / 2, KITCHEN_DOOR / 2, WALL / 2, (KITCHEN_DOOR_H + CEILING) / 2, (CEILING - KITCHEN_DOOR_H) / 2),
   ];
 }

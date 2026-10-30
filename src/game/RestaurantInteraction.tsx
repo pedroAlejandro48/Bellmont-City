@@ -5,7 +5,7 @@ import { SIDEWALK_H, restaurantOpen, timeInfo, type City } from "./config";
 import type { GameState, Script, WorldReach } from "./state";
 import { InteractionPrompt } from "./InteractionPrompt";
 import {
-  CHAIR, ENTER, LEAVE, LOBBY, OUTSIDE, SIT, behindChair, enterPose, leavePose, localYaw, makeRoom, nearDoorInside, nearDoorOutside,
+  CHAIR, ENTER, LEAVE, LOBBY, enterLead, leaveLead, OUTSIDE, SIT, behindChair, enterPose, leavePose, localYaw, makeRoom, nearDoorInside, nearDoorOutside,
   planSit, roomKey, sitPose, smooth, toLocal, toWorld, worldYaw, type Frame, type Pose, type Reach, type Room,
 } from "./restaurantRoom";
 
@@ -112,10 +112,11 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
       frame = activeRoom.frame;
       const t = now - active.startedAt;
       if (active.phase === "entering") {
-        const step = enterPose(Math.min(t, ENTER.done), active.from, active.fromYaw);
+        const lead = enterLead(active.from);
+        const step = enterPose(Math.min(t, ENTER.done + lead), active.from, active.fromYaw);
         activeRoom.doors = step.door; pose = step; fade = Math.max(fade, step.fade);
-        if (t >= ENTER.black + 0.5 && !active.cameraSet) { active.cameraSet = true; state.rotY = worldYaw(frame, step.yaw); cameraBehind(state); }
-        if (t >= ENTER.done) {
+        if (t >= ENTER.black + lead + 0.5 && !active.cameraSet) { active.cameraSet = true; state.rotY = worldYaw(frame, step.yaw); cameraBehind(state); }
+        if (t >= ENTER.done + lead) {
           // In the lobby with the door closed behind; the world outside carried on all along.
           active.phase = "inside"; active.startedAt = now; state.fadeInAt = now; fade = 1; pose = null;
           activeRoom.doors = { left: 0, right: 0 };
@@ -123,10 +124,11 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
           state.pos.x = x; state.pos.z = z; state.rotY = worldYaw(frame, Math.PI);
         }
       } else if (active.phase === "leaving") {
-        const step = leavePose(Math.min(t, LEAVE.done), active.from, active.fromYaw);
+        const lead = leaveLead(active.from);
+        const step = leavePose(Math.min(t, LEAVE.done + lead), active.from, active.fromYaw);
         activeRoom.doors = step.door; pose = step; fade = Math.max(fade, step.fade);
-        if (t >= LEAVE.black + 0.5 && !active.cameraSet) { active.cameraSet = true; state.rotY = worldYaw(frame, step.yaw); cameraBehind(state); }
-        if (t >= LEAVE.done) {
+        if (t >= LEAVE.black + lead + 0.5 && !active.cameraSet) { active.cameraSet = true; state.rotY = worldYaw(frame, step.yaw); cameraBehind(state); }
+        if (t >= LEAVE.done + lead) {
           state.interior = null; state.fadeInAt = now; fade = 1; pose = null;
           activeRoom.doors = { left: 0, right: 0 };
           const [x, z] = toWorld(frame, OUTSIDE[0], OUTSIDE[1]);
@@ -135,10 +137,11 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
       } else if (state.seat) {
         const seat = state.seat, plan = seat.plan;
         let t = 0;
-        if (seat.phase === "sit") { t = now - seat.startedAt; if (t >= SIT.done) seat.phase = "seated"; }
-        if (seat.phase === "seated") t = SIT.done;
-        if (seat.phase === "stand") t = SIT.done - (now - seat.startedAt);
-        const step = sitPose(plan, Math.max(0, Math.min(SIT.done, t)), activeRoom);
+        const done = SIT.done + plan.extra;
+        if (seat.phase === "sit") { t = now - seat.startedAt; if (t >= done) seat.phase = "seated"; }
+        if (seat.phase === "seated") t = done;
+        if (seat.phase === "stand") t = done - (now - seat.startedAt);
+        const step = sitPose(plan, Math.max(0, Math.min(done, t)), activeRoom);
         const c = activeRoom.items[plan.chair];
         if (c) { c.x = step.chair[0]; c.z = step.chair[1]; }
         pose = step;
@@ -153,7 +156,10 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
     if (pose && frame) {
       const [x, z] = toWorld(frame, pose.x, pose.z), yaw = worldYaw(frame, pose.yaw);
       const prev = last.current;
-      const raw = prev ? ((x - prev.x) * Math.sin(yaw) + (z - prev.z) * Math.cos(yaw)) / dt : 0;
+      // Any movement steps the legs (sideways too); stepping backward plays them in reverse.
+      const dx = prev ? x - prev.x : 0, dz = prev ? z - prev.z : 0, speed = Math.hypot(dx, dz) / dt;
+      const along = dx * Math.sin(yaw) + dz * Math.cos(yaw);
+      const raw = along < -0.3 * Math.hypot(dx, dz) ? -speed : speed;
       const walk = prev ? prev.walk + (raw - prev.walk) * (1 - Math.exp(-14 * dt)) : 0;
       last.current = { x, z, walk };
       const reach = (r: Reach | null): WorldReach | null => {

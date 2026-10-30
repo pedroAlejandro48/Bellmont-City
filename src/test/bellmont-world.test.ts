@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BLOCK, DEFAULT_SAVE, HALF, N, PITCH, WORLD_HALF, generateCity, isWildernessRoad, rampTurn, resetProgress, wildernessCenter, PARK_TREES, PARK_BENCHES, PARK_CORNERS, PARK_RING_RADIUS, PARK_OBELISK_HEIGHT, GREEN_BLOCK_CHANCE, SIDEWALK_TREE_CENTER, TREE_BED_RADIUS, SIDEWALK_CANOPY_RADIUS, BUILDING_ENTRANCE, cityRoadDashes, restaurantSpots, restaurantOpen, RESTAURANT_KINDS } from "@/game/config";
+import { BLOCK, DEFAULT_SAVE, HALF, N, PITCH, WORLD_HALF, generateCity, isWildernessRoad, rampTurn, resetProgress, wildernessCenter, PARK_TREES, PARK_BENCHES, PARK_CORNERS, PARK_RING_RADIUS, PARK_OBELISK_HEIGHT, GREEN_BLOCK_CHANCE, SIDEWALK_TREE_CENTER, TREE_BED_RADIUS, SIDEWALK_CANOPY_RADIUS, BUILDING_ENTRANCE, cityRoadDashes, restaurantSpots, restaurantOpen, RESTAURANT_KINDS, buildingLayout } from "@/game/config";
 import { readSave } from "@/game/saves";
 import { createState, toSave } from "@/game/state";
 
@@ -7,7 +7,7 @@ describe("Bellmont world rules", () => {
   it("bounds streaming road markings locally even at opposite city corners", () => {
     for (const [x, z] of [[0, 0], [900, -900], [-900, 900], [700, 100]]) {
       const dashes = cityRoadDashes(x ?? 0, z ?? 0);
-      expect(dashes.length).toBeLessThan(1400);
+      expect(dashes.length).toBeLessThan(1800);
       expect(dashes.every((d) => Math.abs(d.x - (x ?? 0)) <= 260 && Math.abs(d.z - (z ?? 0)) <= 260)).toBe(true);
     }
     expect(cityRoadDashes(900, -900)).toEqual(cityRoadDashes(900, -900));
@@ -63,7 +63,7 @@ describe("Bellmont world rules", () => {
     expect(BUILDING_ENTRANCE).toEqual({ doors: 2, accessible: false, floorHeight: 5 });
   });
   it("bounds downtown ten blocks outward in each direction", () => {
-    expect(HALF).toBe(10); expect(N).toBe(21); expect(WORLD_HALF).toBe(546);
+    expect(HALF).toBe(10); expect(N).toBe(21); expect(WORLD_HALF).toBe(558);
     expect(generateCity(123, WORLD_HALF + 400, 0).buildings).toHaveLength(0);
   });
   it("uses a full central park block and spawns at its entrance", () => {
@@ -130,4 +130,32 @@ it("keeps sidewalk trees from hiding restaurant signs", () => {
       expect(city.trees.filter((t) => t.sidewalk && Math.hypot(t.x - b.x, t.z - b.z) < Math.max(b.w, b.d) / 2 + 3).length).toBeLessThan(2);
     }
   }
+});
+
+describe("blocks and the restaurants around the park", () => {
+  it("gives every block four buildings, the ones beside the avenues included", () => {
+    for (const [x, z] of [[0, 0], [60, 0], [0, -60], [300, 200], [-500, 520]]) {
+      const city = generateCity(42, x ?? 0, z ?? 0);
+      for (const b of city.blocks.filter((b) => !b.park)) {
+        expect(b.w).toBe(40); expect(b.d).toBe(40);
+        expect(city.buildings.filter((h) => Math.abs(h.x - b.x) < 20 && Math.abs(h.z - b.z) < 20)).toHaveLength(4);
+      }
+    }
+  });
+  it("puts one restaurant on each block across the avenues, every one facing the park, shuffled per world", () => {
+    const layouts = new Set<string>();
+    for (const seed of [1, 2, 3, 77, 1337, 99991]) {
+      const found = generateCity(seed, 0, 0).buildings.filter((b) => b.restaurant);
+      expect(new Set(found.map((b) => b.restaurant)).size).toBe(4);
+      for (const b of found) {
+        const L = buildingLayout(b);
+        // The door's side points back toward the park, across the avenue.
+        const out = L.door === "x" ? [L.sx, 0] : [0, L.sz];
+        expect(out[0]! * b.x + out[1]! * b.z).toBeLessThan(0);
+        expect(Math.max(Math.abs(b.x), Math.abs(b.z))).toBeLessThan(80);
+      }
+      layouts.add(found.map((b) => `${b.restaurant}@${Math.sign(Math.round(b.x / 30))},${Math.sign(Math.round(b.z / 30))}`).sort().join(" "));
+    }
+    expect(layouts.size).toBeGreaterThan(1);
+  });
 });

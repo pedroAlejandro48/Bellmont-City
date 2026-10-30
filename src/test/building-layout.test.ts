@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildingLayout, PITCH } from "@/game/config";
+import { blockCenter, buildingLayout, PITCH } from "@/game/config";
 
 describe("building layout", () => {
   it("street sides point away from the block centre", () => {
-    const L = buildingLayout({ x: PITCH * 2 - 8, z: PITCH + 8 });
+    const L = buildingLayout({ x: blockCenter(2) - 8, z: blockCenter(1) + 8 });
     expect([L.sx, L.sz]).toEqual([-1, 1]);
   });
   it("has exactly one main door, on a street side", () => {

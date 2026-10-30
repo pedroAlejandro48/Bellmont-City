@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { generateCity, restaurantSpots, PITCH, type Building } from "@/game/config";
-import { CHAIR, ENTER, LEAF, LEAVE, LOBBY, OUTSIDE, SIT, TABLE, chairBack, enterPose, footprint, leavePose, makeRoom, onLeaf, planSit, separation, sitPose, stepPerson, tableTop, toLocal, toWorld, behindChair } from "@/game/restaurantRoom";
+import { enterLead, leaveLead, CHAIR, ENTER, LEAF, LEAVE, LOBBY, OUTSIDE, SIT, TABLE, chairBack, enterPose, footprint, leavePose, makeRoom, onLeaf, planSit, separation, sitPose, stepPerson, tableTop, toLocal, toWorld, behindChair } from "@/game/restaurantRoom";
 
 const restaurants = (): Building[] => [...restaurantSpots(1337).keys()].flatMap((key) => {
   const [i = 0, j = 0] = key.split(",").map(Number);
@@ -58,13 +58,14 @@ describe("going in and out", () => {
   it("pulls the right door open, walks in, and ends in the lobby with the door shut and the screen black", () => {
     const start = enterPose(0, [0, 1.3], Math.PI);
     expect([start.x, start.z]).toEqual([0, 1.3]);
-    const end = enterPose(ENTER.done, [0, 1.3], Math.PI);
+    const lead = enterLead([0, 1.3]);
+    const end = enterPose(ENTER.done + lead, [0, 1.3], Math.PI);
     expect([end.x, end.z]).toEqual(LOBBY); expect(end.door.right).toBeCloseTo(0); expect(end.fade).toBe(1);
     expect(end.yaw).toBeCloseTo(Math.PI);
     // The hand is on the handle while it pulls; the door never sweeps through the body.
-    const pull = enterPose(1.6, [0, 1.3], Math.PI);
+    const pull = enterPose(1.6 + lead, [0, 1.3], Math.PI);
     expect(pull.right?.blend).toBe(1);
-    for (let t = 0; t <= ENTER.done; t += 0.05) {
+    for (let t = 0; t <= ENTER.done + lead; t += 0.05) {
       const p = enterPose(t, [0, 1.3], Math.PI);
       for (let r = 0.05; r <= LEAF; r += 0.05) {
         const [lx, lz] = onLeaf("right", p.door.right, r);
@@ -73,9 +74,14 @@ describe("going in and out", () => {
     }
   });
   it("pushes the door on the right on the way out and stops outside facing the street", () => {
-    const end = leavePose(LEAVE.done, LOBBY, Math.PI);
+    const lead = leaveLead(LOBBY);
+    expect(lead).toBeGreaterThan(0);
+    const end = leavePose(LEAVE.done + lead, LOBBY, Math.PI);
     expect([end.x, end.z]).toEqual(OUTSIDE); expect(end.yaw).toBeCloseTo(0); expect(end.door.left).toBeCloseTo(0);
-    expect(leavePose(1.6, LOBBY, Math.PI).right?.blend).toBe(1);
+    expect(leavePose(1.6 + lead, LOBBY, Math.PI).right?.blend).toBe(1);
+    // Walking there from the lobby: facing the way he walks (toward the door, +z), not sliding sideways.
+    const mid = leavePose(lead * 0.5 + 0.35, LOBBY, Math.PI);
+    expect(Math.cos(mid.yaw)).toBeGreaterThan(0.5);
   });
 });
 
@@ -91,7 +97,7 @@ describe("sitting at a table", () => {
     const index = room.items.findIndex((i) => i.kind === "chair"), c = room.items[index]!;
     const plan = planSit(room, index, c.x - c.f[0] * 0.8, c.z - c.f[1] * 0.8, Math.atan2(c.f[0], c.f[1]))!;
     expect(plan.table).not.toBeNull();
-    const pulled = sitPose(plan, SIT.pull[1], room).chair, seated = sitPose(plan, SIT.done, room);
+    const pulled = sitPose(plan, SIT.pull[1] + plan.extra, room).chair, seated = sitPose(plan, SIT.done + plan.extra, room);
     const out = (p: [number, number]) => (p[0] - c.x) * c.f[0] + (p[1] - c.z) * c.f[1];
     expect(out(pulled)).toBeLessThan(-0.3);
     expect(seated.sit).toBe(1); expect(out(seated.chair)).toBeGreaterThan(out(pulled));

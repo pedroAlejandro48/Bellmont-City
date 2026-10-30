@@ -54,6 +54,19 @@ function resolve(p: THREE.Vector3, c: Colliders, skip: string | null = null) {
   }
 }
 
+const turnTo = (from: number, to: number, t: number) => from + Math.atan2(Math.sin(to - from), Math.cos(to - from)) * t;
+const smoothstep = (t: number) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
+/**
+ * Walking up to a spot, `k` (0..1) of the way: turn to face the way to go, step there, then turn to `endYaw`.
+ * A short shuffle (under half a metre) is stepped without turning away.
+ */
+function stepYaw(k: number, fromYaw: number, from: THREE.Vector3, to: THREE.Vector3, endYaw: number) {
+  const dx = to.x - from.x, dz = to.z - from.z;
+  if (Math.hypot(dx, dz) < 0.5) return turnTo(fromYaw, endYaw, smoothstep(k / 0.8));
+  const heading = Math.atan2(dx, dz);
+  return k < 0.25 ? turnTo(fromYaw, heading, smoothstep(k / 0.25)) : k > 0.72 ? turnTo(heading, endYaw, smoothstep((k - 0.72) / 0.28)) : heading;
+}
+
 /** Which way an elbow bends while the hand reaches (in the shoulder's frame; side 1 = left arm). */
 const POLES = {
   low: (side: number) => new THREE.Vector3(side * 0.35, -0.6, -0.25),
@@ -113,6 +126,9 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     camInit: false,
     turnRate: 0,
     reverseBlend: 0,
+    /** Which bike action is playing (and the facing it started from), so its approach can step from there. */
+    actionKey: "",
+    actionYaw: 0,
   });
 
   useFrame((_, raw) => {
@@ -298,19 +314,27 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       const ease = (t: number) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
       const right = new THREE.Vector3(Math.cos(bike.yaw), 0, -Math.sin(bike.yaw));
       const ahead = new THREE.Vector3(Math.sin(bike.yaw), 0, Math.cos(bike.yaw));
+      const actionKey = `${bike.action}:${bike.actionAt}`;
+      if (s.actionKey !== actionKey) { s.actionKey = actionKey; s.actionYaw = state.rotY; }
+      // Walking up to the bike takes real steps: the legs swing while the feet travel (`stride` 0..1).
+      let stride = 0;
       if (bike.action === "pickup") {
         // One flow: step in and squat, grab, drive up through the legs with the torso close, then stand tall.
         const side = bike.actionSide;
         const liftT = ease((progress - 0.3) / 0.5);
         // Start right by the lying bike, then step in as it rises so the torso stays close to it.
         const stance = bike.pos.clone().addScaledVector(right, side * (1.0 - 0.42 * liftT)).addScaledVector(ahead, 0.05);
-        p.lerpVectors(bike.actionOrigin, stance, ease(progress / 0.2));
-        if (progress > 0.2) p.copy(stance);
+        const walkK = Math.min(1, progress / 0.22);
+        p.lerpVectors(bike.actionOrigin, stance, ease(walkK));
+        if (progress > 0.22) p.copy(stance);
         p.y = floorHeight(p.x, p.z);
-        const bend = progress < 0.3 ? ease(progress / 0.3) : 1 - liftT;
+        // Squat once there (not while still walking up).
+        const bend = progress < 0.3 ? ease((progress - 0.1) / 0.2) : 1 - liftT;
         hipL = hipR = -1.3 * bend; kneeL = kneeR = 1.9 * bend;
         lean = 0.75 * bend + 0.22 * Math.sin(Math.PI * liftT); bob = 0; riderOffset = -0.44 * bend;
-        state.rotY = Math.atan2(-side * right.x, -side * right.z);
+        const endYaw = Math.atan2(-side * right.x, -side * right.z);
+        state.rotY = walkK < 1 ? stepYaw(walkK, s.actionYaw, bike.actionOrigin, stance, endYaw) : endYaw;
+        stride = walkK < 1 ? Math.sin(Math.PI * walkK) * Math.min(1, bike.actionOrigin.distanceTo(stance) / 0.4) * (1 - bend) : 0;
       } else {
         // Mount and dismount share one path; dismount (always right side) plays it backward.
         const k = mount ? progress : dismount ? 1 - progress : 1;
@@ -339,14 +363,22 @@ export function Player({ state, city }: { state: GameState; city: City }) {
           plantSwing = side > 0 ? planted : -planted;
           const from = mount ? bike.actionOrigin : seatPosition.clone().addScaledVector(right, -0.75);
           const beside = seatPosition.clone().addScaledVector(right, side * 0.42);
-          const approach = ease(k / 0.3);
+          const walkK = Math.min(1, k / 0.3);
+          const approach = ease(walkK);
           p.lerpVectors(from, beside, approach);
           p.lerp(seatPosition, turn);
           const faceYaw = Math.atan2(-side * right.x, -side * right.z);
           const d = Math.atan2(Math.sin(bike.yaw - faceYaw), Math.cos(bike.yaw - faceYaw));
-          state.rotY = faceYaw + d * turn;
+          state.rotY = mount && walkK < 1 ? stepYaw(walkK, s.actionYaw, from, beside, faceYaw) : faceYaw + d * turn;
+          stride = walkK < 1 ? Math.sin(Math.PI * walkK) * Math.min(1, from.distanceTo(beside) / 0.3) : 0;
         }
         else if (bike.riding) { p.copy(seatPosition); state.rotY = bike.yaw; }
+      }
+      if (stride > 0) {
+        s.phase += dt * 10 * stride;
+        const swing = Math.sin(s.phase) * 0.55 * stride, lift = 0.6 * stride;
+        hipL -= swing; hipR += swing;
+        kneeL += lift * Math.max(0, Math.cos(s.phase)); kneeR += lift * Math.max(0, -Math.cos(s.phase));
       }
     }
     if (state.bench) {

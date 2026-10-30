@@ -9,7 +9,9 @@ export const STREET = 12;
 export const PITCH = BLOCK + STREET;
 export const N = 21;
 export const HALF = Math.floor(N / 2);
-export const WORLD_HALF = HALF * PITCH + PITCH / 2;
+/** Avenues around the park are 12 m wider than streets, pushing every block past them out by that much. */
+const AVENUE_EXTRA = 12;
+export const WORLD_HALF = HALF * PITCH + PITCH / 2 + AVENUE_EXTRA;
 /** The city's street surface: a square reaching the outer edge of the ring road. */
 export const CITY_GROUND_SIZE = WORLD_HALF * 2 + 12;
 export const SIDEWALK_H = 0.15;
@@ -135,9 +137,10 @@ export const SCOOTER_MASS = 110;
 export function bikePushShare() { return PERSON_MASS / (PERSON_MASS + SCOOTER_MASS); }
 
 /**
- * Streets are 12 m wide with one 6 m lane each way. The two main roads (one per axis, plus their countryside
- * continuations) have two 6 m lanes each way, so they are 24 m wide: they keep the street's edge on the park's
- * side and widen away from it, which narrows the blocks just past them (see blockSpan).
+ * Streets are 12 m wide with one 6 m lane each way. Four avenues ring the park (at ±MAIN_ROAD_CENTER on each
+ * axis) with two 6 m lanes each way, so they are 24 m wide; every block past them is pushed out 12 m, so all
+ * blocks stay full size. The avenues at +MAIN_ROAD_CENTER are the main roads: they carry on into the
+ * countryside.
  */
 export const ROAD_LANE_WIDTH = 6;
 export const MAIN_ROAD_WIDTH = 4 * ROAD_LANE_WIDTH;
@@ -147,13 +150,21 @@ export const TRAFFIC_SPAWN_GAP = 25;
 /** The gap a moving vehicle keeps behind the one ahead before it stops (m): one bus length. */
 export const TRAFFIC_FOLLOW_GAP = 11.1;
 export function roadLaneOffsets(main: boolean) { return main ? [ROAD_LANE_WIDTH / 2, ROAD_LANE_WIDTH * 1.5] : [ROAD_LANE_WIDTH / 2]; }
-/** Centre line of street k across one axis (k = 0 is the main road). */
-export function streetCenter(k: number) { return k === 0 ? MAIN_ROAD_CENTER : k * PITCH + PITCH / 2; }
-export function streetHalfWidth(center: number) { return Math.abs(center - MAIN_ROAD_CENTER) < 0.1 ? MAIN_ROAD_WIDTH / 2 : STREET / 2; }
-/** The street centres around coordinate t, in order (a main road can be nearer than the grid suggests). */
+/** Centre line of street k across one axis (k = 0 and k = -1 are the avenues either side of the park). */
+export function streetCenter(k: number) {
+  if (k === 0) return MAIN_ROAD_CENTER;
+  if (k === -1) return -MAIN_ROAD_CENTER;
+  return k * PITCH + PITCH / 2 + (k > 0 ? AVENUE_EXTRA : -AVENUE_EXTRA);
+}
+/** A four-lane avenue (either side of the park), as opposed to a two-lane street. */
+export const isAvenue = (center: number) => Math.abs(Math.abs(center) - MAIN_ROAD_CENTER) < 0.1;
+export function streetHalfWidth(center: number) { return isAvenue(center) ? MAIN_ROAD_WIDTH / 2 : STREET / 2; }
+/** The grid index of the street (or block) nearest to t, roughly; neighbours cover the rest. */
+const gridGuess = (t: number) => Math.round((t - PITCH / 2 - Math.sign(t) * AVENUE_EXTRA) / PITCH);
+/** The street centres around coordinate t, in order. */
 function streetsNear(t: number) {
-  const k = Math.round((t - PITCH / 2) / PITCH);
-  return [k - 1, k, k + 1].map(streetCenter);
+  const k = gridGuess(t);
+  return [k - 2, k - 1, k, k + 1, k + 2].map(streetCenter);
 }
 /** The nearest street centre to t across one axis. */
 export function nearestStreet(t: number) {
@@ -161,17 +172,24 @@ export function nearestStreet(t: number) {
 }
 /** The next street centre strictly ahead of t when moving in `dir`. */
 export function nextStreet(t: number, dir: 1 | -1) {
-  const k = Math.floor((t - PITCH / 2) / PITCH);
-  const candidates = [k - 1, k, k + 1, k + 2].map(streetCenter);
+  const k = gridGuess(t);
+  const candidates = [k - 2, k - 1, k, k + 1, k + 2, k + 3].map(streetCenter);
   return dir === 1 ? Math.min(...candidates.filter((c) => c > t + 1e-6)) : Math.max(...candidates.filter((c) => c < t - 1e-6));
 }
-/** Where block i spans across one axis: 40 m, except past a main road, where the wider road takes 12 m. */
+/** The middle of block i across one axis (block 0 is the park). */
+export function blockCenter(i: number) { return i * PITCH + Math.sign(i) * AVENUE_EXTRA; }
+/** Where block i spans across one axis: always a full 40 m. */
 export function blockSpan(i: number): [number, number] {
-  const lo = i * PITCH - BLOCK / 2, hi = i * PITCH + BLOCK / 2;
-  return i === 1 ? [MAIN_ROAD_CENTER + MAIN_ROAD_WIDTH / 2, hi] : [lo, hi];
+  const c = blockCenter(i);
+  return [c - BLOCK / 2, c + BLOCK / 2];
+}
+/** The block whose middle is nearest to t. */
+export function blockIndex(t: number) {
+  const i = Math.round(t / PITCH);
+  return [i - 1, i, i + 1].reduce((best, k) => (Math.abs(blockCenter(k) - t) < Math.abs(blockCenter(best) - t) ? k : best));
 }
 export function roadLane(axis: "x" | "z", dir: 1 | -1, center: number, slot = 0) {
-  const main = Math.abs(center - MAIN_ROAD_CENTER) < 0.1;
+  const main = isAvenue(center);
   const offset = roadLaneOffsets(main)[slot] ?? 3;
   return center + (axis === "x" ? dir : -dir) * offset;
 }
@@ -184,7 +202,7 @@ export function trafficSpawnClear(x: number, z: number, length: number, all: { x
   return all.every((v) => Math.hypot(x - v.x, z - v.z) >= (length + VEHICLE_SIZE[v.kind][0]) / 2 + TRAFFIC_SPAWN_GAP);
 }
 
-export type Building = { x: number; z: number; w: number; d: number; h: number; variant: number; restaurant?: RestaurantKind };
+export type Building = { x: number; z: number; w: number; d: number; h: number; variant: number; restaurant?: RestaurantKind; door?: "x" | "z" };
 
 export type RestaurantKind = "cafe" | "pizza" | "fine" | "burger";
 /** The city's four restaurants, with their opening hours on the 24 h clock (`closes` 24 = open all day). */
@@ -199,29 +217,26 @@ export function restaurantOpen(kind: RestaurantKind, hours: number) {
   const { opens, closes } = RESTAURANTS[kind];
   return hours >= opens && hours < closes;
 }
-/** How far from the park (in blocks) the restaurants may be, so they are downtown and easy to find. */
-const RESTAURANT_REACH = 4;
 const blockRandom = (seed: number, i: number, j: number) => rng(i === 0 && j === 0 ? PARK_SEED : seed ^ Math.imul(i + 101, 73856093) ^ Math.imul(j + 101, 19349663));
-/** Full blocks hold a 2×2 of buildings; a block narrowed by a main road holds one row across it. */
-const buildingColumns = (size: number) => (size >= BLOCK ? [-8, 8] : [0]);
+/** Every block holds a 2×2 of buildings, listed by column (x) then row (z). */
+const buildingColumns = (_size: number) => [-8, 8];
+/** The blocks across the avenues from the park, one on each side. */
+const PARK_NEIGHBOURS = [[1, 0], [-1, 0], [0, 1], [0, -1]] as const;
 /**
- * Which building of which block holds each restaurant: four different downtown blocks, chosen from the world
- * seed alone, so every player in a world (and every streamed piece of it) agrees.
+ * The four restaurants: one in each block across the avenues from the park, in one of its two buildings
+ * facing the park, with the door on the park side. Which goes where is shuffled per world (from its seed, so
+ * every player in a world, and every streamed piece of it, agrees).
  */
 export function restaurantSpots(seed: number) {
   const r = rng(seed ^ 0x7e57a0);
-  const spots = new Map<string, { index: number; kind: RestaurantKind }>();
-  for (const kind of RESTAURANT_KINDS) {
-    for (let attempt = 0; attempt < 200; attempt++) {
-      const i = Math.floor(r() * (RESTAURANT_REACH * 2 + 1)) - RESTAURANT_REACH, j = Math.floor(r() * (RESTAURANT_REACH * 2 + 1)) - RESTAURANT_REACH;
-      const key = `${i},${j}`;
-      if ((i === 0 && j === 0) || spots.has(key) || blockRandom(seed, i, j)() < GREEN_BLOCK_CHANCE) continue;
-      const [x0, x1] = blockSpan(i), [z0, z1] = blockSpan(j);
-      const count = buildingColumns(x1 - x0).length * buildingColumns(z1 - z0).length;
-      spots.set(key, { index: Math.floor(r() * count), kind });
-      break;
-    }
-  }
+  const kinds = [...RESTAURANT_KINDS];
+  for (let i = kinds.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [kinds[i], kinds[j]] = [kinds[j]!, kinds[i]!]; }
+  const spots = new Map<string, { index: number; kind: RestaurantKind; door: "x" | "z" }>();
+  PARK_NEIGHBOURS.forEach(([i, j], n) => {
+    // Building index = column * 2 + row; the park-facing pair is the column (or row) nearer the park.
+    const facing = i === 1 ? [0, 1] : i === -1 ? [2, 3] : j === 1 ? [0, 2] : [1, 3];
+    spots.set(`${i},${j}`, { index: facing[Math.floor(r() * 2)]!, kind: kinds[n]!, door: i !== 0 ? "x" : "z" });
+  });
   return spots;
 }
 export type Prop = { x: number; z: number; rot: number; s: number; sidewalk?: boolean };
@@ -243,14 +258,14 @@ export function cityRoadDashes(x: number, z: number) {
   const dashes: { x: number; z: number; rot: number; divider?: boolean; solid?: boolean }[] = [];
   for (const axis of ["x", "z"] as const) {
     const along = axis === "x" ? x : z, across = axis === "x" ? z : x;
-    const cell = Math.round(across / PITCH);
+    const cell = blockIndex(across);
     for (let k = Math.max(-HALF - 1, cell - 4); k <= Math.min(HALF, cell + 4); k++) {
       const street = streetCenter(k);
       for (let p = Math.ceil(Math.max(-WORLD_HALF, along - 220) / 6) * 6; p < Math.min(WORLD_HALF, along + 220); p += 6) {
         // No markings inside intersections.
         const cross = nearestStreet(p);
         if (Math.abs(p - cross) < streetHalfWidth(cross) + 1) continue;
-        const main = Math.abs(street - MAIN_ROAD_CENTER) < 0.1;
+        const main = isAvenue(street);
         if (main) for (const offset of [-DOUBLE_LINE_GAP / 2, DOUBLE_LINE_GAP / 2]) dashes.push({ x: axis === "x" ? p : street + offset, z: axis === "x" ? street + offset : p, rot: axis === "x" ? 0 : Math.PI / 2, solid: true });
         else dashes.push({ x: axis === "x" ? p : street, z: axis === "x" ? street : p, rot: axis === "x" ? 0 : Math.PI / 2 });
         if (main) for (const offset of [-ROAD_LANE_WIDTH, ROAD_LANE_WIDTH]) dashes.push({ x: axis === "x" ? p : street + offset, z: axis === "x" ? street + offset : p, rot: axis === "x" ? 0 : Math.PI / 2, divider: true });
@@ -261,8 +276,8 @@ export function cityRoadDashes(x: number, z: number) {
 }
 
 export function generateCity(seed = 1337, focusX = 0, focusZ = 0): City {
-  const fi = Math.round(focusX / PITCH);
-  const fj = Math.round(focusZ / PITCH);
+  const fi = blockIndex(focusX);
+  const fj = blockIndex(focusZ);
   const city: City = { blocks: [], buildings: [], trees: [], lamps: [] };
   const restaurants = restaurantSpots(seed);
   for (let i = Math.max(-HALF, fi - 3); i <= Math.min(HALF, fi + 3); i++) {
@@ -272,7 +287,9 @@ export function generateCity(seed = 1337, focusX = 0, focusZ = 0): City {
       const [x0, x1] = blockSpan(i), [z0, z1] = blockSpan(j);
       const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, bw = x1 - x0, bd = z1 - z0;
       const center = i === 0 && j === 0;
-      const park = center || r() < GREEN_BLOCK_CHANCE;
+      // The blocks holding the restaurants are never parks.
+      const green = r() < GREEN_BLOCK_CHANCE;
+      const park = center || (green && !restaurant);
       city.blocks.push({ x: cx, z: cz, w: bw, d: bd, park });
       const dist = Math.hypot(i, j);
       const first = city.buildings.length;
@@ -284,7 +301,7 @@ export function generateCity(seed = 1337, focusX = 0, focusZ = 0): City {
             const floors = Math.floor(3 + r() * (dist < 1.5 ? 18 : dist < 3 ? 10 : 6));
             // A taller ground floor, then 3 m floors above it.
             const building: Building = { x: cx + sx, z: cz + sz, w, d, h: floors * 3 + BUILDING_ENTRANCE.floorHeight - 3, variant: Math.floor(r() * 4) };
-            if (restaurant && restaurant.index === city.buildings.length - first) building.restaurant = restaurant.kind;
+            if (restaurant && restaurant.index === city.buildings.length - first) { building.restaurant = restaurant.kind; building.door = restaurant.door; }
             city.buildings.push(building);
           }
       } else if (!center) {
@@ -341,8 +358,8 @@ export function generateCity(seed = 1337, focusX = 0, focusZ = 0): City {
 }
 
 export function floorHeight(x: number, z: number) {
-  const i = Math.round(x / PITCH);
-  const j = Math.round(z / PITCH);
+  const i = blockIndex(x);
+  const j = blockIndex(z);
   if (Math.abs(i) > HALF || Math.abs(j) > HALF) return 0;
   const [x0, x1] = blockSpan(i), [z0, z1] = blockSpan(j);
   return x >= x0 && x <= x1 && z >= z0 && z <= z1 ? SIDEWALK_H : 0;
@@ -630,13 +647,13 @@ export type BuildingLayout = {
   groundLit: boolean;
 };
 /** Deterministic per-building facade layout derived from its position only (keeps world RNG unchanged). */
-export function buildingLayout(b: { x: number; z: number }): BuildingLayout {
-  const sx = b.x - Math.round(b.x / PITCH) * PITCH >= 0 ? 1 : -1;
-  const sz = b.z - Math.round(b.z / PITCH) * PITCH >= 0 ? 1 : -1;
+export function buildingLayout(b: { x: number; z: number; door?: "x" | "z" | undefined }): BuildingLayout {
+  const sx = b.x - blockCenter(blockIndex(b.x)) >= 0 ? 1 : -1;
+  const sz = b.z - blockCenter(blockIndex(b.z)) >= 0 ? 1 : -1;
   let h = (Math.imul(Math.round(b.x * 10), 73856093) ^ Math.imul(Math.round(b.z * 10), 19349663)) >>> 0;
   // Avalanche-mix so low bits (door side, style) are not tied to coordinate parity.
   h = Math.imul(h ^ (h >>> 16), 0x45d9f3b) >>> 0; h = Math.imul(h ^ (h >>> 16), 0x45d9f3b) >>> 0; h = (h ^ (h >>> 16)) >>> 0;
   const rot = sx === 1 ? (sz === 1 ? 0 : Math.PI / 2) : sz === 1 ? -Math.PI / 2 : Math.PI;
   const back = (h >>> 3) % 8;
-  return { sx, sz, rot, swap: sx !== sz, door: h % 2 ? "x" : "z", backDoor: back === 0 ? "x" : back === 1 ? "z" : null, style: (h >>> 7) % FACADE_STYLES, groundLit: ((h >>> 11) & 1) === 1 };
+  return { sx, sz, rot, swap: sx !== sz, door: b.door ?? (h % 2 ? "x" : "z"), backDoor: back === 0 ? "x" : back === 1 ? "z" : null, style: (h >>> 7) % FACADE_STYLES, groundLit: ((h >>> 11) & 1) === 1 };
 }
