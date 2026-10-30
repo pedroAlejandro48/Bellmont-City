@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BLOCK, DEFAULT_SAVE, HALF, N, PITCH, WORLD_HALF, generateCity, isWildernessRoad, rampTurn, resetProgress, wildernessCenter, PARK_TREES, PARK_BENCHES, PARK_CORNERS, PARK_RING_RADIUS, PARK_OBELISK_HEIGHT, GREEN_BLOCK_CHANCE, SIDEWALK_TREE_CENTER, TREE_BED_RADIUS, SIDEWALK_CANOPY_RADIUS, BUILDING_ENTRANCE, cityRoadDashes } from "@/game/config";
+import { BLOCK, DEFAULT_SAVE, HALF, N, PITCH, WORLD_HALF, generateCity, isWildernessRoad, rampTurn, resetProgress, wildernessCenter, PARK_TREES, PARK_BENCHES, PARK_CORNERS, PARK_RING_RADIUS, PARK_OBELISK_HEIGHT, GREEN_BLOCK_CHANCE, SIDEWALK_TREE_CENTER, TREE_BED_RADIUS, SIDEWALK_CANOPY_RADIUS, BUILDING_ENTRANCE, cityRoadDashes, restaurantSpots, restaurantOpen, RESTAURANT_KINDS } from "@/game/config";
 import { readSave } from "@/game/saves";
 import { createState, toSave } from "@/game/state";
 
@@ -60,10 +60,10 @@ describe("Bellmont world rules", () => {
     }
   });
   it("keeps double-door entrances closed with glazing only on the ground floor", () => {
-    expect(BUILDING_ENTRANCE).toEqual({ doors: 2, accessible: false, floorHeight: 3 });
+    expect(BUILDING_ENTRANCE).toEqual({ doors: 2, accessible: false, floorHeight: 5 });
   });
-  it("bounds downtown twenty blocks outward in each direction", () => {
-    expect(HALF).toBe(20); expect(N).toBe(41);
+  it("bounds downtown ten blocks outward in each direction", () => {
+    expect(HALF).toBe(10); expect(N).toBe(21); expect(WORLD_HALF).toBe(546);
     expect(generateCity(123, WORLD_HALF + 400, 0).buildings).toHaveLength(0);
   });
   it("uses a full central park block and spawns at its entrance", () => {
@@ -101,4 +101,33 @@ describe("Bellmont world rules", () => {
     expect(rampTurn(held, 0, 0.05)).toBe(0);
     expect(rampTurn(held, -1, 0.05)).toBeCloseTo(-0.17);
   });
+});
+describe("restaurants", () => {
+  it("puts each of the four restaurants on its own downtown building, the same for everyone in a world", () => {
+    for (const seed of [1, 123, 1337, 987654]) {
+      const spots = restaurantSpots(seed);
+      expect([...spots.values()].map((s) => s.kind).sort()).toEqual([...RESTAURANT_KINDS].sort());
+      const found = [...spots.keys()].flatMap((key) => {
+        const [i = 0, j = 0] = key.split(",").map(Number);
+        return generateCity(seed, i * PITCH, j * PITCH).buildings.filter((b) => b.restaurant);
+      });
+      expect(new Set(found.map((b) => b.restaurant)).size).toBe(4);
+      expect(found.every((b) => Math.max(Math.abs(b.x), Math.abs(b.z)) < 5 * PITCH)).toBe(true);
+    }
+  });
+  it("closes the café at 5 pm, the pizzeria at 8 pm, the Japanese restaurant at 10 pm, and never the burger place", () => {
+    expect([restaurantOpen("cafe", 16.9), restaurantOpen("cafe", 17)]).toEqual([true, false]);
+    expect([restaurantOpen("pizza", 19.9), restaurantOpen("pizza", 20)]).toEqual([true, false]);
+    expect([restaurantOpen("fine", 21.9), restaurantOpen("fine", 22)]).toEqual([true, false]);
+    for (let h = 0; h < 24; h += 0.5) expect(restaurantOpen("burger", h)).toBe(true);
+  });
+});
+it("keeps sidewalk trees from hiding restaurant signs", () => {
+  for (const key of restaurantSpots(1337).keys()) {
+    const [i = 0, j = 0] = key.split(",").map(Number);
+    const city = generateCity(1337, i * PITCH, j * PITCH);
+    for (const b of city.buildings.filter((b) => b.restaurant)) {
+      expect(city.trees.filter((t) => t.sidewalk && Math.hypot(t.x - b.x, t.z - b.z) < Math.max(b.w, b.d) / 2 + 3).length).toBeLessThan(2);
+    }
+  }
 });

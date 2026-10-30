@@ -1,13 +1,13 @@
 // Pure, browser-safe world config + generation (no randomness at module scope).
-export const DAY_SECONDS = 600; // 10 minutes of daylight
-export const NIGHT_SECONDS = 600; // 10 minutes of night
+export const DAY_SECONDS = 1200; // 20 minutes of daylight
+export const NIGHT_SECONDS = 1200; // 20 minutes of night
 export const CYCLE = DAY_SECONDS + NIGHT_SECONDS;
 export const START_ELAPSED = 45; // early morning
 
 export const BLOCK = 40;
 export const STREET = 12;
 export const PITCH = BLOCK + STREET;
-export const N = 41;
+export const N = 21;
 export const HALF = Math.floor(N / 2);
 export const WORLD_HALF = HALF * PITCH + PITCH / 2;
 /** The city's street surface: a square reaching the outer edge of the ring road. */
@@ -64,7 +64,8 @@ export const GREEN_BLOCK_CHANCE = 0.02;
 export const SIDEWALK_TREE_CENTER = 17.65;
 export const TREE_BED_RADIUS = 1.5;
 export const SIDEWALK_CANOPY_RADIUS = 2.15;
-export const BUILDING_ENTRANCE = { doors: 2, accessible: false, floorHeight: 3 } as const;
+/** The ground floor is taller than the 3 m upper floors, leaving room for a shop sign above the doors. */
+export const BUILDING_ENTRANCE = { doors: 2, accessible: false, floorHeight: 5 } as const;
 export const PARK_CORNERS: [number, number][] = [[-17, -17], [17, -17], [17, 17], [-17, 17]];
 export const PARK_BENCHES = PARK_CORNERS.map(([x, z]) => {
   const angle = Math.atan2(x, z);
@@ -183,7 +184,46 @@ export function trafficSpawnClear(x: number, z: number, length: number, all: { x
   return all.every((v) => Math.hypot(x - v.x, z - v.z) >= (length + VEHICLE_SIZE[v.kind][0]) / 2 + TRAFFIC_SPAWN_GAP);
 }
 
-export type Building = { x: number; z: number; w: number; d: number; h: number; variant: number };
+export type Building = { x: number; z: number; w: number; d: number; h: number; variant: number; restaurant?: RestaurantKind };
+
+export type RestaurantKind = "cafe" | "pizza" | "fine" | "burger";
+/** The city's four restaurants, with their opening hours on the 24 h clock (`closes` 24 = open all day). */
+export const RESTAURANTS: Record<RestaurantKind, { name: string; food: string; opens: number; closes: number }> = {
+  cafe: { name: "Morning Bell Café", food: "Coffee · Pastries · Breakfast", opens: 6, closes: 17 },
+  pizza: { name: "Nonna Lucia's", food: "Pizzeria", opens: 11, closes: 20 },
+  fine: { name: "Hanami", food: "Japanese Fine Dining", opens: 12, closes: 22 },
+  burger: { name: "Big Bell Burgers", food: "Open 24 hours", opens: 0, closes: 24 },
+};
+export const RESTAURANT_KINDS = Object.keys(RESTAURANTS) as RestaurantKind[];
+export function restaurantOpen(kind: RestaurantKind, hours: number) {
+  const { opens, closes } = RESTAURANTS[kind];
+  return hours >= opens && hours < closes;
+}
+/** How far from the park (in blocks) the restaurants may be, so they are downtown and easy to find. */
+const RESTAURANT_REACH = 4;
+const blockRandom = (seed: number, i: number, j: number) => rng(i === 0 && j === 0 ? PARK_SEED : seed ^ Math.imul(i + 101, 73856093) ^ Math.imul(j + 101, 19349663));
+/** Full blocks hold a 2×2 of buildings; a block narrowed by a main road holds one row across it. */
+const buildingColumns = (size: number) => (size >= BLOCK ? [-8, 8] : [0]);
+/**
+ * Which building of which block holds each restaurant: four different downtown blocks, chosen from the world
+ * seed alone, so every player in a world (and every streamed piece of it) agrees.
+ */
+export function restaurantSpots(seed: number) {
+  const r = rng(seed ^ 0x7e57a0);
+  const spots = new Map<string, { index: number; kind: RestaurantKind }>();
+  for (const kind of RESTAURANT_KINDS) {
+    for (let attempt = 0; attempt < 200; attempt++) {
+      const i = Math.floor(r() * (RESTAURANT_REACH * 2 + 1)) - RESTAURANT_REACH, j = Math.floor(r() * (RESTAURANT_REACH * 2 + 1)) - RESTAURANT_REACH;
+      const key = `${i},${j}`;
+      if ((i === 0 && j === 0) || spots.has(key) || blockRandom(seed, i, j)() < GREEN_BLOCK_CHANCE) continue;
+      const [x0, x1] = blockSpan(i), [z0, z1] = blockSpan(j);
+      const count = buildingColumns(x1 - x0).length * buildingColumns(z1 - z0).length;
+      spots.set(key, { index: Math.floor(r() * count), kind });
+      break;
+    }
+  }
+  return spots;
+}
 export type Prop = { x: number; z: number; rot: number; s: number; sidewalk?: boolean };
 export type City = {
   /** Block centres and sizes (w across x, d across z). */
@@ -224,24 +264,28 @@ export function generateCity(seed = 1337, focusX = 0, focusZ = 0): City {
   const fi = Math.round(focusX / PITCH);
   const fj = Math.round(focusZ / PITCH);
   const city: City = { blocks: [], buildings: [], trees: [], lamps: [] };
+  const restaurants = restaurantSpots(seed);
   for (let i = Math.max(-HALF, fi - 3); i <= Math.min(HALF, fi + 3); i++) {
     for (let j = Math.max(-HALF, fj - 3); j <= Math.min(HALF, fj + 3); j++) {
-      const r = rng(i === 0 && j === 0 ? PARK_SEED : seed ^ Math.imul(i + 101, 73856093) ^ Math.imul(j + 101, 19349663));
+      const r = blockRandom(seed, i, j);
+      const restaurant = restaurants.get(`${i},${j}`);
       const [x0, x1] = blockSpan(i), [z0, z1] = blockSpan(j);
       const cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, bw = x1 - x0, bd = z1 - z0;
       const center = i === 0 && j === 0;
       const park = center || r() < GREEN_BLOCK_CHANCE;
       city.blocks.push({ x: cx, z: cz, w: bw, d: bd, park });
       const dist = Math.hypot(i, j);
-      // Full blocks hold a 2×2 of buildings; a block narrowed by a main road holds one row across it.
-      const columns = (size: number) => (size >= BLOCK ? [-8, 8] : [0]);
+      const first = city.buildings.length;
       if (!park) {
-        for (const sx of columns(bw))
-          for (const sz of columns(bd)) {
+        for (const sx of buildingColumns(bw))
+          for (const sz of buildingColumns(bd)) {
             const w = 11 + r() * 3.5;
             const d = 11 + r() * 3.5;
             const floors = Math.floor(3 + r() * (dist < 1.5 ? 18 : dist < 3 ? 10 : 6));
-            city.buildings.push({ x: cx + sx, z: cz + sz, w, d, h: floors * 3, variant: Math.floor(r() * 4) });
+            // A taller ground floor, then 3 m floors above it.
+            const building: Building = { x: cx + sx, z: cz + sz, w, d, h: floors * 3 + BUILDING_ENTRANCE.floorHeight - 3, variant: Math.floor(r() * 4) };
+            if (restaurant && restaurant.index === city.buildings.length - first) building.restaurant = restaurant.kind;
+            city.buildings.push(building);
           }
       } else if (!center) {
         const reach = (size: number) => Math.floor((size / 2 - 8) / 6);
@@ -284,6 +328,13 @@ export function generateCity(seed = 1337, focusX = 0, focusZ = 0): City {
       if (Math.max(Math.abs(x), Math.abs(z)) < WORLD_HALF + 9 || isWildernessRoad(x, z, seed, MAIN_ROAD_WIDTH / 2 + 6)) continue;
       city.trees.push({ x, z, rot: r() * Math.PI * 2, s: 0.98 + r() * 0.04 });
     }
+  }
+  // No sidewalk tree hides a restaurant's sign.
+  for (const b of city.buildings) {
+    if (!b.restaurant) continue;
+    const L = buildingLayout(b);
+    const ex = L.door === "x" ? b.x + L.sx * b.w / 2 : b.x, ez = L.door === "z" ? b.z + L.sz * b.d / 2 : b.z;
+    city.trees = city.trees.filter((t) => !t.sidewalk || Math.hypot(t.x - ex, t.z - ez) > 7);
   }
   if (city.blocks.some((b) => b.x === 0 && b.z === 0)) city.trees.push(...PARK_TREES);
   return city;

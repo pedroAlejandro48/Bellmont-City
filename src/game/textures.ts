@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { rng } from "./config";
 
-function canvas(w: number, h: number) {
+export function canvas(w: number, h: number) {
   const c = document.createElement("canvas");
   c.width = w;
   c.height = h;
@@ -10,7 +10,7 @@ function canvas(w: number, h: number) {
   return [c, context] as const;
 }
 
-function tex(c: HTMLCanvasElement, repeat = 1) {
+export function tex(c: HTMLCanvasElement, repeat = 1) {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -32,7 +32,7 @@ const WINDOW_STYLES = [
   { cols: 4, w: 34, h: 22 },
 ];
 export function wallColor(variant: number) { return (FACADES[variant % 4] ?? { wall: "#c9c0b1" }).wall; }
-function paintWall(g: CanvasRenderingContext2D, wall: string, W: number, H: number, seed: number) {
+export function paintWall(g: CanvasRenderingContext2D, wall: string, W: number, H: number, seed: number) {
   const r = rng(seed);
   g.fillStyle = wall; g.fillRect(0, 0, W, H);
   for (let i = 0; i < (W * H) / 44; i++) { g.fillStyle = `rgba(0,0,0,${r() * 0.06})`; g.fillRect(r() * W, r() * H, 2, 2); }
@@ -64,7 +64,7 @@ export function makeBlankWall(variant: number) {
   paintWall(g, wallColor(variant), 256, 256, variant * 31 + 1);
   return tex(c);
 }
-function glassPane(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+export function glassPane(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
   const grad = g.createLinearGradient(0, y, 0, y + h);
   grad.addColorStop(0, "#8caebd"); grad.addColorStop(0.5, "#456374"); grad.addColorStop(1, "#253e49");
   g.fillStyle = "#293738"; g.fillRect(x - 5, y - 5, w + 10, h + 10);
@@ -72,21 +72,34 @@ function glassPane(g: CanvasRenderingContext2D, x: number, y: number, w: number,
   g.fillStyle = "rgba(222,242,244,0.22)";
   g.beginPath(); g.moveTo(x + 8, y); g.lineTo(x + w * 0.5, y); g.lineTo(x + w * 0.25, y + h - 8); g.lineTo(x + 6, y + h - 8); g.fill();
 }
-/** Ground floor in the building's own wall colour: optional central double door plus moderate shop windows. */
+/** Pixels per metre of the 5 m ground-floor textures (1024 × 384 across a ~12.8 m wide face). */
+export const GROUND_PX = 384 / 5;
+/** Height in canvas pixels of a point `metres` above the pavement. */
+export const groundY = (metres: number) => Math.round(384 - metres * GROUND_PX);
+/**
+ * Ground floor in the building's own wall colour: optional central double door plus moderate shop windows,
+ * and above the door a plain panel where a shop could hang its sign.
+ */
 export function makeGroundFloor(variant = 0, withDoor = true) {
-  const [c, g] = canvas(1024, 256);
-  paintWall(g, wallColor(variant), 1024, 256, variant * 17 + 5);
+  const [c, g] = canvas(1024, 384);
+  paintWall(g, wallColor(variant), 1024, 384, variant * 17 + 5);
+  const top = groundY(3), bottom = groundY(0.8), doorTop = groundY(2.7);
   const windows: [number, number][] = withDoor ? [[90, 230], [704, 230]] : [[80, 240], [392, 240], [704, 240]];
-  for (const [x, w] of windows) glassPane(g, x, 60, w, 140);
+  for (const [x, w] of windows) glassPane(g, x, top, w, bottom - top);
   if (withDoor) {
-    glassPane(g, 400, 40, 108, 210); glassPane(g, 516, 40, 108, 210);
-    g.fillStyle = "#dce2dd"; g.fillRect(492, 130, 5, 40); g.fillRect(527, 130, 5, 40);
-    g.fillStyle = "#293738"; g.fillRect(395, 30, 234, 8);
+    glassPane(g, 400, doorTop, 108, 384 - doorTop); glassPane(g, 516, doorTop, 108, 384 - doorTop);
+    g.fillStyle = "#dce2dd"; g.fillRect(492, groundY(1.2), 5, 40); g.fillRect(527, groundY(1.2), 5, 40);
+    g.fillStyle = "#293738"; g.fillRect(395, doorTop - 10, 234, 8);
+    // The empty sign panel over the entrance.
+    g.fillStyle = "rgba(0,0,0,0.12)"; g.fillRect(262, groundY(4.65), 500, groundY(3.3) - groundY(4.65));
+    g.fillStyle = "rgba(255,255,255,0.12)"; g.fillRect(262, groundY(3.3) - 4, 500, 4);
   }
-  const [e, ge] = canvas(1024, 256);
-  ge.fillStyle = "#000"; ge.fillRect(0, 0, 1024, 256); ge.fillStyle = "#fff";
-  for (const [x, w] of windows) ge.fillRect(x, 60, w, 140);
-  if (withDoor) { ge.fillRect(400, 40, 108, 210); ge.fillRect(516, 40, 108, 210); }
+  // A stone band where the upper floors begin.
+  g.fillStyle = "rgba(0,0,0,0.22)"; g.fillRect(0, 0, 1024, 10);
+  const [e, ge] = canvas(1024, 384);
+  ge.fillStyle = "#000"; ge.fillRect(0, 0, 1024, 384); ge.fillStyle = "#fff";
+  for (const [x, w] of windows) ge.fillRect(x, top, w, bottom - top);
+  if (withDoor) { ge.fillRect(400, doorTop, 108, 384 - doorTop); ge.fillRect(516, doorTop, 108, 384 - doorTop); }
   const map = tex(c); map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping;
   const emissiveMap = tex(e); emissiveMap.wrapS = emissiveMap.wrapT = THREE.ClampToEdgeWrapping;
   return { map, emissiveMap };

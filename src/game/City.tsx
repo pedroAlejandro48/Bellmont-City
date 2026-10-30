@@ -6,6 +6,7 @@ import { buildingGeo, cityAsphalt, makeFacade, makeGlow, makeNoise, makeGroundFl
 import type { GameState } from "./state";
 import { Trees } from "./Trees";
 import { Park } from "./Park";
+import { Restaurants } from "./Restaurants";
 
 function useInstances(ref: React.RefObject<THREE.InstancedMesh | null>, mats: THREE.Matrix4[]) {
   useLayoutEffect(() => {
@@ -56,13 +57,15 @@ export function City({ city, state }: { city: CityT; state: GameState }) {
     const fh = BUILDING_ENTRANCE.floorHeight, y = SIDEWALK_H + fh / 2;
     for (const b of city.buildings) {
       const L = buildingLayout(b);
+      if (L.backDoor === "x") backDoors.push(mat4(b.x - L.sx * (b.w / 2 + 0.025), SIDEWALK_H + 1.05, b.z + L.sz * b.d * 0.25, -L.sx * Math.PI / 2, 1.1, 2.1, 1));
+      else if (L.backDoor === "z") backDoors.push(mat4(b.x + L.sx * b.w * 0.25, SIDEWALK_H + 1.05, b.z - L.sz * (b.d / 2 + 0.025), L.sz === 1 ? Math.PI : 0, 1.1, 2.1, 1));
+      // Restaurants draw their own storefronts.
+      if (b.restaurant) continue;
       const xFace = mat4(b.x + L.sx * (b.w / 2 + 0.025), y, b.z, L.sx * Math.PI / 2, b.d, fh, 1);
       const zFace = mat4(b.x, y, b.z + L.sz * (b.d / 2 + 0.025), L.sz === 1 ? 0 : Math.PI, b.w, fh, 1);
       const lit = L.groundLit ? 1 : 0;
       groundMatrices[b.variant * 4 + (L.door === "x" ? 0 : 2) + lit]?.push(xFace);
       groundMatrices[b.variant * 4 + (L.door === "z" ? 0 : 2) + lit]?.push(zFace);
-      if (L.backDoor === "x") backDoors.push(mat4(b.x - L.sx * (b.w / 2 + 0.025), SIDEWALK_H + 1.05, b.z + L.sz * b.d * 0.25, -L.sx * Math.PI / 2, 1.1, 2.1, 1));
-      else if (L.backDoor === "z") backDoors.push(mat4(b.x + L.sx * b.w * 0.25, SIDEWALK_H + 1.05, b.z - L.sz * (b.d / 2 + 0.025), L.sz === 1 ? Math.PI : 0, 1.1, 2.1, 1));
     }
     return { groundMatrices, backDoors };
   }, [city, groundMats]);
@@ -178,6 +181,7 @@ export function City({ city, state }: { city: CityT; state: GameState }) {
       <instancedMesh ref={roofRef} args={[undefined, roofMat, 256]} castShadow><boxGeometry args={[1, 1, 1]} /></instancedMesh>
       {groundMats.map((mat, i) => <instancedMesh key={`g${i}`} ref={(mesh) => { groundRefs.current[i] = mesh; }} args={[unitPlane, mat, 256]} receiveShadow />)}
       <instancedMesh ref={backDoorRef} args={[unitPlane, backDoorMat, 128]} receiveShadow />
+      <Restaurants city={city} state={state} />
       <Trees trees={city.trees} />
       {city.blocks.some((b) => b.x === 0 && b.z === 0) && <Park />}
 

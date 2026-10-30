@@ -104,10 +104,10 @@ describe("the ring road", () => {
     // Heading -z along the east edge (x ≈ WORLD_HALF): a right turn heads +x, out of the city.
     const east = { axis: "z" as const, dir: -1 as const, lane: WORLD_HALF + 3 };
     expect(turnDir(east, "right")).toBe(1);
-    expect(turnLeavesCity(east, WORLD_HALF, 598, "right")).toBe(true);
-    expect(turnLeavesCity(east, WORLD_HALF, 598, "left")).toBe(false);
+    expect(turnLeavesCity(east, WORLD_HALF, 494, "right")).toBe(true);
+    expect(turnLeavesCity(east, WORLD_HALF, 494, "left")).toBe(false);
     expect(turnLeavesCity(east, WORLD_HALF, MAIN_ROAD_CENTER, "right")).toBe(false);
     // Streets inside the city may turn either way.
-    expect(turnLeavesCity({ axis: "z", dir: -1, lane: 81 }, 78, 598, "left")).toBe(false);
+    expect(turnLeavesCity({ axis: "z", dir: -1, lane: 81 }, 78, 494, "left")).toBe(false);
   });
 });
