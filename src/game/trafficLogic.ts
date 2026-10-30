@@ -1,4 +1,4 @@
-import { TRAFFIC_FOLLOW_GAP, brakingGap, forwardDistance, queueMayResume, roadForward, sameRoad, VEHICLE_SIZE, type RoadPath, type VehicleKind } from "./config";
+import { TRAFFIC_FOLLOW_GAP, brakingGap, isSignalled, nextStreet, signalState, stopLineFrom, streetHalfWidth, forwardDistance, queueMayResume, roadForward, sameRoad, VEHICLE_SIZE, type RoadPath, type VehicleKind } from "./config";
 import type { RoadIncident } from "./state";
 
 export type TrafficAgent = RoadPath & { id: number; kind: VehicleKind; x: number; z: number; vx: number; vz: number; speed: number; heldBy: number | null; crashUntil: number; brake: boolean };
@@ -39,4 +39,22 @@ export function trafficTargetSpeed(vehicle: TrafficAgent, all: TrafficAgent[], i
     }
   }
   return Math.max(0, target);
+}
+/**
+ * At a signalled intersection ahead, how far the vehicle's front is from where it must stop (m), or null when
+ * it may go on: the light is green, there is no signal ahead, or its front is already on the crossing (so on a
+ * yellow it carries on through rather than stopping on the zebra).
+ */
+export function signalStopDistance(axis: "x" | "z", dir: 1 | -1, t: number, roadCenter: number, length: number, elapsed: number): number | null {
+  let c = nextStreet(t - dir * 40, dir);
+  for (let n = 0; n < 5; n++, c = nextStreet(c, dir)) {
+    const rel = (c - t) * dir;
+    if (rel > 90) break;
+    const [ix, iz] = axis === "x" ? [c, roadCenter] : [roadCenter, c];
+    if (rel < -streetHalfWidth(c) || !isSignalled(ix, iz)) continue;
+    if (signalState(axis, elapsed) === "green") return null;
+    const toLine = rel - stopLineFrom(c) - length / 2;
+    return toLine < -0.3 ? null : toLine;
+  }
+  return null;
 }

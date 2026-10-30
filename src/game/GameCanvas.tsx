@@ -7,6 +7,8 @@ import { Progress } from "@/components/ui/progress";
 import { DEATH_SCREEN_SECONDS, farCity, formatClock, generateCity, timeInfo, wholeCity } from "./config";
 import { City, LampLights } from "./City";
 import { ParkLights } from "./ParkLights";
+import { TrafficSignals } from "./TrafficSignals";
+import { Pedestrians } from "./Pedestrians";
 import { Player } from "./Player";
 import { SkyAndLights } from "./Sky";
 import { Traffic } from "./Traffic";
@@ -44,7 +46,7 @@ const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameS
     <ParkLights state={state} />
     <Suspense fallback={null}>
       <Physics gravity={[0, -9.81, 0]} timeStep={1 / 60} interpolate>
-        <PhysicsGround city={city} x={x} z={z} /><RestaurantWalls city={city} />
+        <PhysicsGround city={city} x={x} z={z} /><RestaurantWalls city={city} /><TrafficSignals state={state} /><Pedestrians state={state} city={city} />
         <RestaurantInteraction state={state} city={city} />
         <BenchInteraction state={state} /><Traffic state={state} /><Scooter state={state} /><Player state={state} city={city} />
         <Ragdoll state={state} /><CameraRig state={state} />

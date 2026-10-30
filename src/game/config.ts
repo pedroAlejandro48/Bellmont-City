@@ -218,6 +218,69 @@ export function trafficSpawnClear(x: number, z: number, length: number, all: { x
   return all.every((v) => Math.hypot(x - v.x, z - v.z) >= (length + VEHICLE_SIZE[v.kind][0]) / 2 + TRAFFIC_SPAWN_GAP);
 }
 
+// ---------- traffic lights ----------
+
+/** One in-game minute in real seconds (12 in-game hours of daylight take DAY_SECONDS). */
+export const GAME_MINUTE = DAY_SECONDS / (12 * 60);
+/** Signal timing, in in-game minutes: green, then yellow, then red for as long as the other road's green and yellow. */
+export const SIGNAL = { green: 7, yellow: 3, red: 10 } as const;
+export type Signal = "green" | "yellow" | "red";
+/**
+ * The light for traffic moving along `axis` at a signalled intersection. The two roads alternate: while one has
+ * green then yellow, the other has red.
+ */
+export function signalState(axis: "x" | "z", elapsed: number): Signal {
+  const cycle = (SIGNAL.green + SIGNAL.yellow + SIGNAL.red) * GAME_MINUTE;
+  const t = (((elapsed + (axis === "z" ? (SIGNAL.green + SIGNAL.yellow) * GAME_MINUTE : 0)) % cycle) + cycle) % cycle;
+  return t < SIGNAL.green * GAME_MINUTE ? "green" : t < (SIGNAL.green + SIGNAL.yellow) * GAME_MINUTE ? "yellow" : "red";
+}
+/** Street indices with lights where they cross an avenue: the avenues themselves, then every third street out. */
+export const SIGNAL_STREETS = [0, 3, 6, 9, -1, -4, -7, -10];
+const signalStreet = (center: number) => SIGNAL_STREETS.some((k) => Math.abs(streetCenter(k) - center) < 0.1);
+/** A signalled intersection: an avenue crossing one of the signal streets (x, z are the two roads' centre lines). */
+export function isSignalled(x: number, z: number) {
+  return (isAvenue(x) && signalStreet(z)) || (isAvenue(z) && signalStreet(x));
+}
+/** Every signalled intersection in the city. */
+export const SIGNALLED: [number, number][] = SIGNAL_STREETS.flatMap((k) => SIGNAL_STREETS.map((j) => [streetCenter(k), streetCenter(j)] as [number, number]))
+  .filter(([x, z]) => isSignalled(x, z));
+/** Zebra crossings sit this far out from the crossing road's kerb, and are this wide. */
+export const CROSSWALK = { gap: 0.4, width: 3.2 };
+/** The four crossings around a signalled intersection, as boxes (centre and half sizes). */
+export function crosswalks(x: number, z: number) {
+  const hx = streetHalfWidth(x), hz = streetHalfWidth(z);
+  const mid = CROSSWALK.gap + CROSSWALK.width / 2, half = CROSSWALK.width / 2;
+  return [
+    { x: x - hx - mid, z, hx: half, hz, across: "z" as const }, { x: x + hx + mid, z, hx: half, hz, across: "z" as const },
+    { x, z: z - hz - mid, hx, hz: half, across: "x" as const }, { x, z: z + hz + mid, hx, hz: half, across: "x" as const },
+  ];
+}
+/** Whether (px, pz) is on a zebra crossing (of the signalled intersections near it). */
+export function onCrosswalk(px: number, pz: number) {
+  const x = nearestStreet(px), z = nearestStreet(pz);
+  for (const cx of [x, nearestStreet(px + 20), nearestStreet(px - 20)]) for (const cz of [z, nearestStreet(pz + 20), nearestStreet(pz - 20)]) {
+    if (!isSignalled(cx, cz)) continue;
+    if (crosswalks(cx, cz).some((c) => Math.abs(px - c.x) <= c.hx && Math.abs(pz - c.z) <= c.hz)) return true;
+  }
+  return false;
+}
+/** Where vehicles on a road crossing at `cross` stop: the near edge of its crossing, from the crossing's centre line. */
+export const stopLineFrom = (cross: number) => streetHalfWidth(cross) + CROSSWALK.gap + CROSSWALK.width + 0.4;
+
+/** Signal poles stand this tall; their arm reaches out over the road with a street lamp and the lights under it. */
+export const SIGNAL_POLE = { height: 6.6, arm: 6.3, head: 5.75 };
+/**
+ * The signal for each approach to each signalled intersection: a pole on the far right-hand corner (as the
+ * driver sees it), its arm reaching back over the approaching lanes, the lights hung under the lamp at its tip.
+ * `fx, fz` is the approaching traffic's direction; the lights face against it.
+ */
+export const SIGNAL_POLES = SIGNALLED.flatMap(([cx, cz]) => (["x", "z"] as const).flatMap((axis) => ([1, -1] as const).map((dir) => {
+  const fx = axis === "x" ? dir : 0, fz = axis === "z" ? dir : 0, rx = -fz, rz = fx;
+  const crossHalf = streetHalfWidth(axis === "x" ? cx : cz), roadHalf = streetHalfWidth(axis === "x" ? cz : cx);
+  const out = crossHalf + CROSSWALK.gap + CROSSWALK.width + 2.6, side = roadHalf + 1.3, tip = roadHalf * 0.45;
+  return { axis, dir, fx, fz, rx, rz, x: cx + fx * out + rx * side, z: cz + fz * out + rz * side, tipX: cx + fx * out + rx * tip, tipZ: cz + fz * out + rz * tip, reach: side - tip };
+})));
+
 export type Building = { x: number; z: number; w: number; d: number; h: number; variant: number; restaurant?: RestaurantKind; door?: "x" | "z" };
 
 export type RestaurantKind = "cafe" | "pizza" | "fine" | "burger";
@@ -278,9 +341,10 @@ export function cityRoadDashes(x: number, z: number) {
     for (let k = Math.max(-HALF - 1, cell - 4); k <= Math.min(HALF, cell + 4); k++) {
       const street = streetCenter(k);
       for (let p = Math.ceil(Math.max(-WORLD_HALF, along - 220) / 6) * 6; p < Math.min(WORLD_HALF, along + 220); p += 6) {
-        // No markings inside intersections.
+        // No markings inside intersections (nor over the zebra crossings around signalled ones).
         const cross = nearestStreet(p);
-        if (Math.abs(p - cross) < streetHalfWidth(cross) + 1) continue;
+        const signalled = axis === "x" ? isSignalled(cross, street) : isSignalled(street, cross);
+        if (Math.abs(p - cross) < streetHalfWidth(cross) + (signalled ? CROSSWALK.gap + CROSSWALK.width + 0.8 : 1)) continue;
         const main = isAvenue(street);
         if (main) for (const offset of [-DOUBLE_LINE_GAP / 2, DOUBLE_LINE_GAP / 2]) dashes.push({ x: axis === "x" ? p : street + offset, z: axis === "x" ? street + offset : p, rot: axis === "x" ? 0 : Math.PI / 2, solid: true });
         else dashes.push({ x: axis === "x" ? p : street, z: axis === "x" ? street : p, rot: axis === "x" ? 0 : Math.PI / 2 });

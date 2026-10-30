@@ -57,6 +57,9 @@ export type Interior = {
   cameraSet: boolean;
 };
 
+/** An NPC as the rest of the game sees it: where it stands, whether it is down, and a hit waiting to be felt. */
+export type NpcBody = { id: number; x: number; z: number; down: boolean; moving: boolean; hit: { direction: [number, number] } | null };
+
 /** A traffic vehicle's footprint this frame, for walking and riding into it. */
 export type VehicleSolid = { index: number; kind: VehicleKind; box: SolidBox; speed: number };
 
@@ -108,6 +111,8 @@ export type GameState = {
   /** Shown when the player can use a restaurant door, so the bike's hint stays out of the way. */
   doorPrompt: boolean;
   cash: number;
+  /** The NPCs around the player this frame (Pedestrians keeps them; Traffic and Player bump into them). */
+  npcs: NpcBody[];
 };
 
 export function createState(save: SaveData): GameState {
@@ -141,6 +146,7 @@ export function createState(save: SaveData): GameState {
     vehiclePushes: new Map(),
     rooms: new Map(), interior: null, seat: null, script: null, standQueued: false, fade: 0, fadeInAt: null, doorPrompt: false,
     cash: Math.max(0, save.cash ?? STARTING_CASH),
+    npcs: [],
     seatOccupants: new Map(save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? [[save.benchSeat, "player"]] : []),
     bench: save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? { seat: save.benchSeat, phase: "seated", startedAt: 0, origin: new THREE.Vector3(...save.pos), originYaw: save.rotY } : null,
     scooter: {

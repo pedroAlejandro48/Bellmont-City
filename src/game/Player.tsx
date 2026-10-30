@@ -1,7 +1,7 @@
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { floorHeight, cameraRelativeVelocity, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, type City, PARK_SOLIDS, circleBoxPush, bikePushShare, scooterFootprint, scooterSide, SCOOTER_TIP, BENCH_SEATS, BENCH_SIT_SECONDS, BENCH_STAND_SECONDS, benchStandHeight, BENCH_SEAT_TOP, BENCH_BACK_TOP, BENCH_BACKRESTS } from "./config";
+import { SIGNAL_POLES, floorHeight, cameraRelativeVelocity, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, type City, PARK_SOLIDS, circleBoxPush, bikePushShare, scooterFootprint, scooterSide, SCOOTER_TIP, BENCH_SEATS, BENCH_SIT_SECONDS, BENCH_STAND_SECONDS, benchStandHeight, BENCH_SEAT_TOP, BENCH_BACK_TOP, BENCH_BACKRESTS } from "./config";
 import type { GameState } from "./state";
 import { BODY_PARTS, CharacterBody, useBodyRig } from "./CharacterBody";
 import { bumpOthers } from "@/multiplayer/bump";
@@ -99,6 +99,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       circles: [
         ...city.trees.map((t) => ({ x: t.x, z: t.z, r: 0.25 })),
         ...city.lamps.map((l) => ({ x: l.x, z: l.z, r: 0.15 })),
+        ...SIGNAL_POLES.map((l) => ({ x: l.x, z: l.z, r: 0.15 })),
       ],
     }),
     [city],
@@ -200,6 +201,12 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       for (const v of state.vehicles) { const [vx, vz] = circleBoxPush(p.x, p.z, RADIUS, v.box); p.x += vx; p.z += vz; }
       resolve(p, colliders, state.interior?.key ?? null);
       bumpOthers(p, state.others, RADIUS, dt);
+      // NPCs are solid: walking into one leans on it (it gives way slowly on its own side).
+      for (const n of state.npcs) {
+        if (n.down) continue;
+        const dx = p.x - n.x, dz = p.z - n.z, d = Math.hypot(dx, dz), min = RADIUS + 0.35;
+        if (d < min && d > 1e-5) { p.x = n.x + dx / d * min; p.z = n.z + dz / d * min; }
+      }
       const ground0 = floorHeight(p.x, p.z);
       for (const [i, box] of PARK_SOLIDS.entries()) { if (i < 4 && p.y - ground0 >= BENCH_SEAT_TOP - 0.1) { const back = BENCH_BACKRESTS[i]; if (back && p.y - ground0 < BENCH_BACK_TOP - 0.05) { const [bx, bz] = circleBoxPush(p.x, p.z, RADIUS, back); p.x += bx; p.z += bz; } continue; } const [dx, dz] = circleBoxPush(p.x, p.z, RADIUS, box); p.x += dx; p.z += dz; }
       const [dx, dz] = circleBoxPush(p.x, p.z, RADIUS, scooterFootprint(bike.pos.x, bike.pos.z, bike.yaw, bike.fallen, bike.fallSide));

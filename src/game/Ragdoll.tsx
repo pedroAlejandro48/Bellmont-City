@@ -32,7 +32,42 @@ const LINKS: [number, number, [number, number, number]][] = [
   [1, 9, [-0.2, 1.5, 0]], [9, 10, [-0.2, 1.2, 0]],
 ];
 
+/** Whoever a ragdoll belongs to: the player, or an NPC. */
+export type RagdollSubject = {
+  accident: () => Accident | null;
+  /** Where they are (followed while down, set when back on their feet). */
+  pos: THREE.Vector3;
+  yaw: () => number;
+  time: () => number;
+  /** False keeps them down (the player, dead). */
+  canRise: () => boolean;
+  /** Back on their feet, facing `yaw`. */
+  stoodUp: (accident: Accident, yaw: number) => void;
+};
+
+/** The player's ragdoll. */
 export function Ragdoll({ state }: { state: GameState }) {
+  const subject = useMemo<RagdollSubject>(() => ({
+    accident: () => state.accident,
+    pos: state.pos,
+    yaw: () => state.rotY,
+    time: () => state.simulationTime,
+    canRise: () => state.health > 0,
+    stoodUp: (accident, yaw) => {
+      state.rotY = yaw;
+      state.incidents.forEach((incident) => { if (incident.vehicleId === accident.vehicleId) incident.stoodUpAt = state.simulationTime; });
+      state.accident = null; state.keys.clear(); state.jumpQueued = false;
+    },
+  }), [state]);
+  const onMeshes = useMemo(() => (meshes: THREE.Group[]) => { state.avatar.ragdoll = meshes; }, [state]);
+  return <RagdollBody subject={subject} color={state.bodyColor} onMeshes={onMeshes} />;
+}
+
+/**
+ * A character's ragdoll: while they are knocked down, their body is a set of jointed physics parts thrown by
+ * the hit; then it gets up (hands and knees, then standing) and hands back to the character.
+ */
+export function RagdollBody({ subject, color, onMeshes }: { subject: RagdollSubject; color: string; onMeshes?: (meshes: THREE.Group[]) => void }) {
   const { world, rapier } = useRapier();
   const bodies = useRef<ReturnType<typeof world.createRigidBody>[]>([]);
   const joints = useRef<ReturnType<typeof world.createImpulseJoint>[]>([]);
@@ -41,7 +76,7 @@ export function Ragdoll({ state }: { state: GameState }) {
   const resting = useRef<{ p: THREE.Vector3; q: THREE.Quaternion }[]>([]);
   const standOrigin = useRef(new THREE.Vector3());
   const riseYaw = useRef(0);
-  const mat = useMemo(() => new THREE.MeshStandardMaterial({ color: state.bodyColor, roughness: 0.72 }), [state.bodyColor]);
+  const mat = useMemo(() => new THREE.MeshStandardMaterial({ color, roughness: 0.72 }), [color]);
   const rotation = useMemo(() => new THREE.Quaternion(), []);
   const temp = useMemo(() => new THREE.Vector3(), []);
 
@@ -53,7 +88,7 @@ export function Ragdoll({ state }: { state: GameState }) {
   useEffect(() => () => { dispose(); mat.dispose(); }, [world]);
 
   useFrame(() => {
-    const accident = state.accident;
+    const accident = subject.accident();
     if (!accident) {
       if (active.current) dispose();
       active.current = null;
@@ -63,9 +98,9 @@ export function Ragdoll({ state }: { state: GameState }) {
     if (active.current !== accident) {
       dispose(); active.current = accident;
       const random = rng(accident.seed);
-      rotation.setFromAxisAngle(new THREE.Vector3(0, 1, 0), state.rotY);
+      rotation.setFromAxisAngle(new THREE.Vector3(0, 1, 0), subject.yaw());
       bodies.current = PARTS.map((part, i) => {
-        temp.set(part.p[0], part.p[1], part.p[2]).applyQuaternion(rotation).add(state.pos);
+        temp.set(part.p[0], part.p[1], part.p[2]).applyQuaternion(rotation).add(subject.pos);
         const body = world.createRigidBody(rapier.RigidBodyDesc.dynamic().setTranslation(temp.x, temp.y, temp.z).setRotation(rotation).setLinearDamping(1.1).setAngularDamping(1.8).setAdditionalSolverIterations(8).setCcdEnabled(true));
         body.userData = "ragdoll";
         const radius = i === 0 ? 0.115 : i === 1 ? 0.16 : i >= 7 ? 0.06 : 0.075;
@@ -101,13 +136,13 @@ export function Ragdoll({ state }: { state: GameState }) {
       }
       resting.current = [];
     }
-    const now = state.simulationTime;
+    const now = subject.time();
     const pelvis = bodies.current[0];
     if (!pelvis) return;
     const position = pelvis.translation();
     if (accident.phase === "down") {
-      state.pos.set(position.x, floorHeight(position.x, position.z), position.z);
-      if (state.health > 0 && now - accident.startedAt >= KNOCKDOWN_SECONDS) {
+      subject.pos.set(position.x, floorHeight(position.x, position.z), position.z);
+      if (subject.canRise() && now - accident.startedAt >= KNOCKDOWN_SECONDS) {
         accident.phase = "rising"; accident.riseStartedAt = now;
       }
     }
@@ -145,16 +180,14 @@ export function Ragdoll({ state }: { state: GameState }) {
       mesh.quaternion.copy(rest.q).slerp(orient, blend);
     });
     if (progress >= 1) {
-      state.pos.copy(standOrigin.current).add(new THREE.Vector3(0, 0, STAND_FORWARD).applyQuaternion(facing));
-      state.rotY = riseYaw.current;
-      state.incidents.forEach((incident) => { if (incident.vehicleId === accident.vehicleId) incident.stoodUpAt = now; });
-      state.accident = null; state.keys.clear(); state.jumpQueued = false;
+      subject.pos.copy(standOrigin.current).add(new THREE.Vector3(0, 0, STAND_FORWARD).applyQuaternion(facing));
+      subject.stoodUp(accident, riseYaw.current);
     }
   });
   useEffect(() => {
-    state.avatar.ragdoll = meshes.current.filter((m): m is THREE.Group => m !== null);
-    return () => { state.avatar.ragdoll = []; };
-  }, [state]);
+    onMeshes?.(meshes.current.filter((m): m is THREE.Group => m !== null));
+    return () => onMeshes?.([]);
+  }, [onMeshes]);
   return <RagdollMeshes mat={mat} groupRef={(i, el) => { meshes.current[i] = el; }} />;
 }
 

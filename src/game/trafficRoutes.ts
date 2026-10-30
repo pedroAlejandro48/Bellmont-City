@@ -1,4 +1,4 @@
-import { WORLD_HALF, MAIN_ROAD_CENTER, nextStreet, roadLane, type RoadPath, type VehicleKind } from "./config";
+import { WORLD_HALF, MAIN_ROAD_CENTER, isAvenue, nextStreet, roadLane, type RoadPath, type VehicleKind } from "./config";
 
 /** Where a vehicle is headed after a turn: the new road, its direction, and which of its lanes (slot). */
 export type TurnTarget = RoadPath & { slot: number };
@@ -44,7 +44,7 @@ export function intersectionAhead(path: RoadPath, t: number) {
 export function makeTrafficTurn(path: RoadPath, intersection: number, side: TurnSide, kind: VehicleKind = "car"): TrafficTurn {
   const nextAxis = path.axis === "x" ? "z" : "x";
   const newDir = turnDir(path, side);
-  const slot = arrivalSlot(side, Math.abs(intersection - MAIN_ROAD_CENTER) < 0.1, kind);
+  const slot = arrivalSlot(side, isAvenue(intersection), kind);
   const lane = roadLane(nextAxis, newDir, intersection, slot);
   const radius = 9;
   const corner: [number, number] = path.axis === "x" ? [lane, path.lane] : [path.lane, lane];

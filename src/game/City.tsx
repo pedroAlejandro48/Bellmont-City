@@ -1,7 +1,7 @@
 import { useFrame } from "@react-three/fiber";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { BLOCK, CITY_GROUND_SIZE, PARK_LAMPS, PARK_LAMP_HEIGHT, SIDEWALK_H, type Building, type Prop, WORLD_HALF, cityRoadDashes, BUILDING_ENTRANCE, FACADE_STYLES, buildingLayout, type City as CityT } from "./config";
+import { BLOCK, CITY_GROUND_SIZE, SIGNAL_POLE, SIGNAL_POLES, PARK_LAMPS, PARK_LAMP_HEIGHT, SIDEWALK_H, type Building, type Prop, WORLD_HALF, cityRoadDashes, BUILDING_ENTRANCE, FACADE_STYLES, buildingLayout, type City as CityT } from "./config";
 import { buildingGeo, cityAsphalt, makeFacade, makeGlow, makeNoise, makeGroundFloor, makeBlankWall, makeBackDoor } from "./textures";
 import type { GameState } from "./state";
 import { Trees } from "./Trees";
@@ -235,6 +235,7 @@ export function LampLights({ city, state }: { city: CityT; state: GameState }) {
     () => [
       ...city.lamps.map((l) => new THREE.Vector3(l.x + Math.sin(l.rot) * 1.35, 5.5, l.z + Math.cos(l.rot) * 1.35)),
       ...PARK_LAMPS.map((l) => new THREE.Vector3(l.x, SIDEWALK_H + PARK_LAMP_HEIGHT - 0.35, l.z)),
+      ...SIGNAL_POLES.map((s) => new THREE.Vector3(s.tipX - s.rx * 0.4, SIGNAL_POLE.height - 0.5, s.tipZ - s.rz * 0.4)),
     ],
     [city],
   );
