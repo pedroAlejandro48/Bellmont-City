@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BLOCK, DEFAULT_SAVE, HALF, N, PITCH, WORLD_HALF, generateCity, isWildernessRoad, rampTurn, resetProgress, wildernessCenter, PARK_TREES, PARK_BENCHES, PARK_CORNERS, PARK_RING_RADIUS, PARK_OBELISK_HEIGHT, GREEN_BLOCK_CHANCE, SIDEWALK_TREE_CENTER, TREE_BED_RADIUS, SIDEWALK_CANOPY_RADIUS, BUILDING_ENTRANCE, cityRoadDashes, restaurantSpots, restaurantOpen, RESTAURANT_KINDS, buildingLayout } from "@/game/config";
+import { BLOCK, DEFAULT_SAVE, HALF, N, PITCH, WORLD_HALF, generateCity, isWildernessRoad, rampTurn, resetProgress, wildernessCenter, PARK_TREES, PARK_BENCHES, PARK_CORNERS, PARK_RING_RADIUS, PARK_OBELISK_HEIGHT, GREEN_BLOCK_CHANCE, SIDEWALK_TREE_CENTER, TREE_BED_RADIUS, SIDEWALK_CANOPY_RADIUS, BUILDING_ENTRANCE, cityRoadDashes, restaurantSpots, restaurantOpen, RESTAURANT_KINDS, buildingLayout, wholeCity, farCity, PARK_LAMPS, OBELISK_UPLIGHTS } from "@/game/config";
 import { readSave } from "@/game/saves";
 import { createState, toSave } from "@/game/state";
 
@@ -157,5 +157,25 @@ describe("blocks and the restaurants around the park", () => {
       layouts.add(found.map((b) => `${b.restaurant}@${Math.sign(Math.round(b.x / 30))},${Math.sign(Math.round(b.z / 30))}`).sort().join(" "));
     }
     expect(layouts.size).toBeGreaterThan(1);
+  });
+});
+
+describe("seeing the city from afar", () => {
+  it("knows every building and lamp in the city, and leaves the streamed neighbourhood to the full scene", () => {
+    const all = wholeCity(1337);
+    // Four per block: every block but the park and a few green ones.
+    expect(all.buildings.length % 4).toBe(0); expect(all.buildings.length).toBeGreaterThan(((2 * HALF + 1) ** 2 - 20) * 4);
+    // Every block (but the parks) has its four buildings.
+    const blocks = new Set(all.buildings.map((b) => `${Math.round(b.x / 13)}:${Math.round(b.z / 13)}`));
+    expect(blocks.size).toBeGreaterThan(400);
+    const near = generateCity(1337, 300, -200), far = farCity(all, 300, -200);
+    expect(far.buildings.length + near.buildings.length).toBe(all.buildings.length);
+    expect(far.buildings.some((b) => near.buildings.some((n) => n.x === b.x && n.z === b.z))).toBe(false);
+    expect(far.lamps.length + near.lamps.length).toBe(all.lamps.length);
+  });
+  it("lights the park's paths and its obelisk, clear of the benches", () => {
+    expect(PARK_LAMPS.length).toBeGreaterThanOrEqual(12);
+    for (const l of PARK_LAMPS) for (const b of PARK_BENCHES) expect(Math.hypot(l.x - b.x, l.z - b.z)).toBeGreaterThan(1.6);
+    expect(OBELISK_UPLIGHTS).toHaveLength(4);
   });
 });

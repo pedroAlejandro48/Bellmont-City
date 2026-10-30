@@ -1,11 +1,12 @@
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import { memo, startTransition, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Physics } from "@react-three/rapier";
 import { Ragdoll } from "./Ragdoll";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { DEATH_SCREEN_SECONDS, formatClock, generateCity, timeInfo } from "./config";
+import { DEATH_SCREEN_SECONDS, farCity, formatClock, generateCity, timeInfo, wholeCity } from "./config";
 import { City, LampLights } from "./City";
+import { ParkLights } from "./ParkLights";
 import { Player } from "./Player";
 import { SkyAndLights } from "./Sky";
 import { Traffic } from "./Traffic";
@@ -21,14 +22,26 @@ import type { GameExtras } from "./CloudGame";
 
 const BLOCKED = new Set(["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
+/** Test builds only: exposes the scene so browser checks can inspect it. */
+function SceneHook() {
+  const scene = useThree((t) => t.scene), camera = useThree((t) => t.camera);
+  useEffect(() => { if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") Object.assign(window, { __scene: scene, __camera: camera }); }, [scene, camera]);
+  return null;
+}
+
 // HUD ticks never reconcile the physics/scene tree. Only a streamed cell does.
 const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameState; x: number; z: number; Extra?: GameExtras["Scene"] }) {
   const city = useMemo(() => generateCity(state.worldSeed, x, z), [state.worldSeed, x, z]);
+  // Everything else in the city, drawn (lit at night) out to the horizon.
+  const whole = useMemo(() => wholeCity(state.worldSeed), [state.worldSeed]);
+  const far = useMemo(() => farCity(whole, x, z), [whole, x, z]);
   return <Canvas shadows dpr={[1, 1.25]} camera={{ fov: 60, near: 0.1, far: 1200 }}>
     <SkyAndLights state={state} />
+    <SceneHook />
     <WorldRoads x={x} z={z} seed={state.worldSeed} />
-    <City city={city} state={state} />
+    <City city={city} far={far} state={state} />
     <LampLights city={city} state={state} />
+    <ParkLights state={state} />
     <Suspense fallback={null}>
       <Physics gravity={[0, -9.81, 0]} timeStep={1 / 60} interpolate>
         <PhysicsGround city={city} x={x} z={z} /><RestaurantWalls city={city} />

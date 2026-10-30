@@ -63,7 +63,9 @@ export function SkyAndLights({ state }: { state: GameState }) {
       color.copy(TWILIGHT).lerp(NIGHT, Math.min(1, e * 6));
     }
     fog.color.copy(color);
-    fog.far = 320 - ti.darkness * 120;
+    // At night the haze thins out so the lit city shows all the way to the horizon.
+    fog.near = 60 + ti.darkness * 140;
+    fog.far = 320 + ti.darkness * 780;
 
     const p = state.pos;
     if (sun.current && moon.current && hemi.current) {

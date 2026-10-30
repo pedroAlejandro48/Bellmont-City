@@ -17,7 +17,7 @@ export function ScooterModel({ state, headlight = true, frontRef }: { state: Sco
   useFrame(() => {
     // Headlight only while ridden.
     const on = state.scooter.riding;
-    if (beam.current) beam.current.intensity = on ? 90 : 0;
+    if (beam.current) beam.current.intensity = on ? 10 + state.darkness * 70 : 0;
     materials.light.emissiveIntensity = on ? 0.65 + state.darkness * 2.5 : 0; if (front.current) front.current.rotation.y = state.scooter.steering; if (tail.current) tail.current.emissiveIntensity = state.scooter.braking ? 5 : 0.65; });
   const materials = useMemo(() => ({
     paint: new THREE.MeshStandardMaterial({ color: "#27877b", metalness: 0.45, roughness: 0.3 }),

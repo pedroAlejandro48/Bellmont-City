@@ -209,6 +209,19 @@ function makeFloor(kind: RestaurantKind) {
   return tex(c);
 }
 
+/** A soft band of coloured light, brightest along one long edge (the wall it spills from). */
+function makeGlowSpill(colour: string) {
+  const [c, g] = canvas(256, 128);
+  // Brightest at the top of the texture: laid on the ground, that edge is against the wall.
+  const fade = g.createLinearGradient(0, 0, 0, 128);
+  fade.addColorStop(0, colour); fade.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = fade; g.fillRect(0, 0, 256, 128);
+  const sides = g.createLinearGradient(0, 0, 256, 0);
+  sides.addColorStop(0, "rgba(0,0,0,1)"); sides.addColorStop(0.12, "rgba(0,0,0,0)"); sides.addColorStop(0.88, "rgba(0,0,0,0)"); sides.addColorStop(1, "rgba(0,0,0,1)");
+  g.globalCompositeOperation = "destination-out"; g.fillStyle = sides; g.fillRect(0, 0, 256, 128);
+  return tex(c);
+}
+
 /** Small square wall tiles, or a plain grey floor tile, for the kitchen. One repeat is a metre square. */
 function makeTiles(base: string, grout: string, count: number) {
   const [c, g] = canvas(256, 256);
@@ -400,7 +413,9 @@ function useRestaurantMaterials(ready: boolean) {
       const menuMap = makeMenu(kind);
       const menu = new THREE.MeshStandardMaterial({ map: menuMap, emissiveMap: menuMap, emissive: new THREE.Color("#ffffff"), emissiveIntensity: 0.25, roughness: 0.6 });
       const paintings = [0, 1, 2].map((i) => new THREE.MeshStandardMaterial({ map: makePainting(kind, i), roughness: 0.7 }));
-      return { sign: [edge, edge, edge, edge, sign, edge], edge, glass, menu, paintings };
+      // The light spilling out of the windows onto the pavement while it is open at night.
+      const spill = new THREE.MeshBasicMaterial({ map: makeGlowSpill(BRAND[kind].glow), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0, fog: false });
+      return { sign: [edge, edge, edge, edge, sign, edge], edge, glass, menu, paintings, spill };
     };
     return {
       ...Object.fromEntries(kinds.map((kind) => [kind, entry(kind)])) as Record<RestaurantKind, ReturnType<typeof entry>>,
@@ -422,7 +437,7 @@ function useRestaurantMaterials(ready: boolean) {
     // Repaint once the brand fonts have loaded.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
-  useEffect(() => () => disposeAll(Object.values(mats).flatMap((v) => (v instanceof THREE.Material ? [v] : [v.edge, v.glass, v.menu, ...v.paintings, ...v.sign]))), [mats]);
+  useEffect(() => () => disposeAll(Object.values(mats).flatMap((v) => (v instanceof THREE.Material ? [v] : [v.edge, v.glass, v.menu, v.spill, ...v.paintings, ...v.sign]))), [mats]);
   return mats;
 }
 type Materials = ReturnType<typeof useRestaurantMaterials>;
@@ -646,6 +661,9 @@ function Restaurant({ b, mats, state, ready }: { b: Building; mats: Materials; s
       </group>
     )}
 
+    {/* Light from the windows on the pavement outside, on both streets. */}
+    <mesh position={[0, 0.03, 2.2]} rotation-x={-Math.PI / 2} material={m.spill}><planeGeometry args={[width + 2, 4.4]} /></mesh>
+    <mesh position={[ws * (width / 2 + 2.2), 0.03, -depth / 2]} rotation={[-Math.PI / 2, 0, ws * Math.PI / 2]} material={m.spill}><planeGeometry args={[depth + 2, 4.4]} /></mesh>
     {/* The doorway: frame, two glass leaves opening outward, and their closers. */}
     {[-1, 1].map((s) => <mesh key={s} position={[s * (LEAF + 0.04), DOOR_H / 2, (SKIN - WALL) / 2]} material={own.metal} castShadow><boxGeometry args={[0.08, DOOR_H + 0.04, WALL + SKIN + 0.02]} /></mesh>)}
     <mesh position={[0, DOOR_H + 0.04, (SKIN - WALL) / 2]} material={own.metal}><boxGeometry args={[2 * LEAF + 0.16, 0.08, WALL + SKIN + 0.02]} /></mesh>
@@ -727,6 +745,7 @@ export function Restaurants({ city, state }: { city: City; state: GameState }) {
     for (const kind of Object.keys(RESTAURANTS) as RestaurantKind[]) {
       const lit = restaurantOpen(kind, hours) ? d : 0, m = mats[kind];
       m.glass.emissiveIntensity = lit * 0.55;
+      m.spill.opacity = lit * 0.7;
       (m.sign[4] as THREE.MeshStandardMaterial).emissiveIntensity = lit * 0.85;
       if (kind === "fine") mats.lantern.emissiveIntensity = lit * 1.6 + (restaurantOpen(kind, hours) ? 0.4 : 0);
       if (kind === "burger") mats.blade.emissiveIntensity = lit * 0.85;

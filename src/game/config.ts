@@ -96,9 +96,25 @@ export function nearestBenchSeat(x: number, z: number, occupied: ReadonlyMap<num
   return nearest;
 }
 export type SolidBox = { x: number; z: number; hx: number; hz: number; yaw: number };
+/**
+ * Vintage lamp posts along the park's paths: two along each diagonal path (on the side away from its bench),
+ * two flanking the entrance path, and three around the ring (the entrance side stays open).
+ */
+export const PARK_LAMPS: { x: number; z: number }[] = [
+  ...PARK_CORNERS.flatMap(([cx, cz]) => {
+    const a = Math.atan2(cx, cz), off = -1.5;
+    return [9.5, 15.5].map((r) => ({ x: Math.sin(a) * r + Math.cos(a) * off, z: Math.cos(a) * r - Math.sin(a) * off }));
+  }),
+  { x: 1.6, z: 10 }, { x: -1.6, z: 10 },
+  ...[Math.PI / 2, Math.PI, -Math.PI / 2].map((a) => ({ x: Math.sin(a) * 7.7, z: Math.cos(a) * 7.7 })),
+];
+export const PARK_LAMP_HEIGHT = 3.1;
+/** Four small floodlights set in the ground around the obelisk's plinth, aimed up at it. */
+export const OBELISK_UPLIGHTS = [0, 1, 2, 3].map((i) => { const a = Math.PI / 4 + i * Math.PI / 2; return { x: Math.sin(a) * 2.3, z: Math.cos(a) * 2.3 }; });
 export const PARK_SOLIDS: SolidBox[] = [
   ...PARK_BENCHES.map((b) => ({ x: b.x, z: b.z, hx: 1.3, hz: 0.4, yaw: b.rot })),
   { x: 0, z: 0, hx: 1.25, hz: 1.25, yaw: 0 },
+  ...PARK_LAMPS.map((l) => ({ x: l.x, z: l.z, hx: 0.12, hz: 0.12, yaw: 0 })),
   ...[-1, 1].map((side) => ({ x: side * (PARK_ARCH.inner + PARK_ARCH.outer) / 2, z: PARK_ARCH.z, hx: (PARK_ARCH.outer - PARK_ARCH.inner) / 2, hz: PARK_ARCH.depth / 2, yaw: 0 })),
 ];
 // Bench geometry is modelled in absolute height on the raised park ground; these are heights above that ground.
@@ -355,6 +371,28 @@ export function generateCity(seed = 1337, focusX = 0, focusZ = 0): City {
   }
   if (city.blocks.some((b) => b.x === 0 && b.z === 0)) city.trees.push(...PARK_TREES);
   return city;
+}
+
+/**
+ * The whole city's buildings and street lamps (no trees), for drawing the parts beyond the streamed
+ * neighbourhood: lit windows and lamps on the horizon. The same buildings generateCity makes, block by block.
+ */
+export function wholeCity(seed: number) {
+  const buildings: Building[] = [], lamps: Prop[] = [], seen = new Set<string>();
+  // Each call covers 7 × 7 blocks around its focus; these foci cover every block.
+  const foci = [-7, 0, 7, HALF - 3];
+  for (const fi of foci) for (const fj of foci) {
+    const part = generateCity(seed, blockCenter(fi), blockCenter(fj));
+    for (const b of part.buildings) { const key = `b${b.x}:${b.z}`; if (!seen.has(key)) { seen.add(key); buildings.push(b); } }
+    for (const l of part.lamps) { const key = `l${l.x}:${l.z}`; if (!seen.has(key)) { seen.add(key); lamps.push(l); } }
+  }
+  return { buildings, lamps };
+}
+/** The part of the whole city outside the neighbourhood streamed around (x, z) (which is drawn in full). */
+export function farCity(all: { buildings: Building[]; lamps: Prop[] }, x: number, z: number) {
+  const fi = blockIndex(x), fj = blockIndex(z);
+  const near = (px: number, pz: number) => Math.abs(blockIndex(px) - fi) <= 3 && Math.abs(blockIndex(pz) - fj) <= 3;
+  return { buildings: all.buildings.filter((b) => !near(b.x, b.z)), lamps: all.lamps.filter((l) => !near(l.x, l.z)) };
 }
 
 export function floorHeight(x: number, z: number) {

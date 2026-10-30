@@ -1,7 +1,7 @@
 import { useFrame } from "@react-three/fiber";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { BLOCK, CITY_GROUND_SIZE, SIDEWALK_H, WORLD_HALF, cityRoadDashes, BUILDING_ENTRANCE, FACADE_STYLES, buildingLayout, type City as CityT } from "./config";
+import { BLOCK, CITY_GROUND_SIZE, PARK_LAMPS, PARK_LAMP_HEIGHT, SIDEWALK_H, type Building, type Prop, WORLD_HALF, cityRoadDashes, BUILDING_ENTRANCE, FACADE_STYLES, buildingLayout, type City as CityT } from "./config";
 import { buildingGeo, cityAsphalt, makeFacade, makeGlow, makeNoise, makeGroundFloor, makeBlankWall, makeBackDoor } from "./textures";
 import type { GameState } from "./state";
 import { Trees } from "./Trees";
@@ -28,7 +28,12 @@ function mat4(x: number, y: number, z: number, ry = 0, sx = 1, sy = 1, sz = 1) {
   return tmp.matrix.clone();
 }
 
-export function City({ city, state }: { city: CityT; state: GameState }) {
+/** The rest of the city beyond the streamed neighbourhood: buildings and lamps only, so it can be seen from afar. */
+export type FarScenery = { buildings: Building[]; lamps: Prop[] };
+
+export function City({ city, far, state }: { city: CityT; far: FarScenery; state: GameState }) {
+  // Far away, a restaurant is just a building with a lit ground floor (its own storefront is only drawn nearby).
+  const farBuildings = useMemo(() => far.buildings.map(({ restaurant: _r, ...b }): Building => b), [far]);
   const facadeMats = useMemo(
     () =>
       Array.from({ length: 4 * FACADE_STYLES }, (_, i) => {
@@ -55,20 +60,23 @@ export function City({ city, state }: { city: CityT; state: GameState }) {
     const groundMatrices: THREE.Matrix4[][] = groundMats.map(() => []);
     const backDoors: THREE.Matrix4[] = [];
     const fh = BUILDING_ENTRANCE.floorHeight, y = SIDEWALK_H + fh / 2;
-    for (const b of city.buildings) {
+    const nearCount = city.buildings.length;
+    [...city.buildings, ...farBuildings].forEach((b, index) => {
       const L = buildingLayout(b);
       // Restaurants draw their own ground floor, inside and out.
-      if (b.restaurant) continue;
-      if (L.backDoor === "x") backDoors.push(mat4(b.x - L.sx * (b.w / 2 + 0.025), SIDEWALK_H + 1.05, b.z + L.sz * b.d * 0.25, -L.sx * Math.PI / 2, 1.1, 2.1, 1));
-      else if (L.backDoor === "z") backDoors.push(mat4(b.x + L.sx * b.w * 0.25, SIDEWALK_H + 1.05, b.z - L.sz * (b.d / 2 + 0.025), L.sz === 1 ? Math.PI : 0, 1.1, 2.1, 1));
+      if (b.restaurant) return;
+      // Back doors are only drawn nearby (too small to see from afar).
+      const near = index < nearCount;
+      if (near && L.backDoor === "x") backDoors.push(mat4(b.x - L.sx * (b.w / 2 + 0.025), SIDEWALK_H + 1.05, b.z + L.sz * b.d * 0.25, -L.sx * Math.PI / 2, 1.1, 2.1, 1));
+      else if (near && L.backDoor === "z") backDoors.push(mat4(b.x + L.sx * b.w * 0.25, SIDEWALK_H + 1.05, b.z - L.sz * (b.d / 2 + 0.025), L.sz === 1 ? Math.PI : 0, 1.1, 2.1, 1));
       const xFace = mat4(b.x + L.sx * (b.w / 2 + 0.025), y, b.z, L.sx * Math.PI / 2, b.d, fh, 1);
       const zFace = mat4(b.x, y, b.z + L.sz * (b.d / 2 + 0.025), L.sz === 1 ? 0 : Math.PI, b.w, fh, 1);
       const lit = L.groundLit ? 1 : 0;
       groundMatrices[b.variant * 4 + (L.door === "x" ? 0 : 2) + lit]?.push(xFace);
       groundMatrices[b.variant * 4 + (L.door === "z" ? 0 : 2) + lit]?.push(zFace);
-    }
+    });
     return { groundMatrices, backDoors };
-  }, [city, groundMats]);
+  }, [city, farBuildings, groundMats]);
   useLayoutEffect(() => {
     groundMatrices.forEach((mats, i) => { const mesh = groundRefs.current[i]; if (!mesh) return; mats.forEach((m, j) => mesh.setMatrixAt(j, m)); mesh.count = mats.length; mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere(); });
   }, [groundMatrices]);
@@ -79,7 +87,8 @@ export function City({ city, state }: { city: CityT; state: GameState }) {
   useInstances(blockRef, blockMatrices);
   useInstances(grassRef, grassMatrices);
   const lampHeadMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: "#fff3d6", emissive: "#ffcf80", emissiveIntensity: 0 }),
+    // Light sources are not hidden by the night haze, so lamps show all the way to the horizon.
+    () => new THREE.MeshStandardMaterial({ color: "#fff3d6", emissive: "#ffcf80", emissiveIntensity: 0, fog: false }),
     [],
   );
   const glowMat = useMemo(
@@ -90,21 +99,22 @@ export function City({ city, state }: { city: CityT; state: GameState }) {
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         opacity: 0,
+        fog: false,
       }),
     [glowTex],
   );
 
-  const buildings = useMemo(() => facadeMats.map((_, i) => city.buildings.filter((b) => b.variant === i % 4 && buildingLayout(b).style === Math.floor(i / 4)).map((b) => {
+  const buildings = useMemo(() => facadeMats.map((_, i) => [...city.buildings, ...farBuildings].filter((b) => b.variant === i % 4 && buildingLayout(b).style === Math.floor(i / 4)).map((b) => {
     const L = buildingLayout(b);
     // Above a restaurant the building starts at its first floor: the restaurant itself is open inside.
     const base = b.restaurant ? BUILDING_ENTRANCE.floorHeight : 0, h = b.h - base;
     return mat4(b.x, SIDEWALK_H + base + h / 2, b.z, L.rot, (L.swap ? b.d : b.w) / 13, h / 24, (L.swap ? b.w : b.d) / 13);
-  })), [city, facadeMats]);
+  })), [city, farBuildings, facadeMats]);
   const facadeGeo = useMemo(() => buildingGeo(13, 24, 13), []);
   const unitPlane = useMemo(() => new THREE.PlaneGeometry(1, 1), []);
   const facadeRefs = useRef<(THREE.InstancedMesh | null)[]>([]);
   const roofRef = useRef<THREE.InstancedMesh>(null);
-  const roofs = useMemo(() => city.buildings.map((b) => mat4(b.x, SIDEWALK_H + b.h + 0.25, b.z, 0, b.w + 0.4, 0.5, b.d + 0.4)), [city]);
+  const roofs = useMemo(() => [...city.buildings, ...farBuildings].map((b) => mat4(b.x, SIDEWALK_H + b.h + 0.25, b.z, 0, b.w + 0.4, 0.5, b.d + 0.4)), [city, farBuildings]);
   useLayoutEffect(() => {
     buildings.forEach((matrices, variant) => { const mesh = facadeRefs.current[variant]; if (!mesh) return; matrices.forEach((matrix, i) => mesh.setMatrixAt(i, matrix)); mesh.count = matrices.length; mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere(); });
   }, [buildings]);
@@ -120,21 +130,23 @@ export function City({ city, state }: { city: CityT; state: GameState }) {
   const dashRef = useRef<THREE.InstancedMesh>(null);
 
   const m = useMemo(() => {
-    const poles = city.lamps.map((l) => mat4(l.x, 3, l.z));
+    const lamps = [...city.lamps, ...far.lamps];
+    const poles = lamps.map((l) => mat4(l.x, 3, l.z));
     const out = (l: { rot: number }): [number, number] => [Math.sin(l.rot), Math.cos(l.rot)];
-    const arms = city.lamps.map((l) => {
+    const arms = lamps.map((l) => {
       const [ox, oz] = out(l);
       return mat4(l.x + ox * 0.7, 5.9, l.z + oz * 0.7, l.rot);
     });
-    const heads = city.lamps.map((l) => {
+    const heads = lamps.map((l) => {
       const [ox, oz] = out(l);
       return mat4(l.x + ox * 1.35, 5.75, l.z + oz * 1.35, l.rot);
     });
-    const glows = city.lamps.map((l) => {
+    // Each lamp's pool of light on the ground, drawn for every lamp in the city, near or far.
+    const glows = lamps.map((l) => {
       const [ox, oz] = out(l);
       tmp.position.set(l.x + ox * 1.35, 0.02, l.z + oz * 1.35);
       tmp.rotation.set(-Math.PI / 2, 0, 0);
-      tmp.scale.set(9, 9, 1);
+      tmp.scale.set(14, 14, 1);
       tmp.updateMatrix();
       return tmp.matrix.clone();
     });
@@ -144,7 +156,7 @@ export function City({ city, state }: { city: CityT; state: GameState }) {
     const dashes = markings.filter((d) => !d.divider && !d.solid).map((d) => mat4(d.x, 0.02, d.z, d.rot));
     const solids = markings.filter((d) => d.solid).map((d) => mat4(d.x, 0.02, d.z, d.rot));
     return { poles, arms, heads, glows, dashes, laneDashes, solids };
-  }, [city]);
+  }, [city, far]);
 
   useInstances(poleRef, m.poles);
   useInstances(armRef, m.arms);
@@ -158,7 +170,7 @@ export function City({ city, state }: { city: CityT; state: GameState }) {
     const d = state.darkness;
     for (const f of facadeMats) f.emissiveIntensity = d * 1.3;
     lampHeadMat.emissiveIntensity = d * 4;
-    glowMat.opacity = d * 0.75;
+    glowMat.opacity = d * 0.5;
     for (const g of groundMats) g.emissiveIntensity = d * 1.1;
   });
 
@@ -182,65 +194,74 @@ export function City({ city, state }: { city: CityT; state: GameState }) {
       <instancedMesh ref={grassRef} args={[undefined, undefined, 64]} receiveShadow><boxGeometry args={[33, 0.015, 33]} /><meshStandardMaterial map={grass} roughness={1} /></instancedMesh>
 
       {/* Instanced downtown facades keep streamed blocks affordable. */}
-      {buildings.map((_, i) => <instancedMesh key={i} ref={(mesh) => { facadeRefs.current[i] = mesh; }} args={[facadeGeo, facadeSets[i], 256]} castShadow receiveShadow />)}
-      <instancedMesh ref={roofRef} args={[undefined, roofMat, 256]} castShadow><boxGeometry args={[1, 1, 1]} /></instancedMesh>
-      {groundMats.map((mat, i) => <instancedMesh key={`g${i}`} ref={(mesh) => { groundRefs.current[i] = mesh; }} args={[unitPlane, mat, 256]} receiveShadow />)}
+      {buildings.map((_, i) => <instancedMesh key={i} ref={(mesh) => { facadeRefs.current[i] = mesh; }} args={[facadeGeo, facadeSets[i], 1024]} castShadow receiveShadow />)}
+      <instancedMesh ref={roofRef} args={[undefined, roofMat, 2048]} castShadow><boxGeometry args={[1, 1, 1]} /></instancedMesh>
+      {groundMats.map((mat, i) => <instancedMesh key={`g${i}`} ref={(mesh) => { groundRefs.current[i] = mesh; }} args={[unitPlane, mat, 1024]} receiveShadow />)}
       <instancedMesh ref={backDoorRef} args={[unitPlane, backDoorMat, 128]} receiveShadow />
       <Restaurants city={city} state={state} />
       <Trees trees={city.trees} />
       {city.blocks.some((b) => b.x === 0 && b.z === 0) && <Park />}
 
       {/* street lights */}
-      <instancedMesh ref={poleRef} args={[undefined, undefined, 512]} castShadow>
+      <instancedMesh ref={poleRef} args={[undefined, undefined, 4096]} castShadow>
         <cylinderGeometry args={[0.08, 0.12, 6, 8]} />
         <meshStandardMaterial color="#2b2f33" metalness={0.6} roughness={0.4} />
       </instancedMesh>
-      <instancedMesh ref={armRef} args={[undefined, undefined, 512]}>
+      <instancedMesh ref={armRef} args={[undefined, undefined, 4096]}>
         <boxGeometry args={[0.08, 0.08, 1.5]} />
         <meshStandardMaterial color="#2b2f33" metalness={0.6} roughness={0.4} />
       </instancedMesh>
-      <instancedMesh ref={headRef} args={[undefined, undefined, 512]} material={lampHeadMat}>
+      <instancedMesh ref={headRef} args={[undefined, undefined, 4096]} material={lampHeadMat}>
         <boxGeometry args={[0.35, 0.18, 0.6]} />
       </instancedMesh>
-      <instancedMesh ref={glowRef} args={[undefined, undefined, 512]} material={glowMat}>
+      <instancedMesh ref={glowRef} args={[undefined, undefined, 4096]} material={glowMat}>
         <planeGeometry args={[1, 1]} />
       </instancedMesh>
     </group>
   );
 }
 
-/** A handful of real point lights that follow the nearest street lamps at night. */
+/** How many real lamp lights there are (a fixed number, so turning them on and off never rebuilds shaders). */
+const LAMP_LIGHTS = 12;
+/**
+ * Real point lights on the lamps (street lamps and the park's lamp posts) nearest the player, so their light
+ * falls on the ground, walls and people around them. Every other lamp still glows and lights its patch of
+ * ground (City draws those), wherever it is.
+ */
 export function LampLights({ city, state }: { city: CityT; state: GameState }) {
   const lights = useRef<(THREE.PointLight | null)[]>([]);
   const timer = useRef(0);
   const heads = useMemo(
-    () => city.lamps.map((l) => new THREE.Vector3(l.x + Math.sin(l.rot) * 1.35, 5.5, l.z + Math.cos(l.rot) * 1.35)),
+    () => [
+      ...city.lamps.map((l) => new THREE.Vector3(l.x + Math.sin(l.rot) * 1.35, 5.5, l.z + Math.cos(l.rot) * 1.35)),
+      ...PARK_LAMPS.map((l) => new THREE.Vector3(l.x, SIDEWALK_H + PARK_LAMP_HEIGHT - 0.35, l.z)),
+    ],
     [city],
   );
   useFrame((_, dt) => {
     timer.current -= dt;
     if (timer.current <= 0) {
-      timer.current = 0.4;
+      timer.current = 0.3;
       const p = state.pos;
       const sorted = heads
         .map((h) => [h, h.distanceToSquared(p)] as const)
         .sort((a, b) => a[1] - b[1])
-        .slice(0, 6);
+        .slice(0, LAMP_LIGHTS);
       sorted.forEach(([h], i) => lights.current[i]?.position.copy(h));
     }
-    for (const l of lights.current) if (l) l.intensity = state.darkness * 60;
+    for (const l of lights.current) if (l) l.intensity = state.darkness * 28;
   });
   return (
     <>
-      {Array.from({ length: 6 }).map((_, i) => (
+      {Array.from({ length: LAMP_LIGHTS }).map((_, i) => (
         <pointLight
           key={i}
           ref={(el) => {
             lights.current[i] = el;
           }}
           color="#ffc27a"
-          distance={22}
-          decay={1.6}
+          distance={45}
+          decay={1}
           intensity={0}
         />
       ))}

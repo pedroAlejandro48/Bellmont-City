@@ -3,9 +3,27 @@ import { useEffect, useMemo, useRef } from "react";
 import { useRapier } from "@react-three/rapier";
 import * as THREE from "three";
 import { HALF, PITCH, WORLD_HALF, MAIN_ROAD_CENTER, MAIN_ROAD_WIDTH, ROAD_LANE_WIDTH, STREET, roadLaneOffsets, streetCenter, nextStreet, rng, VEHICLE_SIZE, VEHICLE_MASS, VEHICLE_COLLISION_GROUPS, vehicleContactHurts, vehicleFootprint, THROW_DISTANCE, ACCIDENT_STOP_SECONDS, CRASH_STOP_SECONDS, TRAFFIC_SPEED, TRAFFIC_CORNER_SPEED, brakingGap, scooterBypassReady, wildernessCenter, roadForward, roadLeft, forwardDistance, roadLane, trafficSpawnClear, isTrafficRoad, type VehicleKind } from "./config";
+
+/** How many vehicles carry real headlight spotlights at once (the ones nearest the player). */
+const BEAMS = 8;
+/** How far a headlight reaches (m). */
+export const HEADLIGHT_REACH = 100;
+/** The pool of headlight on the road: bright by the bumper, widening and fading toward its far end. */
+function makeBeam() {
+  const c = document.createElement("canvas"); c.width = 256; c.height = 128;
+  const g = c.getContext("2d");
+  if (g) {
+    const fade = g.createLinearGradient(0, 0, 256, 0);
+    fade.addColorStop(0, "rgba(255,255,255,0.95)"); fade.addColorStop(0.35, "rgba(255,255,255,0.5)"); fade.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = fade;
+    g.beginPath(); g.moveTo(0, 50); g.lineTo(256, 0); g.lineTo(256, 128); g.lineTo(0, 78); g.closePath(); g.fill();
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
 import { allowedTurns, intersectionAhead, makeTrafficTurn, pointAlongTurn, progressOnTurn, turnDir, turnLeavesCity, mayTurnAt, type TrafficTurn, type TurnSide } from "./trafficRoutes";
 
-import { makeText, makeGlow } from "./textures";
+import { makeText } from "./textures";
 import { knockDown, type GameState } from "./state";
 import { holdAccidentQueue, trafficTargetSpeed, type TrafficAgent } from "./trafficLogic";
 
@@ -263,8 +281,8 @@ export function Traffic({ state }: { state: GameState }) {
   }, [vehicles]);
   const refs = useRef<(THREE.Group | null)[]>([]);
   const beams = useRef<(THREE.SpotLight | null)[]>([]);
-  const beamMat = useMemo(() => new THREE.MeshBasicMaterial({ map: makeGlow(), color: "#fff0cd", transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }), []);
-  const beamTargets = useMemo(() => Array.from({ length: 6 }, () => new THREE.Object3D()), []);
+  const beamMat = useMemo(() => new THREE.MeshBasicMaterial({ map: makeBeam(), color: "#fff0cd", transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0, fog: false }), []);
+  const beamTargets = useMemo(() => Array.from({ length: BEAMS }, () => new THREE.Object3D()), []);
   const beamTimer = useRef(0);
   const beamIndices = useRef<number[]>([]);
   const contacts = useRef(new Set<number>());
@@ -307,7 +325,7 @@ export function Traffic({ state }: { state: GameState }) {
     const now = state.simulationTime;
     const d = state.darkness;
     mats.head.emissiveIntensity = 1.2 + d * 2;
-    beamMat.opacity = d * 0.5;
+    beamMat.opacity = d * 0.4;
     mats.tail.emissiveIntensity = 0.4 + d * 2;
     mats.taxiSign.emissiveIntensity = 0.1 + d * 1.2;
     const span = 700;
@@ -352,7 +370,7 @@ export function Traffic({ state }: { state: GameState }) {
     beamTimer.current -= dt;
     if (beamTimer.current <= 0) {
       beamTimer.current = 0.5;
-      beamIndices.current = vehicles.map((v, i) => ({ i, d: Math.hypot(v.x - p.x, v.z - p.z) })).sort((a, b) => a.d - b.d).slice(0, 6).map((v) => v.i);
+      beamIndices.current = vehicles.map((v, i) => ({ i, d: Math.hypot(v.x - p.x, v.z - p.z) })).sort((a, b) => a.d - b.d).slice(0, BEAMS).map((v) => v.i);
     }
     beamIndices.current.forEach((index, slot) => {
       const v = vehicles[index], body = bodies.current[index], light = beams.current[slot], target = beamTargets[slot];
@@ -360,8 +378,8 @@ export function Traffic({ state }: { state: GameState }) {
       const q = body.rotation(); const yaw = steeringScratch.euler.setFromQuaternion(steeringScratch.quaternion.set(q.x, q.y, q.z, q.w), "YXZ").y;
       const dx = Math.cos(yaw), dz = -Math.sin(yaw), reach = VEHICLE_SIZE[v.kind][0] / 2 + 0.1;
       light.position.set(v.x + dx * reach, v.kind === "car" || v.kind === "taxi" ? 0.78 : 0.95, v.z + dz * reach);
-      target.position.set(v.x + dx * (reach + 12), 0, v.z + dz * (reach + 12)); target.updateMatrixWorld();
-      light.intensity = 100;
+      target.position.set(v.x + dx * (reach + 30), 0, v.z + dz * (reach + 30)); target.updateMatrixWorld();
+      light.intensity = 10 + d * 70;
     });
     vehicles.forEach((v, i) => {
       const body = bodies.current[i];
@@ -572,7 +590,7 @@ export function Traffic({ state }: { state: GameState }) {
 
   return (
     <>
-      {beamTargets.map((target, i) => <group key={`beam${i}`}><primitive object={target} /><spotLight ref={(light) => { beams.current[i] = light; }} target={target} color="#fff0cd" intensity={100} distance={42} angle={0.52} penumbra={0.6} decay={1.4} /></group>)}
+      {beamTargets.map((target, i) => <group key={`beam${i}`}><primitive object={target} /><spotLight ref={(light) => { beams.current[i] = light; }} target={target} color="#fff0cd" intensity={100} distance={HEADLIGHT_REACH} angle={0.42} penumbra={0.55} decay={1} /></group>)}
       {vehicles.map((v, i) => {
         const rot = v.axis === "x" ? (v.dir === 1 ? 0 : Math.PI) : v.dir === 1 ? -Math.PI / 2 : Math.PI / 2;
         return (
@@ -587,8 +605,8 @@ export function Traffic({ state }: { state: GameState }) {
               {v.kind === "taxi" && <Car color={v.color} taxi mats={mats} />}
               {v.kind === "bus" && <Bus mats={mats} />}
               {v.kind === "truck" && <Truck color={v.color} cargo={v.cargo} mats={mats} />}
-              {/* Cheap headlight pool on the road so every vehicle lights its path at night, not only the nearest few. */}
-              <mesh material={beamMat} position={[VEHICLE_SIZE[v.kind][0] / 2 + 5, 0.04, 0]} rotation-x={-Math.PI / 2} scale={[11, 5, 1]}><planeGeometry args={[1, 1]} /></mesh>
+              {/* Every vehicle's headlights light the road ahead at night, near or far (the nearest also get real spotlights). */}
+              <mesh material={beamMat} position={[VEHICLE_SIZE[v.kind][0] / 2 + 20, 0.04, 0]} rotation-x={-Math.PI / 2} scale={[40, 14, 1]}><planeGeometry args={[1, 1]} /></mesh>
             </group>
           </group>
         );

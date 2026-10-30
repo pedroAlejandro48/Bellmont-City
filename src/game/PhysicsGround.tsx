@@ -1,6 +1,6 @@
 import { BallCollider, CuboidCollider, RigidBody } from "@react-three/rapier";
 import { roomShell } from "./restaurantRoom";
-import { BUILDING_ENTRANCE, SIDEWALK_H, PARK_OBELISK_HEIGHT, PARK_BENCHES, PARK_ARCH, type City } from "./config";
+import { BUILDING_ENTRANCE, PARK_LAMPS, PARK_LAMP_HEIGHT, SIDEWALK_H, PARK_OBELISK_HEIGHT, PARK_BENCHES, PARK_ARCH, type City } from "./config";
 
 export function PhysicsGround({ city, x, z }: { city: City; x: number; z: number }) {
   return <RigidBody type="fixed" colliders={false}>
@@ -18,6 +18,7 @@ export function PhysicsGround({ city, x, z }: { city: City; x: number; z: number
       {[-1, 1].map((s) => <CuboidCollider key={`arch${s}`} args={[(PARK_ARCH.outer - PARK_ARCH.inner) / 2, PARK_ARCH.spring / 2, PARK_ARCH.depth / 2]} position={[s * (PARK_ARCH.outer + PARK_ARCH.inner) / 2, SIDEWALK_H + PARK_ARCH.spring / 2, PARK_ARCH.z]} />)}
       {Array.from({ length: 17 }, (_, i) => { const angle = i / 16 * Math.PI, radius = (PARK_ARCH.outer + PARK_ARCH.inner) / 2; return <BallCollider key={`arc${i}`} args={[0.32]} position={[Math.cos(angle) * radius, SIDEWALK_H + PARK_ARCH.spring + Math.sin(angle) * radius, PARK_ARCH.z]} />; })}
       <CuboidCollider args={[1.25, 0.2, 1.25]} position={[0, 0.35, 0]} />
+      {PARK_LAMPS.map((l, i) => <CuboidCollider key={`plamp${i}`} args={[0.12, PARK_LAMP_HEIGHT / 2, 0.12]} position={[l.x, SIDEWALK_H + PARK_LAMP_HEIGHT / 2, l.z]} />)}
     </>}
     {city.blocks.some((b) => b.x === 0 && b.z === 0) && <CuboidCollider args={[0.65, PARK_OBELISK_HEIGHT / 2, 0.65]} position={[0, PARK_OBELISK_HEIGHT / 2, 0]} />}
   </RigidBody>;
