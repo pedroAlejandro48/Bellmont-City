@@ -10,13 +10,68 @@ const DUSK = new THREE.Color("#f0a46c");
 const TWILIGHT = new THREE.Color("#3a2c4a");
 const NIGHT = new THREE.Color("#060a17");
 
+function canvas(size: number) {
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const g = c.getContext("2d");
+  if (!g) throw new Error("Canvas textures are unavailable");
+  return [c, g] as const;
+}
+function texture(c: HTMLCanvasElement) {
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+/** A white-hot core fading through warm light to nothing. */
+function makeSunGlow() {
+  const [c, g] = canvas(256);
+  const r = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  r.addColorStop(0, "rgba(255,255,255,1)"); r.addColorStop(0.12, "rgba(255,255,250,1)"); r.addColorStop(0.22, "rgba(255,246,214,0.85)");
+  r.addColorStop(0.42, "rgba(255,224,160,0.35)"); r.addColorStop(0.7, "rgba(255,206,130,0.1)"); r.addColorStop(1, "rgba(255,200,120,0)");
+  g.fillStyle = r; g.fillRect(0, 0, 256, 256);
+  return texture(c);
+}
+/** The moon's surface: pale grey with darker seas and craters. */
+function makeMoon() {
+  const [c, g] = canvas(512);
+  g.fillStyle = "#d9dde3"; g.fillRect(0, 0, 512, 512);
+  const r = rng(11);
+  for (let i = 0; i < 9; i++) {
+    // The dark seas (maria).
+    const x = 80 + r() * 352, y = 120 + r() * 272, rad = 30 + r() * 70;
+    const sea = g.createRadialGradient(x, y, 0, x, y, rad);
+    sea.addColorStop(0, "rgba(120,126,138,0.55)"); sea.addColorStop(1, "rgba(120,126,138,0)");
+    g.fillStyle = sea; g.beginPath(); g.ellipse(x, y, rad * 1.4, rad, r() * 3, 0, Math.PI * 2); g.fill();
+  }
+  for (let i = 0; i < 140; i++) {
+    const x = r() * 512, y = 40 + r() * 432, rad = 2 + r() ** 3 * 22;
+    g.fillStyle = "rgba(90,96,108,0.35)"; g.beginPath(); g.arc(x, y, rad, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = "rgba(255,255,255,0.35)"; g.lineWidth = Math.max(1, rad * 0.18); g.beginPath(); g.arc(x - rad * 0.15, y - rad * 0.15, rad, Math.PI * 0.9, Math.PI * 1.7); g.stroke();
+  }
+  for (let i = 0; i < 4000; i++) { g.fillStyle = `rgba(0,0,0,${r() * 0.06})`; g.fillRect(r() * 512, r() * 512, 2, 2); }
+  return texture(c);
+}
+/** The soft glow around the moon. */
+function makeHalo() {
+  const [c, g] = canvas(256);
+  const r = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  r.addColorStop(0, "rgba(220,230,255,0.75)"); r.addColorStop(0.3, "rgba(200,215,255,0.38)"); r.addColorStop(0.6, "rgba(180,200,255,0.1)"); r.addColorStop(1, "rgba(170,190,255,0)");
+  g.fillStyle = r; g.fillRect(0, 0, 256, 256);
+  return texture(c);
+}
+
 export function SkyAndLights({ state }: { state: GameState }) {
   const { scene, camera } = useThree();
   const sun = useRef<THREE.DirectionalLight>(null);
   const moon = useRef<THREE.DirectionalLight>(null);
   const hemi = useRef<THREE.HemisphereLight>(null);
-  const sunMesh = useRef<THREE.Mesh>(null);
-  const moonMesh = useRef<THREE.Mesh>(null);
+  const sunMesh = useRef<THREE.Group>(null);
+  const moonMesh = useRef<THREE.Group>(null);
+  const bodies = useMemo(() => ({
+    sun: new THREE.SpriteMaterial({ map: makeSunGlow(), color: "#ffffff", transparent: true, depthWrite: false, fog: false, toneMapped: false, blending: THREE.AdditiveBlending }),
+    moon: new THREE.MeshBasicMaterial({ map: makeMoon(), fog: false, toneMapped: false }),
+    halo: new THREE.SpriteMaterial({ map: makeHalo(), color: "#cfdcff", transparent: true, depthWrite: false, fog: false, toneMapped: false, blending: THREE.AdditiveBlending, opacity: 0.85 }),
+  }), []);
   const stars = useRef<THREE.Points>(null);
   const color = useMemo(() => new THREE.Color(), []);
   const fog = useMemo(() => new THREE.Fog("#8cbfe9", 60, 320), []);
@@ -117,14 +172,15 @@ export function SkyAndLights({ state }: { state: GameState }) {
       <hemisphereLight ref={hemi} args={["#bcd3f0", "#3a3530", 0.5]} />
       <directionalLight ref={sun} castShadow {...shadow} />
       <directionalLight ref={moon} color="#9db5ff" {...shadow} />
-      <mesh ref={sunMesh}>
-        <sphereGeometry args={[16, 24, 16]} />
-        <meshBasicMaterial color="#fff2c2" fog={false} toneMapped={false} />
-      </mesh>
-      <mesh ref={moonMesh}>
-        <sphereGeometry args={[10, 24, 16]} />
-        <meshBasicMaterial color="#e6ecf7" fog={false} toneMapped={false} />
-      </mesh>
+      {/* The sun: a blinding ball of light with soft edges rather than a disc. */}
+      <group ref={sunMesh}>
+        <sprite material={bodies.sun} scale={[150, 150, 1]} />
+      </group>
+      {/* The moon: twice its old size, cratered, in a soft halo of its own light. */}
+      <group ref={moonMesh}>
+        <sprite material={bodies.halo} scale={[120, 120, 1]} renderOrder={-1} />
+        <mesh material={bodies.moon} rotation={[0.3, -1.2, 0]}><sphereGeometry args={[20, 32, 24]} /></mesh>
+      </group>
       <points ref={stars} geometry={starGeo} material={starMat} />
     </>
   );
