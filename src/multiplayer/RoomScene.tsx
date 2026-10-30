@@ -10,6 +10,7 @@ import type { NamedRoom, Peer } from "@/platform/realtime";
 import { applyPose, capturePose, isPoseWire, PoseBuffer, RENDER_DELAY_MS, SEND_HZ, type RemoteRig } from "./pose";
 import { spawnBeside, standingFromPose, type Standing } from "./spawn";
 import { NameLabel } from "./NameLabel";
+import { makeNpcLink } from "./npcLink";
 import { bodyColor, playerOf, type Gender } from "@/platform/account";
 
 /** How long after entering a late-arriving position can still move a player who has not moved yet. */
@@ -46,6 +47,11 @@ export function RoomScene({ state, channel, remotes, joinedAt, creator }: { stat
     setIds((old) => (old.length === next.length && old.every((id, i) => id === next[i]) ? old : next));
   }), [channel]);
 
+  // The room's NPCs are shared: one player runs them, everyone sees the same ones.
+  useEffect(() => {
+    state.npcLink = makeNpcLink(channel);
+    return () => { state.npcLink = null; };
+  }, [state, channel]);
   const lastSent = useRef({ at: 0, body: "" });
   const lastHitAt = useRef(Date.now());
   // Until this player first moves, someone found standing on their spawn point (whose position arrived late) and who

@@ -3,7 +3,7 @@
 // Each walks the sidewalk loop around a block, corner to corner, now and then crossing to the next block. Across
 // an avenue they only use a signalled intersection's zebra crossing, starting when the traffic they cross has
 // just got a red light; small streets they cross wherever they reach the corner.
-import { GAME_MINUTE, HALF, SIGNAL, blockCenter, isAvenue, isSignalled, rng, signalState, streetCenter } from "./config";
+import { GAME_MINUTE, HALF, SIGNAL, blockCenter, blockIndex, isAvenue, isSignalled, rng, signalState, streetCenter } from "./config";
 
 /** How far from a block's middle its sidewalk loop runs (between the building fronts and the kerb). */
 export const WALK_RING = 18.4;
@@ -125,4 +125,45 @@ export function steer(x: number, z: number, target: [number, number], obstacles:
 /** Each NPC's colour: about half pink, half blue. */
 export function npcGender(seed: number, index: number): "female" | "male" {
   return rng(seed ^ (index * 2654435761))() < 0.5 ? "female" : "male";
+}
+
+/**
+ * A walking route for someone found at (x, z) heading `yaw` (when another player takes over running the NPCs):
+ * along their block's sidewalk loop toward the corner ahead.
+ */
+export function legFromPosition(x: number, z: number, yaw: number): Leg {
+  const i = Math.max(-HALF, Math.min(HALF, blockIndex(x))), j = Math.max(-HALF, Math.min(HALF, blockIndex(z)));
+  const fx = Math.sin(yaw), fz = Math.cos(yaw);
+  let best = 0, bestScore = -Infinity;
+  for (let c = 0; c < 4; c++) {
+    const [cx, cz] = cornerPoint(i, j, c), dx = cx - x, dz = cz - z, d = Math.hypot(dx, dz) || 1;
+    // Prefer a corner ahead, then a near one.
+    const score = (dx * fx + dz * fz) / d * 2 - d / 20;
+    if (score > bestScore) { bestScore = score; best = c; }
+  }
+  const [ax, az] = cornerPoint(i, j, best + 1), [bx, bz] = cornerPoint(i, j, best - 1);
+  const from = Math.hypot(ax - x, az - z) > Math.hypot(bx - x, bz - z) ? best + 1 : best - 1;
+  return { kind: "ring", i, j, from: ((from % 4) + 4) % 4, to: best };
+}
+
+/**
+ * NPCs shared in a multiplayer room. One player (the host) runs them and publishes a snapshot several times a
+ * second; everyone else shows the host's NPCs and sends the host any hits their own traffic causes.
+ */
+export type NpcSnapshot = {
+  /** Per NPC: id, x, z, yaw, speed, mode (0 walk, 1 stand, 2 wait), seconds since knocked down (-1 = up), hit direction x, z, seed. */
+  list: number[][];
+};
+export type NpcLink = {
+  isHost: () => boolean;
+  publish: (snapshot: NpcSnapshot) => void;
+  /** The host's latest snapshot (null when this player is the host or none has arrived). */
+  latest: () => NpcSnapshot | null;
+  sendHit: (id: number, direction: [number, number]) => void;
+  /** Hits other players reported since last asked (host only). */
+  takeHits: () => { id: number; direction: [number, number] }[];
+};
+export function isNpcSnapshot(value: unknown): value is NpcSnapshot {
+  const v = value as { list?: unknown } | null;
+  return typeof v === "object" && v !== null && Array.isArray(v.list) && v.list.every((row) => Array.isArray(row) && row.length >= 10 && row.every((n) => typeof n === "number" && Number.isFinite(n)));
 }

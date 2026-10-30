@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { Room, SitPlan } from "./restaurantRoom";
+import type { NpcLink } from "./pedestrians";
 import { THROW_DISTANCE, healthAfterImpact, type SaveData, type SolidBox, type VehicleKind, type RoadPath, GET_UP_SECONDS, KNOCKDOWN_SECONDS, floorHeight, BENCH_SEATS, STARTING_CASH } from "./config";
 
 export type Accident = {
@@ -113,6 +114,8 @@ export type GameState = {
   cash: number;
   /** The NPCs around the player this frame (Pedestrians keeps them; Traffic and Player bump into them). */
   npcs: NpcBody[];
+  /** In a multiplayer room: how the NPCs are shared with the others (null playing alone). */
+  npcLink: NpcLink | null;
 };
 
 export function createState(save: SaveData): GameState {
@@ -146,7 +149,7 @@ export function createState(save: SaveData): GameState {
     vehiclePushes: new Map(),
     rooms: new Map(), interior: null, seat: null, script: null, standQueued: false, fade: 0, fadeInAt: null, doorPrompt: false,
     cash: Math.max(0, save.cash ?? STARTING_CASH),
-    npcs: [],
+    npcs: [], npcLink: null,
     seatOccupants: new Map(save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? [[save.benchSeat, "player"]] : []),
     bench: save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? { seat: save.benchSeat, phase: "seated", startedAt: 0, origin: new THREE.Vector3(...save.pos), originYaw: save.rotY } : null,
     scooter: {
