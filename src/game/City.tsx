@@ -108,6 +108,7 @@ export function City({ city, state }: { city: CityT; state: GameState }) {
   const headRef = useRef<THREE.InstancedMesh>(null);
   const glowRef = useRef<THREE.InstancedMesh>(null);
   const laneDashRef = useRef<THREE.InstancedMesh>(null);
+  const solidLineRef = useRef<THREE.InstancedMesh>(null);
   const dashRef = useRef<THREE.InstancedMesh>(null);
 
   const m = useMemo(() => {
@@ -132,8 +133,9 @@ export function City({ city, state }: { city: CityT; state: GameState }) {
     // dashed centre lines
     const markings = cityRoadDashes(state.pos.x, state.pos.z);
     const laneDashes = markings.filter((d) => d.divider).map((d) => mat4(d.x, 0.025, d.z, d.rot));
-    const dashes = markings.filter((d) => !d.divider).map((d) => mat4(d.x, 0.02, d.z, d.rot));
-    return { poles, arms, heads, glows, dashes, laneDashes };
+    const dashes = markings.filter((d) => !d.divider && !d.solid).map((d) => mat4(d.x, 0.02, d.z, d.rot));
+    const solids = markings.filter((d) => d.solid).map((d) => mat4(d.x, 0.02, d.z, d.rot));
+    return { poles, arms, heads, glows, dashes, laneDashes, solids };
   }, [city]);
 
   useInstances(poleRef, m.poles);
@@ -142,6 +144,7 @@ export function City({ city, state }: { city: CityT; state: GameState }) {
   useInstances(glowRef, m.glows);
   useInstances(dashRef, m.dashes);
   useInstances(laneDashRef, m.laneDashes);
+  useInstances(solidLineRef, m.solids);
 
   useFrame(() => {
     const d = state.darkness;
@@ -163,6 +166,8 @@ export function City({ city, state }: { city: CityT; state: GameState }) {
         <meshStandardMaterial color="#e8c547" roughness={0.8} />
       </instancedMesh>
 
+      {/* Double solid yellow centre lines of the main roads, laid end to end in 6 m pieces. */}
+      <instancedMesh ref={solidLineRef} args={[undefined, undefined, 2048]} receiveShadow><boxGeometry args={[6.04, 0.02, 0.12]} /><meshStandardMaterial color="#e8c547" roughness={0.8} /></instancedMesh>
       <instancedMesh ref={laneDashRef} args={[undefined, undefined, 2048]} receiveShadow><boxGeometry args={[2.5, 0.02, 0.12]} /><meshStandardMaterial color="#d8dcd7" roughness={0.8} /></instancedMesh>
       {/* blocks */}
       <instancedMesh ref={blockRef} args={[undefined, undefined, 64]} receiveShadow><boxGeometry args={[BLOCK, SIDEWALK_H, BLOCK]} /><meshStandardMaterial map={concrete} roughness={0.9} /></instancedMesh>

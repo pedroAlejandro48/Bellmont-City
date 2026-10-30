@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import * as THREE from "three";
-import { CITY_GROUND_SIZE, MAIN_ROAD_CENTER, MAIN_ROAD_WIDTH, ROAD_LANE_WIDTH, WORLD_HALF, wildernessCenter } from "./config";
+import { CITY_GROUND_SIZE, DOUBLE_LINE_GAP, MAIN_ROAD_CENTER, MAIN_ROAD_WIDTH, ROAD_LANE_WIDTH, WORLD_HALF, wildernessCenter } from "./config";
 import { cityAsphalt, makeNoise } from "./textures";
 
 /** Centre-line samples every STEP metres; short enough that the ribbon's curves look smooth. */
@@ -79,8 +79,8 @@ export function WorldRoads({ x, z, seed }: { x: number; z: number; seed: number 
         const span = (from: number, to: number): [number, number] => (sign === 1 ? [from, to] : [-to, -from]);
         const [a, b] = span(lo, hi);
         ribbon(axis, a, b, 0, MAIN_ROAD_WIDTH, 0.002, centerAt, road);
-        // Same markings as the city's main roads: a dashed yellow centre line and white lane dividers.
-        dashes(axis, a, b, 0, 0.18, 0.012, centerAt, 2.5, yellow);
+        // Same markings as the city's main roads: a double solid yellow centre line and white lane dividers.
+        for (const offset of [-DOUBLE_LINE_GAP / 2, DOUBLE_LINE_GAP / 2]) ribbon(axis, a, b, offset, 0.12, 0.012, centerAt, yellow);
         for (const offset of [-ROAD_LANE_WIDTH, ROAD_LANE_WIDTH]) dashes(axis, a, b, offset, 0.12, 0.012, centerAt, 2.5, white);
       }
     }

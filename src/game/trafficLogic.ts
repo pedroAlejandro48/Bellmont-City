@@ -1,4 +1,4 @@
-import { TRAFFIC_SPAWN_GAP, brakingGap, forwardDistance, queueMayResume, roadForward, sameRoad, VEHICLE_SIZE, type RoadPath, type VehicleKind } from "./config";
+import { TRAFFIC_FOLLOW_GAP, brakingGap, forwardDistance, queueMayResume, roadForward, sameRoad, VEHICLE_SIZE, type RoadPath, type VehicleKind } from "./config";
 import type { RoadIncident } from "./state";
 
 export type TrafficAgent = RoadPath & { id: number; kind: VehicleKind; x: number; z: number; vx: number; vz: number; speed: number; heldBy: number | null; crashUntil: number; brake: boolean };
@@ -28,7 +28,7 @@ export function trafficTargetSpeed(vehicle: TrafficAgent, all: TrafficAgent[], i
     const gap = ahead - VEHICLE_SIZE[vehicle.kind][0] / 2 - halfOther;
     if (ahead > 0 && lateral < VEHICLE_SIZE[vehicle.kind][2] / 2 + crossOther + 0.4 && gap < brakingGap(Math.hypot(vehicle.vx, vehicle.vz))) {
       const leaderSpeed = Math.max(0, other.vx * fx + other.vz * fz);
-      target = Math.min(target, gap < TRAFFIC_SPAWN_GAP ? 0 : leaderSpeed + Math.max(0, gap - TRAFFIC_SPAWN_GAP) * 0.5);
+      target = Math.min(target, gap < TRAFFIC_FOLLOW_GAP ? 0 : leaderSpeed + Math.max(0, gap - TRAFFIC_FOLLOW_GAP) * 0.5);
     }
     // Yield predictively at crossings, using stable ID priority to avoid deadlock.
     if (other.axis !== vehicle.axis && vehicle.id > other.id) {

@@ -141,7 +141,10 @@ export function bikePushShare() { return PERSON_MASS / (PERSON_MASS + SCOOTER_MA
 export const ROAD_LANE_WIDTH = 6;
 export const MAIN_ROAD_WIDTH = 4 * ROAD_LANE_WIDTH;
 export const MAIN_ROAD_CENTER = PITCH / 2 - STREET / 2 + MAIN_ROAD_WIDTH / 2;
-export const TRAFFIC_SPAWN_GAP = 11.1;
+/** Free road kept between vehicles placed near each other (m): over two bus lengths, so traffic starts spread out. */
+export const TRAFFIC_SPAWN_GAP = 25;
+/** The gap a moving vehicle keeps behind the one ahead before it stops (m): one bus length. */
+export const TRAFFIC_FOLLOW_GAP = 11.1;
 export function roadLaneOffsets(main: boolean) { return main ? [ROAD_LANE_WIDTH / 2, ROAD_LANE_WIDTH * 1.5] : [ROAD_LANE_WIDTH / 2]; }
 /** Centre line of street k across one axis (k = 0 is the main road). */
 export function streetCenter(k: number) { return k === 0 ? MAIN_ROAD_CENTER : k * PITCH + PITCH / 2; }
@@ -190,9 +193,14 @@ export type City = {
   lamps: Prop[];
 };
 
+/** Spacing between the two stripes of a main road's double yellow centre line (m). */
+export const DOUBLE_LINE_GAP = 0.34;
+
 /** Local marking window: each orientation is bounded independently. */
 export function cityRoadDashes(x: number, z: number) {
-  const dashes: { x: number; z: number; rot: number; divider?: boolean }[] = [];
+  // Streets: a dashed yellow centre line. Main roads: a double solid yellow centre line (`solid`, one entry per
+  // stripe, each covering a full 6 m step) and dashed white lane dividers (`divider`).
+  const dashes: { x: number; z: number; rot: number; divider?: boolean; solid?: boolean }[] = [];
   for (const axis of ["x", "z"] as const) {
     const along = axis === "x" ? x : z, across = axis === "x" ? z : x;
     const cell = Math.round(across / PITCH);
@@ -202,8 +210,10 @@ export function cityRoadDashes(x: number, z: number) {
         // No markings inside intersections.
         const cross = nearestStreet(p);
         if (Math.abs(p - cross) < streetHalfWidth(cross) + 1) continue;
-        dashes.push({ x: axis === "x" ? p : street, z: axis === "x" ? street : p, rot: axis === "x" ? 0 : Math.PI / 2 });
-        if (Math.abs(street - MAIN_ROAD_CENTER) < 0.1) for (const offset of [-ROAD_LANE_WIDTH, ROAD_LANE_WIDTH]) dashes.push({ x: axis === "x" ? p : street + offset, z: axis === "x" ? street + offset : p, rot: axis === "x" ? 0 : Math.PI / 2, divider: true });
+        const main = Math.abs(street - MAIN_ROAD_CENTER) < 0.1;
+        if (main) for (const offset of [-DOUBLE_LINE_GAP / 2, DOUBLE_LINE_GAP / 2]) dashes.push({ x: axis === "x" ? p : street + offset, z: axis === "x" ? street + offset : p, rot: axis === "x" ? 0 : Math.PI / 2, solid: true });
+        else dashes.push({ x: axis === "x" ? p : street, z: axis === "x" ? street : p, rot: axis === "x" ? 0 : Math.PI / 2 });
+        if (main) for (const offset of [-ROAD_LANE_WIDTH, ROAD_LANE_WIDTH]) dashes.push({ x: axis === "x" ? p : street + offset, z: axis === "x" ? street + offset : p, rot: axis === "x" ? 0 : Math.PI / 2, divider: true });
       }
     }
   }

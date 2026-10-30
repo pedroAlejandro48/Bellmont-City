@@ -2,8 +2,8 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import { useRapier } from "@react-three/rapier";
 import * as THREE from "three";
-import { HALF, PITCH, WORLD_HALF, MAIN_ROAD_CENTER, MAIN_ROAD_WIDTH, streetCenter, rng, VEHICLE_SIZE, VEHICLE_MASS, VEHICLE_COLLISION_GROUPS, vehicleContactHurts, vehicleFootprint, THROW_DISTANCE, ACCIDENT_STOP_SECONDS, CRASH_STOP_SECONDS, TRAFFIC_SPEED, TRAFFIC_CORNER_SPEED, brakingGap, scooterBypassReady, wildernessCenter, roadForward, roadLeft, forwardDistance, roadLane, trafficSpawnClear, isTrafficRoad, type VehicleKind } from "./config";
-import { intersectionAhead, makeTrafficTurn, turnSample, mayTurnAt, type TrafficTurn } from "./trafficRoutes";
+import { HALF, PITCH, WORLD_HALF, MAIN_ROAD_CENTER, MAIN_ROAD_WIDTH, ROAD_LANE_WIDTH, STREET, roadLaneOffsets, streetCenter, nextStreet, rng, VEHICLE_SIZE, VEHICLE_MASS, VEHICLE_COLLISION_GROUPS, vehicleContactHurts, vehicleFootprint, THROW_DISTANCE, ACCIDENT_STOP_SECONDS, CRASH_STOP_SECONDS, TRAFFIC_SPEED, TRAFFIC_CORNER_SPEED, brakingGap, scooterBypassReady, wildernessCenter, roadForward, roadLeft, forwardDistance, roadLane, trafficSpawnClear, isTrafficRoad, type VehicleKind } from "./config";
+import { allowedTurns, intersectionAhead, makeTrafficTurn, pointAlongTurn, progressOnTurn, turnDir, turnLeavesCity, mayTurnAt, type TrafficTurn, type TurnSide } from "./trafficRoutes";
 
 import { makeText, makeGlow } from "./textures";
 import { knockDown, type GameState } from "./state";
@@ -196,6 +196,20 @@ function Truck({ color, cargo, mats }: { color: string; cargo: string; mats: Mat
   );
 }
 
+/**
+ * Clamps a target lane (cross-road coordinate) to the right-hand half of the vehicle's road, keeping the whole
+ * vehicle between the centre line and its kerb.
+ */
+function rightHalf(v: Vehicle, laneHere: number, width: number) {
+  const side = v.axis === "x" ? v.dir : -v.dir;
+  const offset = roadLaneOffsets(v.central)[v.slot] ?? ROAD_LANE_WIDTH / 2;
+  // The road's centre line here (laneHere already follows a countryside road's curve).
+  const center = laneHere - side * offset;
+  const half = v.central ? MAIN_ROAD_WIDTH / 2 : STREET / 2;
+  const a = center + side * (width / 2 + 0.1), b = center + side * (half - width / 2 - 0.1);
+  return (lane: number) => Math.max(Math.min(a, b), Math.min(Math.max(a, b), lane));
+}
+
 export function Traffic({ state }: { state: GameState }) {
   const { world, rapier } = useRapier();
   const mats = useMats();
@@ -242,6 +256,11 @@ export function Traffic({ state }: { state: GameState }) {
     }
     return list;
   }, [state]);
+  // Test builds only (VITE_TRAFFIC_AUDIT=1): let an automated check inspect where traffic drives.
+  useEffect(() => {
+    if (import.meta.env["VITE_TRAFFIC_AUDIT"] !== "1") return;
+    (window as unknown as { __traffic?: Vehicle[] }).__traffic = vehicles;
+  }, [vehicles]);
   const refs = useRef<(THREE.Group | null)[]>([]);
   const beams = useRef<(THREE.SpotLight | null)[]>([]);
   const beamMat = useMemo(() => new THREE.MeshBasicMaterial({ map: makeGlow(), color: "#fff0cd", transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }), []);
@@ -351,22 +370,28 @@ export function Traffic({ state }: { state: GameState }) {
       v.t = v.axis === "x" ? v.x : v.z;
       const activeIncident = state.incidents.some((incident) => incident.vehicleId === v.id && incident.stoodUpAt === null);
       // Local traffic pool recycles outside visibility, not at a world boundary.
-      if (Math.hypot(v.x - p.x, v.z - p.z) > 340 && v.crashUntil < now && !activeIncident) {
+      // A street vehicle somehow past the city's edge is off the road: put it back on a street at once.
+      const offRoad = !v.central && !v.turn && Math.max(Math.abs(v.x), Math.abs(v.z)) > WORLD_HALF + 8;
+      if ((Math.hypot(v.x - p.x, v.z - p.z) > 340 || offRoad) && v.crashUntil < now && !activeIncident) {
+        // Work out the new road first and only move the vehicle onto it once a clear spot is found,
+        // so a vehicle that stays put keeps its own road, lane and flags.
         const outside = Math.max(Math.abs(p.x), Math.abs(p.z)) > WORLD_HALF;
-        if (outside) {
-          v.axis = Math.abs(p.x) > Math.abs(p.z) ? "x" : "z"; v.central = true;
-        }
-        const cross = v.axis === "x" ? p.z : p.x;
+        const axis = outside ? (Math.abs(p.x) > Math.abs(p.z) ? "x" : "z") : v.axis;
+        const cross = axis === "x" ? p.z : p.x;
         const k = Math.max(-HALF - 1, Math.min(HALF, Math.round((cross - PITCH / 2) / PITCH) + (i % 5) - 2));
-        const center = v.central ? MAIN_ROAD_CENTER : streetCenter(k);
-        const laneBase = roadLane(v.axis, v.dir, center, v.slot);
+        const center = outside || v.central ? MAIN_ROAD_CENTER : streetCenter(k);
+        // A vehicle placed on the main road drives as main-road traffic (two lanes each way, countryside exits).
+        const central = Math.abs(center - MAIN_ROAD_CENTER) < 0.1;
+        const slot = central ? v.slot : 0;
+        const laneBase = roadLane(axis, v.dir, center, slot);
         const random = rng(state.worldSeed ^ i * 71 ^ Math.floor(now));
         for (let attempt = 0; attempt < 100; attempt++) {
-          let t = (v.axis === "x" ? p.x : p.z) - v.dir * (250 + random() * 70);
-          if (!v.central) t = Math.max(-WORLD_HALF + 14, Math.min(WORLD_HALF - 14, t));
-          const lane = v.central && Math.abs(t) > WORLD_HALF ? wildernessCenter(v.axis, t, state.worldSeed) + laneBase - MAIN_ROAD_CENTER : laneBase;
-          const x = v.axis === "x" ? t : lane, z = v.axis === "z" ? t : lane;
+          let t = (axis === "x" ? p.x : p.z) - v.dir * (250 + random() * 70);
+          if (!central) t = Math.max(-WORLD_HALF + 14, Math.min(WORLD_HALF - 14, t));
+          const lane = central && Math.abs(t) > WORLD_HALF ? wildernessCenter(axis, t, state.worldSeed) + laneBase - MAIN_ROAD_CENTER : laneBase;
+          const x = axis === "x" ? t : lane, z = axis === "z" ? t : lane;
           if (!isTrafficRoad(x, z, state.worldSeed) || !trafficSpawnClear(x, z, VEHICLE_SIZE[v.kind][0], vehicles.filter((other) => other !== v))) continue;
+          v.axis = axis; v.central = central; v.slot = slot;
           v.t = t; v.x = x; v.z = z; v.lane = laneBase; v.turn = null; v.nextIntersection = intersectionAhead(v, t);
           const angle = v.axis === "x" ? (v.dir === 1 ? 0 : Math.PI) : v.dir === 1 ? -Math.PI / 2 : Math.PI / 2;
           body.setRotation(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle), true);
@@ -379,9 +404,17 @@ export function Traffic({ state }: { state: GameState }) {
           const random = rng(state.worldSeed ^ v.id * 827 ^ Math.round(v.nextIntersection) ^ (v.axis === "x" ? 33 : 71));
           const edge = Math.abs(v.nextIntersection) >= WORLD_HALF - 1;
           if ((!v.central && edge) || random() < 0.34) {
-            const nextDir: 1 | -1 = edge ? (v.lane > PITCH / 2 ? -1 : 1) : random() < 0.5 ? 1 : -1;
-            v.turn = makeTrafficTurn(v, v.nextIntersection, nextDir, v.slot);
-          } else v.nextIntersection += v.dir * PITCH;
+            // Only turns the vehicle's lane allows; at the city's edge, a street ends, so turn back inward
+            // along the ring road (a street's single lane may turn either way).
+            const roadCenter = v.lane - (v.axis === "x" ? v.dir : -v.dir) * (roadLaneOffsets(v.central)[v.slot] ?? ROAD_LANE_WIDTH / 2);
+            const options = allowedTurns(v.central, v.slot).filter((side) => !turnLeavesCity(v, roadCenter, v.nextIntersection, side));
+            const pick = random();
+            const side: TurnSide = edge && !v.central
+              ? (turnDir(v, "right") === (v.lane > 0 ? -1 : 1) ? "right" : "left")
+              : options[Math.floor(pick * options.length)] ?? "right";
+            if (options.includes(side) || (edge && !v.central)) v.turn = makeTrafficTurn(v, v.nextIntersection, side, v.kind);
+            else v.nextIntersection = nextStreet(v.nextIntersection, v.dir);
+          } else v.nextIntersection = nextStreet(v.nextIntersection, v.dir);
         } else if (distance <= -2) v.nextIntersection = intersectionAhead(v, v.t);
       }
       const g = refs.current[i];
@@ -431,15 +464,30 @@ export function Traffic({ state }: { state: GameState }) {
       if (bike.riding || (!bikeObstacle && (!bike.fallen || bikeAhead < -length / 2 - 2))) bikeWait.current.delete(i);
       const bikeOccupied = bike.riding || bike.action !== null || (bike.fallen && (state.accident !== null || Math.hypot(state.pos.x - bike.pos.x, state.pos.z - bike.pos.z) < 2.5));
       let targetSpeed = trafficTargetSpeed(v, vehicles, state.incidents, now);
+      // A street ends at the city's edge: never drive on into the woods, even when a turn could not start yet.
+      if (!v.central && !v.turn && Math.abs(v.nextIntersection) >= WORLD_HALF - 1 && (v.nextIntersection - v.t) * v.dir < 12) targetSpeed = 0;
       let targetLane = v.central && Math.abs(v.t) > WORLD_HALF
         ? wildernessCenter(v.axis, v.t + v.dir * 10, state.worldSeed) + v.lane - MAIN_ROAD_CENTER
         : v.lane;
+      // Traffic always keeps to the right-hand half of its road: every lane it steers for, including to pass
+      // something, stays between the centre line and the kerb on its side.
+      const keepRight = rightHalf(v, targetLane, width);
+      // Passing an obstacle at `cross`: on whichever side of it the right-hand half leaves room (else null).
+      const passLane = (cross: number, clearance: number) => {
+        const [lx, lz] = roadLeft(v);
+        const left = v.axis === "x" ? lz : lx;
+        for (const side of [left, -left]) {
+          const lane = keepRight(cross + side * clearance);
+          if (Math.abs(lane - cross) >= clearance - 0.35) return lane;
+        }
+        return null;
+      };
       const wait = bikeWait.current.get(i);
       if (bikeObstacle && wait !== undefined) {
         if (bikeOccupied || (bike.fallen && !scooterBypassReady(wait, now)) || Math.hypot(state.pos.x - bike.pos.x, state.pos.z - bike.pos.z) < 1.6 && state.accident) targetSpeed = 0;
         else {
-          const [lx, lz] = roadLeft(v);
-          targetLane = bikeCross + (v.axis === "x" ? lz : lx) * (width / 2 + 1.25);
+          const lane = passLane(bikeCross, width / 2 + 1.25);
+          if (lane === null) targetSpeed = 0; else targetLane = lane;
           targetSpeed = Math.min(targetSpeed, 3.5);
           // Too close to swerve forward around it: wait instead of pivoting in place.
           if (Math.abs(vehicleCross - bikeCross) < width / 2 + 0.9 && bikeAhead > 0 && bikeAhead < length / 2 + 2) targetSpeed = 0;
@@ -461,11 +509,9 @@ export function Traffic({ state }: { state: GameState }) {
         if (now - incident.startedAt < (incident.scooterCrash ? 15 : ACCIDENT_STOP_SECONDS)) targetSpeed = 0;
         else {
           const bodyAhead = forwardDistance(v, [v.x, v.z], [state.pos.x, state.pos.z]);
-          const [lx, lz] = roadLeft(v);
           const crossBody = v.axis === "x" ? state.pos.z : state.pos.x;
-          const side = v.axis === "x" ? lz : lx;
           const offset = width / 2 + 1.5;
-          targetLane = crossBody + side * offset;
+          targetLane = passLane(crossBody, offset) ?? targetLane;
           targetSpeed = Math.min(targetSpeed, 3.2);
           // First make lateral clearance while stopped, then creep past the body.
           const cross = v.axis === "x" ? v.z : v.x;
@@ -473,6 +519,7 @@ export function Traffic({ state }: { state: GameState }) {
           if (bodyAhead < -length / 2 - 2) { incident.passed = true; targetLane = v.lane; }
         }
       }
+      targetLane = keepRight(targetLane);
       const [fx, fz] = roadForward(v);
       if (v.turn) targetSpeed = Math.min(targetSpeed, TRAFFIC_CORNER_SPEED);
       const currentSpeed = v.turn ? Math.hypot(v.vx, v.vz) : v.vx * fx + v.vz * fz;
@@ -488,23 +535,28 @@ export function Traffic({ state }: { state: GameState }) {
       } else {
         const interpolated = currentSpeed + (targetSpeed - currentSpeed) * (1 - Math.exp(-(v.brake ? 9 : 1.8) * dt));
         const speed = targetSpeed === 0 && Math.abs(interpolated) < 0.1 ? 0 : interpolated;
-        const cross = v.axis === "x" ? v.z : v.x;
-        // Lateral motion only while rolling forward, so lane changes arc like real steering.
-        const lateralCap = Math.min(4, Math.max(0, speed) * 0.3);
-        const crossSpeed = Math.max(-lateralCap, Math.min(lateralCap, (targetLane - cross) * 1.2));
         const q = body.rotation(); const actualYaw = steeringScratch.euler.setFromQuaternion(steeringScratch.quaternion.set(q.x, q.y, q.z, q.w), "YXZ").y;
-        let steerYaw = yaw + Math.atan2(-crossSpeed * v.dir * (v.axis === "x" ? 1 : -1), Math.max(1, speed));
+        // Pure pursuit: aim at a point on the target lane a little way ahead. However crooked or far from its
+        // lane a vehicle is (after a turn, a bump, or passing something), this straightens it and brings it back
+        // into the lane as it rolls forward, with gentle, speed-scaled curves and no sideways sliding.
+        const look = Math.max(7, Math.max(0, speed) * 1.4);
+        const aimX = v.axis === "x" ? v.x + v.dir * look : targetLane, aimZ = v.axis === "z" ? v.z + v.dir * look : targetLane;
+        let steerYaw = Math.atan2(-(aimZ - v.z), aimX - v.x);
         const turn = v.turn;
         if (turn) {
           const startDistance = Math.hypot(v.x - turn.start[0], v.z - turn.start[1]);
           const reached = turn.progress > 0 || startDistance < 1.2 || (v.t - (v.axis === "x" ? turn.start[0] : turn.start[1])) * v.dir > 0;
           if (reached) {
-            const sample = turnSample(turn, turn.progress);
-            turn.progress = Math.min(1, turn.progress + Math.max(0, speed) * dt / Math.max(1, sample.derivative));
-            const ahead = turnSample(turn, Math.min(1, turn.progress + 0.12));
+            // Progress is where the vehicle really is on the curve (never going backwards), and it steers for a
+            // point a fixed distance further along it, so even a slow, long bus tracks the curve instead of
+            // cutting wide across the centre line.
+            turn.progress = progressOnTurn(turn, v.x, v.z, turn.progress);
+            const ahead = pointAlongTurn(turn, turn.progress, Math.max(3.5, Math.max(0, speed) * 0.9));
             steerYaw = Math.atan2(-(ahead.z - v.z), ahead.x - v.x);
-            if (turn.progress >= 1 && Math.hypot(v.x - turn.end[0], v.z - turn.end[1]) < 1.5) {
-              v.axis = turn.next.axis; v.dir = turn.next.dir; v.lane = turn.next.lane;
+            // The turn ends when its curve does, even if a long vehicle swung wide: lane keeping on the new
+            // road then pulls it back into its lane, always on the right-hand side.
+            if (turn.progress >= 0.97) {
+              v.axis = turn.next.axis; v.dir = turn.next.dir; v.lane = turn.next.lane; v.slot = turn.next.slot;
               v.central = Math.abs(v.lane - MAIN_ROAD_CENTER) < MAIN_ROAD_WIDTH / 2;
               v.t = v.axis === "x" ? v.x : v.z; v.turn = null; v.nextIntersection = intersectionAhead(v, v.t);
             }

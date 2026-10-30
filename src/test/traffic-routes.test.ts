@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PITCH, WORLD_HALF, TRAFFIC_CORNER_SPEED, VEHICLE_SIZE, TRAFFIC_SPAWN_GAP, isTrafficRoad, roadLaneOffsets, roadLane, trafficSpawnClear, wildernessCenter, cityRoadDashes, MAIN_ROAD_CENTER, MAIN_ROAD_WIDTH, blockSpan, nextStreet } from "@/game/config";
-import { makeTrafficTurn, turnSample, mayTurnAt } from "@/game/trafficRoutes";
+import { makeTrafficTurn, turnSample, mayTurnAt, allowedTurns, turnDir, intersectionAhead, pointAlongTurn, progressOnTurn, turnLeavesCity } from "@/game/trafficRoutes";
 
 describe("road traffic routes", () => {
   it("has two lanes each direction on main roads and one on side streets", () => {
@@ -23,21 +23,91 @@ describe("road traffic routes", () => {
       expect(isTrafficRoad(axis === "x" ? t : center, axis === "z" ? t : center, 123)).toBe(true);
     }
   });
-  it("reserves a bus length between bumpers and staggers adjacent lanes", () => {
-    expect(TRAFFIC_SPAWN_GAP).toBe(VEHICLE_SIZE.bus[0]);
+  it("keeps over two bus lengths between bumpers and staggers adjacent lanes", () => {
+    expect(TRAFFIC_SPAWN_GAP).toBeGreaterThan(2 * VEHICLE_SIZE.bus[0]);
     const existing = [{ x: 0, z: 35, kind: "car" as const }];
     expect(trafficSpawnClear(0, 41, 4.4, existing)).toBe(false);
-    expect(trafficSpawnClear(15.499, 35, 4.4, existing)).toBe(false);
-    expect(trafficSpawnClear(15.5, 35, 4.4, existing)).toBe(true);
+    expect(trafficSpawnClear(4.4 + TRAFFIC_SPAWN_GAP - 0.001, 35, 4.4, existing)).toBe(false);
+    expect(trafficSpawnClear(4.4 + TRAFFIC_SPAWN_GAP, 35, 4.4, existing)).toBe(true);
   });
   it("turns through a moving curve tangent to incoming and outgoing roads", () => {
-    const turn = makeTrafficTurn({ axis: "x", dir: 1, lane: 29 }, PITCH + 26, 1);
+    const turn = makeTrafficTurn({ axis: "x", dir: 1, lane: 81 }, PITCH + 26, "right");
     const start = turnSample(turn, 0), mid = turnSample(turn, 0.5), end = turnSample(turn, 1);
     expect(start.yaw).toBeCloseTo(0); expect(end.yaw).toBeCloseTo(-Math.PI / 2);
     expect(mid.x).toBeGreaterThan(start.x); expect(mid.z).toBeGreaterThan(start.z);
     expect(mid.derivative).toBeGreaterThan(0); expect(end.z).toBeGreaterThan(mid.z);
   });
 });
+describe("keeping right through turns", () => {
+  const main = MAIN_ROAD_CENTER;
+  // The right-hand lanes of a road: heading +x they sit at +z of its centre, heading +z at -x.
+  const onRightHalf = (next: { axis: "x" | "z"; dir: 1 | -1; lane: number }, center: number) =>
+    (next.axis === "x" ? next.dir : -next.dir) * (next.lane - center) > 0;
+
+  it("turns right toward the right-hand side and left toward the left", () => {
+    expect(turnDir({ axis: "x", dir: 1 }, "right")).toBe(1);
+    expect(turnDir({ axis: "x", dir: 1 }, "left")).toBe(-1);
+    expect(turnDir({ axis: "z", dir: 1 }, "right")).toBe(-1);
+    expect(turnDir({ axis: "z", dir: -1 }, "right")).toBe(1);
+  });
+
+  it("lets only the right lane turn right and only the left lane turn left on main roads", () => {
+    expect(allowedTurns(true, 1)).toEqual(["right"]);
+    expect(allowedTurns(true, 0)).toEqual(["left"]);
+    expect(allowedTurns(false, 0)).toEqual(["left", "right"]);
+  });
+
+  it("always ends a turn on the right-hand half of the new road, in the matching lane", () => {
+    for (const axis of ["x", "z"] as const) for (const dir of [1, -1] as const) for (const side of ["left", "right"] as const) {
+      for (const kind of ["car", "bus"] as const) {
+        for (const crossing of [main, 78, -26, WORLD_HALF, -WORLD_HALF]) {
+          const turn = makeTrafficTurn({ axis, dir, lane: roadLane(axis, dir, 130) }, crossing, side, kind);
+          expect(onRightHalf(turn.next, crossing)).toBe(true);
+          const onMain = crossing === main;
+          expect(turn.next.slot).toBe(onMain && side === "right" && kind !== "bus" ? 1 : 0);
+          expect(Math.abs(turn.next.lane - crossing)).toBe(onMain && turn.next.slot === 1 ? 9 : 3);
+        }
+      }
+    }
+  });
+
+  it("finds the main road as the next intersection, not a grid street that isn't there", () => {
+    // Heading +x from the street at -26, the next crossing is the main road at 32 (never 26).
+    expect(intersectionAhead({ axis: "x", dir: 1, lane: 81 }, -20)).toBe(main);
+    expect(nextStreet(-26, 1)).toBe(main);
+    expect(nextStreet(main, 1)).toBe(78);
+    expect(nextStreet(78, -1)).toBe(main);
+  });
+});
+
 it("rolls through corners a little faster than the former 4.5 m/s cap", () => { expect(TRAFFIC_CORNER_SPEED).toBeGreaterThan(4.5); expect(TRAFFIC_CORNER_SPEED).toBeLessThan(7); });
 
 it("lets both perimeter lanes turn at ring corners", () => { expect(mayTurnAt(WORLD_HALF, WORLD_HALF + 3)).toBe(true); expect(mayTurnAt(WORLD_HALF, -WORLD_HALF - 3)).toBe(true); expect(mayTurnAt(WORLD_HALF + 52, 29)).toBe(false); });
+
+describe("following a turn", () => {
+  const turn = makeTrafficTurn({ axis: "x", dir: 1, lane: 81 }, PITCH + 26, "right");
+  it("aims a set distance along the curve, then straight down the new lane", () => {
+    const a = pointAlongTurn(turn, 0, 3);
+    expect(Math.hypot(a.x - turn.start[0], a.z - turn.start[1])).toBeCloseTo(3, 0);
+    const beyond = pointAlongTurn(turn, 1, 5);
+    expect(beyond.x).toBeCloseTo(turn.end[0]); expect(beyond.z).toBeCloseTo(turn.end[1] + 5 * turn.next.dir);
+  });
+  it("measures progress from where the vehicle really is, never backwards", () => {
+    const mid = turnSample(turn, 0.5);
+    expect(progressOnTurn(turn, mid.x, mid.z, 0.3)).toBeCloseTo(0.5, 1);
+    expect(progressOnTurn(turn, turn.start[0], turn.start[1], 0.4)).toBe(0.4);
+  });
+});
+
+describe("the ring road", () => {
+  it("only turns inward, except onto a main road heading into the countryside", () => {
+    // Heading -z along the east edge (x ≈ WORLD_HALF): a right turn heads +x, out of the city.
+    const east = { axis: "z" as const, dir: -1 as const, lane: WORLD_HALF + 3 };
+    expect(turnDir(east, "right")).toBe(1);
+    expect(turnLeavesCity(east, WORLD_HALF, 598, "right")).toBe(true);
+    expect(turnLeavesCity(east, WORLD_HALF, 598, "left")).toBe(false);
+    expect(turnLeavesCity(east, WORLD_HALF, MAIN_ROAD_CENTER, "right")).toBe(false);
+    // Streets inside the city may turn either way.
+    expect(turnLeavesCity({ axis: "z", dir: -1, lane: 81 }, 78, 598, "left")).toBe(false);
+  });
+});
