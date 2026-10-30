@@ -74,7 +74,7 @@ export function Scooter({ state }: { state: GameState }) {
     const dt = Math.min(raw, 0.05), bike = state.scooter, now = state.simulationTime;
     const nearby = canInteractScooter([state.pos.x, state.pos.z], [bike.pos.x, bike.pos.z], bike.yaw, bike.fallen, bike.fallSide);
     // One shared E sign for every available action (pickup, mount, and stopped dismount).
-    bike.promptVisible = !state.bench && (bike.fallen || bike.riding || !nearestBenchSeat(state.pos.x, state.pos.z, state.seatOccupants)) && !bike.action && !state.accident && state.health > 0 && (bike.riding ? scooterCanDismount(bike.speed) : nearby);
+    bike.promptVisible = !state.bench && !state.doorPrompt && !state.interior && (bike.fallen || bike.riding || !nearestBenchSeat(state.pos.x, state.pos.z, state.seatOccupants)) && !bike.action && !state.accident && state.health > 0 && (bike.riding ? scooterCanDismount(bike.speed) : nearby);
     if (bike.interactQueued) {
       bike.interactQueued = false;
       if (!state.accident && state.health > 0 && !bike.action && (nearby || bike.riding) && (!bike.riding || scooterCanDismount(bike.speed))) {

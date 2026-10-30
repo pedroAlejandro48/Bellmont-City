@@ -1,5 +1,6 @@
 import * as THREE from "three";
-import { THROW_DISTANCE, healthAfterImpact, type SaveData, type SolidBox, type VehicleKind, type RoadPath, GET_UP_SECONDS, KNOCKDOWN_SECONDS, floorHeight, BENCH_SEATS } from "./config";
+import type { Room, SitPlan } from "./restaurantRoom";
+import { THROW_DISTANCE, healthAfterImpact, type SaveData, type SolidBox, type VehicleKind, type RoadPath, GET_UP_SECONDS, KNOCKDOWN_SECONDS, floorHeight, BENCH_SEATS, STARTING_CASH } from "./config";
 
 export type Accident = {
   phase: "down" | "rising";
@@ -38,6 +39,23 @@ export type OtherBike = { id: string; box: SolidBox };
 export type Impact =
   | { kind: "bike"; id: string; side: 1 | -1 }
   | { kind: "player"; id: string; direction: [number, number]; speed: number };
+
+/** A hand reaching for a point in the world, its elbow pointing "low", "out" to the side or "back". */
+export type WorldReach = { at: THREE.Vector3; blend: number; pole: "low" | "out" | "back" };
+/**
+ * A scripted movement this frame (going through a door, sitting on a chair): where the character is and how it
+ * holds itself. `walk` is the speed along its facing, for the stepping legs.
+ */
+export type Script = { x: number; z: number; yaw: number; walk: number; sit: number; shuffle: number; lean: number; left: WorldReach | null; right: WorldReach | null };
+/** Inside (or going into, or out of) a restaurant. */
+export type Interior = {
+  key: string; phase: "entering" | "inside" | "leaving"; startedAt: number;
+  /** Where the movement began, in the room's frame. */
+  from: [number, number]; fromYaw: number;
+  /** The spot outside the door facing the street (world), where saving puts the player. */
+  outside: [number, number]; outsideYaw: number;
+  cameraSet: boolean;
+};
 
 /** A traffic vehicle's footprint this frame, for walking and riding into it. */
 export type VehicleSolid = { index: number; kind: VehicleKind; box: SolidBox; speed: number };
@@ -78,6 +96,18 @@ export type GameState = {
   vehicles: VehicleSolid[];
   /** Bike shoves on vehicles this frame, by vehicle index: a world-space velocity Traffic applies. */
   vehiclePushes: Map<number, [number, number]>;
+  /** Restaurant rooms visited (furniture where it was left), by building. */
+  rooms: Map<string, Room>;
+  interior: Interior | null;
+  seat: { room: string; plan: SitPlan; phase: "sit" | "seated" | "stand"; startedAt: number } | null;
+  script: Script | null;
+  standQueued: boolean;
+  /** 0 clear .. 1 black: the fade between outside and inside. */
+  fade: number;
+  fadeInAt: number | null;
+  /** Shown when the player can use a restaurant door, so the bike's hint stays out of the way. */
+  doorPrompt: boolean;
+  cash: number;
 };
 
 export function createState(save: SaveData): GameState {
@@ -109,6 +139,8 @@ export function createState(save: SaveData): GameState {
     impacts: [],
     vehicles: [],
     vehiclePushes: new Map(),
+    rooms: new Map(), interior: null, seat: null, script: null, standQueued: false, fade: 0, fadeInAt: null, doorPrompt: false,
+    cash: Math.max(0, save.cash ?? STARTING_CASH),
     seatOccupants: new Map(save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? [[save.benchSeat, "player"]] : []),
     bench: save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? { seat: save.benchSeat, phase: "seated", startedAt: 0, origin: new THREE.Vector3(...save.pos), originYaw: save.rotY } : null,
     scooter: {
@@ -127,8 +159,10 @@ export function toSave(s: GameState): SaveData {
   return {
     health: s.health,
     elapsed: s.elapsed,
-    pos: [s.pos.x, s.pos.y, s.pos.z],
-    rotY: s.rotY,
+    // Saved inside a restaurant, the game comes back just outside its door.
+    pos: s.interior ? [s.interior.outside[0], s.pos.y, s.interior.outside[1]] : [s.pos.x, s.pos.y, s.pos.z],
+    rotY: s.interior ? s.interior.outsideYaw : s.rotY,
+    cash: s.cash,
     camYaw: s.camYaw,
     camPitch: s.camPitch,
     worldSeed: s.worldSeed,

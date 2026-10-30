@@ -366,7 +366,7 @@ export function Traffic({ state }: { state: GameState }) {
     vehicles.forEach((v, i) => {
       const body = bodies.current[i];
       if (!body) return;
-      let previous = v.t;
+      const previous = v.t;
       v.t = v.axis === "x" ? v.x : v.z;
       const activeIncident = state.incidents.some((incident) => incident.vehicleId === v.id && incident.stoodUpAt === null);
       // Local traffic pool recycles outside visibility, not at a world boundary.

@@ -57,10 +57,10 @@ export function City({ city, state }: { city: CityT; state: GameState }) {
     const fh = BUILDING_ENTRANCE.floorHeight, y = SIDEWALK_H + fh / 2;
     for (const b of city.buildings) {
       const L = buildingLayout(b);
+      // Restaurants draw their own ground floor, inside and out.
+      if (b.restaurant) continue;
       if (L.backDoor === "x") backDoors.push(mat4(b.x - L.sx * (b.w / 2 + 0.025), SIDEWALK_H + 1.05, b.z + L.sz * b.d * 0.25, -L.sx * Math.PI / 2, 1.1, 2.1, 1));
       else if (L.backDoor === "z") backDoors.push(mat4(b.x + L.sx * b.w * 0.25, SIDEWALK_H + 1.05, b.z - L.sz * (b.d / 2 + 0.025), L.sz === 1 ? Math.PI : 0, 1.1, 2.1, 1));
-      // Restaurants draw their own storefronts.
-      if (b.restaurant) continue;
       const xFace = mat4(b.x + L.sx * (b.w / 2 + 0.025), y, b.z, L.sx * Math.PI / 2, b.d, fh, 1);
       const zFace = mat4(b.x, y, b.z + L.sz * (b.d / 2 + 0.025), L.sz === 1 ? 0 : Math.PI, b.w, fh, 1);
       const lit = L.groundLit ? 1 : 0;
@@ -94,7 +94,12 @@ export function City({ city, state }: { city: CityT; state: GameState }) {
     [glowTex],
   );
 
-  const buildings = useMemo(() => facadeMats.map((_, i) => city.buildings.filter((b) => b.variant === i % 4 && buildingLayout(b).style === Math.floor(i / 4)).map((b) => { const L = buildingLayout(b); return mat4(b.x, SIDEWALK_H + b.h / 2, b.z, L.rot, (L.swap ? b.d : b.w) / 13, b.h / 24, (L.swap ? b.w : b.d) / 13); })), [city, facadeMats]);
+  const buildings = useMemo(() => facadeMats.map((_, i) => city.buildings.filter((b) => b.variant === i % 4 && buildingLayout(b).style === Math.floor(i / 4)).map((b) => {
+    const L = buildingLayout(b);
+    // Above a restaurant the building starts at its first floor: the restaurant itself is open inside.
+    const base = b.restaurant ? BUILDING_ENTRANCE.floorHeight : 0, h = b.h - base;
+    return mat4(b.x, SIDEWALK_H + base + h / 2, b.z, L.rot, (L.swap ? b.d : b.w) / 13, h / 24, (L.swap ? b.w : b.d) / 13);
+  })), [city, facadeMats]);
   const facadeGeo = useMemo(() => buildingGeo(13, 24, 13), []);
   const unitPlane = useMemo(() => new THREE.PlaneGeometry(1, 1), []);
   const facadeRefs = useRef<(THREE.InstancedMesh | null)[]>([]);

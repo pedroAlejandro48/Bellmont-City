@@ -359,7 +359,10 @@ export type SaveData = {
   camPitch?: number;
   scooter?: SavedScooter | null;
   benchSeat?: number | null;
+  cash?: number;
 };
+/** Every character starts with this much money. */
+export const STARTING_CASH = 200;
 
 export type SavedScooter = { pos: [number, number, number]; yaw: number; fallen: boolean; riding: boolean };
 
@@ -375,6 +378,7 @@ export const DEFAULT_SAVE: SaveData = {
   worldSeed: 1337,
   scooter: null,
   benchSeat: null,
+  cash: STARTING_CASH,
 };
 
 export const VEHICLE_DAMAGE = 20;

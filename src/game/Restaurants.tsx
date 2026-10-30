@@ -1,8 +1,9 @@
 import { useFrame } from "@react-three/fiber";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { BUILDING_ENTRANCE, RESTAURANTS, SIDEWALK_H, buildingLayout, restaurantOpen, timeInfo, type Building, type City, type RestaurantKind } from "./config";
-import { canvas, glassPane, groundY, tex } from "./textures";
+import { BUILDING_ENTRANCE, RESTAURANTS, SIDEWALK_H, restaurantOpen, timeInfo, type Building, type City, type RestaurantKind } from "./config";
+import { canvas, glassPane, groundY, makeBlankWall, tex } from "./textures";
+import { CEILING, COUNTER, DOOR_H, HANDLE, LEAF, WALL, furnish, onLeaf, roomLayout, toWorld, type Item, type RoomLayout } from "./restaurantRoom";
 import type { GameState } from "./state";
 
 /** Each brand's own fonts (loaded in index.html); signs are painted once they are ready. */
@@ -63,13 +64,17 @@ function paintWallFor(kind: RestaurantKind, g: CanvasRenderingContext2D, W: numb
   }
 }
 
-/** A restaurant's ground floor: its own walls, windows and (on the entrance side) doors and opening hours. */
-function makeStorefront(kind: RestaurantKind, withDoor: boolean) {
+/**
+ * A restaurant's ground floor (`width` metres wide): its own walls and windows and, on the entrance side, an
+ * open doorway (transparent, for the real doors) with the opening hours above it.
+ */
+function makeStorefront(kind: RestaurantKind, withDoor: boolean, width: number) {
   const brand = BRAND[kind];
   const [c, g] = canvas(1024, 384);
   paintWallFor(kind, g, 1024, 384);
-  const top = groundY(3), bottom = groundY(0.8), doorTop = groundY(2.7);
-  const windows: [number, number][] = withDoor ? [[70, 270], [684, 270]] : [[70, 270], [377, 270], [684, 270]];
+  const top = groundY(3), bottom = groundY(0.8), doorTop = groundY(DOOR_H);
+  const px = 1024 / width, x0 = Math.round(512 - LEAF * px), x1 = Math.round(512 + LEAF * px);
+  const windows: [number, number][] = withDoor ? [[70, x0 - 60 - 70], [x1 + 60, 954 - x1 - 60]] : [[70, 270], [377, 270], [684, 270]];
   const [e, ge] = canvas(1024, 384);
   ge.fillStyle = "#000"; ge.fillRect(0, 0, 1024, 384); ge.fillStyle = "#fff";
   for (const [x, w] of windows) {
@@ -90,21 +95,14 @@ function makeStorefront(kind: RestaurantKind, withDoor: boolean) {
     if (kind === "pizza") { g.fillStyle = "#1f5d3a"; g.fillRect(x - 10, bottom + 10, w + 20, 12); }
   }
   if (withDoor) {
-    g.fillStyle = brand.frame; g.fillRect(392, doorTop - 10, 240, 384 - doorTop + 10);
-    glassPane(g, 400, doorTop, 108, 384 - doorTop); glassPane(g, 516, doorTop, 108, 384 - doorTop);
-    ge.fillRect(400, doorTop, 108, 384 - doorTop); ge.fillRect(516, doorTop, 108, 384 - doorTop);
-    g.fillStyle = "#dce2dd"; g.fillRect(492, groundY(1.2), 5, 40); g.fillRect(527, groundY(1.2), 5, 40);
-    if (kind === "fine") {
-      // Indigo noren curtains hanging across the top of the doorway.
-      for (let i = 0; i < 3; i++) { g.fillStyle = "#1d2c5a"; g.fillRect(402 + i * 74, doorTop, 70, 62); g.fillStyle = "#f1e9da"; g.beginPath(); g.arc(437 + i * 74, doorTop + 30, 12, 0, Math.PI * 2); g.fill(); }
-    }
-    // Opening hours on the door glass.
-    const plaqueY = groundY(1.75);
-    g.fillStyle = "rgba(255,255,255,0.88)"; g.fillRect(520, plaqueY, 98, 46);
+    g.fillStyle = brand.frame; g.fillRect(x0 - 12, doorTop - 12, x1 - x0 + 24, 384 - doorTop + 12);
+    // Opening hours above the door.
+    const plaqueY = doorTop - 44;
+    g.fillStyle = "rgba(255,255,255,0.9)"; g.fillRect(512 - 110, plaqueY, 220, 26);
     g.fillStyle = "#1b1b1b"; g.textAlign = "center"; g.textBaseline = "middle";
-    const [first = "", ...rest] = brand.hours.split(" ");
-    fitText(g, first, (s) => `700 ${s}px Manrope, Arial, sans-serif`, 15, 86); g.fillText(first, 569, plaqueY + 13);
-    fitText(g, rest.join(" "), (s) => `700 ${s}px Manrope, Arial, sans-serif`, 15, 90); g.fillText(rest.join(" "), 569, plaqueY + 32);
+    fitText(g, brand.hours, (s) => `700 ${s}px Manrope, Arial, sans-serif`, 17, 206); g.fillText(brand.hours, 512, plaqueY + 14);
+    // The doorway itself is open: the real doors stand in it.
+    g.clearRect(x0, doorTop, x1 - x0, 384 - doorTop);
   }
   g.fillStyle = "rgba(0,0,0,0.25)"; g.fillRect(0, 0, 1024, 10);
   const map = tex(c); map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping;
@@ -204,17 +202,52 @@ function makeBlade() {
   return tex(c);
 }
 
-type Materials = ReturnType<typeof useRestaurantMaterials>;
+/** Inside each restaurant, in the colours of its sign. */
+const INSIDE: Record<RestaurantKind, { wall: string; trim: string; floor: [string, string]; tiles: boolean; counter: string; counterTop: string; table: string; leg: string; chair: string; seat: string; ceiling: string; light: string; metal: string }> = {
+  cafe: { wall: "#f6ecd9", trim: "#7fa38a", floor: ["#a0764f", "#8a633f"], tiles: false, counter: "#7fa38a", counterTop: "#5b3a24", table: "#8b5e3c", leg: "#5b3a24", chair: "#5b3a24", seat: "#7fa38a", ceiling: "#fbf6ec", light: "#ffd9a0", metal: "#5b3a24" },
+  pizza: { wall: "#f1e4d0", trim: "#c0392b", floor: ["#c0392b", "#f4efe6"], tiles: true, counter: "#1f5d3a", counterTop: "#d8cbb6", table: "#f4efe6", leg: "#2b2b2b", chair: "#1f5d3a", seat: "#c0392b", ceiling: "#fff8ee", light: "#ffc27a", metal: "#1f5d3a" },
+  fine: { wall: "#1c1814", trim: "#c9a54a", floor: ["#3b2a20", "#2f2119"], tiles: false, counter: "#0d0d0d", counterTop: "#c9a54a", table: "#111111", leg: "#c9a54a", chair: "#111111", seat: "#b71c1c", ceiling: "#15110e", light: "#ffcf8a", metal: "#c9a54a" },
+  burger: { wall: "#ffcc00", trim: "#e53935", floor: ["#111111", "#f5f5f5"], tiles: true, counter: "#e53935", counterTop: "#c0c4c8", table: "#f5f5f5", leg: "#c0c4c8", chair: "#e53935", seat: "#e53935", ceiling: "#ffffff", light: "#ffffff", metal: "#c0c4c8" },
+};
+
+/** Checkered tiles, or wooden planks. One repeat is a metre square. */
+function makeFloor(kind: RestaurantKind) {
+  const { floor: [a, b], tiles } = INSIDE[kind];
+  const [c, g] = canvas(256, 256);
+  if (tiles) for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) { g.fillStyle = (i + j) % 2 ? b : a; g.fillRect(i * 128, j * 128, 128, 128); }
+  else {
+    for (let row = 0; row < 8; row++) {
+      g.fillStyle = row % 2 ? a : b; g.fillRect(0, row * 32, 256, 32);
+      g.fillStyle = "rgba(0,0,0,0.25)"; g.fillRect(0, row * 32, 256, 2); g.fillRect(((row * 97) % 200) + 20, row * 32, 2, 32);
+    }
+  }
+  return tex(c);
+}
+
+/** A window seen from inside: frame, glazing bars, and sky-bright glass. */
+function makeWindowPane() {
+  const [c, g] = canvas(256, 256);
+  const sky = g.createLinearGradient(0, 0, 0, 256);
+  sky.addColorStop(0, "#9cc6e4"); sky.addColorStop(1, "#dcebf5");
+  g.fillStyle = sky; g.fillRect(0, 0, 256, 256);
+  g.fillStyle = "rgba(255,255,255,0.35)";
+  g.beginPath(); g.moveTo(30, 0); g.lineTo(110, 0); g.lineTo(40, 256); g.lineTo(-40, 256); g.fill();
+  g.fillStyle = "#2b2f33"; g.fillRect(0, 0, 256, 12); g.fillRect(0, 244, 256, 12); g.fillRect(0, 0, 12, 256); g.fillRect(244, 0, 12, 256);
+  g.fillRect(125, 0, 6, 256);
+  const map = tex(c); map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping;
+  return map;
+}
+
 function useRestaurantMaterials(ready: boolean) {
   const mats = useMemo(() => {
     const kinds = Object.keys(RESTAURANTS) as RestaurantKind[];
     const entry = (kind: RestaurantKind) => {
-      const glow = new THREE.Color(BRAND[kind].glow);
-      const front = (withDoor: boolean) => { const { map, emissiveMap } = makeStorefront(kind, withDoor); return new THREE.MeshStandardMaterial({ map, emissiveMap, emissive: glow, emissiveIntensity: 0, roughness: 0.6, metalness: 0.05 }); };
+      const { map, emissiveMap } = makeStorefront(kind, false, 13);
+      const side = new THREE.MeshStandardMaterial({ map, emissiveMap, emissive: new THREE.Color(BRAND[kind].glow), emissiveIntensity: 0, roughness: 0.6, metalness: 0.05 });
       const signMap = makeSign(kind);
       const sign = new THREE.MeshStandardMaterial({ map: signMap, emissiveMap: signMap, emissive: new THREE.Color("#ffffff"), emissiveIntensity: 0, roughness: 0.5 });
       const edge = new THREE.MeshStandardMaterial({ color: kind === "fine" ? "#c9a54a" : kind === "burger" ? "#e53935" : kind === "pizza" ? "#173f28" : "#5b3a24", roughness: 0.6 });
-      return { door: front(true), side: front(false), sign: [edge, edge, edge, edge, sign, edge], edge };
+      return { side, sign: [edge, edge, edge, edge, sign, edge], edge };
     };
     return {
       ...Object.fromEntries(kinds.map((kind) => [kind, entry(kind)])) as Record<RestaurantKind, ReturnType<typeof entry>>,
@@ -223,93 +256,259 @@ function useRestaurantMaterials(ready: boolean) {
       lantern: new THREE.MeshStandardMaterial({ color: "#d32f2f", emissive: new THREE.Color("#ff7043"), emissiveIntensity: 0, roughness: 0.7 }),
       lanternCap: new THREE.MeshStandardMaterial({ color: "#111111", roughness: 0.6 }),
       blade: (() => { const map = makeBlade(); return new THREE.MeshStandardMaterial({ map, emissiveMap: map, emissive: new THREE.Color("#ffffff"), emissiveIntensity: 0, roughness: 0.5 }); })(),
+      glass: new THREE.MeshStandardMaterial({ color: "#a9c7d3", transparent: true, opacity: 0.25, roughness: 0.05, metalness: 0.1, side: THREE.DoubleSide, depthWrite: false }),
+      closer: new THREE.MeshStandardMaterial({ color: "#151515", roughness: 0.4, metalness: 0.5 }),
+      /** Interior window panes: daylight blue by day, dark at night. */
+      pane: (() => { const map = makeWindowPane(); return new THREE.MeshStandardMaterial({ map, emissiveMap: map, emissive: new THREE.Color("#ffffff"), emissiveIntensity: 0.35, roughness: 0.2 }); })(),
+      register: new THREE.MeshStandardMaterial({ color: "#222428", roughness: 0.5, metalness: 0.3 }),
+      screen: new THREE.MeshStandardMaterial({ color: "#1c3a52", emissive: new THREE.Color("#4fc3f7"), emissiveIntensity: 0.6 }),
     };
     // Repaint once the brand fonts have loaded.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
-  useEffect(() => () => {
-    const all = new Set<THREE.Material>();
-    for (const value of Object.values(mats)) {
-      if (value instanceof THREE.Material) all.add(value);
-      else for (const m of [value.door, value.side, value.edge, ...value.sign]) all.add(m);
-    }
-    for (const m of all) {
-      const s = m as THREE.MeshStandardMaterial;
-      s.map?.dispose(); s.emissiveMap?.dispose(); m.dispose();
-    }
-  }, [mats]);
+  useEffect(() => () => disposeAll(Object.values(mats).flatMap((v) => (v instanceof THREE.Material ? [v] : [v.side, v.edge, ...v.sign]))), [mats]);
   return mats;
+}
+type Materials = ReturnType<typeof useRestaurantMaterials>;
+
+function disposeAll(materials: THREE.Material[]) {
+  for (const m of new Set(materials)) {
+    const s = m as THREE.MeshStandardMaterial;
+    s.map?.dispose(); s.emissiveMap?.dispose(); m.dispose();
+  }
 }
 
 const FH = BUILDING_ENTRANCE.floorHeight;
 const SIGN = { w: 6.6, h: 1.34, y: 3.98, depth: 0.18 };
+const DAY_PANE = new THREE.Color("#ffffff"), NIGHT_PANE = new THREE.Color("#1a2333");
 
-/** Where a face of a building sits: its centre on the pavement, its facing, and its width. */
-function face(b: Building, axis: "x" | "z") {
-  const L = buildingLayout(b);
-  return axis === "x"
-    ? { x: b.x + L.sx * (b.w / 2 + 0.03), z: b.z, rot: L.sx * Math.PI / 2, width: b.d }
-    : { x: b.x, z: b.z + L.sz * (b.d / 2 + 0.03), rot: L.sz === 1 ? 0 : Math.PI, width: b.w };
+/** A flat panel `w` × `h` centred at (x, y, z), turned `ry` about the vertical. */
+function Panel({ x, y, z, w, h, ry = 0, material }: { x: number; y: number; z: number; w: number; h: number; ry?: number; material: THREE.Material }) {
+  return <mesh position={[x, y, z]} rotation-y={ry} material={material} receiveShadow><planeGeometry args={[w, h]} /></mesh>;
 }
 
-function Restaurant({ b, mats }: { b: Building; mats: Materials }) {
-  const kind = b.restaurant ?? "cafe";
-  const L = buildingLayout(b);
-  const entrance = face(b, L.door), other = face(b, L.door === "x" ? "z" : "x");
-  const m = mats[kind];
-  const awning = Math.min(entrance.width - 1, 9);
+/** A wall from `a0` to `a1` along it, painted in the trim colour up to a metre and the wall colour above. */
+function Wall({ a0, a1, y0 = 0, place, ry, low, high }: { a0: number; a1: number; y0?: number; place: (a: number) => [number, number]; ry: number; low: THREE.Material; high: THREE.Material }) {
+  const [x, z] = place((a0 + a1) / 2), w = a1 - a0;
   return <>
-    <group position={[other.x, SIDEWALK_H, other.z]} rotation-y={other.rot}>
-      <mesh position-y={FH / 2} material={m.side} receiveShadow><planeGeometry args={[other.width, FH]} /></mesh>
-    </group>
-    <group position={[entrance.x, SIDEWALK_H, entrance.z]} rotation-y={entrance.rot}>
-      <mesh position-y={FH / 2} material={m.door} receiveShadow><planeGeometry args={[entrance.width, FH]} /></mesh>
-      <mesh position={[0, SIGN.y, SIGN.depth / 2 + 0.02]} material={m.sign} castShadow><boxGeometry args={[SIGN.w, SIGN.h, SIGN.depth]} /></mesh>
-      {(kind === "cafe" || kind === "pizza") && (
-        // A striped awning sloping out over the windows and door.
-        <mesh position={[0, 3.02, 0.62]} rotation-x={0.32} material={kind === "cafe" ? mats.cafeAwning : mats.pizzaAwning} castShadow>
-          <boxGeometry args={[awning, 0.04, 1.3]} />
-        </mesh>
-      )}
-      {kind === "fine" && [-1.75, 1.75].map((x) => (
-        // Red paper lanterns either side of the door.
-        <group key={x} position={[x, 2.45, 0.42]}>
-          <mesh material={mats.lantern} scale={[0.26, 0.36, 0.26]}><sphereGeometry args={[1, 16, 12]} /></mesh>
-          <mesh material={mats.lanternCap} position-y={0.36}><cylinderGeometry args={[0.12, 0.12, 0.06, 12]} /></mesh>
-          <mesh material={mats.lanternCap} position-y={-0.36}><cylinderGeometry args={[0.12, 0.12, 0.06, 12]} /></mesh>
-          <mesh material={mats.lanternCap} position={[0, 0.5, -0.2]}><boxGeometry args={[0.04, 0.04, 0.44]} /></mesh>
-        </group>
-      ))}
-      {kind === "burger" && (
-        <group position={[entrance.width / 2 - 0.9, 3.95, 0.95]}>
-          <mesh material={m.edge} position={[0, 0.76, -0.5]}><boxGeometry args={[0.08, 0.08, 1]} /></mesh>
-          <mesh material={m.edge} rotation-z={Math.PI / 2} castShadow><cylinderGeometry args={[0.72, 0.72, 0.1, 32]} /></mesh>
-          {[-1, 1].map((side) => (
-            <mesh key={side} material={mats.blade} position-x={side * 0.052} rotation-y={side * Math.PI / 2}><circleGeometry args={[0.7, 32]} /></mesh>
-          ))}
-        </group>
-      )}
-    </group>
+    {y0 < 1 && <Panel x={x} z={z} y={(y0 + 1) / 2} w={w} h={1 - y0} ry={ry} material={low} />}
+    <Panel x={x} z={z} y={(Math.max(1, y0) + CEILING) / 2} w={w} h={CEILING - Math.max(1, y0)} ry={ry} material={high} />
   </>;
+}
+
+function Table({ material, legs, at }: { material: THREE.Material; legs: THREE.Material; at: (g: THREE.Group | null) => void }) {
+  return <group ref={at}>
+    <mesh position-y={0.76} material={material} castShadow receiveShadow><boxGeometry args={[0.9, 0.04, 0.9]} /></mesh>
+    {[-1, 1].flatMap((a) => [-1, 1].map((b) => <mesh key={`${a}${b}`} position={[a * 0.39, 0.37, b * 0.39]} material={legs} castShadow><boxGeometry args={[0.05, 0.74, 0.05]} /></mesh>))}
+  </group>;
+}
+
+function Chair({ frame, seat, at }: { frame: THREE.Material; seat: THREE.Material; at: (g: THREE.Group | null) => void }) {
+  return <group ref={at}>
+    <mesh position-y={0.435} material={seat} castShadow receiveShadow><boxGeometry args={[0.44, 0.05, 0.44]} /></mesh>
+    {[-1, 1].flatMap((a) => [-1, 1].map((b) => <mesh key={`${a}${b}`} position={[a * 0.19, 0.205, b * 0.19]} material={frame} castShadow><boxGeometry args={[0.035, 0.41, 0.035]} /></mesh>))}
+    {[-1, 1].map((a) => <mesh key={a} position={[a * 0.19, 0.69, -0.2]} material={frame} castShadow><boxGeometry args={[0.035, 0.5, 0.035]} /></mesh>)}
+    <mesh position={[0, 0.83, -0.2]} material={frame} castShadow><boxGeometry args={[0.44, 0.22, 0.035]} /></mesh>
+  </group>;
+}
+
+/** One glass door leaf, hinged at its outer edge (`side` 1 = right, seen from the street). */
+function Leaf({ side, frame, mats, at }: { side: 1 | -1; frame: THREE.Material; mats: Materials; at: (g: THREE.Group | null) => void }) {
+  const mid = -side * LEAF / 2;
+  return <group ref={at} position={[side * LEAF, 0, 0]}>
+    {[0.03, LEAF - 0.03].map((x) => <mesh key={x} position={[-side * x, DOOR_H / 2, 0]} material={frame} castShadow><boxGeometry args={[0.06, DOOR_H, 0.05]} /></mesh>)}
+    <mesh position={[mid, DOOR_H - 0.04, 0]} material={frame}><boxGeometry args={[LEAF, 0.08, 0.05]} /></mesh>
+    <mesh position={[mid, 0.08, 0]} material={frame}><boxGeometry args={[LEAF, 0.16, 0.05]} /></mesh>
+    <mesh position={[mid, DOOR_H / 2 + 0.04, 0]} material={mats.glass}><planeGeometry args={[LEAF - 0.12, DOOR_H - 0.24]} /></mesh>
+    {/* Pull handle outside, push bar inside. */}
+    <mesh position={[-side * HANDLE.r, HANDLE.y, HANDLE.out]} material={mats.closer}><boxGeometry args={[0.03, 0.4, 0.03]} /></mesh>
+    {[-0.15, 0.15].map((y) => <mesh key={y} position={[-side * HANDLE.r, HANDLE.y + y, 0.045]} material={mats.closer}><boxGeometry args={[0.02, 0.02, 0.05]} /></mesh>)}
+    <mesh position={[mid, 1.05, -0.06]} material={mats.closer}><boxGeometry args={[LEAF * 0.7, 0.035, 0.035]} /></mesh>
+    {/* The door closer's body, near the hinge on top of the leaf. */}
+    <mesh position={[-side * 0.27, DOOR_H - 0.08, 0.065]} material={mats.closer} castShadow><boxGeometry args={[0.32, 0.07, 0.07]} /></mesh>
+  </group>;
+}
+
+const CLOSER_ARM = 0.3, ARM_Y = DOOR_H - 0.02;
+/** The closer's two arms: from its body on the door to a bracket on the frame, folded into a V when shut. */
+function closerArms(side: 1 | -1, angle: number) {
+  const [ax, az] = onLeaf(side === 1 ? "right" : "left", angle, 0.22, 0.07);
+  const bx = side * (LEAF - 0.48), bz = 0.07;
+  const d = Math.hypot(bx - ax, bz - az), mx = (ax + bx) / 2, mz = (az + bz) / 2;
+  const h = Math.sqrt(Math.max(0, CLOSER_ARM * CLOSER_ARM - d * d / 4));
+  let px = -(bz - az) / (d || 1), pz = (bx - ax) / (d || 1);
+  if (pz < 0) { px = -px; pz = -pz; }
+  const ex = mx + px * h, ez = mz + pz * h;
+  return [[ax, az, ex, ez], [bx, bz, ex, ez]] as const;
+}
+
+function Restaurant({ b, mats, state, ready }: { b: Building; mats: Materials; state: GameState; ready: boolean }) {
+  const kind = b.restaurant ?? "cafe";
+  const layout = useMemo<RoomLayout>(() => roomLayout(b), [b]);
+  const { frame, width, depth, windowSide: ws, counter, bounds } = layout;
+  const m = mats[kind], look = INSIDE[kind];
+  const own = useMemo(() => {
+    const { map, emissiveMap } = makeStorefront(kind, true, width);
+    const front = new THREE.MeshStandardMaterial({ map, emissiveMap, emissive: new THREE.Color(BRAND[kind].glow), emissiveIntensity: 0, roughness: 0.6, alphaTest: 0.5 });
+    const floorMap = makeFloor(kind); floorMap.repeat.set(width / 1, depth / 1);
+    const solid = (color: string, roughness = 0.8, metalness = 0) => new THREE.MeshStandardMaterial({ color, roughness, metalness });
+    return {
+      front, floor: new THREE.MeshStandardMaterial({ map: floorMap, roughness: 0.7 }),
+      blank: new THREE.MeshStandardMaterial({ map: makeBlankWall(b.variant), roughness: 0.9 }),
+      wall: solid(look.wall, 0.9), trim: solid(look.trim), ceiling: solid(look.ceiling, 0.95),
+      counter: solid(look.counter, 0.6), counterTop: solid(look.counterTop, 0.35, kind === "burger" ? 0.6 : 0.1),
+      table: solid(look.table, 0.45), leg: solid(look.leg, 0.5, 0.3), chair: solid(look.chair, 0.6), seat: solid(look.seat, 0.7),
+      metal: solid(look.metal, 0.35, 0.6),
+      lamp: new THREE.MeshStandardMaterial({ color: look.light, emissive: new THREE.Color(look.light), emissiveIntensity: 0 }),
+    };
+  }, [kind, width, depth, b.variant, ready, look]);
+  useEffect(() => () => disposeAll(Object.values(own)), [own]);
+
+  const initial = useMemo<Item[]>(() => furnish(layout), [layout]);
+  const pieces = useRef<(THREE.Group | null)[]>([]);
+  const leaves = useRef<{ left: THREE.Group | null; right: THREE.Group | null }>({ left: null, right: null });
+  const arms = useRef<(THREE.Mesh | null)[]>([]);
+  useFrame(() => {
+    const room = state.rooms.get(layout.key);
+    const items = room?.items ?? initial;
+    items.forEach((it, i) => {
+      const g = pieces.current[i];
+      if (!g) return;
+      g.position.set(it.x, 0, it.z);
+      g.rotation.y = Math.atan2(it.f[0], it.f[1]);
+    });
+    const doors = room?.doors ?? { left: 0, right: 0 };
+    leaves.current.right?.rotation.set(0, doors.right, 0);
+    leaves.current.left?.rotation.set(0, -doors.left, 0);
+    ([1, -1] as const).forEach((side, k) => closerArms(side, side === 1 ? doors.right : doors.left).forEach(([x0, z0, x1, z1], j) => {
+      const arm = arms.current[k * 2 + j];
+      if (!arm) return;
+      arm.position.set((x0 + x1) / 2, ARM_Y, (z0 + z1) / 2);
+      arm.rotation.set(0, Math.atan2(-(z1 - z0), x1 - x0), 0);
+    }));
+    const open = restaurantOpen(kind, timeInfo(state.elapsed).hours);
+    own.front.emissiveIntensity = m.side.emissiveIntensity;
+    own.lamp.emissiveIntensity = open ? 1.4 : 0;
+  });
+
+  const inner = { minX: bounds.minX, maxX: bounds.maxX, minZ: bounds.minZ, maxZ: bounds.maxZ };
+  const px = (p: number) => (p / 1024 - 0.5) * width;
+  const doorPx = [512 - LEAF * 1024 / width, 512 + LEAF * 1024 / width];
+  const frontPanes: [number, number][] = [[px(70), px(doorPx[0]! - 60)], [px(doorPx[1]! + 60), px(954)]];
+  const awning = Math.min(width - 1, 9);
+  return <group position={[frame.ox, SIDEWALK_H, frame.oz]} rotation-y={frame.rot}>
+    {/* Outside: the storefronts on both streets, plain walls on the other two sides. */}
+    <mesh position={[0, FH / 2, 0.03]} material={own.front} castShadow receiveShadow><planeGeometry args={[width, FH]} /></mesh>
+    <mesh position={[ws * (width / 2 + 0.03), FH / 2, -depth / 2]} rotation-y={ws * Math.PI / 2} material={m.side} castShadow receiveShadow><planeGeometry args={[depth, FH]} /></mesh>
+    <Panel x={0} y={FH / 2} z={-depth - 0.03} w={width} h={FH} ry={Math.PI} material={own.blank} />
+    <Panel x={-ws * (width / 2 + 0.03)} y={FH / 2} z={-depth / 2} w={depth} h={FH} ry={-ws * Math.PI / 2} material={own.blank} />
+
+    <mesh position={[0, SIGN.y, SIGN.depth / 2 + 0.05]} material={m.sign} castShadow><boxGeometry args={[SIGN.w, SIGN.h, SIGN.depth]} /></mesh>
+    {(kind === "cafe" || kind === "pizza") && (
+      // A striped awning sloping out over the windows and door.
+      <mesh position={[0, 3.02, 0.65]} rotation-x={0.32} material={kind === "cafe" ? mats.cafeAwning : mats.pizzaAwning} castShadow>
+        <boxGeometry args={[awning, 0.04, 1.3]} />
+      </mesh>
+    )}
+    {kind === "fine" && [-1.75, 1.75].map((x) => (
+      // Red paper lanterns either side of the door.
+      <group key={x} position={[x, 2.45, 0.45]}>
+        <mesh material={mats.lantern} scale={[0.26, 0.36, 0.26]}><sphereGeometry args={[1, 16, 12]} /></mesh>
+        <mesh material={mats.lanternCap} position-y={0.36}><cylinderGeometry args={[0.12, 0.12, 0.06, 12]} /></mesh>
+        <mesh material={mats.lanternCap} position-y={-0.36}><cylinderGeometry args={[0.12, 0.12, 0.06, 12]} /></mesh>
+        <mesh material={mats.lanternCap} position={[0, 0.5, -0.2]}><boxGeometry args={[0.04, 0.04, 0.44]} /></mesh>
+      </group>
+    ))}
+    {kind === "burger" && (
+      <group position={[width / 2 - 0.9, 3.95, 0.98]}>
+        <mesh material={m.edge} position={[0, 0.76, -0.5]}><boxGeometry args={[0.08, 0.08, 1]} /></mesh>
+        <mesh material={m.edge} rotation-z={Math.PI / 2} castShadow><cylinderGeometry args={[0.72, 0.72, 0.1, 32]} /></mesh>
+        {[-1, 1].map((side) => (
+          <mesh key={side} material={mats.blade} position-x={side * 0.052} rotation-y={side * Math.PI / 2}><circleGeometry args={[0.7, 32]} /></mesh>
+        ))}
+      </group>
+    )}
+
+    {/* The doorway: frame, two glass leaves opening outward, and their closers. */}
+    {[-1, 1].map((s) => <mesh key={s} position={[s * (LEAF + 0.04), DOOR_H / 2, -WALL / 2 + 0.015]} material={own.metal} castShadow><boxGeometry args={[0.08, DOOR_H + 0.04, WALL + 0.04]} /></mesh>)}
+    <mesh position={[0, DOOR_H + 0.04, -WALL / 2 + 0.015]} material={own.metal}><boxGeometry args={[2 * LEAF + 0.16, 0.08, WALL + 0.04]} /></mesh>
+    <Leaf side={1} frame={own.metal} mats={mats} at={(g) => { leaves.current.right = g; }} />
+    <Leaf side={-1} frame={own.metal} mats={mats} at={(g) => { leaves.current.left = g; }} />
+    {[1, -1].map((s) => <mesh key={s} position={[s * (LEAF - 0.48), DOOR_H - 0.01, 0.07]} material={mats.closer}><boxGeometry args={[0.06, 0.05, 0.06]} /></mesh>)}
+    {[0, 1, 2, 3].map((i) => <mesh key={i} ref={(el) => { arms.current[i] = el; }} material={mats.closer}><boxGeometry args={[CLOSER_ARM, 0.022, 0.03]} /></mesh>)}
+
+    {/* Inside. */}
+    <mesh position={[0, 0.004, -depth / 2]} rotation-x={-Math.PI / 2} material={own.floor} receiveShadow><planeGeometry args={[width, depth]} /></mesh>
+    <mesh position={[0, CEILING, -depth / 2]} rotation-x={Math.PI / 2} material={own.ceiling}><planeGeometry args={[width, depth]} /></mesh>
+    <Wall a0={inner.minX} a1={-LEAF - 0.08} place={(a) => [a, -WALL]} ry={Math.PI} low={own.trim} high={own.wall} />
+    <Wall a0={LEAF + 0.08} a1={inner.maxX} place={(a) => [a, -WALL]} ry={Math.PI} low={own.trim} high={own.wall} />
+    <Wall a0={-LEAF - 0.08} a1={LEAF + 0.08} y0={DOOR_H + 0.08} place={(a) => [a, -WALL]} ry={Math.PI} low={own.trim} high={own.wall} />
+    <Wall a0={inner.minX} a1={inner.maxX} place={(a) => [a, inner.minZ]} ry={0} low={own.trim} high={own.wall} />
+    <Wall a0={inner.minZ} a1={inner.maxZ} place={(a) => [inner.minX, a]} ry={Math.PI / 2} low={own.trim} high={own.wall} />
+    <Wall a0={inner.minZ} a1={inner.maxZ} place={(a) => [inner.maxX, a]} ry={-Math.PI / 2} low={own.trim} high={own.wall} />
+    {frontPanes.map(([a, b2]) => <Panel key={a} x={(a + b2) / 2} y={1.9} z={-WALL - 0.006} w={Math.abs(b2 - a)} h={2.2} ry={Math.PI} material={mats.pane} />)}
+    {[-0.3, 0, 0.3].map((k) => <Panel key={k} x={ws * (width / 2 - WALL - 0.006)} y={1.9} z={-depth / 2 + k * depth} w={depth * 270 / 1024} h={2.2} ry={-ws * Math.PI / 2} material={mats.pane} />)}
+
+    {/* The counter with its register, and the menu board on the wall behind. */}
+    <mesh position={[counter.x, 0.5, counter.z]} material={own.counter} castShadow receiveShadow><boxGeometry args={[counter.hx * 2, 1, counter.hz * 2]} /></mesh>
+    <mesh position={[counter.x, COUNTER.height - 0.025, counter.z]} material={own.counterTop} castShadow receiveShadow><boxGeometry args={[counter.hx * 2 + 0.08, 0.05, counter.hz * 2 + 0.08]} /></mesh>
+    <group position={[counter.x + ws * (counter.hx - 0.45), COUNTER.height, counter.z]}>
+      <mesh position-y={0.06} material={mats.register} castShadow><boxGeometry args={[0.42, 0.12, 0.36]} /></mesh>
+      <mesh position={[0, 0.2, -0.08]} rotation-x={-0.35} material={mats.register}><boxGeometry args={[0.34, 0.24, 0.04]} /></mesh>
+      <mesh position={[0, 0.2, -0.057]} rotation-x={-0.35} material={mats.screen}><planeGeometry args={[0.3, 0.2]} /></mesh>
+    </group>
+    <mesh position={[counter.x, 2.7, inner.minZ + 0.02]} material={m.sign}><boxGeometry args={[3.2, 0.65, 0.03]} /></mesh>
+    {[-1, 1].map((s) => <mesh key={s} position={[s * width / 4, CEILING - 0.03, -depth / 2]} rotation-x={Math.PI / 2} material={own.lamp}><circleGeometry args={[0.35, 24]} /></mesh>)}
+
+    {initial.map((it, i) => it.kind === "table"
+      ? <Table key={i} material={own.table} legs={own.leg} at={(g) => { pieces.current[i] = g; }} />
+      : <Chair key={i} frame={own.chair} seat={own.seat} at={(g) => { pieces.current[i] = g; }} />)}
+  </group>;
+}
+
+/** Where the lights hang inside a restaurant (world space). */
+function lightSpots(layout: RoomLayout) {
+  return [-1, 1].map((s) => toWorld(layout.frame, s * layout.width / 4, -layout.depth / 2));
 }
 
 /**
  * The city's four restaurants. Their doors and windows light up at dusk like everyone else's, but switch off
- * when they close for the night (the burger place never closes).
+ * when they close for the night (the burger place never closes). Inside, the lights are on while they are open.
  */
 export function Restaurants({ city, state }: { city: City; state: GameState }) {
   const ready = useFontsReady();
   const mats = useRestaurantMaterials(ready);
-  const here = city.buildings.filter((b) => b.restaurant);
+  const here = useMemo(() => city.buildings.filter((b) => b.restaurant), [city]);
+  const layouts = useMemo(() => here.map((b) => roomLayout(b)), [here]);
+  const lights = useRef<(THREE.PointLight | null)[]>([]);
   useFrame(() => {
     const { hours } = timeInfo(state.elapsed), d = state.darkness;
     for (const kind of Object.keys(RESTAURANTS) as RestaurantKind[]) {
       const lit = restaurantOpen(kind, hours) ? d : 0, m = mats[kind];
-      m.door.emissiveIntensity = m.side.emissiveIntensity = lit * 1.2;
+      m.side.emissiveIntensity = lit * 1.2;
       (m.sign[4] as THREE.MeshStandardMaterial).emissiveIntensity = lit * 0.85;
       if (kind === "fine") mats.lantern.emissiveIntensity = lit * 1.6;
       if (kind === "burger") mats.blade.emissiveIntensity = lit * 0.85;
     }
+    mats.pane.color.copy(DAY_PANE).lerp(NIGHT_PANE, d); mats.pane.emissiveIntensity = 0.35 * (1 - d);
+    // Two real lights follow the nearest restaurant, lit while it is open.
+    let best: RoomLayout | null = null, bestDistance = 45;
+    for (const layout of layouts) {
+      const distance = Math.hypot(layout.frame.ox - state.pos.x, layout.frame.oz - state.pos.z);
+      if (distance < bestDistance) { best = layout; bestDistance = distance; }
+    }
+    const spots = best ? lightSpots(best) : [];
+    const on = best ? restaurantOpen(best.kind, hours) : false;
+    lights.current.forEach((light, i) => {
+      if (!light) return;
+      const spot = spots[i];
+      if (spot) light.position.set(spot[0], SIDEWALK_H + CEILING - 0.4, spot[1]);
+      light.intensity = spot ? (on ? 16 : 1.2) : 0;
+      if (best) light.color.set(INSIDE[best.kind].light);
+    });
   });
-  return <>{here.map((b) => <Restaurant key={`${b.x}:${b.z}`} b={b} mats={mats} />)}</>;
+  return <>
+    {here.map((b) => <Restaurant key={`${b.x}:${b.z}`} b={b} mats={mats} state={state} ready={ready} />)}
+    {[0, 1].map((i) => <pointLight key={i} ref={(el) => { lights.current[i] = el; }} distance={10} decay={1.3} intensity={0} />)}
+  </>;
 }

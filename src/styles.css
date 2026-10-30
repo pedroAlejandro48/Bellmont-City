@@ -194,3 +194,4 @@
 .health-critical > div { background: var(--color-destructive); }
 
 .scooter-key { width: 2.25rem; height: 2.25rem; display: grid; place-items: center; background: var(--interaction-glass); color: var(--interaction-foreground); border: 1px solid var(--border); border-radius: 4px; font-weight: 700; font-size: 1.2rem; pointer-events: none; opacity: 0; }
+.scooter-key.wide { width: auto; padding: 0 0.6rem; font-size: 0.8rem; letter-spacing: 0.08em; white-space: nowrap; }

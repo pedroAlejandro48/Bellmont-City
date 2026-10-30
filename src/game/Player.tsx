@@ -5,6 +5,7 @@ import { floorHeight, cameraRelativeVelocity, SCOOTER_MOUNT_SECONDS, SCOOTER_PIC
 import type { GameState } from "./state";
 import { BODY_PARTS, CharacterBody, useBodyRig } from "./CharacterBody";
 import { bumpOthers } from "@/multiplayer/bump";
+import { CHAIR, stepPerson, toLocal, toWorld } from "./restaurantRoom";
 
 // feel constants
 const WALK = 2.2;
@@ -16,10 +17,11 @@ const RADIUS = 0.35;
 
 const damp = (a: number, b: number, k: number, dt: number) => a + (b - a) * (1 - Math.exp(-k * dt));
 
-type Colliders = { boxes: { minX: number; maxX: number; minZ: number; maxZ: number }[]; circles: { x: number; z: number; r: number }[] };
+type Colliders = { boxes: { minX: number; maxX: number; minZ: number; maxZ: number; key: string }[]; circles: { x: number; z: number; r: number }[] };
 
-function resolve(p: THREE.Vector3, c: Colliders) {
+function resolve(p: THREE.Vector3, c: Colliders, skip: string | null = null) {
   for (const b of c.boxes) {
+    if (b.key === skip) continue;
     const nx = Math.max(b.minX, Math.min(p.x, b.maxX));
     const nz = Math.max(b.minZ, Math.min(p.z, b.maxZ));
     const dx = p.x - nx;
@@ -52,10 +54,35 @@ function resolve(p: THREE.Vector3, c: Colliders) {
   }
 }
 
+/** Which way an elbow bends while the hand reaches (in the shoulder's frame; side 1 = left arm). */
+const POLES = {
+  low: (side: number) => new THREE.Vector3(side * 0.35, -0.6, -0.25),
+  out: (side: number) => new THREE.Vector3(side * 0.8, -0.1, -0.3),
+  back: (side: number) => new THREE.Vector3(side * 0.35, -0.25, -0.9),
+};
+/** Bends an arm so its hand reaches `world` (as near as it can), blended `blend` of the way from its pose. */
+function reachArm(upper: THREE.Group | null, lower: THREE.Group | null, world: THREE.Vector3, pole: THREE.Vector3, blend: number) {
+  const parent = upper?.parent;
+  if (!upper || !lower || !parent || blend <= 0) return;
+  const restUpper = upper.quaternion.clone(), restLower = lower.quaternion.clone();
+  const target = parent.worldToLocal(world.clone());
+  const delta = target.clone().sub(upper.position);
+  const distance = Math.min(0.579, Math.max(0.08, delta.length()));
+  const forward = delta.normalize();
+  const bend = pole.clone().addScaledVector(forward, -pole.dot(forward)).normalize();
+  const along = (0.3 * 0.3 - 0.28 * 0.28 + distance * distance) / (2 * distance);
+  const height = Math.sqrt(Math.max(0, 0.3 * 0.3 - along * along));
+  const elbowPoint = upper.position.clone().addScaledVector(forward, along).addScaledVector(bend, height);
+  const hand = upper.position.clone().addScaledVector(forward, distance);
+  upper.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), elbowPoint.clone().sub(upper.position).normalize());
+  lower.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), hand.sub(elbowPoint).normalize().applyQuaternion(upper.quaternion.clone().invert()));
+  if (blend < 1) { upper.quaternion.slerpQuaternions(restUpper, upper.quaternion.clone(), blend); lower.quaternion.slerpQuaternions(restLower, lower.quaternion.clone(), blend); }
+}
+
 export function Player({ state, city }: { state: GameState; city: City }) {
   const colliders = useMemo<Colliders>(
     () => ({
-      boxes: city.buildings.map((b) => ({ minX: b.x - b.w / 2, maxX: b.x + b.w / 2, minZ: b.z - b.d / 2, maxZ: b.z + b.d / 2 })),
+      boxes: city.buildings.map((b) => ({ minX: b.x - b.w / 2, maxX: b.x + b.w / 2, minZ: b.z - b.d / 2, maxZ: b.z + b.d / 2, key: `${b.x}:${b.z}` })),
       circles: [
         ...city.trees.map((t) => ({ x: t.x, z: t.z, r: 0.25 })),
         ...city.lamps.map((l) => ({ x: l.x, z: l.z, r: 0.15 })),
@@ -106,8 +133,14 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     const bike = state.scooter;
     const usingBike = bike.riding || bike.action !== null;
     const sitting = state.bench !== null;
+    // Going through a restaurant door or sitting on a chair: the movement is scripted.
+    const script = state.script;
     s.reverseBlend = damp(s.reverseBlend, bike.riding && !bike.action && !incapacitated && bike.speed < -0.01 ? 1 : 0, 6, dt);
-    if (dead || incapacitated || usingBike || sitting) {
+    if (script) {
+      s.vel.set(0, 0, 0); s.vy = 0; s.grounded = true;
+      p.x = script.x; p.z = script.z; p.y = floorHeight(p.x, p.z);
+      state.rotY = script.yaw;
+    } else if (dead || incapacitated || usingBike || sitting) {
       s.vel.set(0, 0, 0);
       s.vy = 0;
       s.grounded = true;
@@ -132,17 +165,24 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       }
     }
     if (!s.grounded || dead || incapacitated) s.turnRate = 0;
-    state.movingForward = fwdKey && !back && !left && !right && s.grounded && !dead && !incapacitated && !usingBike && !sitting && Math.hypot(s.vel.x, s.vel.z) > 0.1;
+    state.movingForward = !script && fwdKey && !back && !left && !right && s.grounded && !dead && !incapacitated && !usingBike && !sitting && Math.hypot(s.vel.x, s.vel.z) > 0.1;
     state.jumpQueued = false;
     // airborne: horizontal velocity frozen (no steering, same speed)
 
     p.x += s.vel.x * dt;
     p.z += s.vel.z * dt;
-    if (!incapacitated && !usingBike && !sitting) {
+    const room = state.interior?.phase === "inside" ? state.rooms.get(state.interior.key) : undefined;
+    if (room && !script) {
+      // Inside a restaurant: its walls, counter and furniture (running shoves tables and chairs along).
+      const [lx, lz] = toLocal(room.frame, p.x, p.z);
+      const [nx, nz] = stepPerson(room, lx, lz, running, dt);
+      [p.x, p.z] = toWorld(room.frame, nx, nz);
+      bumpOthers(p, state.others, RADIUS, dt);
+    } else if (!incapacitated && !usingBike && !sitting && !script) {
       // Vehicles are solid: walking never pushes them, and a slow one rolling into the player shoves them along
       // (fast ones knock the player down in Traffic instead).
       for (const v of state.vehicles) { const [vx, vz] = circleBoxPush(p.x, p.z, RADIUS, v.box); p.x += vx; p.z += vz; }
-      resolve(p, colliders);
+      resolve(p, colliders, state.interior?.key ?? null);
       bumpOthers(p, state.others, RADIUS, dt);
       const ground0 = floorHeight(p.x, p.z);
       for (const [i, box] of PARK_SOLIDS.entries()) { if (i < 4 && p.y - ground0 >= BENCH_SEAT_TOP - 0.1) { const back = BENCH_BACKRESTS[i]; if (back && p.y - ground0 < BENCH_BACK_TOP - 0.05) { const [bx, bz] = circleBoxPush(p.x, p.z, RADIUS, back); p.x += bx; p.z += bz; } continue; } const [dx, dz] = circleBoxPush(p.x, p.z, RADIUS, box); p.x += dx; p.z += dz; }
@@ -187,11 +227,11 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     }
 
     // ---------- animation ----------
-    const hSpeed = Math.hypot(s.vel.x, s.vel.z);
+    const hSpeed = script ? Math.abs(script.walk) : Math.hypot(s.vel.x, s.vel.z);
     s.moveBlend = damp(s.moveBlend, s.grounded ? Math.min(1, hSpeed / WALK) : 0, 10, dt);
     s.runBlend = damp(s.runBlend, Math.max(0, Math.min(1, (hSpeed - WALK) / (RUN - WALK))), 8, dt);
     s.airBlend = damp(s.airBlend, s.grounded ? 0 : 1, 14, dt);
-    if (s.grounded) s.phase += dt * hSpeed * (s.runBlend > 0.5 ? 2.4 : 4.2);
+    if (s.grounded) s.phase += dt * (script ? script.walk : hSpeed) * (s.runBlend > 0.5 ? 2.4 : 4.2);
 
     const ph = s.phase;
     const run = s.runBlend;
@@ -344,6 +384,16 @@ export function Player({ state, city }: { state: GameState; city: City }) {
         sitHands = seated;
       }
     }
+    if (script) {
+      // Seated on a chair: thighs level on the seat, shins down; while shuffling in, only the lower legs step.
+      const seated = script.sit;
+      hipL = THREE.MathUtils.lerp(hipL, -1.57, seated); hipR = THREE.MathUtils.lerp(hipR, -1.57, seated);
+      const shuffle = script.shuffle * Math.sin(state.simulationTime * 9) * 0.32;
+      kneeL = THREE.MathUtils.lerp(kneeL, 1.57, seated) + shuffle; kneeR = THREE.MathUtils.lerp(kneeR, 1.57, seated) - shuffle;
+      riderOffset = (CHAIR.seatTop + 0.077 - 0.95) * seated;
+      lean = Math.max(lean * (1 - seated), script.lean); bob *= 1 - seated;
+      if (seated > 0) { shL = shR = THREE.MathUtils.lerp(shL, -0.5, seated); elbow = THREE.MathUtils.lerp(elbow, -0.6, seated); }
+    }
     if (root.current) {
       root.current.visible = !incapacitated;
       root.current.position.copy(p);
@@ -404,6 +454,11 @@ export function Player({ state, city }: { state: GameState; city: City }) {
         if (hold < 1) { upper.quaternion.slerpQuaternions(restUpper, upper.quaternion.clone(), hold); lower.quaternion.slerpQuaternions(restLower, lower.quaternion.clone(), hold); }
       };
       reach(armL.current, foreL.current, 1); reach(armR.current, foreR.current, -1);
+    }
+    if (script && root.current) {
+      root.current.updateMatrixWorld(true);
+      if (script.left) reachArm(armL.current, foreL.current, script.left.at, POLES[script.left.pole](1), script.left.blend);
+      if (script.right) reachArm(armR.current, foreR.current, script.right.at, POLES[script.right.pole](-1), script.right.blend);
     }
 
   });

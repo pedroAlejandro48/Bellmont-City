@@ -1,7 +1,6 @@
 import { Canvas } from "@react-three/fiber";
-import { memo, startTransition, Suspense, useEffect, useMemo, useState } from "react";
+import { memo, startTransition, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Physics } from "@react-three/rapier";
-import { PhysicsGround } from "./PhysicsGround";
 import { Ragdoll } from "./Ragdoll";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -16,6 +15,8 @@ import { WorldRoads } from "./WorldRoads";
 import { PITCH, MPH_TO_MPS } from "./config";
 import { Scooter } from "./Scooter";
 import { BenchInteraction } from "./BenchInteraction";
+import { RestaurantInteraction } from "./RestaurantInteraction";
+import { PhysicsGround, RestaurantWalls } from "./PhysicsGround";
 import type { GameExtras } from "./CloudGame";
 
 const BLOCKED = new Set(["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
@@ -30,7 +31,8 @@ const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameS
     <LampLights city={city} state={state} />
     <Suspense fallback={null}>
       <Physics gravity={[0, -9.81, 0]} timeStep={1 / 60} interpolate>
-        <PhysicsGround city={city} x={x} z={z} />
+        <PhysicsGround city={city} x={x} z={z} /><RestaurantWalls city={city} />
+        <RestaurantInteraction state={state} city={city} />
         <BenchInteraction state={state} /><Traffic state={state} /><Scooter state={state} /><Player state={state} city={city} />
         <Ragdoll state={state} /><CameraRig state={state} />
         {Extra && <Extra state={state} />}
@@ -54,12 +56,24 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
   const [riding, setRiding] = useState(state.scooter.riding);
   const [speed, setSpeed] = useState(0);
   const [dead, setDead] = useState(state.health === 0);
+  const [cash, setCash] = useState(state.cash);
+  // Test builds only: lets browser tests drive the character.
+  useEffect(() => { if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") (window as unknown as { __game?: GameState }).__game = state; }, [state]);
+  const fade = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // The black fade between outside and inside a restaurant, every frame.
+    let id = 0;
+    const tick = () => { if (fade.current) fade.current.style.opacity = String(state.fade); id = requestAnimationFrame(tick); };
+    id = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(id);
+  }, [state]);
 
   useEffect(() => {
     let resetTimer: number | undefined;
     let deathSeen = false;
     const id = window.setInterval(() => {
       setHealth(state.health);
+      setCash(state.cash);
       setRiding(state.scooter.riding);
       setSpeed(Math.round(Math.abs(state.scooter.speed) / MPH_TO_MPS));
       if (state.deathStartedAt !== null && !deathSeen) {
@@ -81,6 +95,8 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
       if (BLOCKED.has(e.code)) e.preventDefault();
       if (state.health === 0 || state.accident) return;
       if (e.code === "KeyE" && !e.repeat) { state.interactQueued = true; e.preventDefault(); }
+      // Seated at a restaurant table, Space stands up; during a scripted movement nothing else applies.
+      if (state.seat || state.script) { if (e.code === "Space" && !e.repeat) state.standQueued = true; return; }
       if (state.bench) return;
       if (e.code === "Space" && !e.repeat && !state.scooter.riding && !state.scooter.action) state.jumpQueued = true;
       state.keys.add(e.code);
@@ -124,13 +140,23 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
         </div>
         {Overlay && <Overlay state={state} />}
         {riding && <div className="hud-panel absolute bottom-24 left-1/2 flex h-16 w-40 -translate-x-1/2 items-baseline justify-center gap-2 px-4 py-3" aria-label="Scooter speed"><span className="font-display text-3xl tabular-nums">{speed}</span><span className="text-xs text-muted-foreground">MPH</span></div>}
-        <div className="absolute bottom-6 left-1/2 w-64 max-w-[calc(100%-2rem)] -translate-x-1/2 hud-panel px-4 py-3">
-          <div className="mb-2 flex justify-between text-xs font-bold">
-            <span>HEALTH</span><span>{health}%</span>
+        <div className="absolute bottom-6 left-1/2 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-stretch gap-2">
+          <div className="hud-panel w-64 min-w-0 px-4 py-3">
+            <div className="mb-2 flex justify-between text-xs font-bold">
+              <span>HEALTH</span><span>{health}%</span>
+            </div>
+            <Progress aria-label="Health" value={health} className={`health-meter h-3 ${health <= 20 ? "health-critical" : ""}`} />
           </div>
-          <Progress aria-label="Health" value={health} className={`health-meter h-3 ${health <= 20 ? "health-critical" : ""}`} />
+          <div className="hud-panel flex aspect-square shrink-0 flex-col items-center justify-center gap-1 px-1" aria-label={`Cash: $${cash}`}>
+            <span className="text-[10px] font-bold leading-none tracking-wide">CASH</span>
+            <span className="flex items-center gap-1 text-xs font-bold leading-none tabular-nums">
+              <svg viewBox="0 0 24 14" className="h-3 w-5 shrink-0" aria-hidden><rect x="0.5" y="0.5" width="23" height="13" rx="1.5" fill="#2e7d32" stroke="#1b5e20" /><rect x="2.5" y="2.5" width="19" height="9" rx="1" fill="none" stroke="#a5d6a7" strokeWidth="0.8" /><circle cx="12" cy="7" r="3.2" fill="#a5d6a7" /><text x="12" y="9.3" textAnchor="middle" fontSize="6.5" fontWeight="700" fill="#1b5e20">$</text></svg>
+              ${cash}
+            </span>
+          </div>
         </div>
       </div>
+      <div ref={fade} className="pointer-events-none fixed inset-0 z-30 bg-black" style={{ opacity: 0 }} aria-hidden />
       {dead && (
         <div role="alert" className="death-screen pointer-events-auto fixed inset-0 z-20 flex items-center justify-center">
           <h1 className="font-display text-5xl text-destructive sm:text-7xl">YOU DIED</h1>
