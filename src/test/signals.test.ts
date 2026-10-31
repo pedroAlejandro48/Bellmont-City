@@ -68,7 +68,7 @@ describe("pedestrians", () => {
     const [dx, dz] = steer(0, 0, [0, 10], [{ x: 0.1, z: 1.2, r: 0.3 }]);
     expect(dz).toBeGreaterThan(0.3);
     expect(Math.abs(dx)).toBeGreaterThan(0.2);
-    expect(steer(0, 0, [0, 10], [])).toEqual([0, 1]);
+    expect(steer(0, 0, [0, 10], []).slice(0, 2)).toEqual([0, 1]);
   });
   it("comes in pink and blue, about evenly", () => {
     const pink = Array.from({ length: 400 }, (_, i) => npcGender(1337, i)).filter((g) => g === "female").length;
@@ -116,5 +116,44 @@ describe("walking round a bus in the way", () => {
     expect(past === null || past[1] > 0).toBe(true);
     // Nothing in the way: no detour.
     expect(detour(0, -6, [0, 8], [{ ...bus, x: 30 }], null)).toBeNull();
+  });
+});
+
+describe("people stepping round each other", () => {
+  it("passes someone standing in the way, or walking the other way, with room to spare", async () => {
+    const { steer, NPC_RADIUS } = await import("@/game/pedestrians");
+    const walk = (others: { x: number; z: number; t?: [number, number] }[]) => {
+      const me = { x: 0, z: 0, t: [0, 8] as [number, number] }, all = [me, ...others];
+      let gap = Infinity;
+      for (let k = 0; k < 600; k++) {
+        for (const p of all) {
+          if (!p.t || Math.hypot(p.t[0] - p.x, p.t[1] - p.z) < 0.45) continue;
+          const [dx, dz] = steer(p.x, p.z, p.t, all.filter((o) => o !== p).map((o) => ({ x: o.x, z: o.z, r: NPC_RADIUS })));
+          p.x += dx * 1.3 / 60; p.z += dz * 1.3 / 60;
+        }
+        gap = Math.min(gap, Math.hypot(me.x - others[0]!.x, me.z - others[0]!.z));
+      }
+      return { gap, there: Math.hypot(me.t[0] - me.x, me.t[1] - me.z) < 0.5 };
+    };
+    for (const result of [walk([{ x: 0, z: 4 }]), walk([{ x: 0.2, z: 4 }]), walk([{ x: 0, z: 8, t: [0, 0] }])]) {
+      expect(result.there).toBe(true);
+      expect(result.gap).toBeGreaterThan(0.95);
+    }
+  });
+});
+
+describe("a gap too narrow to pass", () => {
+  it("goes round the far side of someone standing by a tree, not into the gap between them", async () => {
+    const { steer, NPC_RADIUS } = await import("@/game/pedestrians");
+    // A tree trunk and someone standing 1.1 m from it, right across the way.
+    const fixed = [{ x: -0.55, z: 3, r: 0.3 }, { x: 0.55, z: 3, r: NPC_RADIUS }];
+    const me = { x: 0, z: 0 }; let side: 1 | -1 = 1, closest = Infinity;
+    for (let k = 0; k < 600; k++) {
+      const [dx, dz, s] = steer(me.x, me.z, [0, 8], fixed, side);
+      side = s; me.x += dx * 1.3 / 60; me.z += dz * 1.3 / 60;
+      for (const o of fixed) closest = Math.min(closest, Math.hypot(me.x - o.x, me.z - o.z) - o.r - NPC_RADIUS);
+    }
+    expect(Math.hypot(me.x, me.z - 8)).toBeLessThan(0.5);
+    expect(closest).toBeGreaterThan(0.15);
   });
 });

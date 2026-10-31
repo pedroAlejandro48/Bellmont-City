@@ -24,6 +24,10 @@ type Npc = {
   active: boolean;
   /** The corner of a vehicle or bike being walked round, if one is in the way. */
   around: [number, number] | null;
+  /** Each person's own spot at a corner or kerb (a little off the exact point), so nobody aims for the same one. */
+  offset: [number, number];
+  /** Which way they last stepped round something (kept, so they don't dither). */
+  side: 1 | -1;
   /** In a room as a guest of the host: the seed of the knock-down already shown, and when a hit was last reported. */
   shownHit: number; hitSentAt: number;
 };
@@ -69,7 +73,7 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       const npc: Npc = {
         body: { id, x: 0, z: 0, down: false, moving: false, hit: null }, pos: new THREE.Vector3(), yaw: 0,
         color: bodyColor(npcGender(state.worldSeed, id)), leg: { kind: "ring", i: 0, j: 0, from: 0, to: 1 }, crossing: false,
-        mode: random() < 0.75 ? "walk" : "stand", until: 2 + random() * 20, speed: 0, phase: random() * 6, accident: null, random, shownHit: -1, hitSentAt: -Infinity, active: true, around: null,
+        mode: random() < 0.75 ? "walk" : "stand", until: 2 + random() * 20, speed: 0, phase: random() * 6, accident: null, random, shownHit: -1, hitSentAt: -Infinity, active: true, around: null, side: 1, offset: (() => { const a = random() * Math.PI * 2, d = 0.25 + random() * 0.55; return [Math.cos(a) * d, Math.sin(a) * d] as [number, number]; })(),
       };
       // At the start everyone the hour calls for is already about (anywhere); the rest are kept aside.
       place(npc, fi, fj, []);
@@ -78,6 +82,8 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
     }
     return list;
   }, [state]);
+  // Test builds: the NPCs' full state for browser checks.
+  useEffect(() => { if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") (window as unknown as { __npcs?: Npc[] }).__npcs = npcs; }, [npcs]);
   useEffect(() => {
     state.npcs = npcs.map((n) => n.body);
     return () => { state.npcs = []; };
@@ -141,24 +147,28 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
         npc.mode = npc.mode === "walk" && npc.random() < 0.45 ? "stand" : "walk";
         npc.until = now + (npc.mode === "walk" ? 6 + npc.random() * 40 : 3 + npc.random() * 18);
       }
-      let target = legEnd(npc.leg);
+      const mine = (q: [number, number]): [number, number] => [q[0] + npc.offset[0], q[1] + npc.offset[1]];
+      // Someone else already standing at a spot: close by it counts as there (rather than pressing into them).
+      const taken = (q: [number, number]) => npcs.some((o) => o !== npc && o.active && !o.accident && Math.hypot(o.pos.x - q[0], o.pos.z - q[1]) < 1);
+      let target = mine(legEnd(npc.leg));
       if (npc.leg.kind === "cross" && !npc.crossing) {
         // At the kerb: go once it is safe to start (avenues: on red for the traffic, with time to get over).
-        const atKerb = Math.hypot(npc.leg.from[0] - npc.pos.x, npc.leg.from[1] - npc.pos.z) < 0.8;
+        const kerb = mine(npc.leg.from);
+        const atKerb = Math.hypot(kerb[0] - npc.pos.x, kerb[1] - npc.pos.z) < (taken(kerb) ? 1.6 : 0.8);
         if (atKerb && mayCross(npc.leg, state.elapsed)) npc.crossing = true;
-        else if (atKerb) { npc.mode = "wait"; target = npc.leg.from; }
-        else target = npc.leg.from;
+        else if (atKerb) { npc.mode = "wait"; target = kerb; }
+        else target = kerb;
       }
       if (npc.mode === "wait" && (npc.crossing || npc.leg.kind !== "cross")) npc.mode = "walk";
       // Reached the end of this stretch: choose the next.
-      if (Math.hypot(target[0] - npc.pos.x, target[1] - npc.pos.z) < 0.45 && (npc.leg.kind === "ring" || npc.crossing)) {
+      if (Math.hypot(target[0] - npc.pos.x, target[1] - npc.pos.z) < (taken(target) ? 1.6 : 0.45) && (npc.leg.kind === "ring" || npc.crossing)) {
         if (npc.leg.kind === "ring") npc.leg = nextLeg(npc.leg.i, npc.leg.j, npc.leg.to, npc.leg.from, npc.random);
         else {
           const [i, j] = npc.leg.toBlock, from = npc.leg.toCorner;
           npc.leg = { kind: "ring", i, j, from, to: (from + (npc.random() < 0.5 ? 1 : 3)) % 4 };
         }
         npc.crossing = false;
-        target = npc.leg.kind === "cross" ? npc.leg.from : legEnd(npc.leg);
+        target = mine(npc.leg.kind === "cross" ? npc.leg.from : legEnd(npc.leg));
       }
 
       // Things in the way: fixed props nearby, the bike, other people (players and NPCs) and vehicles.
@@ -181,7 +191,8 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
         const boxes = [bikeBox, ...state.otherBikes.map((o) => o.box), ...state.parkedBikes.map((o) => o.box), ...state.vehicles.map((v) => v.box)]
           .filter((bx) => Math.abs(bx.x - x) < 20 && Math.abs(bx.z - z) < 20);
         npc.around = detour(x, z, target, boxes, npc.around);
-        const [dx, dz] = steer(x, z, npc.around ?? target, near);
+        const [dx, dz, side] = steer(x, z, npc.around ?? target, near, npc.side);
+        npc.side = side;
         npc.pos.x += dx * npc.speed * dt; npc.pos.z += dz * npc.speed * dt;
         npc.yaw = turn(npc.yaw, Math.atan2(dx, dz), 10 * dt);
       } else if (npc.mode === "wait" && npc.leg.kind === "cross") {

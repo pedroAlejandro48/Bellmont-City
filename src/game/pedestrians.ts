@@ -97,29 +97,36 @@ export function spawnOnRing(i: number, j: number, random: () => number) {
 }
 
 export type Obstacle = { x: number; z: number; r: number };
+/** Room kept between someone walking past and whatever they pass (beyond touching). */
+const PASS_MARGIN = 0.3;
 /**
- * The way to step this frame: toward `target`, bending around anything in the way within a couple of metres
- * (then back onto the line once past it).
+ * The way to step this frame: straight for `target` if the next couple of metres are clear, else the smallest
+ * turn to one side or the other that is clear (trying the side chosen last time first, so nobody dithers), and
+ * back onto the line once past. Unlike adding up a push from each thing, this never walks into a gap that is too
+ * narrow (between a tree and someone standing by it, say) just because the pushes cancel out.
  */
-export function steer(x: number, z: number, target: [number, number], obstacles: readonly Obstacle[]): [number, number] {
+export function steer(x: number, z: number, target: [number, number], obstacles: readonly Obstacle[], prefer: 1 | -1 = 1): [number, number, 1 | -1] {
   let dx = target[0] - x, dz = target[1] - z;
-  const len = Math.hypot(dx, dz) || 1;
-  dx /= len; dz /= len;
-  const px = -dz, pz = dx;
-  let side = 0;
-  for (const o of obstacles) {
-    const rx = o.x - x, rz = o.z - z;
-    const ahead = rx * dx + rz * dz, lateral = rx * px + rz * pz;
-    const clear = o.r + NPC_RADIUS + 0.3;
-    if (ahead <= -0.2 || ahead > 2.6 || Math.abs(lateral) >= clear) continue;
-    // Step to whichever side of it is nearer to open; strongest when close.
-    const push = (clear - Math.abs(lateral)) / clear * (1.4 - Math.min(1, ahead / 2.6) * 0.6);
-    side += (lateral > 0 ? -1 : 1) * push;
+  const dist = Math.hypot(dx, dz) || 1;
+  dx /= dist; dz /= dist;
+  const look = Math.min(2.4, dist + 0.3);
+  // Only what is ahead or alongside matters (something just behind can't be walked into).
+  const relevant = obstacles.filter((o) => (o.x - x) * dx + (o.z - z) * dz > -(o.r + NPC_RADIUS));
+  const clear = (ux: number, uz: number) => relevant.every((o) => {
+    const rx = o.x - x, rz = o.z - z, along = Math.max(0, Math.min(look, rx * ux + rz * uz));
+    const room = o.r + NPC_RADIUS + PASS_MARGIN;
+    // Already brushing it: any step that does not take us further in is fine.
+    if (Math.hypot(rx, rz) < room) return rx * ux + rz * uz <= 0.05;
+    return Math.hypot(rx - ux * along, rz - uz * along) >= room;
+  });
+  for (let step = 0; step <= 8; step++) {
+    for (const side of step === 0 ? [1] : [prefer, -prefer]) {
+      const a = side * step * (Math.PI / 12);
+      const c = Math.cos(a), s = Math.sin(a), ux = dx * c - dz * s, uz = dx * s + dz * c;
+      if (clear(ux, uz)) return [ux, uz, step === 0 ? prefer : (side as 1 | -1)];
+    }
   }
-  let sx = dx + px * side * 1.6, sz = dz + pz * side * 1.6;
-  const s = Math.hypot(sx, sz) || 1;
-  sx /= s; sz /= s;
-  return [sx, sz];
+  return [dx, dz, prefer];
 }
 
 /** Each NPC's colour: about half pink, half blue. */
