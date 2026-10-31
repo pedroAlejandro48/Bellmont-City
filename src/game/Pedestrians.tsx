@@ -1,15 +1,13 @@
 import { useFrame } from "@react-three/fiber";
 import { memo, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { HALF, PARK_LAMPS, SIGNAL_POLES, THROW_DISTANCE, blockIndex, circleBoxPush, floorHeight, rng, scooterFootprint, type City } from "./config";
+import { HALF, PARK_LAMPS, SIGNAL_POLES, THROW_DISTANCE, blockIndex, timeInfo, circleBoxPush, floorHeight, rng, scooterFootprint, type City } from "./config";
 import { bodyColor } from "@/platform/account";
 import { CharacterBody, useBodyRig } from "./CharacterBody";
 import { RagdollBody, type RagdollSubject } from "./Ragdoll";
 import type { Accident, GameState, NpcBody } from "./state";
-import { CROSS_SPEED, NPC_RADIUS, WALK_SPEED, legEnd, legFromPosition, type NpcLink, type NpcSnapshot, mayCross, nextLeg, npcGender, spawnBlock, spawnOnRing, steer, type Leg, type Obstacle } from "./pedestrians";
+import { CROSS_SPEED, NPC_APPEAR_DISTANCE, NPC_MAX, NPC_RADIUS, WALK_SPEED, npcTarget, legEnd, legFromPosition, type NpcLink, type NpcSnapshot, mayCross, nextLeg, npcGender, spawnBlock, spawnOnRing, steer, type Leg, type Obstacle } from "./pedestrians";
 
-/** How many people are about at once (around the player). */
-const NPC_COUNT = 22;
 /** Further than this from the player, someone is moved to walk somewhere nearer. */
 const NPC_RANGE = 170;
 /** How quickly a standing person gives way when leaned into (m/s): a slow shove. */
@@ -22,23 +20,35 @@ type Npc = {
   speed: number; phase: number;
   accident: Accident | null;
   random: () => number;
+  /** Out and about (the rest are kept aside until the hour brings more people out). */
+  active: boolean;
   /** In a room as a guest of the host: the seed of the knock-down already shown, and when a hit was last reported. */
   shownHit: number; hitSentAt: number;
 };
 
 const turn = (from: number, to: number, t: number) => from + Math.atan2(Math.sin(to - from), Math.cos(to - from)) * Math.min(1, t);
 
-function place(npc: Npc, fi: number, fj: number, avoid: THREE.Vector3 | null) {
-  for (let attempt = 0; attempt < 12; attempt++) {
+/** Where nobody is: further than this from any player. */
+const outOfSight = (x: number, z: number, players: readonly { x: number; z: number }[]) => players.every((p) => Math.hypot(x - p.x, z - p.z) >= NPC_APPEAR_DISTANCE);
+
+/** Puts someone on a sidewalk near block (fi, fj), at least a block from every player in `away`. False if no spot. */
+function place(npc: Npc, fi: number, fj: number, away: readonly { x: number; z: number }[]) {
+  for (let attempt = 0; attempt < 30; attempt++) {
     const [i, j] = spawnBlock(fi, fj, npc.random);
     const at = spawnOnRing(i, j, npc.random);
-    if (avoid && attempt < 11 && Math.hypot(at.x - avoid.x, at.z - avoid.z) < 45) continue;
+    if (!outOfSight(at.x, at.z, away)) continue;
     npc.pos.set(at.x, floorHeight(at.x, at.z), at.z);
     npc.leg = at.leg; npc.crossing = false;
     const [tx, tz] = legEnd(at.leg);
     npc.yaw = Math.atan2(tx - at.x, tz - at.z);
-    return;
+    return true;
   }
+  return false;
+}
+/** Kept aside: nowhere near anything, and ignored by everyone. */
+function putAway(npc: Npc) {
+  npc.active = false; npc.accident = null; npc.speed = 0;
+  Object.assign(npc.body, { x: 1e6, z: 1e6, down: true, moving: false, hit: null });
 }
 
 /**
@@ -51,14 +61,17 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
   const npcs = useMemo<Npc[]>(() => {
     const list: Npc[] = [];
     const fi = blockIndex(state.pos.x), fj = blockIndex(state.pos.z);
-    for (let id = 0; id < NPC_COUNT; id++) {
+    const target = npcTarget(timeInfo(state.elapsed).hours);
+    for (let id = 0; id < NPC_MAX; id++) {
       const random = rng(state.worldSeed ^ (id * 7919 + 13));
       const npc: Npc = {
         body: { id, x: 0, z: 0, down: false, moving: false, hit: null }, pos: new THREE.Vector3(), yaw: 0,
         color: bodyColor(npcGender(state.worldSeed, id)), leg: { kind: "ring", i: 0, j: 0, from: 0, to: 1 }, crossing: false,
-        mode: random() < 0.75 ? "walk" : "stand", until: 2 + random() * 20, speed: 0, phase: random() * 6, accident: null, random, shownHit: -1, hitSentAt: -Infinity,
+        mode: random() < 0.75 ? "walk" : "stand", until: 2 + random() * 20, speed: 0, phase: random() * 6, accident: null, random, shownHit: -1, hitSentAt: -Infinity, active: true,
       };
-      place(npc, fi, fj, null);
+      // At the start everyone the hour calls for is already about (anywhere); the rest are kept aside.
+      place(npc, fi, fj, []);
+      if (id >= target) putAway(npc);
       list.push(npc);
     }
     return list;
@@ -94,11 +107,22 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
     const players = [{ x: p.x, z: p.z }, ...state.others];
     const anchor = players[Math.floor(Math.random() * players.length)] ?? p;
     const fi = blockIndex(anchor.x), fj = blockIndex(anchor.z);
-    if (link) for (const hit of link.takeHits()) { const n = npcs[hit.id]; if (n && !n.accident) n.body.hit = { direction: hit.direction }; }
+    if (link) for (const hit of link.takeHits()) { const n = npcs[hit.id]; if (n && n.active && !n.accident) n.body.hit = { direction: hit.direction }; }
+    // Busier by day, quieter at night: one at a time, people come out or go home, always a block from everyone.
+    const target = npcTarget(timeInfo(state.elapsed).hours);
+    const out = npcs.filter((n) => n.active).length;
+    if (out < target) {
+      const n = npcs.find((m) => !m.active);
+      if (n && place(n, Math.max(-HALF, Math.min(HALF, fi)), Math.max(-HALF, Math.min(HALF, fj)), players)) { n.active = true; n.mode = "walk"; n.body.down = false; }
+    } else if (out > target) {
+      const n = npcs.find((m) => m.active && !m.accident && outOfSight(m.pos.x, m.pos.z, players));
+      if (n) putAway(n);
+    }
     const bike = state.scooter;
     const bikeBox = scooterFootprint(bike.pos.x, bike.pos.z, bike.yaw, bike.fallen, bike.fallSide);
     for (const npc of npcs) {
       const b = npc.body;
+      if (!npc.active) continue;
       // Hit by a vehicle: down they go.
       if (b.hit && !npc.accident) {
         npc.accident = { phase: "down", startedAt: now, riseStartedAt: null, vehicleId: null, direction: b.hit.direction, launchSpeed: THROW_DISTANCE * 1.75, seed: Math.floor(npc.random() * 1e8) };
@@ -108,7 +132,7 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       if (npc.accident) { b.x = npc.pos.x; b.z = npc.pos.z; b.down = true; b.moving = false; continue; }
       b.down = false;
       // Too far away: someone else, somewhere nearer.
-      if (players.every((o) => Math.hypot(npc.pos.x - o.x, npc.pos.z - o.z) > NPC_RANGE)) place(npc, Math.max(-HALF, Math.min(HALF, fi)), Math.max(-HALF, Math.min(HALF, fj)), p);
+      if (players.every((o) => Math.hypot(npc.pos.x - o.x, npc.pos.z - o.z) > NPC_RANGE)) place(npc, Math.max(-HALF, Math.min(HALF, fi)), Math.max(-HALF, Math.min(HALF, fj)), players);
 
       // Now and then switch between walking and standing (never in the middle of a road).
       if (now > npc.until && !npc.crossing) {
@@ -143,7 +167,7 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       for (const ob of [...state.otherBikes, ...state.parkedBikes]) if (Math.abs(ob.box.x - x) < 4 && Math.abs(ob.box.z - z) < 4) near.push({ x: ob.box.x, z: ob.box.z, r: 0.95 });
       const people = [...(playerOnFoot ? [{ x: p.x, z: p.z, r: 0.35 }] : []), ...state.others];
       for (const o of people) near.push({ x: o.x, z: o.z, r: o.r });
-      for (const other of npcs) if (other !== npc && !other.accident && Math.abs(other.pos.x - x) < 3 && Math.abs(other.pos.z - z) < 3) near.push({ x: other.pos.x, z: other.pos.z, r: NPC_RADIUS });
+      for (const other of npcs) if (other !== npc && other.active && !other.accident && Math.abs(other.pos.x - x) < 3 && Math.abs(other.pos.z - z) < 3) near.push({ x: other.pos.x, z: other.pos.z, r: NPC_RADIUS });
       for (const v of state.vehicles) if (Math.abs(v.box.x - x) < 8 && Math.abs(v.box.z - z) < 8) near.push({ x: v.box.x, z: v.box.z, r: Math.max(v.box.hx, v.box.hz) * 0.7 });
 
       const walking = npc.mode === "walk";
@@ -181,7 +205,7 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       publishTimer.current = 0.1;
       link.publish({ list: npcs.map((n) => {
         const a = n.accident, r = (v: number) => Math.round(v * 100) / 100;
-        return [n.body.id, r(n.pos.x), r(n.pos.z), r(n.yaw), r(n.speed), n.mode === "walk" ? 0 : n.mode === "stand" ? 1 : 2, a ? r(now - a.startedAt) : -1, a ? r(a.direction[0]) : 0, a ? r(a.direction[1]) : 0, a ? a.seed : 0];
+        return [n.body.id, r(n.pos.x), r(n.pos.z), r(n.yaw), r(n.speed), n.mode === "walk" ? 0 : n.mode === "stand" ? 1 : 2, a ? r(now - a.startedAt) : -1, a ? r(a.direction[0]) : 0, a ? r(a.direction[1]) : 0, a ? a.seed : 0, n.active ? 1 : 0];
       }) });
     }
   });
@@ -199,6 +223,10 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
         b.hit = null;
       }
       const row = seen?.snapshot.list.find((r) => r[0] === b.id);
+      // Kept aside by the host: kept aside here too.
+      if (row && row[10] === 0) { if (npc.active) putAway(npc); continue; }
+      if (row && !npc.active) { npc.active = true; npc.body.down = false; npc.pos.set(row[1] ?? 0, 0, row[2] ?? 0); }
+      if (!npc.active) continue;
       if (row) {
         const [, x = 0, z = 0, yaw = 0, speed = 0, mode = 0, downFor = -1, dx = 0, dz = 0, seed = 0] = row;
         if (downFor >= 0 && !npc.accident && seed !== npc.shownHit) {
@@ -241,7 +269,7 @@ const NpcView = memo(function NpcView({ npc, state }: { npc: Npc; state: GameSta
   useFrame(() => {
     const root = rig.root.current;
     if (!root) return;
-    root.visible = !npc.accident;
+    root.visible = npc.active && !npc.accident;
     if (npc.accident) return;
     root.position.copy(npc.pos); root.rotation.set(0, npc.yaw, 0);
     // Walking: the same stride as the player's walk; standing: a slight breath.

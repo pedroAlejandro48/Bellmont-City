@@ -75,3 +75,12 @@ describe("pedestrians", () => {
     expect(pink).toBeGreaterThan(150); expect(pink).toBeLessThan(250);
   });
 });
+
+describe("how many people are about", () => {
+  it("is 50 by day, 22 from 8 pm to 1 am, and 10 from 1 am to 6 am", async () => {
+    const { npcTarget } = await import("@/game/pedestrians");
+    expect([6, 12, 19.9].map(npcTarget)).toEqual([50, 50, 50]);
+    expect([20, 23.5, 0.5].map(npcTarget)).toEqual([22, 22, 22]);
+    expect([1, 3, 5.9].map(npcTarget)).toEqual([10, 10, 10]);
+  });
+});

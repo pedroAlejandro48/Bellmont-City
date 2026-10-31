@@ -167,3 +167,15 @@ export function isNpcSnapshot(value: unknown): value is NpcSnapshot {
   const v = value as { list?: unknown } | null;
   return typeof v === "object" && v !== null && Array.isArray(v.list) && v.list.every((row) => Array.isArray(row) && row.length >= 10 && row.every((n) => typeof n === "number" && Number.isFinite(n)));
 }
+
+/** At most this many people are about at once (daytime). */
+export const NPC_MAX = 50;
+/** How many people are about at an hour of the day: busy by day, fewer in the evening, a handful late at night. */
+export function npcTarget(hours: number) {
+  const h = ((hours % 24) + 24) % 24;
+  if (h >= 6 && h < 20) return NPC_MAX;
+  if (h >= 20 || h < 1) return 22;
+  return 10;
+}
+/** People only appear or leave at least a block away from every player, so nobody pops in or out in view. */
+export const NPC_APPEAR_DISTANCE = 60;
