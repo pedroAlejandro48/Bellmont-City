@@ -2,7 +2,7 @@ import { WORLD_HALF, MAIN_ROAD_CENTER, isAvenue, nextStreet, roadLane, type Road
 
 /** Where a vehicle is headed after a turn: the new road, its direction, and which of its lanes (slot). */
 export type TurnTarget = RoadPath & { slot: number };
-export type TrafficTurn = { start: [number, number]; corner: [number, number]; end: [number, number]; next: TurnTarget; progress: number; radius: number };
+export type TrafficTurn = { start: [number, number]; corner: [number, number]; end: [number, number]; next: TurnTarget; progress: number; radius: number; side: TurnSide };
 export type TurnSide = "left" | "right";
 
 /** Traffic keeps right. Heading along +x the right-hand side is +z; heading along +z it is -x. */
@@ -50,7 +50,7 @@ export function makeTrafficTurn(path: RoadPath, intersection: number, side: Turn
   const corner: [number, number] = path.axis === "x" ? [lane, path.lane] : [path.lane, lane];
   const start: [number, number] = path.axis === "x" ? [corner[0] - path.dir * radius, corner[1]] : [corner[0], corner[1] - path.dir * radius];
   const end: [number, number] = nextAxis === "x" ? [corner[0] + newDir * radius, corner[1]] : [corner[0], corner[1] + newDir * radius];
-  return { start, corner, end, next: { axis: nextAxis, dir: newDir, lane, slot }, progress: 0, radius };
+  return { start, corner, end, next: { axis: nextAxis, dir: newDir, lane, slot }, progress: 0, radius, side };
 }
 /** Quadratic centerline has tangents parallel to both roads, never sideways. */
 export function turnSample(turn: TrafficTurn, progress: number) {

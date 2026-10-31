@@ -26,8 +26,13 @@ const BLOCKED = new Set(["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRig
 
 /** Test builds only: exposes the scene so browser checks can inspect it. */
 function SceneHook() {
-  const scene = useThree((t) => t.scene), camera = useThree((t) => t.camera);
-  useEffect(() => { if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") Object.assign(window, { __scene: scene, __camera: camera }); }, [scene, camera]);
+  const scene = useThree((t) => t.scene), camera = useThree((t) => t.camera), gl = useThree((t) => t.gl);
+  useEffect(() => {
+    if (import.meta.env["VITE_TRAFFIC_AUDIT"] !== "1") return;
+    Object.assign(window, { __scene: scene, __camera: camera });
+    // ?norender: run the game without drawing it, so logic checks see a realistic frame rate.
+    if (new URLSearchParams(location.search).has("norender")) gl.render = () => {};
+  }, [scene, camera, gl]);
   return null;
 }
 

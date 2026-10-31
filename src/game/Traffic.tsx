@@ -25,7 +25,7 @@ import { allowedTurns, intersectionAhead, makeTrafficTurn, pointAlongTurn, progr
 
 import { makeText } from "./textures";
 import { knockDown, type GameState } from "./state";
-import { holdAccidentQueue, signalStopDistance, trafficTargetSpeed, type TrafficAgent } from "./trafficLogic";
+import { crossingOf, crossingStopDistance, holdAccidentQueue, signalStopDistance, trafficTargetSpeed, type CrossingAgent, type TrafficAgent } from "./trafficLogic";
 
 type Kind = VehicleKind;
 type Vehicle = TrafficAgent & {
@@ -41,6 +41,10 @@ type Vehicle = TrafficAgent & {
   slot: number;
   nextIntersection: number;
   turn: TrafficTurn | null;
+  /** Stopped last frame to give way at an intersection. */
+  yielding: boolean;
+  /** At an intersection's corner last frame and free to go into it. */
+  going: boolean;
 };
 
 const PALETTE = ["#b3261e", "#1d4e89", "#f2f2f2", "#222426", "#7a7f85", "#2e6b3f", "#8a5a2b", "#5b2c6f", "#c96a1b", "#3c8dbc", "#9fa8b0"];
@@ -283,7 +287,7 @@ export function Traffic({ state }: { state: GameState }) {
         axis,
         dir,
         lane,
-        slot, nextIntersection: intersectionAhead({ axis, dir, lane }, t), turn: null,
+        slot, nextIntersection: intersectionAhead({ axis, dir, lane }, t), turn: null, yielding: false, going: false,
         t,
         speed: base,
       });
@@ -346,6 +350,11 @@ export function Traffic({ state }: { state: GameState }) {
     mats.taxiSign.emissiveIntensity = 0.1 + d * 1.2;
     const span = 700;
     const p = state.pos;
+    // Everyone at or coming up to an intersection, for the right-of-way rules.
+    const crossers: CrossingAgent[] = vehicles.map((v) => ({
+      id: v.id, x: v.x, z: v.z, axis: v.axis, dir: v.dir, road: roadCenterOf(v), t: v.axis === "x" ? v.x : v.z,
+      length: VEHICLE_SIZE[v.kind][0], speed: Math.hypot(v.vx, v.vz), move: v.turn ? v.turn.side : "straight", waiting: v.yielding, going: v.going,
+    }));
     // Everyone on foot standing or walking on a zebra crossing right now.
     const crossing: [number, number][] = [];
     if (!state.scooter.riding && !state.accident && !state.interior && onCrosswalk(p.x, p.z)) crossing.push([p.x, p.z]);
@@ -439,7 +448,8 @@ export function Traffic({ state }: { state: GameState }) {
       }
       if (!v.turn && !activeIncident && now > v.crashUntil) {
         const distance = (v.nextIntersection - v.t) * v.dir;
-        if (distance < 18 && distance > -2 && mayTurnAt(v.nextIntersection, v.lane)) {
+        // Decide early enough to give way properly before the intersection.
+        if (distance < 32 && distance > -2 && mayTurnAt(v.nextIntersection, v.lane)) {
           const random = rng(state.worldSeed ^ v.id * 827 ^ Math.round(v.nextIntersection) ^ (v.axis === "x" ? 33 : 71));
           const edge = Math.abs(v.nextIntersection) >= WORLD_HALF - 1;
           const exit = exitRoad(v);
@@ -512,6 +522,8 @@ export function Traffic({ state }: { state: GameState }) {
       if (bike.riding || (!bikeObstacle && (!bike.fallen || bikeAhead < -length / 2 - 2))) bikeWait.current.delete(i);
       const bikeOccupied = bike.riding || bike.action !== null || (bike.fallen && (state.accident !== null || Math.hypot(state.pos.x - bike.pos.x, state.pos.z - bike.pos.z) < 2.5));
       let targetSpeed = trafficTargetSpeed(v, vehicles, state.incidents, now);
+      // Test builds: why a vehicle is held (the first rule that brought it to a stop).
+      let why = targetSpeed < 0.1 ? "follow" : "";
       // A street ends at the city's edge: never drive on into the woods, even when a turn could not start yet.
       if (!exitRoad(v) && !v.turn && Math.abs(v.nextIntersection) >= WORLD_HALF - 1 && (v.nextIntersection - v.t) * v.dir < 12) targetSpeed = 0;
       let targetLane = v.central && Math.abs(v.t) > WORLD_HALF
@@ -572,6 +584,20 @@ export function Traffic({ state }: { state: GameState }) {
         const toLine = signalStopDistance(v.axis, v.dir, v.t, roadCenterOf(v), length, state.elapsed);
         if (toLine !== null) targetSpeed = Math.min(targetSpeed, toLine < 1 ? 0 : Math.sqrt(2 * 5 * (toLine - 1)));
       }
+      // Right of way: wait short of the intersection for whoever this vehicle must give way to.
+      const crosser = crossers[i];
+      const giveWay = crosser && (!v.turn || v.turn.progress < 0.02) && v.axis === crosser.axis ? crossingStopDistance({ ...crosser, t: v.axis === "x" ? v.x : v.z }, crossers) : null;
+      v.yielding = giveWay !== null && giveWay < 6;
+      // At the corner with nothing to give way to (and no red light): this one is going.
+      v.going = false;
+      if (crosser && giveWay === null && (!v.turn || v.turn.progress < 0.02)) {
+        const entry = crossingOf({ ...crosser, t: v.axis === "x" ? v.x : v.z }).toEntry;
+        v.going = entry > -0.3 && entry < 6 && signalStopDistance(v.axis, v.dir, v.t, roadCenterOf(v), length, state.elapsed) === null;
+      }
+      // Brake gently and early so the stop is always made short of the corner.
+      if (!why && targetSpeed < 0.1) why = "early";
+      if (giveWay !== null) targetSpeed = Math.min(targetSpeed, giveWay < 1.5 ? 0 : Math.sqrt(2 * 2.5 * (giveWay - 1.5)));
+      if (!why && targetSpeed < 0.1) why = "giveway";
       // People on a zebra crossing ahead: always stop for them (anyone else on the road is not looked out for).
       for (const person of crossing) {
         const ahead = forwardDistance(v, [v.x, v.z], person);
@@ -585,7 +611,9 @@ export function Traffic({ state }: { state: GameState }) {
       }
       targetLane = keepRight(targetLane);
       const [fx, fz] = roadForward(v);
+      if (!why && targetSpeed < 0.1) why = "people";
       if (v.turn) targetSpeed = Math.min(targetSpeed, TRAFFIC_CORNER_SPEED);
+      if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") (v as Vehicle & { why?: string }).why = why;
       const currentSpeed = v.turn ? Math.hypot(v.vx, v.vz) : v.vx * fx + v.vz * fz;
       v.brake = targetSpeed < currentSpeed - 0.25 || targetSpeed < 0.1 || now < v.crashUntil;
       const tail = brakeMats.current[i]; if (tail) tail.emissiveIntensity = v.brake ? 5 : 0.35 + d * 0.8;
