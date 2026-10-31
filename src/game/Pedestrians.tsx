@@ -6,7 +6,7 @@ import { bodyColor } from "@/platform/account";
 import { CharacterBody, useBodyRig } from "./CharacterBody";
 import { RagdollBody, type RagdollSubject } from "./Ragdoll";
 import type { Accident, GameState, NpcBody } from "./state";
-import { CROSS_SPEED, NPC_APPEAR_DISTANCE, boxObstacles, NPC_MAX, NPC_RADIUS, WALK_SPEED, npcTarget, legEnd, legFromPosition, type NpcLink, type NpcSnapshot, mayCross, nextLeg, npcGender, spawnBlock, spawnOnRing, steer, type Leg, type Obstacle } from "./pedestrians";
+import { CROSS_SPEED, NPC_APPEAR_DISTANCE, boxObstacles, detour, NPC_MAX, NPC_RADIUS, WALK_SPEED, npcTarget, legEnd, legFromPosition, type NpcLink, type NpcSnapshot, mayCross, nextLeg, npcGender, spawnBlock, spawnOnRing, steer, type Leg, type Obstacle } from "./pedestrians";
 
 /** Further than this from the player, someone is moved to walk somewhere nearer. */
 const NPC_RANGE = 170;
@@ -22,6 +22,8 @@ type Npc = {
   random: () => number;
   /** Out and about (the rest are kept aside until the hour brings more people out). */
   active: boolean;
+  /** The corner of a vehicle or bike being walked round, if one is in the way. */
+  around: [number, number] | null;
   /** In a room as a guest of the host: the seed of the knock-down already shown, and when a hit was last reported. */
   shownHit: number; hitSentAt: number;
 };
@@ -67,7 +69,7 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       const npc: Npc = {
         body: { id, x: 0, z: 0, down: false, moving: false, hit: null }, pos: new THREE.Vector3(), yaw: 0,
         color: bodyColor(npcGender(state.worldSeed, id)), leg: { kind: "ring", i: 0, j: 0, from: 0, to: 1 }, crossing: false,
-        mode: random() < 0.75 ? "walk" : "stand", until: 2 + random() * 20, speed: 0, phase: random() * 6, accident: null, random, shownHit: -1, hitSentAt: -Infinity, active: true,
+        mode: random() < 0.75 ? "walk" : "stand", until: 2 + random() * 20, speed: 0, phase: random() * 6, accident: null, random, shownHit: -1, hitSentAt: -Infinity, active: true, around: null,
       };
       // At the start everyone the hour calls for is already about (anywhere); the rest are kept aside.
       place(npc, fi, fj, []);
@@ -175,7 +177,11 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       const pace = walking ? (npc.crossing && npc.leg.kind === "cross" && npc.leg.avenue ? CROSS_SPEED : WALK_SPEED) : 0;
       npc.speed += (pace - npc.speed) * (1 - Math.exp(-5 * dt));
       if (npc.speed > 0.02) {
-        const [dx, dz] = steer(x, z, target, near);
+        // A vehicle or bike standing in the way, however long: head for its nearer end and round it.
+        const boxes = [bikeBox, ...state.otherBikes.map((o) => o.box), ...state.parkedBikes.map((o) => o.box), ...state.vehicles.map((v) => v.box)]
+          .filter((bx) => Math.abs(bx.x - x) < 20 && Math.abs(bx.z - z) < 20);
+        npc.around = detour(x, z, target, boxes, npc.around);
+        const [dx, dz] = steer(x, z, npc.around ?? target, near);
         npc.pos.x += dx * npc.speed * dt; npc.pos.z += dz * npc.speed * dt;
         npc.yaw = turn(npc.yaw, Math.atan2(dx, dz), 10 * dt);
       } else if (npc.mode === "wait" && npc.leg.kind === "cross") {

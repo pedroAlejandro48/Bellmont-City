@@ -97,3 +97,24 @@ describe("people steering round vehicles", () => {
     expect(Math.abs(dx)).toBeLessThan(1);
   });
 });
+
+describe("walking round a bus in the way", () => {
+  it("heads for the nearer end of a bus parked across the way, keeps to that side, then carries on", async () => {
+    const { detour, segmentHitsBox } = await import("@/game/pedestrians");
+    // A 12 m bus lying across x (the walker comes up from z = -6 heading for z = +8), slightly off-centre.
+    const bus = { x: 1, z: 0, hx: 6, hz: 1.3, yaw: 0 };
+    expect(segmentHitsBox(bus, [0, -6], [0, 8], 0.5)).toBe(true);
+    const corner = detour(0, -6, [0, 8], [bus], null)!;
+    expect(corner).not.toBeNull();
+    // The nearer end is the -x one (the bus sticks out further on +x).
+    expect(corner[0]).toBeLessThan(-5); expect(corner[1]).toBeLessThan(0);
+    // A step later it still goes the same way round (no dithering), even if the other side is nearly as short.
+    const again = detour(-1, -5.5, [0, 8], [bus], corner)!;
+    expect(again[0]).toBeLessThan(-5);
+    // Once past the end, round the far corner and on.
+    const past = detour(-7.2, -1.8, [0, 8], [bus], corner);
+    expect(past === null || past[1] > 0).toBe(true);
+    // Nothing in the way: no detour.
+    expect(detour(0, -6, [0, 8], [{ ...bus, x: 30 }], null)).toBeNull();
+  });
+});

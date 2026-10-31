@@ -195,3 +195,55 @@ export function boxObstacles(box: { x: number; z: number; hx: number; hz: number
     return { x: box.x + ux * a, z: box.z + uz * a, r };
   });
 }
+
+type Box = { x: number; z: number; hx: number; hz: number; yaw: number };
+/** A point in a box's own frame (its local x along hx, z along hz). */
+function toBox(b: Box, x: number, z: number): [number, number] {
+  const c = Math.cos(b.yaw), s = Math.sin(b.yaw), dx = x - b.x, dz = z - b.z;
+  return [dx * c - dz * s, dx * s + dz * c];
+}
+/** Whether the straight walk from a to b passes through the box grown by `pad` on every side. */
+export function segmentHitsBox(b: Box, a: [number, number], c: [number, number], pad: number) {
+  const [ax, az] = toBox(b, a[0], a[1]), [cx, cz] = toBox(b, c[0], c[1]);
+  const hx = b.hx + pad, hz = b.hz + pad;
+  let t0 = 0, t1 = 1;
+  for (const [p, d, h] of [[ax, cx - ax, hx], [az, cz - az, hz]] as const) {
+    if (Math.abs(d) < 1e-9) { if (Math.abs(p) > h) return false; continue; }
+    let lo = (-h - p) / d, hi = (h - p) / d;
+    if (lo > hi) [lo, hi] = [hi, lo];
+    t0 = Math.max(t0, lo); t1 = Math.min(t1, hi);
+    if (t0 > t1) return false;
+  }
+  return true;
+}
+/**
+ * Walking round a vehicle or bike that stands in the way (however long it is): the corner of it to head for,
+ * whichever makes the shorter way round, or null when the way is clear. `previous` keeps a chosen side unless the
+ * other is clearly shorter, so nobody dithers in front of a bus.
+ */
+export function detour(x: number, z: number, target: [number, number], boxes: readonly Box[], chosen: [number, number] | null): [number, number] | null {
+  const pad = NPC_RADIUS + 0.15;
+  // A corner already reached is done with: from there, on to the next.
+  const previous = chosen && Math.hypot(chosen[0] - x, chosen[1] - z) > 1.2 ? chosen : null;
+  const blocking = boxes.filter((b) => segmentHitsBox(b, [x, z], target, pad) && Math.hypot(b.x - x, b.z - z) < Math.max(b.hx, b.hz) + 8);
+  if (!blocking.length) return null;
+  // The nearest blocker decides.
+  const b = blocking.reduce((n, o) => (Math.hypot(o.x - x, o.z - z) < Math.hypot(n.x - x, n.z - z) ? o : n));
+  const c = Math.cos(b.yaw), s = Math.sin(b.yaw), m = NPC_RADIUS + 0.6;
+  const corners = [[1, 1], [1, -1], [-1, 1], [-1, -1]].map(([u, v]) => {
+    const lx = u! * (b.hx + m), lz = v! * (b.hz + m);
+    return [b.x + lx * c + lz * s, b.z - lx * s + lz * c] as [number, number];
+  });
+  let best: [number, number] | null = null, bestCost = Infinity, previousCost = Infinity;
+  for (const corner of corners) {
+    if (Math.hypot(corner[0] - x, corner[1] - z) < 0.3) continue;
+    if (segmentHitsBox(b, [x, z], corner, pad - 0.05)) continue;
+    // From a corner that still has the vehicle between it and the target, it is another corner further.
+    const onward = segmentHitsBox(b, corner, target, pad - 0.05) ? 2 * (b.hx + b.hz) : 0;
+    const cost = Math.hypot(corner[0] - x, corner[1] - z) + Math.hypot(target[0] - corner[0], target[1] - corner[1]) + onward;
+    if (previous && Math.hypot(previous[0] - corner[0], previous[1] - corner[1]) < 1.5) previousCost = cost;
+    if (cost < bestCost) { bestCost = cost; best = corner; }
+  }
+  if (previous && previousCost < bestCost + 2) return corners.find((k) => Math.hypot(previous[0] - k[0], previous[1] - k[1]) < 1.5) ?? best;
+  return best;
+}
