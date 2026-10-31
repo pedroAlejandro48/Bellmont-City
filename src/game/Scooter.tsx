@@ -115,6 +115,15 @@ export function Scooter({ state }: { state: GameState }) {
       if (person) {
         if (fast) crash(person.id ?? null); else bike.speed = 0;
       }
+      // NPCs, the same: above 20 mph rider and NPC both go down; slower, the bike just stops against them.
+      const npc = bike.speed !== 0 ? state.npcs.find((n) => !n.down && bikeTouchesCircle(probeX, probeZ, bike.yaw, { x: n.x, z: n.z, r: 0.35 })) : undefined;
+      if (npc) {
+        if (fast) {
+          const direction: [number, number] = [hx * Math.sign(impactSpeed), hz * Math.sign(impactSpeed)];
+          if (!npc.hit) npc.hit = { direction };
+          crash();
+        } else bike.speed = 0;
+      }
       const bikes = [...state.otherBikes, ...state.parkedBikes];
       const bikeHit = bike.speed !== 0 ? bikeOutOfBoxes(probeX, probeZ, bike.yaw, bikes.map((b) => b.box)).hit : -1;
       const otherBike = bikes[bikeHit];

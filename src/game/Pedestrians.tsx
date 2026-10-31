@@ -6,7 +6,7 @@ import { bodyColor } from "@/platform/account";
 import { CharacterBody, useBodyRig } from "./CharacterBody";
 import { RagdollBody, type RagdollSubject } from "./Ragdoll";
 import type { Accident, GameState, NpcBody } from "./state";
-import { CROSS_SPEED, NPC_APPEAR_DISTANCE, NPC_MAX, NPC_RADIUS, WALK_SPEED, npcTarget, legEnd, legFromPosition, type NpcLink, type NpcSnapshot, mayCross, nextLeg, npcGender, spawnBlock, spawnOnRing, steer, type Leg, type Obstacle } from "./pedestrians";
+import { CROSS_SPEED, NPC_APPEAR_DISTANCE, boxObstacles, NPC_MAX, NPC_RADIUS, WALK_SPEED, npcTarget, legEnd, legFromPosition, type NpcLink, type NpcSnapshot, mayCross, nextLeg, npcGender, spawnBlock, spawnOnRing, steer, type Leg, type Obstacle } from "./pedestrians";
 
 /** Further than this from the player, someone is moved to walk somewhere nearer. */
 const NPC_RANGE = 170;
@@ -163,12 +163,13 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       const near: Obstacle[] = [];
       const x = npc.pos.x, z = npc.pos.z;
       for (const o of fixed) if (Math.abs(o.x - x) < 3 && Math.abs(o.z - z) < 3) near.push(o);
-      if (Math.abs(bike.pos.x - x) < 4 && Math.abs(bike.pos.z - z) < 4 && !bike.riding) near.push({ x: bike.pos.x, z: bike.pos.z, r: 0.95 });
-      for (const ob of [...state.otherBikes, ...state.parkedBikes]) if (Math.abs(ob.box.x - x) < 4 && Math.abs(ob.box.z - z) < 4) near.push({ x: ob.box.x, z: ob.box.z, r: 0.95 });
+      // Bikes (ours, standing or ridden, and everyone else's) and vehicles: kept clear along their whole length.
+      if (Math.abs(bike.pos.x - x) < 5 && Math.abs(bike.pos.z - z) < 5) near.push(...boxObstacles(bikeBox));
+      for (const ob of [...state.otherBikes, ...state.parkedBikes]) if (Math.abs(ob.box.x - x) < 5 && Math.abs(ob.box.z - z) < 5) near.push(...boxObstacles(ob.box));
       const people = [...(playerOnFoot ? [{ x: p.x, z: p.z, r: 0.35 }] : []), ...state.others];
       for (const o of people) near.push({ x: o.x, z: o.z, r: o.r });
       for (const other of npcs) if (other !== npc && other.active && !other.accident && Math.abs(other.pos.x - x) < 3 && Math.abs(other.pos.z - z) < 3) near.push({ x: other.pos.x, z: other.pos.z, r: NPC_RADIUS });
-      for (const v of state.vehicles) if (Math.abs(v.box.x - x) < 8 && Math.abs(v.box.z - z) < 8) near.push({ x: v.box.x, z: v.box.z, r: Math.max(v.box.hx, v.box.hz) * 0.7 });
+      for (const v of state.vehicles) if (Math.abs(v.box.x - x) < 10 && Math.abs(v.box.z - z) < 10) near.push(...boxObstacles(v.box));
 
       const walking = npc.mode === "walk";
       const pace = walking ? (npc.crossing && npc.leg.kind === "cross" && npc.leg.avenue ? CROSS_SPEED : WALK_SPEED) : 0;

@@ -84,3 +84,16 @@ describe("how many people are about", () => {
     expect([1, 3, 5.9].map(npcTarget)).toEqual([10, 10, 10]);
   });
 });
+
+describe("people steering round vehicles", () => {
+  it("keeps clear of a parked car's ends, not just its middle", async () => {
+    const { boxObstacles, steer } = await import("@/game/pedestrians");
+    const car = { x: 0, z: 0, hx: 2.2, hz: 0.95, yaw: 0 };
+    const circles = boxObstacles(car);
+    expect(Math.max(...circles.map((c) => c.x + c.r))).toBeGreaterThanOrEqual(2.2);
+    expect(Math.min(...circles.map((c) => c.x - c.r))).toBeLessThanOrEqual(-2.2);
+    // Walking straight at the car's front end from 2 m away: they bend aside.
+    const [dx] = steer(3.6, -0.3, [-10, -0.3], circles);
+    expect(Math.abs(dx)).toBeLessThan(1);
+  });
+});

@@ -179,3 +179,19 @@ export function npcTarget(hours: number) {
 }
 /** People only appear or leave at least a block away from every player, so nobody pops in or out in view. */
 export const NPC_APPEAR_DISTANCE = 60;
+
+/**
+ * A parked bike or a vehicle as things to step around: a row of circles along its length, each as wide as the
+ * vehicle, so its ends are kept clear as well as its middle.
+ */
+export function boxObstacles(box: { x: number; z: number; hx: number; hz: number; yaw: number }): Obstacle[] {
+  const c = Math.cos(box.yaw), s = Math.sin(box.yaw);
+  // The box's local x and z directions in the world.
+  const long = box.hx >= box.hz, half = long ? box.hx : box.hz, r = (long ? box.hz : box.hx) + 0.05;
+  const [ux, uz] = long ? [c, -s] : [s, c];
+  const count = Math.max(1, Math.ceil((half * 2) / Math.max(0.4, r)));
+  return Array.from({ length: count + 1 }, (_, k) => {
+    const a = -half + r + (half * 2 - 2 * r) * (count ? k / count : 0.5);
+    return { x: box.x + ux * a, z: box.z + uz * a, r };
+  });
+}
