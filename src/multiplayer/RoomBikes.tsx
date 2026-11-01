@@ -4,7 +4,7 @@ import type * as THREE from "three";
 import { ScooterModel, type ScooterLook } from "@/game/Scooter";
 import { scooterFootprint } from "@/game/config";
 import { dropScooter, takeScooter, type GameState, type OtherBike } from "@/game/state";
-import { bringBike, claimBike, knockBike, releaseBike, saveBike, watchBikes, type BikeRecord, type BikeSpot } from "@/platform/bikes";
+import { bringBike, claimBike, knockBike, moveBike, pushBike, releaseBike, saveBike, watchBikes, type BikeRecord, type BikeSpot } from "@/platform/bikes";
 import type { NamedRoom } from "@/platform/realtime";
 import { isPoseWire } from "./pose";
 
@@ -57,6 +57,8 @@ export function RoomBikes({ state, code, uid, channel }: { state: GameState; cod
   const busy = useRef(false);
   const knocks = useRef(new Map<string, number>());
   const saved = useRef({ at: 0, spot: "" });
+  // Shoving other bikes: totals per bike this tab has pushed (sent now and then), and those seen applied here.
+  const shoves = useRef({ totals: new Map<string, [number, number]>(), moved: new Set<string>(), pushed: new Set<string>(), sentAt: 0, seen: new Map<string, [number, number]>() });
 
   useEffect(() => {
     dropScooter(state);
@@ -70,8 +72,8 @@ export function RoomBikes({ state, code, uid, channel }: { state: GameState; cod
     };
   }, [state, code, uid, channel]);
 
-  useFrame(() => {
-    const now = Date.now();
+  useFrame((_, raw) => {
+    const now = Date.now(), dt = Math.min(raw, 0.05);
     const peers = channel.peers();
     const me = peers.find((p) => p.sameTab)?.peer ?? "";
     const present = new Set(peers.map((p) => p.peer));
@@ -89,6 +91,32 @@ export function RoomBikes({ state, code, uid, channel }: { state: GameState; cod
       knocks.current.set(bike.id, heldRec.knock);
       if (!bike.riding && !bike.action && !bike.fallen && Date.now() - heldRec.knock < 10_000) {
         bike.fallen = true; bike.fallSide = heldRec.knockSide; bike.fallenAt = state.simulationTime; bike.tip = 0; bike.tipVel = 0;
+      }
+    }
+
+    // This player's bike shoved other bikes along: a parked one is moved here and now; one someone else controls
+    // is moved by them (they are sent how far, in total).
+    const sh = shoves.current;
+    for (const [id, [vx, vz]] of state.bikePushes) {
+      const rec = bikes.current.get(id);
+      if (!rec) continue;
+      if (free.some(([fid]) => fid === id)) { rec.pos = [rec.pos[0] + vx * dt, rec.pos[1], rec.pos[2] + vz * dt]; sh.moved.add(id); }
+      else { const t = sh.totals.get(id) ?? [0, 0]; sh.totals.set(id, [t[0] + vx * dt, t[1] + vz * dt]); sh.pushed.add(id); }
+    }
+    state.bikePushes.clear();
+    if (now - sh.sentAt > 100 && (sh.moved.size || sh.pushed.size)) {
+      sh.sentAt = now;
+      for (const id of sh.moved) { const rec = bikes.current.get(id); if (rec) void moveBike(code, id, rec.pos).catch(() => {}); }
+      for (const id of sh.pushed) { const t = sh.totals.get(id); if (t && me) void pushBike(code, id, me, t).catch(() => {}); }
+      sh.moved.clear(); sh.pushed.clear();
+    }
+    // Others shoving the bike this player controls: it moves by however much more they have pushed it.
+    if (bike.id && heldRec && !bike.riding && !bike.action) {
+      for (const [by, total] of Object.entries(heldRec.pushes)) {
+        const key = `${bike.id}:${by}`, before = sh.seen.get(key);
+        sh.seen.set(key, total);
+        if (!before) continue;
+        bike.pos.x += total[0] - before[0]; bike.pos.z += total[1] - before[1];
       }
     }
 
@@ -138,7 +166,7 @@ export function RoomBikes({ state, code, uid, channel }: { state: GameState; cod
 
     // Parked bikes are solid for walking into, and drawn below.
     const boxes: OtherBike[] = [];
-    for (const [id, rec] of free) boxes.push({ id, box: scooterFootprint(rec.pos[0], rec.pos[2], rec.yaw, rec.fallen, rec.fallSide) });
+    for (const [id, rec] of free) boxes.push({ id, box: scooterFootprint(rec.pos[0], rec.pos[2], rec.yaw, rec.fallen, rec.fallSide), fallen: rec.fallen });
     state.parkedBikes = boxes;
     const ids = free.map(([id]) => id);
     setParked((old) => (old.length === ids.length && old.every((id, i) => id === ids[i]) ? old : ids));

@@ -6,6 +6,7 @@ import { Headlight } from "./Headlight";
 import * as THREE from "three";
 import { canInteractScooter, scooterSide, floorHeight, headingVelocity, smoothSteer, scooterNextAction, scooterSpeed, scooterCanDismount, scooterTurn, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, nearestBenchSeat, scooterTipStep, SCOOTER_MASS, SCOOTER_COLLISION_PARTS, SCOOTER_COLLISION_GROUPS, bikeOutOfBoxes, bikeCanPushVehicle, BIKE_PUSH_SPEED, bikeImpactCrashes, bikeTouchesCircle, footprintBlocked, scooterFootprint } from "./config";
 import { crashBike, type GameState } from "./state";
+import { BIKE_SHOVE_SPEED } from "./config";
 
 /** What the model reads to draw lights and steering; a remote player's scooter passes its own copy. */
 export type ScooterLook = { darkness: number; scooter: { riding: boolean; steering: number; braking: boolean } };
@@ -133,7 +134,11 @@ export function Scooter({ state }: { state: GameState }) {
           const side = scooterSide([bike.pos.x, bike.pos.z], [otherBike.box.x, otherBike.box.z], otherBike.box.yaw);
           state.impacts.push({ kind: "bike", id: otherBike.id, side: side === 1 ? -1 : 1 });
           crash();
-        } else bike.speed = 0;
+        } else {
+          // Slower, it is a physical thing: the bike shoves it along at walking pace (whoever controls it moves it).
+          bike.speed = Math.sign(bike.speed) * Math.min(Math.abs(bike.speed), BIKE_SHOVE_SPEED);
+          state.bikePushes.set(otherBike.id, [hx * bike.speed, hz * bike.speed]);
+        }
       }
       const ahead = bikeOutOfBoxes(probeX, probeZ, bike.yaw, state.vehicles.map((v) => v.box));
       const touched = ahead.hit >= 0 ? state.vehicles[ahead.hit] : undefined;

@@ -12,6 +12,8 @@ import { spawnBeside, standingFromPose, type Standing } from "./spawn";
 import { NameLabel } from "./NameLabel";
 import { makeNpcLink } from "./npcLink";
 import { makeFoodLink } from "./foodLink";
+import { makeTrafficLink } from "./trafficLink";
+import { makeDoorLink } from "./doorLink";
 import { bodyColor, playerOf, type Gender } from "@/platform/account";
 
 /** How long after entering a late-arriving position can still move a player who has not moved yet. */
@@ -53,7 +55,10 @@ export function RoomScene({ state, channel, remotes, joinedAt, creator }: { stat
     state.npcLink = makeNpcLink(channel);
     // And so are the restaurants: the orders, the staff and the food.
     state.foodLink = makeFoodLink(channel);
-    return () => { state.npcLink = null; state.foodLink = null; };
+    // So are the traffic and the restaurant doors.
+    state.trafficLink = makeTrafficLink(channel);
+    state.doorLink = makeDoorLink(channel);
+    return () => { state.npcLink = null; state.foodLink = null; state.trafficLink = null; state.doorLink = null; };
   }, [state, channel]);
   const lastSent = useRef({ at: 0, body: "" });
   const lastHitAt = useRef(Date.now());
@@ -101,7 +106,7 @@ export function RoomScene({ state, channel, remotes, joinedAt, creator }: { stat
           const { y: yaw, z: lean } = bikeTilt.setFromQuaternion(bikeQuat.set(qx, qy, qz, qw), "YXZ");
           const fallen = Math.abs(lean) > 1;
           const held = peer.presence["bike"];
-          if (typeof held === "string") bikes.push({ id: held, box: scooterFootprint(x, z, yaw, fallen, lean < 0 ? 1 : -1) });
+          if (typeof held === "string") bikes.push({ id: held, box: scooterFootprint(x, z, yaw, fallen, lean < 0 ? 1 : -1), fallen });
         }
       }
     }

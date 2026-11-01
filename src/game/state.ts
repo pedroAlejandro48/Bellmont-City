@@ -2,6 +2,8 @@ import * as THREE from "three";
 import type { Room, SitPlan } from "./restaurantRoom";
 import type { NpcLink } from "./pedestrians";
 import type { FoodLink, Mode, PackKind } from "./food";
+import type { TrafficLink } from "./trafficShare";
+import type { DoorLink } from "./doors";
 import type { BodyRig } from "./CharacterBody";
 import { THROW_DISTANCE, healthAfterImpact, type SaveData, type SolidBox, type VehicleKind, type RoadPath, GET_UP_SECONDS, KNOCKDOWN_SECONDS, floorHeight, BENCH_SEATS, STARTING_CASH } from "./config";
 
@@ -37,7 +39,7 @@ export type AvatarRig = { body: THREE.Object3D[]; ragdoll: THREE.Object3D[]; sco
 /** Another player's body on the ground plane, for bumping (`id` is their open tab in the room). */
 export type OtherBody = { x: number; z: number; r: number; id?: string };
 /** Another bike in the room (held by someone else, or parked and free), solid to this player. */
-export type OtherBike = { id: string; box: SolidBox };
+export type OtherBike = { id: string; box: SolidBox; fallen?: boolean };
 /** Something this player's bike crashed into that another player must hear about. */
 export type Impact =
   | { kind: "bike"; id: string; side: 1 | -1 }
@@ -58,6 +60,9 @@ export type Interior = {
   /** The spot outside the door facing the street (world), where saving puts the player. */
   outside: [number, number]; outsideYaw: number;
   cameraSet: boolean;
+  /** Opening the door, or walking through behind someone who has it open (`walk` is that path). */
+  mode?: "open" | "follow";
+  walk?: import("./restaurantRoom").WalkThrough;
 };
 
 /** An NPC as the rest of the game sees it: where it stands, whether it is down, and a hit waiting to be felt. */
@@ -125,6 +130,12 @@ export type GameState = {
   npcs: NpcBody[];
   /** In a multiplayer room: how the NPCs are shared with the others (null playing alone). */
   npcLink: NpcLink | null;
+  /** In a multiplayer room: how the traffic is shared (null playing alone). */
+  trafficLink: TrafficLink | null;
+  /** In a multiplayer room: who is using which restaurant door (null playing alone). */
+  doorLink: DoorLink | null;
+  /** Slow pushes this player's bike gave to other bikes this frame, by bike id: a world velocity (m/s). */
+  bikePushes: Map<string, [number, number]>;
   /** In a multiplayer room: how orders, the restaurant staff and food are shared (null playing alone). */
   foodLink: FoodLink | null;
   /** What this player is holding in each hand, and a grab in progress. */
@@ -169,6 +180,7 @@ export function createState(save: SaveData): GameState {
     rooms: new Map(), interior: null, seat: null, script: null, standQueued: false, fade: 0, fadeInAt: null, doorPrompt: false,
     cash: Math.max(0, save.cash ?? STARTING_CASH),
     npcs: [], npcLink: null,
+    trafficLink: null, doorLink: null, bikePushes: new Map(),
     foodLink: null, hands: { left: null, right: null }, grab: null, foodUi: { open: false, key: null, kind: null, note: null }, foodOrder: null, remoteRigs: new Map(),
     seatOccupants: new Map(save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? [[save.benchSeat, "player"]] : []),
     bench: save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? { seat: save.benchSeat, phase: "seated", startedAt: 0, origin: new THREE.Vector3(...save.pos), originYaw: save.rotY } : null,

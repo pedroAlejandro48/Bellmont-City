@@ -6,9 +6,21 @@ import { realtime } from "./firebase";
 
 export type BikeSpot = { pos: [number, number, number]; yaw: number; fallen: boolean; fallSide: 1 | -1 };
 /** `knock` is when another player last crashed into the bike, knocking it onto `knockSide`. */
-export type BikeRecord = BikeSpot & { owner: string; holder: string | null; updatedAt: number; knock: number; knockSide: 1 | -1 };
+export type BikeRecord = BikeSpot & { owner: string; holder: string | null; updatedAt: number; knock: number; knockSide: 1 | -1;
+  /** How far each other player's bike has shoved this one so far (in total, by their tab id): its controller moves it. */
+  pushes: Record<string, [number, number]> };
 
 const bikeRef = (code: string, id: string) => ref(realtime, `rooms/${code}/bikes/${id}`);
+
+function readPushes(value: unknown) {
+  const out: Record<string, [number, number]> = {};
+  if (typeof value !== "object" || value === null) return out;
+  for (const [by, p] of Object.entries(value as Record<string, unknown>)) {
+    const q = p as { x?: unknown; z?: unknown } | null;
+    if (q && typeof q.x === "number" && typeof q.z === "number") out[by] = [q.x, q.z];
+  }
+  return out;
+}
 
 function readBike(value: unknown): BikeRecord | null {
   if (typeof value !== "object" || value === null) return null;
@@ -20,6 +32,7 @@ function readBike(value: unknown): BikeRecord | null {
     pos: pos as [number, number, number], yaw: v["yaw"], fallen: v["fallen"] === true, fallSide: v["fallSide"] === -1 ? -1 : 1,
     owner: v["owner"], holder: typeof v["holder"] === "string" ? v["holder"] : null, updatedAt: typeof v["updatedAt"] === "number" ? v["updatedAt"] : 0,
     knock: typeof v["knock"] === "number" ? v["knock"] : 0, knockSide: v["knockSide"] === -1 ? -1 : 1,
+    pushes: readPushes(v["push"]),
   };
 }
 
@@ -61,4 +74,14 @@ export function knockBike(code: string, id: string, side: 1 | -1) {
 export async function releaseBike(code: string, id: string, spot: BikeSpot) {
   await update(bikeRef(code, id), { ...spot, holder: null, updatedAt: Date.now() });
   await onDisconnect(ref(realtime, `rooms/${code}/bikes/${id}/holder`)).cancel();
+}
+
+/** Shoves a parked bike nobody controls: it is simply moved. */
+export function moveBike(code: string, id: string, pos: [number, number, number]) {
+  return update(bikeRef(code, id), { pos, updatedAt: Date.now() });
+}
+
+/** Shoves a bike another player controls: the running total of the shove, which they apply. */
+export function pushBike(code: string, id: string, by: string, total: [number, number]) {
+  return update(ref(realtime, `rooms/${code}/bikes/${id}/push/${by}`), { x: Math.round(total[0] * 1000) / 1000, z: Math.round(total[1] * 1000) / 1000 });
 }

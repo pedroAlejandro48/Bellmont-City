@@ -633,6 +633,8 @@ export const VEHICLE_COLLISION_GROUPS = (0x0004 << 16) | 0xffff;
 export const SCOOTER_COLLISION_GROUPS = (0x0002 << 16) | (0xffff & ~0x0004);
 /** How fast a bike can shove a car (m/s): a slow, heavy push. */
 export const BIKE_PUSH_SPEED = 0.5;
+/** How fast a slow bike shoves another bike (fallen or parked) along: walking pace. */
+export const BIKE_SHOVE_SPEED = 2.2;
 
 export type RoadPath = { axis: "x" | "z"; dir: 1 | -1; lane: number };
 export function roadForward(path: RoadPath): [number, number] { return path.axis === "x" ? [path.dir, 0] : [0, path.dir]; }

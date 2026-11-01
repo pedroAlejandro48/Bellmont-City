@@ -502,3 +502,28 @@ export function roomShell(b: Building) {
     piece(layout.divider.doorX, layout.divider.z - WALL / 2, KITCHEN_DOOR / 2, WALL / 2, (KITCHEN_DOOR_H + CEILING) / 2, (CEILING - KITCHEN_DOOR_H) / 2),
   ];
 }
+
+// ---------- walking through a door someone else holds open ----------
+
+/** Walking in or out through a door that is already open: no reaching for it, just through. */
+export type WalkThrough = { dir: "in" | "out"; from: [number, number]; fromYaw: number; approach: number; points: [number, number][]; pass: number; done: number };
+export function planWalkThrough(dir: "in" | "out", from: [number, number], fromYaw: number): WalkThrough {
+  // Going in through the right-hand doorway (the leaf that opens in), coming out through the left.
+  const start: [number, number] = dir === "in" ? [0.5, 1.0] : [-0.45, -1.0];
+  const points: [number, number][] = dir === "in" ? [start, [0.5, 0.35], LOBBY] : [start, [-0.45, 0.3], OUTSIDE];
+  const approach = walkTime(from, start);
+  // Through (and clear of the leaf's swing) once this far along the path.
+  const through = dir === "in" ? 0.65 + 1.15 : 1.3 + 0.9;
+  const length = points.slice(1).reduce((s, q, i) => s + Math.hypot(q[0] - points[i]![0], q[1] - points[i]![1]), 0);
+  return { dir, from, fromYaw, approach, points, pass: approach + through / STEP, done: approach + length / STEP + 0.15 };
+}
+export function walkThroughPose(time: number, plan: WalkThrough): Pose {
+  const face = plan.dir === "in" ? FACE_IN : FACE_OUT;
+  let at: [number, number], yaw = face;
+  if (time < plan.approach) ({ at, yaw } = walkTo(time / plan.approach, plan.from, plan.points[0]!, plan.fromYaw, face));
+  else {
+    const length = plan.points.slice(1).reduce((s, q, i) => s + Math.hypot(q[0] - plan.points[i]![0], q[1] - plan.points[i]![1]), 0);
+    at = along(plan.points, ((time - plan.approach) * STEP) / length);
+  }
+  return { x: at[0], z: at[1], yaw, sit: 0, shuffle: 0, lean: 0, left: null, right: null };
+}

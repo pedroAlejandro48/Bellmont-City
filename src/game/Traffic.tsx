@@ -25,6 +25,7 @@ import { allowedTurns, intersectionAhead, makeTrafficTurn, pointAlongTurn, progr
 
 import { makeText } from "./textures";
 import { knockDown, type GameState } from "./state";
+import { TRAFFIC_SEND_SECONDS, TrafficBuffer, trafficRow } from "./trafficShare";
 import { crossingOf, crossingStopDistance, holdAccidentQueue, signalStopDistance, trafficTargetSpeed, type CrossingAgent, type TrafficAgent } from "./trafficLogic";
 
 type Kind = VehicleKind;
@@ -253,10 +254,14 @@ export function Traffic({ state }: { state: GameState }) {
   const mats = useMats();
   const vehicles = useMemo<Vehicle[]>(() => {
     const r = rng(state.worldSeed + 42);
+    // What each vehicle looks like depends only on the world, so everyone in a room sees the same ones.
+    const looks = rng(state.worldSeed + 4243);
     const list: Vehicle[] = [];
     for (let i = 0; i < 64; i++) {
-      const roll = r();
+      const roll = looks();
       const kind: Kind = roll < 0.5 ? "car" : roll < 0.72 ? "taxi" : roll < 0.84 ? "bus" : "truck";
+      const color = PALETTE[Math.floor(looks() * PALETTE.length)] ?? PALETTE[0] ?? "#b3261e";
+      const cargo = looks() < 0.5 ? "#eeeeee" : (PALETTE[Math.floor(looks() * PALETTE.length)] ?? "#eeeeee");
       const outside = Math.max(Math.abs(state.pos.x), Math.abs(state.pos.z)) > WORLD_HALF;
       const axis = outside ? (Math.abs(state.pos.x) > Math.abs(state.pos.z) ? "x" : "z") : i % 2 === 0 ? "x" : "z";
       const cross = axis === "x" ? state.pos.z : state.pos.x;
@@ -276,14 +281,15 @@ export function Traffic({ state }: { state: GameState }) {
         x = axis === "x" ? t : crossLane; z = axis === "z" ? t : crossLane;
         if (isTrafficRoad(x, z, state.worldSeed) && trafficSpawnClear(x, z, VEHICLE_SIZE[kind][0], list)) break;
       }
-      if (!isTrafficRoad(x, z, state.worldSeed) || !trafficSpawnClear(x, z, VEHICLE_SIZE[kind][0], list)) continue;
+      // Nowhere clear: parked far away for now (it is brought back onto a road straight away).
+      if (!isTrafficRoad(x, z, state.worldSeed) || !trafficSpawnClear(x, z, VEHICLE_SIZE[kind][0], list)) { x = axis === "x" ? 100_000 + i * 30 : lane; z = axis === "z" ? 100_000 + i * 30 : lane; t = axis === "x" ? x : z; }
       const base = TRAFFIC_SPEED;
       list.push({
-        id: list.length, x, z, vx: 0, vz: 0, heldBy: null, crashUntil: 0, brake: false,
+        id: i, x, z, vx: 0, vz: 0, heldBy: null, crashUntil: 0, brake: false,
         kind,
         central,
-        color: PALETTE[Math.floor(r() * PALETTE.length)] ?? PALETTE[0] ?? "#b3261e",
-        cargo: r() < 0.5 ? "#eeeeee" : (PALETTE[Math.floor(r() * PALETTE.length)] ?? "#eeeeee"),
+        color,
+        cargo,
         axis,
         dir,
         lane,
@@ -313,8 +319,16 @@ export function Traffic({ state }: { state: GameState }) {
   const nextContacts = useRef(new Set<string>());
   const colliderIndices = useRef(new Map<number, number>());
   const steeringScratch = useMemo(() => ({ euler: new THREE.Euler(), quaternion: new THREE.Quaternion() }), []);
-  const bikeWait = useRef(new Map<number, number>());
+  const bikeWait = useRef(new Map<number, { key: string; since: number }>());
   const boxes = useMemo(() => ({ player: new THREE.Box3(), vehicle: new THREE.Box3() }), []);
+  // In a room: whether this player ran the traffic last frame, what the host sent, and stops for others' accidents.
+  const hostingRef = useRef(true);
+  const shared = useMemo(() => new TrafficBuffer(), []);
+  const publishTimer = useRef(0);
+  const remoteStops = useRef(new Map<number, number>());
+  const lastRiders = useRef(new Map<string, { x: number; z: number; at: number; speed: number }>());
+  const yawQuat = useMemo(() => new THREE.Quaternion(), []);
+  const upAxis = useMemo(() => new THREE.Vector3(0, 1, 0), []);
 
   useEffect(() => {
     vehicles.forEach((v, i) => {
@@ -411,6 +425,82 @@ export function Traffic({ state }: { state: GameState }) {
       target.position.set(v.x + dx * (reach + 30), 0, v.z + dz * (reach + 30)); target.updateMatrixWorld();
       light.intensity = 10 + d * 70;
     });
+    // ---------- in a room, run by someone else: draw their traffic, and be hit by it ----------
+    const link = state.trafficLink, hosting = !link || link.isHost();
+    if (hosting !== hostingRef.current) {
+      hostingRef.current = hosting;
+      vehicles.forEach((v, i) => {
+        const body = bodies.current[i];
+        if (!body) return;
+        body.setBodyType(hosting ? rapier.RigidBodyType.Dynamic : rapier.RigidBodyType.KinematicPositionBased, true);
+        if (hosting) {
+          // Taking over: carry on from where everyone last saw each vehicle, in its lane.
+          v.turn = null; v.t = v.axis === "x" ? v.x : v.z; v.nextIntersection = intersectionAhead(v, v.t); v.crashUntil = 0;
+          body.setLinvel({ x: v.vx, y: 0, z: v.vz }, true);
+        }
+      });
+    }
+    if (!hosting && link) {
+      const got = link.latest();
+      if (got) shared.push(got.snapshot, got.at);
+      state.vehiclePushes.clear();
+      const nowMs = Date.now();
+      solids.length = 0;
+      vehicles.forEach((v, i) => {
+        const body = bodies.current[i], g = refs.current[i];
+        const pose = shared.sample(v.id, nowMs);
+        if (!body || !pose) { if (g) g.visible = false; return; }
+        if (g) g.visible = true;
+        const px = v.x, pz = v.z;
+        v.x = pose.x; v.z = pose.z; v.vx = pose.vx; v.vz = pose.vz; v.brake = (pose.flags & 1) === 1;
+        v.axis = pose.flags & 2 ? "z" : "x"; v.dir = pose.flags & 4 ? -1 : 1; v.central = (pose.flags & 8) === 8; v.lane = pose.lane; v.slot = pose.slot;
+        v.t = v.axis === "x" ? v.x : v.z;
+        yawQuat.setFromAxisAngle(upAxis, pose.yaw);
+        body.setTranslation({ x: v.x, y: VEHICLE_SIZE[v.kind][1] / 2, z: v.z }, true); body.setRotation(yawQuat, true);
+        const speed = Math.hypot(v.vx, v.vz);
+        solids.push({ index: i, kind: v.kind, box: vehicleFootprint(v.x, v.z, pose.yaw, v.kind), speed });
+        if (g) { g.position.set(v.x, 0, v.z); const child = g.children[0]; if (child) child.quaternion.copy(yawQuat); }
+        const tail = brakeMats.current[i]; if (tail) tail.emissiveIntensity = v.brake ? 5 : 0.35 + d * 0.8;
+        // The same accident as with this player's own traffic: swept over this frame's movement.
+        const [length, height, width] = VEHICLE_SIZE[v.kind];
+        const jump = Math.hypot(v.x - px, v.z - pz) > 15;
+        const x0 = Math.min(v.x, jump ? v.x : px), x1 = Math.max(v.x, jump ? v.x : px), z0 = Math.min(v.z, jump ? v.z : pz), z1 = Math.max(v.z, jump ? v.z : pz);
+        const along = length / 2, across = width / 2;
+        if (v.axis === "x") { boxes.vehicle.min.set(x0 - along, 0, z0 - across); boxes.vehicle.max.set(x1 + along, height, z1 + across); }
+        else { boxes.vehicle.min.set(x0 - across, 0, z0 - along); boxes.vehicle.max.set(x1 + across, height, z1 + along); }
+        const ridingContact = state.scooter.riding && Math.hypot(v.x - state.scooter.pos.x, v.z - state.scooter.pos.z) < length / 2 + 0.85;
+        if (!state.accident && vehicleContactHurts(speed) && (boxes.player.intersectsBox(boxes.vehicle) || ridingContact && Math.abs((v.axis === "x" ? state.scooter.pos.z - v.z : state.scooter.pos.x - v.x)) < width / 2 + 0.3)) {
+          if (!contacts.current.has(i)) {
+            const direction = speed > 0.1 ? [v.vx / speed, v.vz / speed] as [number, number] : roadForward(v);
+            if (knockDown(state, i, v, [v.x, v.z], direction, THROW_DISTANCE * 1.75, Math.floor(Math.random() * 1e8))) {
+              const reach = length / 2 + 0.65;
+              state.pos.x = v.x + direction[0] * reach; state.pos.z = v.z + direction[1] * reach;
+              link.sendHit(i);
+            }
+          }
+          contacts.current.add(i);
+        } else contacts.current.delete(i);
+      });
+      return;
+    }
+    // ---------- running the traffic (alone, or for the whole room) ----------
+    // Everyone it is driven around: this player and, in a room, the others.
+    const players: { x: number; z: number }[] = [{ x: p.x, z: p.z }, ...state.others.map((o) => ({ x: o.x, z: o.z }))];
+    if (link) for (const id of link.takeHits()) remoteStops.current.set(id, now + ACCIDENT_STOP_SECONDS);
+    // Other players riding: traffic follows them like any slow vehicle (their speed worked out as they go).
+    const riders: { x: number; z: number; speed: number }[] = [];
+    for (const o of state.others) {
+      if (o.r < 0.5 || !o.id) continue;
+      const last = lastRiders.current.get(o.id);
+      const speed = last && now > last.at ? Math.min(20, Math.hypot(o.x - last.x, o.z - last.z) / (now - last.at)) : 0;
+      const smoothed = last ? last.speed + (speed - last.speed) * 0.2 : 0;
+      lastRiders.current.set(o.id, { x: o.x, z: o.z, at: now, speed: smoothed });
+      riders.push({ x: o.x, z: o.z, speed: smoothed });
+    }
+    // Bikes standing or lying about (this player's when not ridden, and everyone else's): obstacles in the road.
+    const parked: { key: string; x: number; z: number; fallen: boolean; occupied: boolean }[] = [];
+    const nearSomeone = (x: number, z: number) => players.some((q) => Math.hypot(q.x - x, q.z - z) < 2.5);
+    for (const b of [...state.otherBikes, ...state.parkedBikes]) parked.push({ key: b.id, x: b.box.x, z: b.box.z, fallen: b.fallen ?? true, occupied: nearSomeone(b.box.x, b.box.z) });
     vehicles.forEach((v, i) => {
       const body = bodies.current[i];
       if (!body) return;
@@ -420,9 +510,11 @@ export function Traffic({ state }: { state: GameState }) {
       // Local traffic pool recycles outside visibility, not at a world boundary.
       // A street vehicle somehow past the city's edge is off the road: put it back on a street at once.
       const offRoad = !exitRoad(v) && !v.turn && Math.max(Math.abs(v.x), Math.abs(v.z)) > WORLD_HALF + 8;
-      if ((Math.hypot(v.x - p.x, v.z - p.z) > 340 || offRoad) && v.crashUntil < now && !activeIncident) {
+      if ((players.every((q) => Math.hypot(v.x - q.x, v.z - q.z) > 340) || offRoad) && v.crashUntil < now && !activeIncident) {
         // Work out the new road first and only move the vehicle onto it once a clear spot is found,
-        // so a vehicle that stays put keeps its own road, lane and flags.
+        // so a vehicle that stays put keeps its own road, lane and flags. In a room, the vehicles are shared
+        // out among the players, so there is traffic around each of them.
+        const p = players[i % players.length] ?? state.pos;
         const outside = Math.max(Math.abs(p.x), Math.abs(p.z)) > WORLD_HALF;
         const axis = outside ? (Math.abs(p.x) > Math.abs(p.z) ? "x" : "z") : v.axis;
         const cross = axis === "x" ? p.z : p.x;
@@ -511,16 +603,26 @@ export function Traffic({ state }: { state: GameState }) {
         contacts.current.add(i);
       } else contacts.current.delete(i);
 
+      // The nearest bike standing or lying in this vehicle's lane ahead (this player's own, unridden, or anyone
+      // else's), and how long the vehicle has been held up by it.
       const bike = state.scooter;
-      const bikePosition: [number, number] = [bike.pos.x, bike.pos.z];
-      const bikeAhead = forwardDistance(v, [v.x, v.z], bikePosition);
-      const bikeCross = v.axis === "x" ? bike.pos.z : bike.pos.x;
       const vehicleCross = v.axis === "x" ? v.z : v.x;
-      const bikeInLane = Math.abs(bikeCross - vehicleCross) < width / 2 + 0.65;
-      const bikeObstacle = !bike.riding && (bikeInLane || bikeWait.current.has(i)) && bikeAhead > -length / 2 - 2 && bikeAhead < brakingGap(Math.hypot(v.vx, v.vz)) + 30;
-      if (bikeObstacle && !bikeWait.current.has(i)) bikeWait.current.set(i, now);
-      if (bike.riding || (!bikeObstacle && (!bike.fallen || bikeAhead < -length / 2 - 2))) bikeWait.current.delete(i);
-      const bikeOccupied = bike.riding || bike.action !== null || (bike.fallen && (state.accident !== null || Math.hypot(state.pos.x - bike.pos.x, state.pos.z - bike.pos.z) < 2.5));
+      const ownBike = bike.id !== null && !bike.riding ? [{ key: "own", x: bike.pos.x, z: bike.pos.z, fallen: bike.fallen, occupied: bike.action !== null || (bike.fallen && (state.accident !== null || Math.hypot(state.pos.x - bike.pos.x, state.pos.z - bike.pos.z) < 2.5)) }] : [];
+      const waiting = bikeWait.current.get(i);
+      let obstacle: (typeof parked)[number] | null = null, bikeAhead = Infinity;
+      for (const c of [...ownBike, ...parked]) {
+        const ahead = forwardDistance(v, [v.x, v.z], [c.x, c.z]);
+        const inLane = Math.abs((v.axis === "x" ? c.z : c.x) - vehicleCross) < width / 2 + 0.65;
+        if ((inLane || waiting?.key === c.key) && ahead > -length / 2 - 2 && ahead < brakingGap(Math.hypot(v.vx, v.vz)) + 30 && ahead < bikeAhead) { obstacle = c; bikeAhead = ahead; }
+      }
+      const bikeObstacle = obstacle !== null;
+      if (obstacle && waiting?.key !== obstacle.key) bikeWait.current.set(i, { key: obstacle.key, since: now });
+      if (!obstacle) bikeWait.current.delete(i);
+      const bikeCross = obstacle ? (v.axis === "x" ? obstacle.z : obstacle.x) : 0;
+      const bikeInLane = !!obstacle && Math.abs(bikeCross - vehicleCross) < width / 2 + 0.65;
+      const ownAhead = forwardDistance(v, [v.x, v.z], [bike.pos.x, bike.pos.z]);
+      const ownInLane = Math.abs((v.axis === "x" ? bike.pos.z : bike.pos.x) - vehicleCross) < width / 2 + 0.65;
+      const bikeOccupied = bike.riding || bike.action !== null;
       let targetSpeed = trafficTargetSpeed(v, vehicles, state.incidents, now);
       // Test builds: why a vehicle is held (the first rule that brought it to a stop).
       let why = targetSpeed < 0.1 ? "follow" : "";
@@ -542,9 +644,15 @@ export function Traffic({ state }: { state: GameState }) {
         }
         return null;
       };
-      const wait = bikeWait.current.get(i);
-      if (bikeObstacle && wait !== undefined) {
-        if (bikeOccupied || (bike.fallen && !scooterBypassReady(wait, now)) || Math.hypot(state.pos.x - bike.pos.x, state.pos.z - bike.pos.z) < 1.6 && state.accident) targetSpeed = 0;
+      const wait = bikeWait.current.get(i)?.since;
+      if (bikeObstacle && obstacle && wait !== undefined) {
+        // A fallen bike: stop short of it, and only go round once it has lain there a while (or never, while
+        // someone is at it); an upright one is passed slowly.
+        if (obstacle.occupied || (obstacle.fallen && !scooterBypassReady(wait, now)) || Math.hypot(state.pos.x - obstacle.x, state.pos.z - obstacle.z) < 1.6 && state.accident) {
+          // Brake to a stop a few metres short of it (not wherever it was first seen).
+          const gap = bikeAhead - length / 2 - 3;
+          targetSpeed = Math.min(targetSpeed, gap < 0.5 ? 0 : Math.sqrt(2 * 4 * gap));
+        }
         else {
           const lane = passLane(bikeCross, width / 2 + 1.25);
           if (lane === null) targetSpeed = 0; else targetLane = lane;
@@ -558,12 +666,25 @@ export function Traffic({ state }: { state: GameState }) {
       }
       // A ridden/occupied bike is part of traffic: follow it like a leader, never bypass it.
       const riderInLane = Math.abs((v.axis === "x" ? state.pos.z : state.pos.x) - vehicleCross) < width / 2 + 0.9;
-      if (bikeOccupied && (bikeInLane || riderInLane) && bikeAhead > -length / 2) {
+      if (bikeOccupied && (ownInLane || riderInLane) && ownAhead > -length / 2) {
+        const bikeAhead = ownAhead;
         const [rfx, rfz] = roadForward(v);
         const bikeSpeed = bike.riding ? Math.max(0, Math.sin(bike.yaw) * rfx * bike.speed + Math.cos(bike.yaw) * rfz * bike.speed) : 0;
         const gap = bikeAhead - length / 2 - 1;
         if (gap < brakingGap(Math.hypot(v.vx, v.vz)) + 4) targetSpeed = Math.min(targetSpeed, gap < 2.5 ? 0 : bikeSpeed + Math.max(0, gap - 2.5) * 0.5);
       }
+      // Other players riding in the lane ahead: followed like a slow vehicle, never driven into.
+      for (const rider of riders) {
+        const ahead = forwardDistance(v, [v.x, v.z], [rider.x, rider.z]);
+        if (Math.abs((v.axis === "x" ? rider.z : rider.x) - vehicleCross) >= width / 2 + 0.9 || ahead <= -length / 2) continue;
+        const gap = ahead - length / 2 - 1;
+        if (gap < brakingGap(Math.hypot(v.vx, v.vz)) + 4) targetSpeed = Math.min(targetSpeed, gap < 2.5 ? 0 : rider.speed + Math.max(0, gap - 2.5) * 0.5);
+      }
+      // Someone else in the room was knocked down by this vehicle: it stops a while, as for this player.
+      const remoteStop = remoteStops.current.get(i);
+      const stoppedForOther = remoteStop !== undefined && now < remoteStop;
+      if (remoteStop !== undefined && !stoppedForOther) remoteStops.current.delete(i);
+      if (stoppedForOther) targetSpeed = 0;
       const incident = state.incidents.find((item) => item.vehicleId === i && !item.passed && !item.scooterCrash);
       if (incident) {
         if (now - incident.startedAt < (incident.scooterCrash ? 15 : ACCIDENT_STOP_SECONDS)) targetSpeed = 0;
@@ -617,7 +738,7 @@ export function Traffic({ state }: { state: GameState }) {
       const currentSpeed = v.turn ? Math.hypot(v.vx, v.vz) : v.vx * fx + v.vz * fz;
       v.brake = targetSpeed < currentSpeed - 0.25 || targetSpeed < 0.1 || now < v.crashUntil;
       const tail = brakeMats.current[i]; if (tail) tail.emissiveIntensity = v.brake ? 5 : 0.35 + d * 0.8;
-      if (incident && now - incident.startedAt < (incident.scooterCrash ? 15 : ACCIDENT_STOP_SECONDS)) {
+      if ((incident && now - incident.startedAt < (incident.scooterCrash ? 15 : ACCIDENT_STOP_SECONDS)) || stoppedForOther) {
         body.setLinvel({ x: 0, y: 0, z: 0 }, true);
         body.setAngvel({ x: 0, y: 0, z: 0 }, true);
       } else if (now < v.crashUntil) {
@@ -660,6 +781,16 @@ export function Traffic({ state }: { state: GameState }) {
         body.setLinvel({ x: Math.cos(actualYaw) * speed, y: 0, z: -Math.sin(actualYaw) * speed }, true);
       }
     });
+    // Running the room's traffic: tell everyone where it is, ten times a second.
+    publishTimer.current -= dt;
+    if (link && publishTimer.current <= 0) {
+      publishTimer.current = TRAFFIC_SEND_SECONDS;
+      link.publish({ v: 1, rows: vehicles.map((v, i) => {
+        const q = bodies.current[i]?.rotation();
+        const yaw = q ? steeringScratch.euler.setFromQuaternion(steeringScratch.quaternion.set(q.x, q.y, q.z, q.w), "YXZ").y : 0;
+        return trafficRow(v.id, v.x, v.z, yaw, v.vx, v.vz, v.brake, v.axis, v.dir, v.central, v.lane, v.slot);
+      }) });
+    }
   });
 
   return (

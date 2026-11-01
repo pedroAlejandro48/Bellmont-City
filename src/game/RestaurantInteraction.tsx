@@ -4,9 +4,10 @@ import * as THREE from "three";
 import { SIDEWALK_H, restaurantOpen, timeInfo, type City } from "./config";
 import type { GameState, Script, WorldReach } from "./state";
 import { InteractionPrompt } from "./InteractionPrompt";
+import { OPENER_PASS, doorState, type DoorUse, type Leaf } from "./doors";
 import {
   CHAIR, ENTER, LEAVE, LOBBY, enterLead, leaveLead, OUTSIDE, SIT, behindChair, enterPose, leavePose, localYaw, makeRoom, nearDoorInside, nearDoorOutside,
-  planSit, roomKey, sitPose, toLocal, toWorld, worldYaw, type Frame, type Pose, type Reach, type Room,
+  planSit, planWalkThrough, roomKey, sitPose, toLocal, walkThroughPose, toWorld, worldYaw, type Frame, type Pose, type Reach, type Room,
 } from "./restaurantRoom";
 
 /**
@@ -17,9 +18,37 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
   const here = useMemo(() => city.buildings.filter((b) => b.restaurant), [city]);
   const prompt = useRef({ visible: false, x: 0, y: 0, z: 0, label: undefined as string | undefined });
   const last = useRef<{ x: number; z: number; walk: number } | null>(null);
+  /** This player's door uses (shared in a room), and a door it is waiting on to finish closing. */
+  const mine = useRef<DoorUse[]>([]);
+  const waiting = useRef<{ key: string; leaf: Leaf } | null>(null);
 
   useFrame((_, raw) => {
     const dt = Math.max(1e-3, Math.min(raw, 0.05)), now = state.simulationTime;
+    // Everyone's uses of the doors (this player's and, in a room, the others'), on this player's clock.
+    const wall = performance.now() / 1000;
+    mine.current = mine.current.filter((u) => wall - u.start < 40);
+    const uses = [...mine.current, ...(state.doorLink?.others(wall) ?? [])];
+    const usesOf = (key: string, leaf: Leaf) => uses.filter((u) => u.key === key && u.leaf === leaf);
+    /**
+     * Going through a door: open it if it is shut, walk through behind whoever has it open, or (while it swings
+     * shut) wait for it to close. Returns how, or null when waiting.
+     */
+    const useDoor = (r: Room, leaf: Leaf, from: [number, number], fromYaw: number) => {
+      const ds = doorState(usesOf(r.key, leaf), wall);
+      if (ds.phase === "closing") { waiting.current = { key: r.key, leaf }; return null; }
+      waiting.current = null;
+      let use: DoorUse, walk: ReturnType<typeof planWalkThrough> | undefined;
+      if (ds.phase === "closed") {
+        const lead = leaf === "right" ? enterLead(from) : leaveLead(from);
+        use = { key: r.key, leaf, mode: "open", start: wall, lead, pass: lead + OPENER_PASS[leaf] };
+      } else {
+        walk = planWalkThrough(leaf === "right" ? "in" : "out", from, fromYaw);
+        use = { key: r.key, leaf, mode: "follow", start: wall, lead: 0, pass: walk.pass };
+      }
+      mine.current.push(use);
+      state.doorLink?.publish(use);
+      return { mode: use.mode, walk };
+    };
     for (const b of here) if (!state.rooms.has(roomKey(b))) state.rooms.set(roomKey(b), makeRoom(b));
     const hours = timeInfo(state.elapsed).hours;
     const bike = state.scooter;
@@ -64,22 +93,35 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
     }
     state.doorPrompt = door !== null || inter !== null;
 
+    // Waiting for a door to finish closing: once it is shut, open it (unless the player has walked off).
+    const w = waiting.current;
+    if (w) {
+      const at = w.leaf === "right" ? door?.room : inDoor ?? undefined;
+      if (!at || at.key !== w.key || state.keys.size > 0) waiting.current = null;
+      else if (doorState(usesOf(w.key, w.leaf), wall).phase === "closed") state.interactQueued = true;
+    }
     // E: go in, come out, or sit down. Inside, E never reaches the bike or the benches.
     if (state.interactQueued) {
       if (door) {
         state.interactQueued = false;
         if (door.open) {
-          const f = door.room.frame, [lx, lz] = toLocal(f, state.pos.x, state.pos.z);
-          state.interior = { key: door.room.key, phase: "entering", startedAt: now, from: [lx, lz], fromYaw: localYaw(f, state.rotY), outside: toWorld(f, OUTSIDE[0], OUTSIDE[1]), outsideYaw: worldYaw(f, 0), cameraSet: false };
-          state.keys.clear(); state.jumpQueued = false;
+          const f = door.room.frame, [lx, lz] = toLocal(f, state.pos.x, state.pos.z), fromYaw = localYaw(f, state.rotY);
+          const how = useDoor(door.room, "right", [lx, lz], fromYaw);
+          if (how) {
+            state.interior = { key: door.room.key, phase: "entering", startedAt: now, from: [lx, lz], fromYaw, outside: toWorld(f, OUTSIDE[0], OUTSIDE[1]), outsideYaw: worldYaw(f, 0), cameraSet: false, mode: how.mode, ...(how.walk ? { walk: how.walk } : {}) };
+            state.keys.clear(); state.jumpQueued = false;
+          }
         }
       } else if (inter) {
         state.interactQueued = false;
         const found = chair as { room: Room; index: number } | null;
         if (inDoor) {
-          const [lx, lz] = toLocal(inDoor.frame, state.pos.x, state.pos.z);
-          Object.assign(inter, { phase: "leaving", startedAt: now, from: [lx, lz], fromYaw: localYaw(inDoor.frame, state.rotY), cameraSet: false });
-          state.keys.clear(); state.jumpQueued = false;
+          const [lx, lz] = toLocal(inDoor.frame, state.pos.x, state.pos.z), fromYaw = localYaw(inDoor.frame, state.rotY);
+          const how = useDoor(inDoor, "left", [lx, lz], fromYaw);
+          if (how) {
+            Object.assign(inter, { phase: "leaving", startedAt: now, from: [lx, lz], fromYaw, cameraSet: false, mode: how.mode, walk: how.walk });
+            state.keys.clear(); state.jumpQueued = false;
+          }
         } else if (found) {
           const [lx, lz] = toLocal(found.room.frame, state.pos.x, state.pos.z);
           const plan = planSit(found.room, found.index, lx, lz, localYaw(found.room.frame, state.rotY));
@@ -98,23 +140,21 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
       frame = activeRoom.frame;
       const t = now - active.startedAt;
       if (active.phase === "entering") {
-        const lead = enterLead(active.from);
-        const step = enterPose(Math.min(t, ENTER.done + lead), active.from, active.fromYaw);
-        activeRoom.doors = step.door; pose = step;
-        if (t >= ENTER.done + lead) {
-          // In the lobby with the door closed behind (the camera came in too); the world outside carried on.
+        const lead = enterLead(active.from), walk = active.mode === "follow" ? active.walk : undefined;
+        const end = walk ? walk.done : ENTER.done + lead;
+        pose = walk ? walkThroughPose(Math.min(t, end), walk) : enterPose(Math.min(t, end), active.from, active.fromYaw);
+        if (t >= end) {
+          // In the lobby (the camera came in too); the world outside carried on.
           active.phase = "inside"; active.startedAt = now; pose = null;
-          activeRoom.doors = { left: 0, right: 0 };
           const [x, z] = toWorld(frame, LOBBY[0], LOBBY[1]);
           state.pos.x = x; state.pos.z = z; state.rotY = worldYaw(frame, Math.PI);
         }
       } else if (active.phase === "leaving") {
-        const lead = leaveLead(active.from);
-        const step = leavePose(Math.min(t, LEAVE.done + lead), active.from, active.fromYaw);
-        activeRoom.doors = step.door; pose = step;
-        if (t >= LEAVE.done + lead) {
+        const lead = leaveLead(active.from), walk = active.mode === "follow" ? active.walk : undefined;
+        const end = walk ? walk.done : LEAVE.done + lead;
+        pose = walk ? walkThroughPose(Math.min(t, end), walk) : leavePose(Math.min(t, end), active.from, active.fromYaw);
+        if (t >= end) {
           state.interior = null; pose = null;
-          activeRoom.doors = { left: 0, right: 0 };
           const [x, z] = toWorld(frame, OUTSIDE[0], OUTSIDE[1]);
           state.pos.x = x; state.pos.z = z; state.rotY = worldYaw(frame, 0);
         }
@@ -135,6 +175,12 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
           state.pos.x = x; state.pos.z = z; state.rotY = worldYaw(frame, plan.startYaw);
         }
       }
+    }
+
+    // Every door swings the same for everyone: from all the uses of it.
+    for (const r of state.rooms.values()) {
+      const left = doorState(usesOf(r.key, "left"), wall).angle, right = doorState(usesOf(r.key, "right"), wall).angle;
+      if (r.doors.left !== left || r.doors.right !== right) r.doors = { left, right };
     }
 
     if (pose && frame) {
