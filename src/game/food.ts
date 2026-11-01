@@ -14,7 +14,7 @@ export const MENU_BOARDS: Record<RestaurantKind, { sections: MenuBoardSection[];
   cafe: {
     note: "Oat, almond or soy milk +$0.60",
     sections: [
-      { title: "Coffee", items: [["Espresso", "2.50"], ["Americano", "3.00"], ["Cappuccino", "3.75"], ["Latte", "4.00"], ["Mocha", "4.50"], ["Cold Brew", "4.25"]] },
+      { title: "Coffee", items: [["Espresso", "2.50"], ["Americano", "3.00"], ["Cappuccino", "3.75"], ["Latte", "4.00"], ["Mocha", "4.50"], ["Cold Brew", "4.25"], ["Bottled Water", "1.75"]] },
       { title: "Bakery", items: [["Butter Croissant", "3.25"], ["Blueberry Muffin", "3.00"], ["Cinnamon Roll", "3.75"], ["Almond Biscotti", "2.25"]] },
       { title: "Breakfast", items: [["Avocado Toast", "7.50"], ["Egg & Cheese Bagel", "6.25"], ["Yogurt Parfait", "5.50"], ["Pancake Stack", "8.00"]] },
     ],
@@ -24,7 +24,7 @@ export const MENU_BOARDS: Record<RestaurantKind, { sections: MenuBoardSection[];
     sections: [
       { title: "Pizze", items: [["Margherita", "12.00"], ["Pepperoni", "14.00"], ["Quattro Formaggi", "15.00"], ["Diavola", "15.00"], ["Capricciosa", "16.00"], ["Ortolana", "14.00"]] },
       { title: "Antipasti", items: [["Garlic Knots", "5.00"], ["Arancini (3)", "6.50"], ["Caesar Salad", "7.00"], ["Bruschetta", "6.00"]] },
-      { title: "Dolci & Bevande", items: [["Tiramisù", "6.00"], ["Cannoli (2)", "5.00"], ["Panna Cotta", "5.50"], ["San Pellegrino", "2.50"]] },
+      { title: "Dolci & Bevande", items: [["Tiramisù", "6.00"], ["Cannoli (2)", "5.00"], ["Panna Cotta", "5.50"], ["San Pellegrino", "2.50"], ["Bottled Water", "2.00"]] },
     ],
   },
   fine: {
@@ -32,7 +32,7 @@ export const MENU_BOARDS: Record<RestaurantKind, { sections: MenuBoardSection[];
     sections: [
       { title: "Sushi & Sashimi", items: [["Salmon Nigiri (2)", "7"], ["Bluefin Tuna Nigiri (2)", "9"], ["Dragon Roll", "16"], ["Sashimi Moriawase", "28"]] },
       { title: "Kitchen", items: [["Miso Soup", "4"], ["Chicken Teriyaki", "19"], ["Tonkotsu Ramen", "17"], ["A5 Wagyu Tataki", "34"]] },
-      { title: "Sweets & Tea", items: [["Matcha Mochi", "7"], ["Yuzu Sorbet", "6"], ["Sencha Green Tea", "3"], ["Sake (glass)", "9"]] },
+      { title: "Sweets & Tea", items: [["Matcha Mochi", "7"], ["Yuzu Sorbet", "6"], ["Sencha Green Tea", "3"], ["Sake (glass)", "9"], ["Bottled Water", "3"]] },
     ],
   },
   burger: {
@@ -40,7 +40,7 @@ export const MENU_BOARDS: Record<RestaurantKind, { sections: MenuBoardSection[];
     sections: [
       { title: "Burgers", items: [["Classic Bell", "7.99"], ["Double Bell", "10.49"], ["Bacon BBQ", "9.99"], ["Crispy Chicken", "8.49"], ["Veggie Bell", "7.99"]] },
       { title: "Sides", items: [["Fries", "2.99"], ["Cheese Fries", "3.99"], ["Onion Rings", "3.49"], ["Nuggets (6)", "4.49"]] },
-      { title: "Shakes & Drinks", items: [["Vanilla Shake", "4.49"], ["Chocolate Shake", "4.49"], ["Strawberry Shake", "4.49"], ["Fountain Soda", "1.99"]] },
+      { title: "Shakes & Drinks", items: [["Vanilla Shake", "4.49"], ["Chocolate Shake", "4.49"], ["Strawberry Shake", "4.49"], ["Fountain Soda", "1.99"], ["Bottled Water", "1.49"]] },
     ],
   },
 };
@@ -49,8 +49,11 @@ export const MENU_BOARDS: Record<RestaurantKind, { sections: MenuBoardSection[];
 const DRINKS = new Set([
   "Espresso", "Americano", "Cappuccino", "Latte", "Mocha", "Cold Brew",
   "San Pellegrino", "Sencha Green Tea", "Sake (glass)",
-  "Vanilla Shake", "Chocolate Shake", "Strawberry Shake", "Fountain Soda",
+  "Vanilla Shake", "Chocolate Shake", "Strawberry Shake", "Fountain Soda", "Bottled Water",
 ]);
+export const isDrinkName = (name: string) => DRINKS.has(name);
+/** Bottled water comes in a bottle (everything else to drink in a lidded cup). */
+export const isWaterName = (name: string) => name === "Bottled Water";
 
 export type MenuItem = { name: string; price: number; drink: boolean };
 export type MenuSection = { title: string; items: MenuItem[] };

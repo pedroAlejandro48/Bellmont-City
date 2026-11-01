@@ -267,12 +267,14 @@ function makeMenu(kind: RestaurantKind) {
   fitText(g, RESTAURANTS[kind].name, font(look.head), 54, 700); g.fillText(RESTAURANTS[kind].name, W / 2, 62);
   g.fillStyle = look.rule; g.fillRect(60, 104, W - 120, 2);
   const columns = menu.sections.length, colW = (W - 80) / columns;
+  // Rows closer together when a column is long, so the note at the bottom stays clear.
+  const rows = Math.max(...menu.sections.map((sec) => sec.items.length)), step = Math.min(46, 232 / Math.max(1, rows - 1));
   menu.sections.forEach((section, i) => {
     const x0 = 40 + i * colW + 14, x1 = 40 + (i + 1) * colW - 14;
     g.textAlign = "center"; g.fillStyle = look.title;
     fitText(g, section.title, font(look.head), 34, x1 - x0); g.fillText(section.title, (x0 + x1) / 2, 140);
     section.items.forEach(([name, price], row) => {
-      const y = 190 + row * 46;
+      const y = 190 + row * step;
       g.fillStyle = look.text; g.textAlign = "left";
       fitText(g, name, font(look.body), 22, x1 - x0 - 80); g.fillText(name, x0, y);
       g.fillStyle = look.price; g.textAlign = "right";

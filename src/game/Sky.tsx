@@ -1,7 +1,8 @@
+import { stepNeeds } from "./needs";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { rng, timeInfo } from "./config";
+import { GAME_MINUTE, rng, timeInfo } from "./config";
 import { Environment, Lightformer } from "@react-three/drei";
 import type { GameState } from "./state";
 
@@ -104,7 +105,14 @@ export function SkyAndLights({ state }: { state: GameState }) {
   }, [scene, color, fog]);
 
   useFrame((_, raw) => {
-    if (state.health > 0) state.elapsed += Math.min(raw, 0.1);
+    if (state.health > 0) {
+      const step = Math.min(raw, 0.1);
+      state.elapsed += step;
+      // Hunger and thirst run down; either at zero hurts, otherwise health slowly comes back.
+      const next = stepNeeds(state, step / GAME_MINUTE);
+      state.hunger = next.hunger; state.thirst = next.thirst; state.health = next.health;
+      if (state.health <= 0) { state.health = 0; state.deathStartedAt = performance.now(); state.keys.clear(); state.jumpQueued = false; }
+    }
     const ti = timeInfo(state.elapsed);
     state.darkness = ti.darkness;
     const e = ti.elevation;

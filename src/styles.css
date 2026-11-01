@@ -194,6 +194,11 @@
 }
 
 .health-meter { background: var(--color-muted); }
+.need-meter { background: var(--color-muted); }
+.need-health > div { background: var(--color-health); }
+.need-hunger > div { background: #f2a33a; }
+.need-thirst > div { background: #3fa7f5; }
+.need-low > div { background: var(--color-destructive); }
 .health-meter > div { background: var(--color-health); }
 .health-critical > div { background: var(--color-destructive); }
 

@@ -76,6 +76,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
   }, [state]);
   const [hud, setHud] = useState(() => timeInfo(state.elapsed));
   const [health, setHealth] = useState(state.health);
+  const [needs, setNeeds] = useState({ hunger: state.hunger, thirst: state.thirst });
   const [riding, setRiding] = useState(state.scooter.riding);
   const [speed, setSpeed] = useState(0);
   const [dead, setDead] = useState(state.health === 0);
@@ -98,6 +99,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
     let deathSeen = false;
     const id = window.setInterval(() => {
       setHealth(state.health);
+      setNeeds((old) => (Math.round(old.hunger * 2) === Math.round(state.hunger * 2) && Math.round(old.thirst * 2) === Math.round(state.thirst * 2) ? old : { hunger: state.hunger, thirst: state.thirst }));
       setCash(state.cash);
       setRiding(state.scooter.riding);
       setSpeed(Math.round(Math.abs(state.scooter.speed) / MPH_TO_MPS));
@@ -166,11 +168,15 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
         {Overlay && <Overlay state={state} />}
         {riding && <div className="hud-panel absolute bottom-24 left-1/2 flex h-16 w-40 -translate-x-1/2 items-baseline justify-center gap-2 px-4 py-3" aria-label="Scooter speed"><span className="font-display text-3xl tabular-nums">{speed}</span><span className="text-xs text-muted-foreground">MPH</span></div>}
         <div className="absolute bottom-6 left-1/2 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-stretch gap-2">
-          <div className="hud-panel w-64 min-w-0 px-4 py-3">
-            <div className="mb-2 flex justify-between text-xs font-bold">
-              <span>HEALTH</span><span>{health}%</span>
-            </div>
-            <Progress aria-label="Health" value={health} className={`health-meter h-3 ${health <= 20 ? "health-critical" : ""}`} />
+          <div className="hud-panel w-64 min-w-0 space-y-1.5 px-4 py-2.5">
+            {([["HEALTH", health, "health"], ["HUNGER", needs.hunger, "hunger"], ["THIRST", needs.thirst, "thirst"]] as const).map(([label, value, kind]) => (
+              <div key={kind}>
+                <div className="mb-0.5 flex justify-between text-[10px] font-bold leading-none tracking-wide">
+                  <span>{label}</span><span className="tabular-nums">{Math.round(value)}%</span>
+                </div>
+                <Progress aria-label={label.charAt(0) + label.slice(1).toLowerCase()} value={value} className={`need-meter need-${kind} h-1.5 ${value <= 20 ? "need-low" : ""}`} />
+              </div>
+            ))}
           </div>
           <div className="hud-panel flex aspect-square shrink-0 flex-col items-center justify-center gap-1 px-1" aria-label={`Cash: $${cashText}`}>
             <span className="text-[10px] font-bold leading-none tracking-wide">CASH</span>

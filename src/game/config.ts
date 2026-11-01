@@ -510,6 +510,9 @@ export type SaveData = {
   scooter?: SavedScooter | null;
   benchSeat?: number | null;
   cash?: number;
+  /** 0..100: how fed and how watered the character is. */
+  hunger?: number;
+  thirst?: number;
 };
 /** Every character starts with this much money. */
 export const STARTING_CASH = 200;
@@ -529,6 +532,8 @@ export const DEFAULT_SAVE: SaveData = {
   scooter: null,
   benchSeat: null,
   cash: STARTING_CASH,
+  hunger: 100,
+  thirst: 100,
 };
 
 export const VEHICLE_DAMAGE = 20;

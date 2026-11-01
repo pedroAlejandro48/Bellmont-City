@@ -80,6 +80,9 @@ export type VehicleSolid = { index: number; kind: VehicleKind; box: SolidBox; sp
 
 export type GameState = {
   health: number;
+  /** 0..100: how fed and how watered the character is (either at zero hurts). */
+  hunger: number;
+  thirst: number;
   deathStartedAt: number | null;
   lastImpactAt: number;
   elapsed: number;
@@ -153,6 +156,8 @@ export type GameState = {
 export function createState(save: SaveData): GameState {
   return {
     health: Math.max(0, Math.min(100, save.health ?? 100)),
+    hunger: Math.max(0, Math.min(100, save.hunger ?? 100)),
+    thirst: Math.max(0, Math.min(100, save.thirst ?? 100)),
     deathStartedAt: save.health === 0 ? performance.now() : null,
     lastImpactAt: -Infinity,
     elapsed: save.elapsed,
@@ -206,6 +211,8 @@ export function toSave(s: GameState): SaveData {
     pos: s.interior ? [s.interior.outside[0], s.pos.y, s.interior.outside[1]] : [s.pos.x, s.pos.y, s.pos.z],
     rotY: s.interior ? s.interior.outsideYaw : s.rotY,
     cash: s.cash,
+    hunger: Math.round(s.hunger * 100) / 100,
+    thirst: Math.round(s.thirst * 100) / 100,
     camYaw: s.camYaw,
     camPitch: s.camPitch,
     worldSeed: s.worldSeed,

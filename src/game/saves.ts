@@ -16,6 +16,8 @@ export function readSave(value: unknown): SaveData {
     scooter: readScooter(data['scooter']),
     benchSeat: typeof data['benchSeat'] === 'number' && Number.isInteger(data['benchSeat']) && BENCH_SEATS[data['benchSeat']] ? data['benchSeat'] : null,
     cash: Math.max(0, number("cash", DEFAULT_SAVE.cash ?? 200)),
+    hunger: Math.max(0, Math.min(100, number("hunger", 100))),
+    thirst: Math.max(0, Math.min(100, number("thirst", 100))),
     pos: [...pos], rotY: number("rotY", DEFAULT_SAVE.rotY), camYaw: number("camYaw", DEFAULT_SAVE.camYaw),
     ...(data['accident'] ? { accident: readAccident(data['accident']) } : {}),
   };
