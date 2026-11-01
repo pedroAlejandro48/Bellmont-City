@@ -1,4 +1,4 @@
-import { isNpcSnapshot, type NpcLink } from "@/game/pedestrians";
+import { isNpcSnapshot, type NpcLink, type NpcSnapshot } from "@/game/pedestrians";
 import type { NamedRoom, Peer } from "@/platform/realtime";
 
 const joinedAt = (p: Peer) => (typeof p.presence["joinedAt"] === "number" ? p.presence["joinedAt"] : Infinity);
@@ -17,6 +17,9 @@ const isHit = (v: unknown): v is Hit => {
 export function makeNpcLink(channel: NamedRoom): NpcLink {
   const seen = new Map<string, number>();
   let mine: Hit[] = [];
+  // Snapshots are numbered and handed out as the same object until a new one arrives (presence objects are
+  // rebuilt on every update, so identity alone would make every frame look like a fresh snapshot).
+  let seq = 0, cached: { n: unknown; snapshot: NpcSnapshot } | null = null;
   const host = () => {
     let best: Peer | null = null;
     for (const p of channel.peers()) {
@@ -27,12 +30,15 @@ export function makeNpcLink(channel: NamedRoom): NpcLink {
   };
   return {
     isHost: () => host()?.sameTab ?? true,
-    publish: (snapshot) => { void channel.presence({ npcs: snapshot }).catch(() => {}); },
+    publish: (snapshot) => { seq += 1; void channel.presence({ npcs: { ...snapshot, n: seq } }).catch(() => {}); },
     latest: () => {
       const h = host();
       if (!h || h.sameTab) return null;
       const value = h.presence["npcs"];
-      return isNpcSnapshot(value) ? value : null;
+      if (!isNpcSnapshot(value)) return null;
+      const n = (value as { n?: unknown }).n;
+      if (!cached || cached.n !== n || n === undefined) cached = { n, snapshot: value };
+      return cached.snapshot;
     },
     sendHit: (id, direction) => {
       const at = Date.now();

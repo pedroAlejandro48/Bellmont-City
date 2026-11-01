@@ -1,6 +1,6 @@
 import { useFrame } from "@react-three/fiber";
 import { POLES, carryElbow, reachArm } from "./arms";
-import { GRAB_TIME, grabReach } from "./food";
+import { DROP_TIME, GRAB_TIME, PACK_SIZE, dropReach, grabReach } from "./food";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { SIGNAL_POLES, benchJoints, benchPose, floorHeight, cameraRelativeVelocity, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, type City, PARK_SOLIDS, circleBoxPush, bikePushShare, scooterFootprint, scooterSide, SCOOTER_TIP, BENCH_SEATS, BENCH_SIT_SECONDS, BENCH_STAND_SECONDS, benchStandHeight, BENCH_SEAT_TOP, BENCH_BACK_TOP, BENCH_BACKRESTS } from "./config";
@@ -134,6 +134,10 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     // Reaching for food on a counter: stop, and turn a little toward it.
     const grab = state.grab, grabT = grab ? state.simulationTime - grab.at : Infinity;
     const grabbing = grab !== null && grabT < GRAB_TIME;
+    // Putting food down (Q), or picking something up off the ground: a squat.
+    const dropT = state.drop ? state.simulationTime - state.drop.at : Infinity, dropping = dropT < DROP_TIME;
+    const lowGrab = grabbing && grab !== null && grab.target.y - floorHeight(grab.target.x, grab.target.z) < 0.8;
+    const crouch = dropping ? dropReach(dropT) : lowGrab ? grabReach(grabT) : 0;
     if (script) {
       s.vel.set(0, 0, 0); s.vy = 0; s.grounded = true;
       p.x = script.x; p.z = script.z; p.y = floorHeight(p.x, p.z);
@@ -143,6 +147,8 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       s.vy = 0;
       s.grounded = true;
       p.y = floorHeight(p.x, p.z);
+    } else if (dropping && s.grounded) {
+      s.vel.set(damp(s.vel.x, 0, ACCEL * 2, dt), 0, damp(s.vel.z, 0, ACCEL * 2, dt));
     } else if (grabbing && s.grounded && grab) {
       s.vel.set(damp(s.vel.x, 0, ACCEL * 2, dt), 0, damp(s.vel.z, 0, ACCEL * 2, dt));
       const want = Math.atan2(grab.target.x - p.x, grab.target.z - p.z), off = Math.atan2(Math.sin(want - state.rotY), Math.cos(want - state.rotY));
@@ -183,6 +189,11 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       const [nx, nz] = stepPerson(room, lx, lz, running, dt);
       [p.x, p.z] = toWorld(room.frame, nx, nz);
       bumpOthers(p, state.others, RADIUS, dt);
+      // The staff are solid.
+      for (const w of state.staffBodies) {
+        const dx = p.x - w.x, dz = p.z - w.z, d = Math.hypot(dx, dz), min = RADIUS + w.r;
+        if (d < min && d > 1e-5) { p.x = w.x + dx / d * min; p.z = w.z + dz / d * min; }
+      }
     } else if (!incapacitated && !usingBike && !sitting && !script) {
       // Vehicles are solid: walking never pushes them, and a slow one rolling into the player shoves them along
       // (fast ones knock the player down in Traffic instead).
@@ -409,9 +420,15 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       root.current.rotation.x = collapse * Math.PI / 2 + Math.sin(fall * Math.PI * 2) * 0.12;
       root.current.rotation.z = usingBike && !incapacitated && bike.action !== "pickup" ? bike.lean : collapse * 0.12;
     }
+    if (crouch > 0 && !script && !usingBike) {
+      // Down on the haunches: hips low, thighs forward, knees bent, leaning over the hands.
+      hipL = THREE.MathUtils.lerp(hipL, -1.3, crouch); hipR = THREE.MathUtils.lerp(hipR, -1.3, crouch);
+      kneeL = THREE.MathUtils.lerp(kneeL, 2.0, crouch); kneeR = THREE.MathUtils.lerp(kneeR, 2.0, crouch);
+      bob = THREE.MathUtils.lerp(bob, -0.42, crouch); lean = Math.max(lean, 0.55 * crouch);
+    }
     if (hips.current) hips.current.position.y = 0.95 + bob + riderOffset;
     // Leaning in over the counter while reaching for food.
-    if (grabbing && !script && !usingBike) lean = Math.max(lean, 0.3 * grabReach(grabT));
+    if (grabbing && !script && !usingBike && !lowGrab) lean = Math.max(lean, 0.3 * grabReach(grabT));
     if (torso.current) torso.current.rotation.set(lean, s.reverseBlend * 0.65, 0);
     if (head.current) head.current.rotation.set(-lean * 0.5, s.reverseBlend * 1.05, 0);
     thighL.current?.rotation.set(hipL, 0, 0.13 + Math.max(0, -legSwing) + Math.max(0, plantSwing) + 0.32 * straddle);
@@ -428,6 +445,18 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     if (onFoot) {
       if (state.hands.left || grab?.hand === "left") { armL.current?.rotation.set(shL, 0, 0.2); foreL.current?.rotation.set(carryElbow(shL), 0, 0); }
       if (state.hands.right || grab?.hand === "right") { armR.current?.rotation.set(shR, 0, -0.2); foreR.current?.rotation.set(carryElbow(shR), 0, 0); }
+      if (dropping && root.current) {
+        // Each hand sets its food down on the ground beside the feet.
+        root.current.updateMatrixWorld(true);
+        const fx = Math.sin(state.rotY), fz = Math.cos(state.rotY), lx = Math.cos(state.rotY), lz = -Math.sin(state.rotY), floor = floorHeight(p.x, p.z);
+        for (const side of [1, -1] as const) {
+          const held = side === 1 ? state.hands.left : state.hands.right;
+          if (!held) continue;
+          const at = new THREE.Vector3(p.x + fx * 0.36 + lx * side * 0.24, floor + PACK_SIZE[held.kind].grip, p.z + fz * 0.36 + lz * side * 0.24);
+          if (side === 1) reachArm(armL.current, foreL.current, at, POLES.low(1), dropReach(dropT));
+          else reachArm(armR.current, foreR.current, at, POLES.low(-1), dropReach(dropT));
+        }
+      }
       if (grabbing && grab && root.current) {
         // Up to the food until the hand touches it, then back to the waist with it: one movement.
         root.current.updateMatrixWorld(true);

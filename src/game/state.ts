@@ -69,7 +69,7 @@ export type Interior = {
 export type NpcBody = { id: number; x: number; z: number; down: boolean; moving: boolean; hit: { direction: [number, number] } | null };
 
 /** Food in one of this player's hands. */
-export type Held = { id: number; kind: PackKind; bags: number; cups: number };
+export type Held = { id: number; kind: PackKind; bags: number; cups: number; items?: string[] };
 /** Reaching for food on a counter: which pack, which hand, when it started, and where the hand goes. */
 export type Grab = { pack: number; hand: "left" | "right"; at: number; target: THREE.Vector3; kind: PackKind; bags: number; cups: number; confirmed: boolean };
 /** The order menu on screen (at a counter), and the order the player has just placed from it. */
@@ -146,6 +146,11 @@ export type GameState = {
   /** What this player is holding in each hand, and a grab in progress. */
   hands: { left: Held | null; right: Held | null };
   grab: Grab | null;
+  /** Putting held food down (Q): when it started, and whether it has been let go of yet. */
+  drop: { at: number; sent: boolean } | null;
+  dropQueued: boolean;
+  /** Restaurant staff standing or walking about (world), solid to players. */
+  staffBodies: { x: number; z: number; r: number }[];
   foodUi: FoodUi;
   /** An order placed from the menu, waiting to be sent. */
   foodOrder: { names: string[]; mode: Mode } | null;
@@ -188,7 +193,7 @@ export function createState(save: SaveData): GameState {
     cash: Math.max(0, save.cash ?? STARTING_CASH),
     npcs: [], npcLink: null,
     trafficLink: null, doorLink: null, bikePushes: new Map(), takenChairs: new Set(),
-    foodLink: null, hands: { left: null, right: null }, grab: null, foodUi: { open: false, key: null, kind: null, note: null }, foodOrder: null, remoteRigs: new Map(),
+    foodLink: null, hands: { left: null, right: null }, grab: null, drop: null, dropQueued: false, staffBodies: [], foodUi: { open: false, key: null, kind: null, note: null }, foodOrder: null, remoteRigs: new Map(),
     seatOccupants: new Map(save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? [[save.benchSeat, "player"]] : []),
     bench: save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? { seat: save.benchSeat, phase: "seated", startedAt: 0, origin: new THREE.Vector3(...save.pos), originYaw: save.rotY } : null,
     scooter: {

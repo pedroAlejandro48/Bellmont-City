@@ -2,11 +2,11 @@ import { Html } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { RESTAURANTS, SIDEWALK_H, generateCity, timeInfo, type RestaurantKind } from "./config";
+import { RESTAURANTS, SIDEWALK_H, floorHeight, generateCity, timeInfo, type RestaurantKind } from "./config";
 import { CharacterBody, useBodyRig, type BodyRig } from "./CharacterBody";
 import { POLES, carryElbow, handWorld, pointArm, reachArm } from "./arms";
 import {
-  FoodSim, GRAB_CONTACT, GRAB_TIME, PACK_SIZE, atCounter, canReach, cents, greetingLine, localFoodLink, orderTotal, placesOf, runnerPose, toldLine, viewOf,
+  DROP_CONTACT, DROP_TIME, FoodSim, GRAB_CONTACT, GRAB_TIME, PACK_SIZE, atCounter, canReach, cents, greetingLine, localFoodLink, orderTotal, placesOf, runnerPose, toldLine, viewOf,
   type FoodLink, type FoodPack, type FoodView, type Places, type Trip,
 } from "./food";
 import { COUNTER, roomLayout, toLocal, toWorld, worldYaw, type RoomLayout } from "./restaurantRoom";
@@ -38,6 +38,10 @@ export function Food({ state }: { state: GameState }) {
   const sim = useMemo(() => new FoodSim((key) => { const p = byKey.get(key); return p ? { places: p.places, room: p.room } : null; }), [byKey]);
   const live = useRef<Live>({ view: viewOf(sim, Date.now() / 1000), at: Date.now() });
   const runnerHands = useMemo<Hands>(() => new Map(), []);
+  /** Where each restaurant's staff are standing (world), solid to players. */
+  const staffAt = useMemo(() => new Map<string, { x: number; z: number; r: number }[]>(), []);
+  /** Food this player has just put down, where (until the host shows it on the ground). */
+  const dropped = useMemo(() => new Map<number, { x: number; z: number; yaw: number; until: number }>(), []);
   const mine = useRef({ greeted: "" as string, greetAt: 0, wasHost: true, published: "", publishedAt: 0, inside: null as string | null, sessionSeenAt: 0 });
 
   useFrame(() => {
@@ -64,6 +68,7 @@ export function Food({ state }: { state: GameState }) {
       if (got) live.current = got;
     }
     const view = live.current.view;
+    state.staffBodies = [...staffAt.values()].flat();
     if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") (window as unknown as { __food?: unknown }).__food = { view, places: [...byKey.values()] };
 
     // ---------- this player at a counter ----------
@@ -108,7 +113,9 @@ export function Food({ state }: { state: GameState }) {
     // ---------- food in hand ----------
     const held = view.packs.filter((p) => p.where === "held" && p.holder === me);
     const hands: GameState["hands"] = { left: null, right: null };
-    for (const p of held) hands[p.hand] = { id: p.id, kind: p.kind, bags: p.bags, cups: p.cups };
+    // Just put down (Q): out of the hands here at once, before the host has said so.
+    for (const [id, d] of dropped) if (Date.now() > d.until || view.packs.find((q) => q.id === id)?.where !== "held") dropped.delete(id);
+    for (const p of held) if (!dropped.has(p.id)) hands[p.hand] = { id: p.id, kind: p.kind, bags: p.bags, cups: p.cups, items: p.items };
     const g = state.grab;
     if (g) {
       const t = state.simulationTime - g.at, p = view.packs.find((q) => q.id === g.pack);
@@ -123,12 +130,56 @@ export function Food({ state }: { state: GameState }) {
     }
     state.hands = hands;
 
-    // E: pick up food from the counter, one thing per free hand.
-    if (state.interactQueued && place && lp && standing && !state.grab) {
+    // Q: squat and put everything held down on the ground, where the hands set it.
+    const onFoot = standing && !state.bench && !state.scooter.riding && !state.scooter.action;
+    if (state.dropQueued) {
+      state.dropQueued = false;
+      if (onFoot && !state.grab && !state.drop && (hands.left || hands.right)) state.drop = { at: state.simulationTime, sent: false };
+    }
+    const drop = state.drop;
+    if (drop) {
+      const t = state.simulationTime - drop.at;
+      if (!drop.sent && t >= DROP_CONTACT) {
+        drop.sent = true;
+        const out: { id: number; x: number; z: number; yaw: number }[] = [];
+        for (const side of ["left", "right"] as const) {
+          const h = hands[side], fore = state.avatar.body[side === "left" ? 9 : 11];
+          if (!h || !fore) continue;
+          fore.updateWorldMatrix(true, false);
+          const at = handWorld(fore, new THREE.Vector3());
+          out.push({ id: h.id, x: cents(at.x), z: cents(at.z), yaw: cents(state.rotY) });
+          dropped.set(h.id, { x: at.x, z: at.z, yaw: state.rotY, until: Date.now() + 3000 });
+        }
+        if (out.length) link.send({ type: "drop", packs: out });
+      }
+      if (t >= DROP_TIME) state.drop = null;
+    }
+    // E on something lying on the ground (anyone's): squat down and pick it up.
+    if (state.interactQueued && onFoot && !state.grab && !state.drop && state.interior?.phase !== "entering" && state.interior?.phase !== "leaving" && !state.script) {
       const free = (["right", "left"] as const).filter((h) => !hands[h]);
       let best: { pack: FoodPack; d: number } | null = null;
       for (const p of view.packs) {
-        if (p.key !== place.key || p.where !== "counter") continue;
+        if (p.where !== "ground" || dropped.has(p.id)) continue;
+        const d = Math.hypot(p.gx - state.pos.x, p.gz - state.pos.z);
+        if (d < 1.0 && (!best || d < best.d)) best = { pack: p, d };
+      }
+      if (best && free.length) {
+        state.interactQueued = false;
+        const b = best.pack, size = PACK_SIZE[b.kind];
+        const leftX = Math.cos(state.rotY), leftZ = -Math.sin(state.rotY);
+        const onLeft = (b.gx - state.pos.x) * leftX + (b.gz - state.pos.z) * leftZ > 0;
+        const hand = free.length === 2 ? (onLeft ? "left" : "right") : free[0]!;
+        const target = new THREE.Vector3(b.gx, floorHeight(b.gx, b.gz) + size.grip, b.gz);
+        state.grab = { pack: b.id, hand, at: state.simulationTime, target, kind: b.kind, bags: b.bags, cups: b.cups, confirmed: false };
+        link.send({ type: "pickup", pack: b.id, hand });
+      }
+    }
+    // E: pick up food from the counter, one thing per free hand (only what this player ordered).
+    if (state.interactQueued && place && lp && standing && !state.grab && !state.drop) {
+      const free = (["right", "left"] as const).filter((h) => !hands[h]);
+      let best: { pack: FoodPack; d: number } | null = null;
+      for (const p of view.packs) {
+        if (p.key !== place.key || p.where !== "counter" || p.owner !== me) continue;
         const slot = place.places.slots[p.slot];
         if (!slot || !canReach(slot, lp[0], lp[1])) continue;
         const d = Math.hypot(slot.x - lp[0], slot.z - lp[1]);
@@ -159,8 +210,8 @@ export function Food({ state }: { state: GameState }) {
   });
 
   return <>
-    {places.filter((p) => near.includes(p.key)).map((p) => <Staffed key={p.key} place={p} state={state} live={live} hands={runnerHands} />)}
-    <Packs state={state} live={live} byKey={byKey} runnerHands={runnerHands} />
+    {places.filter((p) => near.includes(p.key)).map((p) => <Staffed key={p.key} place={p} state={state} live={live} hands={runnerHands} staffAt={staffAt} />)}
+    <Packs state={state} live={live} byKey={byKey} runnerHands={runnerHands} dropped={dropped} />
   </>;
 }
 
@@ -232,7 +283,7 @@ function poseBody(rig: BodyRig, phase: number, moving: number, time: number, lea
 }
 
 /** A restaurant's cashier (with the speech bubble) and kitchen runner. */
-const Staffed = memo(function Staffed({ place, state, live, hands }: { place: Place; state: GameState; live: React.RefObject<Live>; hands: Hands }) {
+const Staffed = memo(function Staffed({ place, state, live, hands, staffAt }: { place: Place; state: GameState; live: React.RefObject<Live>; hands: Hands; staffAt: Map<string, { x: number; z: number; r: number }[]> }) {
   const { room, places: P, kind, key } = place;
   const f = room.frame;
   const colors = useMemo(() => { const r = (n: number) => ((Math.sin(place.seed * 12.9898 + n * 78.233) * 43758.5453) % 1 + 1) % 1; return [bodyColor(r(1) < 0.5 ? "female" : "male"), bodyColor(r(2) < 0.5 ? "female" : "male")] as const; }, [place.seed]);
@@ -243,6 +294,7 @@ const Staffed = memo(function Staffed({ place, state, live, hands }: { place: Pl
   const bubble = useRef<THREE.Group>(null);
   const [said, setSaid] = useState<{ text: string; shown: boolean }>({ text: "", shown: false });
   const v = useMemo(() => ({ a: new THREE.Vector3(), b: new THREE.Vector3(), look: new THREE.Vector3() }), []);
+  useEffect(() => () => { staffAt.delete(key); }, [staffAt, key]);
 
   useFrame((_, raw) => {
     const dt = Math.min(raw, 0.05), now = state.simulationTime, L = live.current;
@@ -310,6 +362,9 @@ const Staffed = memo(function Staffed({ place, state, live, hands }: { place: Pl
       if (r.foreR.current) handWorld(r.foreR.current, entry.right);
       entry.yaw = worldYaw(f, pose.yaw);
       hands.set(key, entry);
+      // Both of them are solid: nobody walks through the cashier or the runner.
+      const [cx, cz] = toWorld(f, P.cashier.x, P.cashier.z);
+      staffAt.set(key, [{ x: cx, z: cz, r: 0.3 }, { x, z, r: 0.3 }]);
     }
     // ---- the speech bubble over the cashier, for anyone in the restaurant ----
     const show = !!session && state.interior?.key === key && state.interior.phase === "inside";
@@ -358,6 +413,9 @@ function usePackLooks() {
       kraft: m("#c8a27a"), kraftDark: m("#a8835c"), lid: m("#f8f8f6", 0.35), sticker: Object.fromEntries(Object.entries(sleeve).map(([k, c]) => [k, m(c, 0.6)])) as Record<RestaurantKind, THREE.MeshStandardMaterial>,
       cup: Object.fromEntries(Object.entries(cupColor).map(([k, c]) => [k, m(c, 0.5)])) as Record<RestaurantKind, THREE.MeshStandardMaterial>,
       tray: m("#9e9585", 0.95), handle: m("#b48e66", 0.9), brand,
+      bottlePlastic: new THREE.MeshStandardMaterial({ color: "#dff1ff", roughness: 0.08, metalness: 0, transparent: true, opacity: 0.35, depthWrite: false }),
+      water: new THREE.MeshStandardMaterial({ color: "#9fd3f5", roughness: 0.05, transparent: true, opacity: 0.45, depthWrite: false }),
+      bottleLabel: m("#1e78c8", 0.5), bottleCap: m("#1565c0", 0.4),
       geo: {
         box: new THREE.BoxGeometry(1, 1, 1),
         cup: new THREE.CylinderGeometry(0.046, 0.036, 0.15, 20),
@@ -367,6 +425,12 @@ function usePackLooks() {
         lidTab: new THREE.BoxGeometry(0.022, 0.006, 0.016),
         handle: new THREE.TorusGeometry(0.075, 0.009, 6, 16, Math.PI),
         plane: new THREE.PlaneGeometry(1, 1),
+        bottleBody: new THREE.CylinderGeometry(0.034, 0.034, 0.15, 20),
+        bottleWater: new THREE.CylinderGeometry(0.031, 0.031, 0.118, 20),
+        bottleLabel: new THREE.CylinderGeometry(0.0352, 0.0352, 0.05, 20, 1, true),
+        bottleShoulder: new THREE.CylinderGeometry(0.014, 0.034, 0.045, 20),
+        bottleNeck: new THREE.CylinderGeometry(0.0135, 0.0135, 0.022, 12),
+        bottleCap: new THREE.CylinderGeometry(0.0155, 0.0155, 0.016, 12),
       },
     };
   }, []);
@@ -385,6 +449,18 @@ function cupModel(looks: Looks, kind: RestaurantKind) {
   return g;
 }
 
+/** A bottle of water: clear plastic with water inside, a printed label, a narrowing neck and a blue cap. */
+function bottleModel(looks: Looks) {
+  const g = new THREE.Group(), add = (geo: THREE.BufferGeometry, mat: THREE.Material, y: number) => { const m = new THREE.Mesh(geo, mat); m.position.y = y; m.castShadow = true; g.add(m); return m; };
+  add(looks.geo.bottleBody, looks.bottlePlastic, 0.075);
+  add(looks.geo.bottleWater, looks.water, 0.06);
+  add(looks.geo.bottleLabel, looks.bottleLabel, 0.08);
+  add(looks.geo.bottleShoulder, looks.bottlePlastic, 0.172);
+  add(looks.geo.bottleNeck, looks.bottlePlastic, 0.205);
+  add(looks.geo.bottleCap, looks.bottleCap, 0.222);
+  return g;
+}
+
 /** Builds a pack's model with its base at the origin and its front (the printed side) toward +z. */
 function packModel(looks: Looks, p: FoodPack, kind: RestaurantKind) {
   const g = new THREE.Group(), G = looks.geo;
@@ -396,7 +472,7 @@ function packModel(looks: Looks, p: FoodPack, kind: RestaurantKind) {
     box(looks.kraftDark, s.w - 0.01, 0.05, s.d * 0.32, 0, s.h - 0.025, 0);
     box(looks.sticker[kind], 0.06, 0.04, 0.003, 0, s.h - 0.06, s.d / 2 + 0.002);
   } else if (p.kind === "cup") {
-    g.add(cupModel(looks, kind));
+    g.add(p.items[0] === "Bottled Water" ? bottleModel(looks) : cupModel(looks, kind));
   } else {
     const s = PACK_SIZE.big;
     box(looks.kraft, s.w, s.h, s.d, 0, s.h / 2, 0);
@@ -424,7 +500,7 @@ const PackObject = memo(function PackObject({ looks, pack, kind, objects }: { lo
 });
 
 /** Every pack of food: on a counter, in a runner's hands, or in a player's hand (always upright). */
-function Packs({ state, live, byKey, runnerHands }: { state: GameState; live: React.RefObject<Live>; byKey: Map<string, Place>; runnerHands: Hands }) {
+function Packs({ state, live, byKey, runnerHands, dropped }: { state: GameState; live: React.RefObject<Live>; byKey: Map<string, Place>; runnerHands: Hands; dropped: Map<number, { x: number; z: number; yaw: number }> }) {
   const looks = usePackLooks();
   const objects = useMemo(() => new Map<number, THREE.Group>(), []);
   const [list, setList] = useState<FoodPack[]>([]);
@@ -441,8 +517,13 @@ function Packs({ state, live, byKey, runnerHands }: { state: GameState; live: Re
       const f = place.room.frame, size = PACK_SIZE[p.kind];
       obj.visible = true;
       const grab = state.grab;
-      const inMyHand = (p.where === "held" && p.holder === me) || (grab?.pack === p.id && state.simulationTime - grab.at >= GRAB_CONTACT);
-      if (inMyHand || p.where === "held") {
+      const inMyHand = (p.where === "held" && p.holder === me && !dropped.has(p.id)) || (grab?.pack === p.id && state.simulationTime - grab.at >= GRAB_CONTACT);
+      const down = dropped.get(p.id) ?? (p.where === "ground" ? { x: p.gx, z: p.gz, yaw: p.gyaw } : null);
+      if (down && !inMyHand) {
+        // On the ground, upright, where it was set down.
+        obj.position.set(down.x, floorHeight(down.x, down.z), down.z);
+        obj.rotation.set(0, down.yaw, 0);
+      } else if (inMyHand || p.where === "held") {
         const hand = inMyHand && grab?.pack === p.id ? grab.hand : p.hand;
         let fore: THREE.Object3D | null | undefined, yaw = 0;
         if (inMyHand) { fore = state.avatar.body[hand === "left" ? 9 : 11]; yaw = state.rotY; }

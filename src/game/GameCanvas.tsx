@@ -122,6 +122,8 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
       if (BLOCKED.has(e.code)) e.preventDefault();
       if (state.health === 0 || state.accident) return;
       if (e.code === "KeyE" && !e.repeat) { state.interactQueued = true; e.preventDefault(); }
+      // Q: put down whatever is in the hands.
+      if (e.code === "KeyQ" && !e.repeat) { state.dropQueued = true; e.preventDefault(); }
       // Seated at a restaurant table, Space stands up; during a scripted movement nothing else applies.
       if (state.seat || state.script) { if (e.code === "Space" && !e.repeat) state.standQueued = true; return; }
       if (state.bench) return;

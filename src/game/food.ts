@@ -75,7 +75,7 @@ export function orderTotal(kind: RestaurantKind, names: string[]) {
 
 /** One thing to carry: a paper bag (up to 3 foods), a lidded cup, or a big handled bag (3 bags and 4 cups). */
 export type PackKind = "bag" | "cup" | "big";
-export type Pack = { kind: PackKind; bags: number; cups: number };
+export type Pack = { kind: PackKind; bags: number; cups: number; items?: string[] };
 export const BAG_HOLDS = 3, BIG_BAGS = 3, BIG_CUPS = 4, HOLDER_CUPS = 4;
 
 /**
@@ -118,6 +118,25 @@ export function grabReach(t: number) {
   return t < GRAB_CONTACT ? up(t / GRAB_CONTACT) : 1 - up((t - GRAB_CONTACT) / (GRAB_TIME - GRAB_CONTACT));
 }
 
+/** Packs an order's items by name: foods into bags (and big bags), drinks into cups or bottles, as packOrder. */
+export function packItems(foods: string[], drinks: string[]): Pack[] {
+  const packs = packOrder(foods.length, drinks.length);
+  let f = 0, d = 0;
+  return packs.map((p) => {
+    const nf = p.kind === "bag" ? Math.min(BAG_HOLDS, foods.length - f) : p.kind === "big" ? Math.min(p.bags * BAG_HOLDS, foods.length - f) : 0;
+    const items = [...foods.slice(f, f + nf), ...drinks.slice(d, d + p.cups)];
+    f += nf; d += p.cups;
+    return { ...p, items };
+  });
+}
+
+/** Putting everything held down on the ground (Q): a squat, the food set down at the bottom, and back up. */
+export const DROP_TIME = 1.3, DROP_CONTACT = 0.6;
+export function dropReach(t: number) {
+  const up = (k: number) => { const c = Math.max(0, Math.min(1, k)); return c * c * (3 - 2 * c); };
+  return t < DROP_CONTACT ? up(t / DROP_CONTACT) : 1 - up((t - DROP_CONTACT) / (DROP_TIME - DROP_CONTACT));
+}
+
 // ---------- the counter and the staff ----------
 
 export type Spot = { x: number; z: number; yaw: number };
@@ -134,6 +153,13 @@ export type Places = {
   tables: { x: number; z: number };
 };
 
+function kitchenStation(room: RoomLayout): Spot {
+  const { divider, bounds, windowSide: ws } = room;
+  const depth = divider.z - bounds.minZ;
+  const z = divider.z - Math.max(1.4, Math.min(depth * 0.6, depth - 0.7));
+  const x = Math.max(bounds.minX + 0.6, Math.min(bounds.maxX - 0.6, divider.doorX + ws * 2.2));
+  return { x, z, yaw: Math.PI / 2 * -ws };
+}
 export function placesOf(room: RoomLayout): Places {
   const { counter, windowSide: ws, divider, bounds } = room;
   const register = { x: counter.x + ws * (counter.hx - 0.45), z: counter.z };
@@ -151,7 +177,8 @@ export function placesOf(room: RoomLayout): Places {
     cashier: { x: register.x, z: back - 0.4, yaw: 0 },
     customer: { x: register.x, z: front + 0.45, yaw: Math.PI },
     slots,
-    kitchen: { x: divider.doorX, z: divider.z - 1.7, yaw: 0 },
+    // The runner's station well inside the kitchen and off to the side, out of sight from the dining room.
+    kitchen: kitchenStation(room),
     doorway: { x: divider.doorX, z: divider.z + 0.3 },
     tables: { x: ws * (edge - 2.8), z: bounds.maxZ - 4.3 },
   };
@@ -224,7 +251,9 @@ export function tripStand(p: Places, room: RoomLayout, slots: number[]): { x: nu
 }
 function tripPath(p: Places, room: RoomLayout, slots: number[]): [number, number][] {
   const stand = tripStand(p, room, slots);
-  return [[p.kitchen.x, p.kitchen.z], [p.doorway.x, p.doorway.z - 0.5], [p.doorway.x, p.doorway.z], [stand.x, stand.z]];
+  // From the station, across the kitchen to just inside its doorway, through it, and to the counter.
+  const inner: [number, number] = [p.doorway.x, Math.max(p.kitchen.z, room.divider.z - 1.1)];
+  return [[p.kitchen.x, p.kitchen.z], inner, [p.doorway.x, p.doorway.z], [stand.x, stand.z]];
 }
 const pathLength = (pts: [number, number][]) => pts.slice(1).reduce((s, q, i) => s + Math.hypot(q[0] - pts[i]![0], q[1] - pts[i]![1]), 0);
 /** How long a trip takes: out to the counter, the handling there, and back. */
@@ -281,7 +310,13 @@ export function runnerPose(p: Places, room: RoomLayout, trip: Trip | null, t: nu
 
 export type Mode = "togo" | "here";
 /** A pack of food somewhere: in the kitchen, in the runner's hands, on the counter, held by a player, or gone. */
-export type FoodPack = Pack & { id: number; order: number; key: string; where: "kitchen" | "runner" | "counter" | "held" | "gone"; slot: number; holder: string; hand: "left" | "right" };
+export type FoodPack = Pack & {
+  id: number; order: number; key: string; where: "kitchen" | "runner" | "counter" | "held" | "ground" | "gone"; slot: number; holder: string; hand: "left" | "right";
+  /** Who ordered it (only they can take it off the counter). */
+  owner: string; items: string[];
+  /** Put down on the ground: where (world) and facing which way. */
+  gx: number; gz: number; gyaw: number;
+};
 export type Order = { id: number; by: string; key: string; kind: RestaurantKind; mode: Mode; names: string[]; placedAt: number; readyAt: number };
 /** Someone at a counter talking to the cashier. */
 export type Session = { by: string; text: string; at: number; stage: "greet" | "told"; mode: Mode | null };
@@ -291,7 +326,11 @@ export type FoodRequest =
   | { type: "greet"; key: string; text: string }
   | { type: "bye"; key: string }
   | { type: "order"; key: string; kind: RestaurantKind; names: string[]; mode: Mode; text: string }
-  | { type: "grab"; pack: number; hand: "left" | "right" };
+  | { type: "grab"; pack: number; hand: "left" | "right" }
+  /** Picking up something lying on the ground (anyone's). */
+  | { type: "pickup"; pack: number; hand: "left" | "right" }
+  /** Putting down everything held, where each one lands. */
+  | { type: "drop"; packs: { id: number; x: number; z: number; yaw: number }[] };
 
 /** Seconds from paying until the food is ready to come out. */
 export const prepSeconds = (count: number) => Math.min(30, 7 + 1.5 * count);
@@ -325,14 +364,25 @@ export class FoodSim {
       this.orders.push({ id, by, key: req.key, kind: req.kind, mode: req.mode, names, placedAt: now, readyAt: now + prepSeconds(names.length) });
       this.sessions.set(req.key, { by, text: req.text.slice(0, 160), at: now, stage: "told", mode: req.mode });
       if (req.mode === "togo") {
-        const drinks = names.filter((n) => priceOf(req.kind, n)?.drink).length;
-        for (const pack of packOrder(names.length - drinks, drinks)) this.packs.push({ ...pack, id: this.nextId++, order: id, key: req.key, where: "kitchen", slot: -1, holder: "", hand: "right" });
+        const isDrink = (n: string) => !!priceOf(req.kind, n)?.drink;
+        for (const pack of packItems(names.filter((n) => !isDrink(n)), names.filter(isDrink))) this.packs.push({ ...pack, items: pack.items ?? [], id: this.nextId++, order: id, key: req.key, where: "kitchen", slot: -1, holder: "", hand: "right", owner: by, gx: 0, gz: 0, gyaw: 0 });
       }
     } else if (req.type === "grab") {
       const p = this.packs.find((q) => q.id === req.pack);
-      if (!p || p.where !== "counter") return;
+      // Only whoever ordered it can take it off the counter.
+      if (!p || p.where !== "counter" || p.owner !== by) return;
       if (this.packs.some((q) => q.where === "held" && q.holder === by && q.hand === req.hand)) return;
       Object.assign(p, { where: "held", holder: by, hand: req.hand, slot: -1 });
+    } else if (req.type === "pickup") {
+      const p = this.packs.find((q) => q.id === req.pack);
+      if (!p || p.where !== "ground") return;
+      if (this.packs.some((q) => q.where === "held" && q.holder === by && q.hand === req.hand)) return;
+      Object.assign(p, { where: "held", holder: by, hand: req.hand, slot: -1 });
+    } else if (req.type === "drop") {
+      for (const d of req.packs) {
+        const p = this.packs.find((q) => q.id === d.id);
+        if (p && p.where === "held" && p.holder === by) Object.assign(p, { where: "ground", holder: "", gx: d.x, gz: d.z, gyaw: d.yaw });
+      }
     }
   }
 
@@ -391,7 +441,7 @@ export class FoodSim {
       v: 1,
       s: [...this.sessions].map(([key, s]) => [key, s.by, s.text, cents(now - s.at), s.stage === "told" ? (s.mode === "togo" ? 1 : 2) : 0]),
       r: [...this.trips].map(([key, t]) => [key, t.task === "deliver" ? 0 : 1, cents(now - t.at), t.slots, t.packs]),
-      p: this.packs.map((p) => [p.id, p.key, p.kind === "bag" ? 0 : p.kind === "cup" ? 1 : 2, p.bags, p.cups, WHERE.indexOf(p.where), p.slot, p.holder, p.hand === "left" ? 0 : 1, p.order]),
+      p: this.packs.map((p) => [p.id, p.key, p.kind === "bag" ? 0 : p.kind === "cup" ? 1 : 2, p.bags, p.cups, WHERE.indexOf(p.where), p.slot, p.holder, p.hand === "left" ? 0 : 1, p.order, p.owner, p.items.join("|"), cents(p.gx), cents(p.gz), cents(p.gyaw)]),
     };
   }
 
@@ -404,14 +454,14 @@ export class FoodSim {
   }
 }
 
-const WHERE = ["kitchen", "runner", "counter", "held", "gone"] as const;
+const WHERE = ["kitchen", "runner", "counter", "held", "gone", "ground"] as const;
 
 /** What the host shares: sessions [key, by, text, ago, stage], trips [key, task, ago, slots, packs], packs. */
 export type FoodSnapshot = {
   v: 1;
   s: [string, string, string, number, number][];
   r: [string, number, number, number[], number[]][];
-  p: [number, string, number, number, number, number, number, string, number, number][];
+  p: [number, string, number, number, number, number, number, string, number, number, string, string, number, number, number][];
 };
 /** A snapshot read back, with times as ages (seconds) when it was taken. */
 export type FoodView = {
@@ -441,9 +491,12 @@ export function readSnapshot(value: unknown): FoodView | null {
   }
   for (const p of list(v.p)) {
     if (!Array.isArray(p)) continue;
-    const [id, key, kind, bags, cups, where, slot, holder, hand, order] = p;
+    const [id, key, kind, bags, cups, where, slot, holder, hand, order, owner, items, gx, gz, gyaw] = p;
     if (!isNum(id) || !isStr(key) || !isNum(kind) || !isNum(bags) || !isNum(cups) || !isNum(where) || !isNum(slot) || !isStr(holder) || !isNum(hand) || !isNum(order)) continue;
-    view.packs.push({ id, key, kind: kind === 0 ? "bag" : kind === 1 ? "cup" : "big", bags, cups, where: WHERE[where] ?? "gone", slot, holder, hand: hand === 0 ? "left" : "right", order });
+    view.packs.push({
+      id, key, kind: kind === 0 ? "bag" : kind === 1 ? "cup" : "big", bags, cups, where: WHERE[where] ?? "gone", slot, holder, hand: hand === 0 ? "left" : "right", order,
+      owner: isStr(owner) ? owner : "", items: isStr(items) && items ? items.split("|") : [], gx: isNum(gx) ? gx : 0, gz: isNum(gz) ? gz : 0, gyaw: isNum(gyaw) ? gyaw : 0,
+    });
   }
   return view;
 }

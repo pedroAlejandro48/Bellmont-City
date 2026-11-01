@@ -16,6 +16,7 @@ const isSent = (v: unknown): v is Sent => {
  */
 export function makeFoodLink(channel: NamedRoom): FoodLink {
   const seen = new Map<string, number>();
+  let seq = 0;
   let mine: Sent[] = [], next = 1, local: { by: string; req: FoodRequest }[] = [];
   let last: { value: unknown; view: ReturnType<typeof readSnapshot>; at: number } | null = null;
   let inside: string | null | undefined;
@@ -31,12 +32,14 @@ export function makeFoodLink(channel: NamedRoom): FoodLink {
   return {
     me,
     isHost: () => host()?.sameTab ?? true,
-    publish: (snapshot) => { void channel.presence({ food: snapshot }).catch(() => {}); },
+    // Numbered, so a snapshot is only taken as new when it is (presence objects are rebuilt on every update).
+    publish: (snapshot) => { seq += 1; void channel.presence({ food: { ...snapshot, n: seq } }).catch(() => {}); },
     latest: () => {
       const h = host();
       if (!h || h.sameTab) return null;
       const value = h.presence["food"];
-      if (!last || last.value !== value) last = { value, view: readSnapshot(value), at: Date.now() };
+      const stamp = typeof value === "object" && value !== null ? (value as { n?: unknown }).n : undefined;
+      if (!last || last.value !== stamp) last = { value: stamp, view: readSnapshot(value), at: Date.now() };
       return last.view ? { view: last.view, at: last.at } : null;
     },
     send: (req) => {

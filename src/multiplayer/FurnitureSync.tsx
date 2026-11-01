@@ -81,7 +81,8 @@ export function FurnitureSync({ state, channel }: { state: GameState; channel: N
     for (const p of others) {
       const v = p.presence["fmoves"];
       if (!isMoves(v)) continue;
-      if (m.lastSeenMoves.get(p.peer) !== v) { m.lastSeenMoves.set(p.peer, v); for (const row of list(v.items)) if (Array.isArray(row)) m.theirsAt.set(id(v.key, Number(row[0])), now); }
+      const sig = JSON.stringify(v);
+      if (m.lastSeenMoves.get(p.peer) !== sig) { m.lastSeenMoves.set(p.peer, sig); for (const row of list(v.items)) if (Array.isArray(row)) m.theirsAt.set(id(v.key, Number(row[0])), now); }
       for (const row of list(v.items)) {
         if (!Array.isArray(row) || row.length < 3) continue;
         const [i, x, z] = row as number[];
@@ -103,8 +104,8 @@ export function FurnitureSync({ state, channel }: { state: GameState; channel: N
       }
     } else if (host) {
       const v = host.presence["furniture"] as { rooms?: unknown } | undefined;
-      if (v && v !== m.hostSeen && typeof v.rooms === "string") {
-        m.hostSeen = v; m.applied.clear();
+      if (v && typeof v.rooms === "string" && v.rooms !== m.hostSeen) {
+        m.hostSeen = v.rooms; m.applied.clear();
         try { m.hostRooms = JSON.parse(v.rooms) as Record<string, number[]>; } catch { m.hostRooms = null; }
       }
       // Each room takes the record once per new record (straight away the first time this player sees it).

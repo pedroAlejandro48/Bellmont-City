@@ -71,6 +71,9 @@ export function roomLayout(b: Building): RoomLayout {
   // Potted plants in the two front corners.
   const plants: [number, number][] = [[windowSide * (bounds.maxX - 0.4), bounds.maxZ - 0.45], [-windowSide * (bounds.maxX - 0.4), bounds.maxZ - 0.45]];
   for (const [x, z] of plants) solids.push({ x, z, hx: 0.28, hz: 0.28 });
+  // An invisible wall at the open end of the counter, so customers can't go round behind it into the kitchen.
+  const end = counter.x + windowSide * counter.hx;
+  solids.push({ x: end + windowSide * 0.05, z: (dividerZ + counter.z) / 2, hx: 0.05, hz: (counter.z - dividerZ) / 2 });
   const frontWindows: [number, number][] = [[-width / 2 + 0.7, -LEAF - 0.75], [LEAF + 0.75, width / 2 - 0.7]];
   // Side windows stay clear of the divider: two in the dining room, one in the kitchen if it is deep enough.
   const dineFrom = dividerZ + 0.5, dineTo = bounds.maxZ - 0.5, half = (dineTo - dineFrom - 0.6) / 2;
@@ -505,25 +508,31 @@ export function roomShell(b: Building) {
 
 // ---------- walking through a door someone else holds open ----------
 
-/** Walking in or out through a door that is already open: no reaching for it, just through. */
-export type WalkThrough = { dir: "in" | "out"; from: [number, number]; fromYaw: number; approach: number; points: [number, number][]; pass: number; done: number };
-export function planWalkThrough(dir: "in" | "out", from: [number, number], fromYaw: number): WalkThrough {
-  // Going in through the right-hand doorway (the leaf that opens in), coming out through the left.
-  const start: [number, number] = dir === "in" ? [0.5, 1.0] : [-0.45, -1.0];
-  const points: [number, number][] = dir === "in" ? [start, [0.5, 0.35], LOBBY] : [start, [-0.45, 0.3], OUTSIDE];
-  const approach = walkTime(from, start);
+/**
+ * Walking in or out through a door someone else has opened: up to a spot clear of the door's swing, waiting
+ * there (`wait`) until whoever is ahead is through, then on through the open side of the doorway, without
+ * reaching for the door.
+ */
+export type WalkThrough = { dir: "in" | "out"; from: [number, number]; fromYaw: number; approach: number; hold: number; points: [number, number][]; pass: number; done: number };
+export function planWalkThrough(dir: "in" | "out", from: [number, number], fromYaw: number, wait = 0): WalkThrough {
+  // Going in through the right-hand doorway (the leaf that opens out to the right stands clear at x ≈ 1);
+  // coming out through the left.
+  const start: [number, number] = dir === "in" ? [0.4, 1.35] : [-0.45, -1.3];
+  const points: [number, number][] = dir === "in" ? [start, [0.4, 0.35], [0.5, -0.5], LOBBY] : [start, [-0.45, 0.3], OUTSIDE];
+  const approach = walkTime(from, start), hold = Math.max(0, wait - approach);
   // Through (and clear of the leaf's swing) once this far along the path.
-  const through = dir === "in" ? 0.65 + 1.15 : 1.3 + 0.9;
+  const through = dir === "in" ? 2.16 : 2.5;
   const length = points.slice(1).reduce((s, q, i) => s + Math.hypot(q[0] - points[i]![0], q[1] - points[i]![1]), 0);
-  return { dir, from, fromYaw, approach, points, pass: approach + through / STEP, done: approach + length / STEP + 0.15 };
+  return { dir, from, fromYaw, approach, hold, points, pass: approach + hold + through / STEP, done: approach + hold + length / STEP + 0.15 };
 }
 export function walkThroughPose(time: number, plan: WalkThrough): Pose {
   const face = plan.dir === "in" ? FACE_IN : FACE_OUT;
   let at: [number, number], yaw = face;
   if (time < plan.approach) ({ at, yaw } = walkTo(time / plan.approach, plan.from, plan.points[0]!, plan.fromYaw, face));
+  else if (time < plan.approach + plan.hold) at = plan.points[0]!;
   else {
     const length = plan.points.slice(1).reduce((s, q, i) => s + Math.hypot(q[0] - plan.points[i]![0], q[1] - plan.points[i]![1]), 0);
-    at = along(plan.points, ((time - plan.approach) * STEP) / length);
+    at = along(plan.points, ((time - plan.approach - plan.hold) * STEP) / length);
   }
   return { x: at[0], z: at[1], yaw, sit: 0, shuffle: 0, lean: 0, left: null, right: null };
 }

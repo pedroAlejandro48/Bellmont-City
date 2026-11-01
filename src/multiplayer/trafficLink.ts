@@ -12,6 +12,7 @@ const isHit = (v: unknown): v is Hit => { const h = v as Hit | null; return type
  */
 export function makeTrafficLink(channel: NamedRoom): TrafficLink {
   const seen = new Map<string, number>();
+  let seq = 0;
   let mine: Hit[] = [];
   let last: { value: unknown; snapshot: TrafficSnapshot | null; at: number } | null = null;
   const host = () => {
@@ -24,12 +25,14 @@ export function makeTrafficLink(channel: NamedRoom): TrafficLink {
   };
   return {
     isHost: () => host()?.sameTab ?? true,
-    publish: (snapshot) => { void channel.presence({ traffic: snapshot }).catch(() => {}); },
+    // Numbered, so a snapshot is only taken as new when it is (presence objects are rebuilt on every update).
+    publish: (snapshot) => { seq += 1; void channel.presence({ traffic: { ...snapshot, n: seq } }).catch(() => {}); },
     latest: () => {
       const h = host();
       if (!h || h.sameTab) return null;
       const value = h.presence["traffic"];
-      if (!last || last.value !== value) last = { value, snapshot: readTrafficSnapshot(value), at: Date.now() };
+      const stamp = typeof value === "object" && value !== null ? (value as { n?: unknown }).n : undefined;
+      if (!last || last.value !== stamp) last = { value: stamp, snapshot: readTrafficSnapshot(value), at: Date.now() };
       return last.snapshot ? { snapshot: last.snapshot, at: last.at } : null;
     },
     sendHit: (id) => {

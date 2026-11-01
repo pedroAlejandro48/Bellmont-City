@@ -42,7 +42,8 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
         const lead = leaf === "right" ? enterLead(from) : leaveLead(from);
         use = { key: r.key, leaf, mode: "open", start: wall, lead, pass: lead + OPENER_PASS[leaf] };
       } else {
-        walk = planWalkThrough(leaf === "right" ? "in" : "out", from, fromYaw);
+        // Behind whoever has it open: wait clear of the door until they are through, then follow them in.
+        walk = planWalkThrough(leaf === "right" ? "in" : "out", from, fromYaw, Math.max(0, ds.closesAt - 0.6 - wall));
         use = { key: r.key, leaf, mode: "follow", start: wall, lead: 0, pass: walk.pass };
       }
       mine.current.push(use);
