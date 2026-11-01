@@ -4,6 +4,7 @@ import * as THREE from "three";
 import { BUILDING_ENTRANCE, RESTAURANTS, SIDEWALK_H, restaurantOpen, timeInfo, type Building, type City, type RestaurantKind } from "./config";
 import { canvas, groundY, makeBlankWall, tex } from "./textures";
 import { CEILING, COUNTER, DINING, DOOR_H, HANDLE, KITCHEN_DOOR, KITCHEN_DOOR_H, LEAF, WALL, WINDOW, furnish, onLeaf, roomLayout, toWorld, type Item, type RoomLayout } from "./restaurantRoom";
+import { MENU_BOARDS } from "./food";
 import type { GameState } from "./state";
 
 /** Each brand's own fonts (loaded in index.html); signs are painted once they are ready. */
@@ -127,6 +128,14 @@ function blossom(g: CanvasRenderingContext2D, x: number, y: number, s: number) {
   g.fillStyle = "#c2185b"; g.beginPath(); g.arc(x, y, s * 0.2, 0, Math.PI * 2); g.fill();
 }
 
+/** A place's emblem (the coffee cup, the slice, the rising sun and blossom, the burger), centred at (x, y). */
+export function drawBrandIcon(kind: RestaurantKind, g: CanvasRenderingContext2D, x: number, y: number, s: number) {
+  if (kind === "cafe") coffeeCup(g, x, y, s);
+  else if (kind === "pizza") pizzaSlice(g, x, y, s);
+  else if (kind === "burger") burgerIcon(g, x, y, s);
+  else { g.fillStyle = "#b71c1c"; g.beginPath(); g.arc(x, y, s * 0.5, 0, Math.PI * 2); g.fill(); blossom(g, x + s * 0.38, y - s * 0.36, s * 0.3); }
+}
+
 /** The brand's sign board over the entrance (1024 × 208, for a 6.6 m × 1.34 m board). */
 function makeSign(kind: RestaurantKind) {
   const W = 1024, H = 208;
@@ -232,42 +241,9 @@ function makeTiles(base: string, grout: string, count: number) {
   return tex(c);
 }
 
-type MenuSection = { title: string; items: [string, string][] };
-/** What each place sells, and for how much. */
-const MENUS: Record<RestaurantKind, { sections: MenuSection[]; note: string }> = {
-  cafe: {
-    note: "Oat, almond or soy milk +$0.60",
-    sections: [
-      { title: "Coffee", items: [["Espresso", "2.50"], ["Americano", "3.00"], ["Cappuccino", "3.75"], ["Latte", "4.00"], ["Mocha", "4.50"], ["Cold Brew", "4.25"]] },
-      { title: "Bakery", items: [["Butter Croissant", "3.25"], ["Blueberry Muffin", "3.00"], ["Cinnamon Roll", "3.75"], ["Almond Biscotti", "2.25"]] },
-      { title: "Breakfast", items: [["Avocado Toast", "7.50"], ["Egg & Cheese Bagel", "6.25"], ["Yogurt Parfait", "5.50"], ["Pancake Stack", "8.00"]] },
-    ],
-  },
-  pizza: {
-    note: "All pizzas 12\" · wood-fired · gluten-free crust +$2",
-    sections: [
-      { title: "Pizze", items: [["Margherita", "12.00"], ["Pepperoni", "14.00"], ["Quattro Formaggi", "15.00"], ["Diavola", "15.00"], ["Capricciosa", "16.00"], ["Ortolana", "14.00"]] },
-      { title: "Antipasti", items: [["Garlic Knots", "5.00"], ["Arancini (3)", "6.50"], ["Caesar Salad", "7.00"], ["Bruschetta", "6.00"]] },
-      { title: "Dolci & Bevande", items: [["Tiramisù", "6.00"], ["Cannoli (2)", "5.00"], ["Panna Cotta", "5.50"], ["San Pellegrino", "2.50"]] },
-    ],
-  },
-  fine: {
-    note: "Chef's omakase tasting menu · $85 per guest",
-    sections: [
-      { title: "Sushi & Sashimi", items: [["Salmon Nigiri (2)", "7"], ["Bluefin Tuna Nigiri (2)", "9"], ["Dragon Roll", "16"], ["Sashimi Moriawase", "28"]] },
-      { title: "Kitchen", items: [["Miso Soup", "4"], ["Chicken Teriyaki", "19"], ["Tonkotsu Ramen", "17"], ["A5 Wagyu Tataki", "34"]] },
-      { title: "Sweets & Tea", items: [["Matcha Mochi", "7"], ["Yuzu Sorbet", "6"], ["Sencha Green Tea", "3"], ["Sake (glass)", "9"]] },
-    ],
-  },
-  burger: {
-    note: "Make it a combo: fries + drink +$3.50",
-    sections: [
-      { title: "Burgers", items: [["Classic Bell", "7.99"], ["Double Bell", "10.49"], ["Bacon BBQ", "9.99"], ["Crispy Chicken", "8.49"], ["Veggie Bell", "7.99"]] },
-      { title: "Sides", items: [["Fries", "2.99"], ["Cheese Fries", "3.99"], ["Onion Rings", "3.49"], ["Nuggets (6)", "4.49"]] },
-      { title: "Shakes & Drinks", items: [["Vanilla Shake", "4.49"], ["Chocolate Shake", "4.49"], ["Strawberry Shake", "4.49"], ["Fountain Soda", "1.99"]] },
-    ],
-  },
-};
+/** What each place sells, and for how much (shared with ordering). */
+const MENUS = MENU_BOARDS;
+
 /** The menu board's look: background, titles, item text, prices, and fonts, from the sign's palette. */
 const MENU_LOOK: Record<RestaurantKind, { bg: string; frame: string; title: string; text: string; price: string; head: string; body: string; rule: string }> = {
   cafe: { bg: "#26302a", frame: "#5b3a24", title: "#f6ecd9", text: "#f6ecd9", price: "#e9c48a", head: "400 {s}px Pacifico, cursive", body: "600 {s}px Manrope, Arial, sans-serif", rule: "rgba(246,236,217,0.35)" },

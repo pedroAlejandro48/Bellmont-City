@@ -60,7 +60,7 @@ describe("going in and out", () => {
     expect([start.x, start.z]).toEqual([0, 1.3]);
     const lead = enterLead([0, 1.3]);
     const end = enterPose(ENTER.done + lead, [0, 1.3], Math.PI);
-    expect([end.x, end.z]).toEqual(LOBBY); expect(end.door.right).toBeCloseTo(0); expect(end.fade).toBe(1);
+    expect([end.x, end.z]).toEqual(LOBBY); expect(end.door.right).toBeCloseTo(0); expect(end.fade).toBe(0);
     expect(end.yaw).toBeCloseTo(Math.PI);
     // The hand is on the handle while it pulls; the door never sweeps through the body.
     const pull = enterPose(1.6 + lead, [0, 1.3], Math.PI);

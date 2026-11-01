@@ -282,14 +282,15 @@ export type Pose = {
 };
 export type DoorPose = Pose & { door: { left: number; right: number }; fade: number };
 
-export const ENTER = { open: 0.9, release: 2.0, walk: [2.3, 4.6] as const, close: [3.6, 5.8] as const, black: 5.8, done: 6.6 };
+/** Going in: no fade any more; it is done once the door has closed behind (the camera came in with the player). */
+export const ENTER = { open: 0.9, release: 2.0, walk: [2.3, 4.6] as const, close: [3.6, 5.8] as const, done: 5.85 };
 const FACE_IN = Math.PI, FACE_OUT = 0;
 /** The lobby spot just inside, facing into the restaurant with the door behind. */
 export const LOBBY: [number, number] = [0.5, -2.7];
 
 /**
  * Going in: reach for the right door's handle, pull it open while stepping back, let go as it swings wide, walk
- * in while it slowly closes behind, then fade to black.
+ * in while it slowly closes behind.
  */
 const ENTER_STAND: [number, number] = [-0.05, 0.48];
 /** Extra seconds going in takes for walking up to the door from further away. */
@@ -310,17 +311,17 @@ export function enterPose(time: number, from: [number, number], fromYaw: number)
   return {
     x: at[0], z: at[1], yaw, sit: 0, shuffle: 0, lean: 0.12 * hold,
     right: hold > 0 ? { at: [handle[0], HANDLE.y, handle[1]], blend: hold, pole: "low" } : null, left: null,
-    door: { left: 0, right }, fade: seg(t, ENTER.black, ENTER.black + 0.5),
+    door: { left: 0, right }, fade: 0,
   };
 }
 
-export const LEAVE = { push: [1.1, 2.3] as const, release: 2.1, walk: [2.3, 3.6] as const, close: [3.4, 5.4] as const, black: 5.4, done: 5.9 };
+export const LEAVE = { push: [1.1, 2.3] as const, release: 2.1, walk: [2.3, 4.4] as const, close: [3.4, 5.4] as const, done: 5.45 };
 /** Just outside, facing the street. */
-export const OUTSIDE: [number, number] = [-0.45, 1.5];
+export const OUTSIDE: [number, number] = [-0.45, 2.6];
 
 /**
  * Coming out: walk up to the door, push the right-hand door open with the right hand while walking on, let go
- * as it swings wide, stop outside, and fade to black as it closes behind.
+ * as it swings wide, and stop outside while it closes behind.
  */
 const LEAVE_START: [number, number] = [-0.45, -1.0];
 /** Extra seconds coming out takes for walking up to the door from further away. */
@@ -342,7 +343,7 @@ export function leavePose(time: number, from: [number, number], fromYaw: number)
   return {
     x: at[0], z: at[1], yaw, sit: 0, shuffle: 0, lean: 0.1 * hold,
     right: hold > 0 ? { at: [point[0], PUSH.y, point[1]], blend: hold, pole: "low" } : null, left: null,
-    door: { left, right: 0 }, fade: seg(t, LEAVE.black, LEAVE.black + 0.5),
+    door: { left, right: 0 }, fade: 0,
   };
 }
 

@@ -1,4 +1,6 @@
 import { useFrame } from "@react-three/fiber";
+import { POLES, carryElbow, reachArm } from "./arms";
+import { GRAB_TIME, grabReach } from "./food";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { SIGNAL_POLES, benchJoints, benchPose, floorHeight, cameraRelativeVelocity, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, type City, PARK_SOLIDS, circleBoxPush, bikePushShare, scooterFootprint, scooterSide, SCOOTER_TIP, BENCH_SEATS, BENCH_SIT_SECONDS, BENCH_STAND_SECONDS, benchStandHeight, BENCH_SEAT_TOP, BENCH_BACK_TOP, BENCH_BACKRESTS } from "./config";
@@ -67,31 +69,6 @@ function stepYaw(k: number, fromYaw: number, from: THREE.Vector3, to: THREE.Vect
   return k < 0.25 ? turnTo(fromYaw, heading, smoothstep(k / 0.25)) : k > 0.72 ? turnTo(heading, endYaw, smoothstep((k - 0.72) / 0.28)) : heading;
 }
 
-/** Which way an elbow bends while the hand reaches (in the shoulder's frame; side 1 = left arm). */
-const POLES = {
-  low: (side: number) => new THREE.Vector3(side * 0.35, -0.6, -0.25),
-  out: (side: number) => new THREE.Vector3(side * 0.8, -0.1, -0.3),
-  back: (side: number) => new THREE.Vector3(side * 0.35, -0.25, -0.9),
-};
-/** Bends an arm so its hand reaches `world` (as near as it can), blended `blend` of the way from its pose. */
-function reachArm(upper: THREE.Group | null, lower: THREE.Group | null, world: THREE.Vector3, pole: THREE.Vector3, blend: number) {
-  const parent = upper?.parent;
-  if (!upper || !lower || !parent || blend <= 0) return;
-  const restUpper = upper.quaternion.clone(), restLower = lower.quaternion.clone();
-  const target = parent.worldToLocal(world.clone());
-  const delta = target.clone().sub(upper.position);
-  const distance = Math.min(0.579, Math.max(0.08, delta.length()));
-  const forward = delta.normalize();
-  const bend = pole.clone().addScaledVector(forward, -pole.dot(forward)).normalize();
-  const along = (0.3 * 0.3 - 0.28 * 0.28 + distance * distance) / (2 * distance);
-  const height = Math.sqrt(Math.max(0, 0.3 * 0.3 - along * along));
-  const elbowPoint = upper.position.clone().addScaledVector(forward, along).addScaledVector(bend, height);
-  const hand = upper.position.clone().addScaledVector(forward, distance);
-  upper.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), elbowPoint.clone().sub(upper.position).normalize());
-  lower.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), hand.sub(elbowPoint).normalize().applyQuaternion(upper.quaternion.clone().invert()));
-  if (blend < 1) { upper.quaternion.slerpQuaternions(restUpper, upper.quaternion.clone(), blend); lower.quaternion.slerpQuaternions(restLower, lower.quaternion.clone(), blend); }
-}
-
 export function Player({ state, city }: { state: GameState; city: City }) {
   const colliders = useMemo<Colliders>(
     () => ({
@@ -153,6 +130,10 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     // Going through a restaurant door or sitting on a chair: the movement is scripted.
     const script = state.script;
     s.reverseBlend = damp(s.reverseBlend, bike.riding && !bike.action && !incapacitated && bike.speed < -0.01 ? 1 : 0, 6, dt);
+    const holdingDrink = (state.hands.left?.cups ?? 0) + (state.hands.right?.cups ?? 0) > 0;
+    // Reaching for food on a counter: stop, and turn a little toward it.
+    const grab = state.grab, grabT = grab ? state.simulationTime - grab.at : Infinity;
+    const grabbing = grab !== null && grabT < GRAB_TIME;
     if (script) {
       s.vel.set(0, 0, 0); s.vy = 0; s.grounded = true;
       p.x = script.x; p.z = script.z; p.y = floorHeight(p.x, p.z);
@@ -162,11 +143,18 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       s.vy = 0;
       s.grounded = true;
       p.y = floorHeight(p.x, p.z);
+    } else if (grabbing && s.grounded && grab) {
+      s.vel.set(damp(s.vel.x, 0, ACCEL * 2, dt), 0, damp(s.vel.z, 0, ACCEL * 2, dt));
+      const want = Math.atan2(grab.target.x - p.x, grab.target.z - p.z), off = Math.atan2(Math.sin(want - state.rotY), Math.cos(want - state.rotY));
+      // Square up to it, but only partly: the reaching hand's shoulder leads.
+      state.rotY += off * 0.6 * (1 - Math.exp(-8 * dt));
+      state.camOrbit = state.camYaw - state.rotY - Math.PI;
     } else if (s.grounded) {
       // Restore view-relative walking; changing the player's facing never rotates the view.
       const direction = Number(fwdKey) - Number(back);
       const sideways = Number(right) - Number(left);
-      running = shift && fwdKey && !back;
+      // Nobody runs holding a drink.
+      running = shift && fwdKey && !back && !holdingDrink;
       const [vx, vz] = cameraRelativeVelocity(state.camYaw, direction, sideways, running ? RUN : WALK);
       s.vel.set(damp(s.vel.x, vx, ACCEL, dt), 0, damp(s.vel.z, vz, ACCEL, dt));
       if (direction || sideways) {
@@ -422,6 +410,8 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       root.current.rotation.z = usingBike && !incapacitated && bike.action !== "pickup" ? bike.lean : collapse * 0.12;
     }
     if (hips.current) hips.current.position.y = 0.95 + bob + riderOffset;
+    // Leaning in over the counter while reaching for food.
+    if (grabbing && !script && !usingBike) lean = Math.max(lean, 0.3 * grabReach(grabT));
     if (torso.current) torso.current.rotation.set(lean, s.reverseBlend * 0.65, 0);
     if (head.current) head.current.rotation.set(-lean * 0.5, s.reverseBlend * 1.05, 0);
     thighL.current?.rotation.set(hipL, 0, 0.13 + Math.max(0, -legSwing) + Math.max(0, plantSwing) + 0.32 * straddle);
@@ -432,6 +422,20 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     armR.current?.rotation.set(shR, 0, (-0.12 - air * 0.2) * (1 - sitHands) + 0.1 * sitHands);
     foreL.current?.rotation.set(elbow, 0, 0);
     foreR.current?.rotation.set(elbow, 0, 0);
+    // Carrying food: the hand stays at the waist (the forearm bends to keep it there) while the upper arm swings
+    // as usual and the other arm moves freely.
+    const onFoot = !usingBike && !dead && !incapacitated && !sitting && !script;
+    if (onFoot) {
+      if (state.hands.left || grab?.hand === "left") { armL.current?.rotation.set(shL, 0, 0.2); foreL.current?.rotation.set(carryElbow(shL), 0, 0); }
+      if (state.hands.right || grab?.hand === "right") { armR.current?.rotation.set(shR, 0, -0.2); foreR.current?.rotation.set(carryElbow(shR), 0, 0); }
+      if (grabbing && grab && root.current) {
+        // Up to the food until the hand touches it, then back to the waist with it: one movement.
+        root.current.updateMatrixWorld(true);
+        const side = grab.hand === "left" ? 1 : -1;
+        if (side === 1) reachArm(armL.current, foreL.current, grab.target, POLES.low(1), grabReach(grabT));
+        else reachArm(armR.current, foreR.current, grab.target, POLES.low(-1), grabReach(grabT));
+      }
+    }
     if (usingBike && !incapacitated && root.current && torso.current) {
       const pickup = bike.action === "pickup";
       root.current.updateMatrixWorld(true);

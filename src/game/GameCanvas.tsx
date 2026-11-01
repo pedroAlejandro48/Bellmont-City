@@ -19,6 +19,8 @@ import { PITCH, MPH_TO_MPS } from "./config";
 import { Scooter } from "./Scooter";
 import { BenchInteraction } from "./BenchInteraction";
 import { RestaurantInteraction } from "./RestaurantInteraction";
+import { Food } from "./Food";
+import { OrderMenu } from "@/components/OrderMenu";
 import { PhysicsGround, RestaurantWalls } from "./PhysicsGround";
 import type { GameExtras } from "./CloudGame";
 
@@ -56,6 +58,7 @@ const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameS
         <BenchInteraction state={state} /><Traffic state={state} /><Scooter state={state} /><Player state={state} city={city} />
         <Ragdoll state={state} /><CameraRig state={state} />
         {Extra && <Extra state={state} />}
+        <Food state={state} />
       </Physics>
     </Suspense>
   </Canvas>;
@@ -77,6 +80,8 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
   const [speed, setSpeed] = useState(0);
   const [dead, setDead] = useState(state.health === 0);
   const [cash, setCash] = useState(state.cash);
+  // Whole dollars as they are; cents once there are any.
+  const cashText = Number.isInteger(cash) ? String(cash) : cash.toFixed(2);
   // Test builds only: lets browser tests drive the character.
   useEffect(() => { if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") (window as unknown as { __game?: GameState }).__game = state; }, [state]);
   const fade = useRef<HTMLDivElement>(null);
@@ -167,15 +172,16 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
             </div>
             <Progress aria-label="Health" value={health} className={`health-meter h-3 ${health <= 20 ? "health-critical" : ""}`} />
           </div>
-          <div className="hud-panel flex aspect-square shrink-0 flex-col items-center justify-center gap-1 px-1" aria-label={`Cash: $${cash}`}>
+          <div className="hud-panel flex aspect-square shrink-0 flex-col items-center justify-center gap-1 px-1" aria-label={`Cash: $${cashText}`}>
             <span className="text-[10px] font-bold leading-none tracking-wide">CASH</span>
             <span className="flex items-center gap-1 text-xs font-bold leading-none tabular-nums">
               <svg viewBox="0 0 24 14" className="h-3 w-5 shrink-0" aria-hidden><rect x="0.5" y="0.5" width="23" height="13" rx="1.5" fill="#2e7d32" stroke="#1b5e20" /><rect x="2.5" y="2.5" width="19" height="9" rx="1" fill="none" stroke="#a5d6a7" strokeWidth="0.8" /><circle cx="12" cy="7" r="3.2" fill="#a5d6a7" /><text x="12" y="9.3" textAnchor="middle" fontSize="6.5" fontWeight="700" fill="#1b5e20">$</text></svg>
-              ${cash}
+              ${cashText}
             </span>
           </div>
         </div>
       </div>
+      <OrderMenu state={state} />
       <div ref={fade} className="pointer-events-none fixed inset-0 z-30 bg-black" style={{ opacity: 0 }} aria-hidden />
       {dead && (
         <div role="alert" className="death-screen pointer-events-auto fixed inset-0 z-20 flex items-center justify-center">

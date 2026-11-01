@@ -6,17 +6,8 @@ import type { GameState, Script, WorldReach } from "./state";
 import { InteractionPrompt } from "./InteractionPrompt";
 import {
   CHAIR, ENTER, LEAVE, LOBBY, enterLead, leaveLead, OUTSIDE, SIT, behindChair, enterPose, leavePose, localYaw, makeRoom, nearDoorInside, nearDoorOutside,
-  planSit, roomKey, sitPose, smooth, toLocal, toWorld, worldYaw, type Frame, type Pose, type Reach, type Room,
+  planSit, roomKey, sitPose, toLocal, toWorld, worldYaw, type Frame, type Pose, type Reach, type Room,
 } from "./restaurantRoom";
-
-const FADE_IN = 0.6;
-
-/** Behind the character, looking the way it faces (after a fade, the view starts from there). */
-function cameraBehind(state: GameState) {
-  state.camOrbit = 0;
-  state.camYaw = state.rotY + Math.PI;
-  state.camPitch = 0.22;
-}
 
 /**
  * Restaurant doors and chairs: shows the E hint, starts going in or out, sitting down or standing up, and
@@ -33,11 +24,6 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
     const hours = timeInfo(state.elapsed).hours;
     const bike = state.scooter;
     const busy = bike.riding || bike.action !== null || state.bench !== null || state.accident !== null || state.health <= 0;
-    let fade = 0;
-    if (state.fadeInAt !== null) {
-      fade = 1 - smooth((now - state.fadeInAt) / FADE_IN);
-      if (now - state.fadeInAt > FADE_IN) state.fadeInAt = null;
-    }
 
     // What the player could use right now.
     const p = prompt.current;
@@ -114,11 +100,10 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
       if (active.phase === "entering") {
         const lead = enterLead(active.from);
         const step = enterPose(Math.min(t, ENTER.done + lead), active.from, active.fromYaw);
-        activeRoom.doors = step.door; pose = step; fade = Math.max(fade, step.fade);
-        if (t >= ENTER.black + lead + 0.5 && !active.cameraSet) { active.cameraSet = true; state.rotY = worldYaw(frame, step.yaw); cameraBehind(state); }
+        activeRoom.doors = step.door; pose = step;
         if (t >= ENTER.done + lead) {
-          // In the lobby with the door closed behind; the world outside carried on all along.
-          active.phase = "inside"; active.startedAt = now; state.fadeInAt = now; fade = 1; pose = null;
+          // In the lobby with the door closed behind (the camera came in too); the world outside carried on.
+          active.phase = "inside"; active.startedAt = now; pose = null;
           activeRoom.doors = { left: 0, right: 0 };
           const [x, z] = toWorld(frame, LOBBY[0], LOBBY[1]);
           state.pos.x = x; state.pos.z = z; state.rotY = worldYaw(frame, Math.PI);
@@ -126,10 +111,9 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
       } else if (active.phase === "leaving") {
         const lead = leaveLead(active.from);
         const step = leavePose(Math.min(t, LEAVE.done + lead), active.from, active.fromYaw);
-        activeRoom.doors = step.door; pose = step; fade = Math.max(fade, step.fade);
-        if (t >= LEAVE.black + lead + 0.5 && !active.cameraSet) { active.cameraSet = true; state.rotY = worldYaw(frame, step.yaw); cameraBehind(state); }
+        activeRoom.doors = step.door; pose = step;
         if (t >= LEAVE.done + lead) {
-          state.interior = null; state.fadeInAt = now; fade = 1; pose = null;
+          state.interior = null; pose = null;
           activeRoom.doors = { left: 0, right: 0 };
           const [x, z] = toWorld(frame, OUTSIDE[0], OUTSIDE[1]);
           state.pos.x = x; state.pos.z = z; state.rotY = worldYaw(frame, 0);
@@ -170,7 +154,7 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
       const script: Script = { x, z, yaw, walk, sit: pose.sit, shuffle: pose.shuffle, lean: pose.lean, left: reach(pose.left), right: reach(pose.right) };
       state.script = script;
     } else { state.script = null; last.current = null; }
-    state.fade = fade;
+    state.fade = 0;
   }, -0.6);
 
   return <InteractionPrompt sample={() => ({ ...prompt.current, time: state.simulationTime })} />;

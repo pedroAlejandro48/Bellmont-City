@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import type { Room, SitPlan } from "./restaurantRoom";
 import type { NpcLink } from "./pedestrians";
+import type { FoodLink, Mode, PackKind } from "./food";
+import type { BodyRig } from "./CharacterBody";
 import { THROW_DISTANCE, healthAfterImpact, type SaveData, type SolidBox, type VehicleKind, type RoadPath, GET_UP_SECONDS, KNOCKDOWN_SECONDS, floorHeight, BENCH_SEATS, STARTING_CASH } from "./config";
 
 export type Accident = {
@@ -61,6 +63,13 @@ export type Interior = {
 /** An NPC as the rest of the game sees it: where it stands, whether it is down, and a hit waiting to be felt. */
 export type NpcBody = { id: number; x: number; z: number; down: boolean; moving: boolean; hit: { direction: [number, number] } | null };
 
+/** Food in one of this player's hands. */
+export type Held = { id: number; kind: PackKind; bags: number; cups: number };
+/** Reaching for food on a counter: which pack, which hand, when it started, and where the hand goes. */
+export type Grab = { pack: number; hand: "left" | "right"; at: number; target: THREE.Vector3; kind: PackKind; bags: number; cups: number; confirmed: boolean };
+/** The order menu on screen (at a counter), and the order the player has just placed from it. */
+export type FoodUi = { open: boolean; key: string | null; kind: import("./config").RestaurantKind | null; note: string | null };
+
 /** A traffic vehicle's footprint this frame, for walking and riding into it. */
 export type VehicleSolid = { index: number; kind: VehicleKind; box: SolidBox; speed: number };
 
@@ -116,6 +125,16 @@ export type GameState = {
   npcs: NpcBody[];
   /** In a multiplayer room: how the NPCs are shared with the others (null playing alone). */
   npcLink: NpcLink | null;
+  /** In a multiplayer room: how orders, the restaurant staff and food are shared (null playing alone). */
+  foodLink: FoodLink | null;
+  /** What this player is holding in each hand, and a grab in progress. */
+  hands: { left: Held | null; right: Held | null };
+  grab: Grab | null;
+  foodUi: FoodUi;
+  /** An order placed from the menu, waiting to be sent. */
+  foodOrder: { names: string[]; mode: Mode } | null;
+  /** Other players' bodies in a room, by their id (to put food they hold in their hands). */
+  remoteRigs: Map<string, BodyRig>;
 };
 
 export function createState(save: SaveData): GameState {
@@ -150,6 +169,7 @@ export function createState(save: SaveData): GameState {
     rooms: new Map(), interior: null, seat: null, script: null, standQueued: false, fade: 0, fadeInAt: null, doorPrompt: false,
     cash: Math.max(0, save.cash ?? STARTING_CASH),
     npcs: [], npcLink: null,
+    foodLink: null, hands: { left: null, right: null }, grab: null, foodUi: { open: false, key: null, kind: null, note: null }, foodOrder: null, remoteRigs: new Map(),
     seatOccupants: new Map(save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? [[save.benchSeat, "player"]] : []),
     bench: save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? { seat: save.benchSeat, phase: "seated", startedAt: 0, origin: new THREE.Vector3(...save.pos), originYaw: save.rotY } : null,
     scooter: {

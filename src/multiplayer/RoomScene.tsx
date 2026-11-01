@@ -11,6 +11,7 @@ import { applyPose, capturePose, isPoseWire, PoseBuffer, RENDER_DELAY_MS, SEND_H
 import { spawnBeside, standingFromPose, type Standing } from "./spawn";
 import { NameLabel } from "./NameLabel";
 import { makeNpcLink } from "./npcLink";
+import { makeFoodLink } from "./foodLink";
 import { bodyColor, playerOf, type Gender } from "@/platform/account";
 
 /** How long after entering a late-arriving position can still move a player who has not moved yet. */
@@ -50,7 +51,9 @@ export function RoomScene({ state, channel, remotes, joinedAt, creator }: { stat
   // The room's NPCs are shared: one player runs them, everyone sees the same ones.
   useEffect(() => {
     state.npcLink = makeNpcLink(channel);
-    return () => { state.npcLink = null; };
+    // And so are the restaurants: the orders, the staff and the food.
+    state.foodLink = makeFoodLink(channel);
+    return () => { state.npcLink = null; state.foodLink = null; };
   }, [state, channel]);
   const lastSent = useRef({ at: 0, body: "" });
   const lastHitAt = useRef(Date.now());
@@ -167,6 +170,8 @@ const RemoteAvatar = memo(function RemoteAvatar({ id, uid, creator, remotes, sta
   }, [uid]);
   const name = profile.username, color = bodyColor(profile.gender);
   const body = useBodyRig();
+  // Food this player holds is drawn in their hands.
+  useEffect(() => { state.remoteRigs.set(id, body); return () => { if (state.remoteRigs.get(id) === body) state.remoteRigs.delete(id); }; }, [state, id, body]);
   const rig = useRef<RemoteRig>({ body: [], ragdoll: Array(RAGDOLL_PART_COUNT).fill(null), scooter: null, front: null });
   const look = useMemo<ScooterLook>(() => ({ darkness: 0, scooter: { riding: false, steering: 0, braking: false } }), []);
   const ragdollMat = useMemo(() => new THREE.MeshStandardMaterial({ color, roughness: 0.72 }), [color]);

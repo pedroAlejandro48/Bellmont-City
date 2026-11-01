@@ -1,0 +1,477 @@
+import { Html } from "@react-three/drei";
+import { useFrame } from "@react-three/fiber";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import * as THREE from "three";
+import { RESTAURANTS, SIDEWALK_H, generateCity, timeInfo, type RestaurantKind } from "./config";
+import { CharacterBody, useBodyRig, type BodyRig } from "./CharacterBody";
+import { POLES, carryElbow, handWorld, pointArm, reachArm } from "./arms";
+import {
+  FoodSim, GRAB_CONTACT, GRAB_TIME, PACK_SIZE, atCounter, canReach, cents, greetingLine, localFoodLink, orderTotal, placesOf, runnerPose, toldLine, viewOf,
+  type FoodLink, type FoodPack, type FoodView, type Places, type Trip,
+} from "./food";
+import { COUNTER, roomLayout, toLocal, toWorld, worldYaw, type RoomLayout } from "./restaurantRoom";
+import { drawBrandIcon } from "./Restaurants";
+import { canvas, tex } from "./textures";
+import { bodyColor } from "@/platform/account";
+import type { GameState } from "./state";
+
+/** How long after the cashier says hello the menu comes up (s). */
+const MENU_DELAY = 2.2;
+
+type Place = { key: string; kind: RestaurantKind; room: RoomLayout; places: Places; seed: number };
+/** The latest view of the food and staff, and when it was taken (local ms), for working out ages now. */
+type Live = { view: FoodView; at: number };
+const ageNow = (live: Live, ago: number) => ago + (Date.now() - live.at) / 1000;
+const smooth = (t: number) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
+
+/** Where each runner's hands are this frame (for the food it carries), by restaurant. */
+type Hands = Map<string, { left: THREE.Vector3; right: THREE.Vector3; yaw: number }>;
+
+/** The restaurants' staff and the food: ordering at the counters, the kitchen runners, and food to take away. */
+export function Food({ state }: { state: GameState }) {
+  const places = useMemo<Place[]>(() => generateCity(state.worldSeed, 0, 0).buildings.filter((b) => b.restaurant).map((b, i) => {
+    const room = roomLayout(b);
+    return { key: room.key, kind: room.kind, room, places: placesOf(room), seed: (state.worldSeed * 31 + i * 7919) | 0 };
+  }), [state.worldSeed]);
+  const byKey = useMemo(() => new Map(places.map((p) => [p.key, p])), [places]);
+  const local = useMemo(() => localFoodLink(), []);
+  const sim = useMemo(() => new FoodSim((key) => { const p = byKey.get(key); return p ? { places: p.places, room: p.room } : null; }), [byKey]);
+  const live = useRef<Live>({ view: viewOf(sim, Date.now() / 1000), at: Date.now() });
+  const runnerHands = useMemo<Hands>(() => new Map(), []);
+  const mine = useRef({ greeted: "" as string, greetAt: 0, wasHost: true, published: "", publishedAt: 0, inside: null as string | null, sessionSeenAt: 0 });
+
+  useFrame(() => {
+    const link: FoodLink = state.foodLink ?? local;
+    const me = link.me(), nowS = Date.now() / 1000, m = mine.current;
+    const inter = state.interior, here = inter && inter.phase !== "leaving" ? inter.key : null;
+    if (here !== m.inside) { m.inside = here; link.setInside(here); }
+
+    // ---------- the host runs everything ----------
+    if (link.isHost()) {
+      if (!m.wasHost) { const last = live.current.view; sim.adopt({ ...last, sessions: new Map([...last.sessions].map(([k, s]) => [k, { ...s, ago: ageNow(live.current, s.ago) }])), trips: new Map([...last.trips].map(([k, t]) => [k, { ...t, ago: ageNow(live.current, t.ago) }])) }, nowS); }
+      m.wasHost = true;
+      for (const { by, req } of link.takeRequests()) sim.handle(by, req, nowS);
+      const others = link.others();
+      sim.step(nowS, (by, key) => (by === me ? here === key : others.get(by) === key), (by) => by === me || others.has(by));
+      const snap = sim.snapshot(nowS);
+      // Share it when something changed (ages aside), and now and then anyway.
+      const shape = JSON.stringify([snap.s.map((s) => [s[0], s[1], s[2], s[4]]), snap.r.map((r) => [r[0], r[1], r[3], r[4]]), snap.p]);
+      if (shape !== m.published || Date.now() - m.publishedAt > 3000) { m.published = shape; m.publishedAt = Date.now(); link.publish(snap); }
+      live.current = { view: viewOf(sim, nowS), at: Date.now() };
+    } else {
+      m.wasHost = false;
+      const got = link.latest();
+      if (got) live.current = got;
+    }
+    const view = live.current.view;
+    if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") (window as unknown as { __food?: unknown }).__food = { view, places: [...byKey.values()] };
+
+    // ---------- this player at a counter ----------
+    const place = here ? byKey.get(here) : undefined;
+    const lp = place && inter?.phase === "inside" ? toLocal(place.room.frame, state.pos.x, state.pos.z) : null;
+    const standing = !state.seat && !state.script && !state.accident && state.health > 0;
+    const atIt = !!(place && lp && standing && atCounter(place.places, lp[0], lp[1]));
+    const session = place ? view.sessions.get(place.key) : undefined;
+    if (atIt && place) {
+      const ours = session?.by === me;
+      if (!session && (m.greeted !== place.key || Date.now() - m.greetAt > 2500)) {
+        m.greeted = place.key; m.greetAt = Date.now();
+        link.send({ type: "greet", key: place.key, text: greetingLine(place.kind, timeInfo(state.elapsed).hours) });
+      }
+      const greetAge = ours && session ? ageNow(live.current, session.ago) : 0;
+      state.foodUi.open = !!(ours && session?.stage === "greet" && greetAge >= MENU_DELAY);
+      state.foodUi.key = place.key; state.foodUi.kind = place.kind;
+    } else {
+      if (m.greeted) {
+        // Walked away: the cashier stops talking to this player (asked again until it has).
+        const key = m.greeted;
+        if (view.sessions.get(key)?.by !== me) m.greeted = "";
+        else if (Date.now() - m.greetAt > 500) { m.greetAt = Date.now(); link.send({ type: "bye", key }); }
+      }
+      state.foodUi.open = false; state.foodUi.note = null;
+    }
+    // An order from the menu: paid for here, then sent.
+    const order = state.foodOrder;
+    if (order) {
+      state.foodOrder = null;
+      if (place && atIt && session?.by === me) {
+        const total = orderTotal(place.kind, order.names);
+        if (total > state.cash + 1e-9) state.foodUi.note = "Not enough cash";
+        else {
+          state.cash = cents(state.cash - total);
+          state.foodUi.open = false; state.foodUi.note = null;
+          link.send({ type: "order", key: place.key, kind: place.kind, names: order.names, mode: order.mode, text: toldLine(order.mode) });
+        }
+      }
+    }
+
+    // ---------- food in hand ----------
+    const held = view.packs.filter((p) => p.where === "held" && p.holder === me);
+    const hands: GameState["hands"] = { left: null, right: null };
+    for (const p of held) hands[p.hand] = { id: p.id, kind: p.kind, bags: p.bags, cups: p.cups };
+    const g = state.grab;
+    if (g) {
+      const t = state.simulationTime - g.at, p = view.packs.find((q) => q.id === g.pack);
+      if (p?.where === "held" && p.holder === me) g.confirmed = true;
+      const lost = !p || (p.where === "held" && p.holder !== me) || p.where === "runner";
+      if (lost && t > 0.25) state.grab = null;
+      else {
+        // Once the hand has it, it is in the hand (before the host has said so).
+        if (t >= GRAB_CONTACT && !hands[g.hand]) hands[g.hand] = { id: g.pack, kind: g.kind, bags: g.bags, cups: g.cups };
+        if (t >= GRAB_TIME && (g.confirmed || t > 3)) state.grab = null;
+      }
+    }
+    state.hands = hands;
+
+    // E: pick up food from the counter, one thing per free hand.
+    if (state.interactQueued && place && lp && standing && !state.grab) {
+      const free = (["right", "left"] as const).filter((h) => !hands[h]);
+      let best: { pack: FoodPack; d: number } | null = null;
+      for (const p of view.packs) {
+        if (p.key !== place.key || p.where !== "counter") continue;
+        const slot = place.places.slots[p.slot];
+        if (!slot || !canReach(slot, lp[0], lp[1])) continue;
+        const d = Math.hypot(slot.x - lp[0], slot.z - lp[1]);
+        if (!best || d < best.d) best = { pack: p, d };
+      }
+      if (best && free.length) {
+        state.interactQueued = false;
+        const slot = place.places.slots[best.pack.slot]!;
+        const [wx, wz] = toWorld(place.room.frame, slot.x, slot.z);
+        const leftX = Math.cos(state.rotY), leftZ = -Math.sin(state.rotY);
+        const onLeft = (wx - state.pos.x) * leftX + (wz - state.pos.z) * leftZ > 0;
+        const hand = free.length === 2 ? (onLeft ? "left" : "right") : free[0]!;
+        const size = PACK_SIZE[best.pack.kind];
+        // Bags by the top (the folded top, or the handles); a cup by its side, toward the player.
+        const target = new THREE.Vector3(wx, SIDEWALK_H + COUNTER.height + size.grip, wz);
+        if (best.pack.kind === "cup") { const dx = state.pos.x - wx, dz = state.pos.z - wz, d = Math.hypot(dx, dz) || 1; target.x += dx / d * 0.05; target.z += dz / d * 0.05; }
+        state.grab = { pack: best.pack.id, hand, at: state.simulationTime, target, kind: best.pack.kind, bags: best.pack.bags, cups: best.pack.cups, confirmed: false };
+        link.send({ type: "grab", pack: best.pack.id, hand });
+      }
+    }
+  }, -0.7);
+
+  // Only the restaurants nearby are drawn (all four sit around the park).
+  const [near, setNear] = useState<string[]>([]);
+  useFrame(() => {
+    const list = places.filter((p) => { const [x, z] = toWorld(p.room.frame, 0, 0); return Math.hypot(x - state.pos.x, z - state.pos.z) < 90; }).map((p) => p.key);
+    if (list.join() !== near.join()) setNear(list);
+  });
+
+  return <>
+    {places.filter((p) => near.includes(p.key)).map((p) => <Staffed key={p.key} place={p} state={state} live={live} hands={runnerHands} />)}
+    <Packs state={state} live={live} byKey={byKey} runnerHands={runnerHands} />
+  </>;
+}
+
+// ---------- the staff ----------
+
+const UNIFORM: Record<RestaurantKind, { apron: string; hat: string }> = {
+  burger: { apron: "#e53935", hat: "#e53935" },
+  pizza: { apron: "#2e7d4f", hat: "#ffffff" },
+  cafe: { apron: "#4a3221", hat: "#2e5d43" },
+  fine: { apron: "#1d1d1d", hat: "#ffffff" },
+};
+
+/** The thing each place's staff wear on their head (red caps at the burger place, and so on), and an apron. */
+function dressUp(rig: BodyRig, kind: RestaurantKind) {
+  const head = rig.head.current, torso = rig.torso.current;
+  if (!head || !torso) return () => {};
+  const u = UNIFORM[kind], mat = (c: string, r = 0.7) => new THREE.MeshStandardMaterial({ color: c, roughness: r });
+  const hat = new THREE.Group(), apron = new THREE.Group();
+  const add = (g: THREE.Group, geo: THREE.BufferGeometry, m: THREE.Material, pos: [number, number, number], rot: [number, number, number] = [0, 0, 0], scale: [number, number, number] = [1, 1, 1]) => {
+    const mesh = new THREE.Mesh(geo, m); mesh.position.set(...pos); mesh.rotation.set(...rot); mesh.scale.set(...scale); mesh.castShadow = true; g.add(mesh); return mesh;
+  };
+  if (kind === "burger") {
+    // A red baseball cap: crown and a peak out front.
+    const red = mat(u.hat, 0.6);
+    add(hat, new THREE.SphereGeometry(0.15, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), red, [0, 0.025, 0], [0, 0, 0], [1, 0.8, 1]);
+    add(hat, new THREE.CylinderGeometry(0.1, 0.1, 0.012, 20, 1, false, -Math.PI / 2, Math.PI), red, [0, 0.03, 0.12], [0.12, 0, 0], [1, 1, 0.9]);
+    add(hat, new THREE.SphereGeometry(0.018, 8, 6), mat("#ffcc00"), [0, 0.145, 0]);
+  } else if (kind === "pizza") {
+    // A white chef's hat: a band and a puffed top.
+    const white = mat(u.hat, 0.85);
+    add(hat, new THREE.CylinderGeometry(0.135, 0.14, 0.09, 20), white, [0, 0.1, 0]);
+    add(hat, new THREE.SphereGeometry(0.165, 20, 12), white, [0, 0.2, 0], [0, 0, 0], [1, 0.62, 1]);
+  } else if (kind === "cafe") {
+    // A knitted beanie with a turned-up cuff.
+    const knit = mat(u.hat, 0.95);
+    add(hat, new THREE.SphereGeometry(0.152, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2), knit, [0, 0.02, 0], [0, 0, 0], [1, 0.95, 1]);
+    add(hat, new THREE.TorusGeometry(0.148, 0.02, 8, 24), knit, [0, 0.03, 0], [Math.PI / 2, 0, 0]);
+  } else {
+    // A white headband (hachimaki) with the red sun at the front.
+    add(hat, new THREE.TorusGeometry(0.143, 0.022, 8, 28), mat(u.hat, 0.8), [0, 0.05, 0], [Math.PI / 2, 0, 0], [1, 1, 1.3]);
+    add(hat, new THREE.CircleGeometry(0.025, 16), mat("#c62828"), [0, 0.05, 0.168]);
+  }
+  add(apron, new THREE.BoxGeometry(0.27, 0.42, 0.012), mat(u.apron, 0.85), [0, 0.13, 0.163]);
+  head.add(hat); torso.add(apron);
+  return () => { head.remove(hat); torso.remove(apron); hat.traverse((o) => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); (o.material as THREE.Material).dispose(); } }); apron.traverse((o) => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); (o.material as THREE.Material).dispose(); } }); };
+}
+
+function Worker({ rigRef, color, kind }: { rigRef: (rig: BodyRig) => void; color: string; kind: RestaurantKind }) {
+  const rig = useBodyRig();
+  useEffect(() => { rigRef(rig); return dressUp(rig, kind); }, [rig, kind, rigRef]);
+  return <CharacterBody rig={rig} color={color} />;
+}
+
+/** Stands a worker's body: legs stepping by `phase` when moving, a little breathing otherwise. */
+function poseBody(rig: BodyRig, phase: number, moving: number, time: number, lean = 0) {
+  const s = Math.sin(phase), c = Math.cos(phase), legA = 0.5 * moving, kneeA = 0.65 * moving;
+  rig.thighL.current?.rotation.set(-s * legA, 0, 0);
+  rig.thighR.current?.rotation.set(s * legA, 0, 0);
+  rig.shinL.current?.rotation.set(0.08 + kneeA * Math.max(0, c), 0, 0);
+  rig.shinR.current?.rotation.set(0.08 + kneeA * Math.max(0, -c), 0, 0);
+  rig.armL.current?.rotation.set(s * 0.4 * moving, 0, 0.12);
+  rig.armR.current?.rotation.set(-s * 0.4 * moving, 0, -0.12);
+  rig.foreL.current?.rotation.set(-0.15, 0, 0);
+  rig.foreR.current?.rotation.set(-0.15, 0, 0);
+  const breathe = Math.sin(time * 2) * 0.012 * (1 - moving);
+  if (rig.hips.current) rig.hips.current.position.y = 0.95 - Math.abs(c) * 0.035 * moving + breathe;
+  rig.torso.current?.rotation.set(0.05 * moving + lean, 0, 0);
+  rig.head.current?.rotation.set(-lean * 0.6, 0, 0);
+}
+
+/** A restaurant's cashier (with the speech bubble) and kitchen runner. */
+const Staffed = memo(function Staffed({ place, state, live, hands }: { place: Place; state: GameState; live: React.RefObject<Live>; hands: Hands }) {
+  const { room, places: P, kind, key } = place;
+  const f = room.frame;
+  const colors = useMemo(() => { const r = (n: number) => ((Math.sin(place.seed * 12.9898 + n * 78.233) * 43758.5453) % 1 + 1) % 1; return [bodyColor(r(1) < 0.5 ? "female" : "male"), bodyColor(r(2) < 0.5 ? "female" : "male")] as const; }, [place.seed]);
+  const cashier = useRef<BodyRig | null>(null), runner = useRef<BodyRig | null>(null);
+  const setCashier = useMemo(() => (r: BodyRig) => { cashier.current = r; }, []);
+  const setRunner = useMemo(() => (r: BodyRig) => { runner.current = r; }, []);
+  const walk = useRef({ phase: 0, x: 0, z: 0 });
+  const bubble = useRef<THREE.Group>(null);
+  const [said, setSaid] = useState<{ text: string; shown: boolean }>({ text: "", shown: false });
+  const v = useMemo(() => ({ a: new THREE.Vector3(), b: new THREE.Vector3(), look: new THREE.Vector3() }), []);
+
+  useFrame((_, raw) => {
+    const dt = Math.min(raw, 0.05), now = state.simulationTime, L = live.current;
+    if (!L) return;
+    const view = L.view, session = view.sessions.get(key);
+    // ---- cashier: behind the register, facing the customers ----
+    const c = cashier.current;
+    if (c?.root.current) {
+      const [x, z] = toWorld(f, P.cashier.x, P.cashier.z);
+      c.root.current.position.set(x, SIDEWALK_H, z);
+      c.root.current.rotation.set(0, worldYaw(f, P.cashier.yaw), 0);
+      poseBody(c, 0, 0, now + place.seed);
+      if (session) {
+        const age = ageNow(L, session.ago);
+        // Talking: a little nod while speaking.
+        const talk = age < 3 ? Math.sin(age * 9) * 0.05 * (1 - smooth((age - 2.4) / 0.6)) : 0;
+        c.head.current?.rotation.set(talk, 0, 0);
+        if (session.stage === "told") {
+          // Pointing (right arm) where to wait: the pick-up spot by the register, or the tables.
+          const target = session.mode === "togo" ? P.slots[0] ?? P.register : P.tables;
+          const [tx, tz] = toWorld(f, target.x, target.z);
+          v.a.set(tx, SIDEWALK_H + (session.mode === "togo" ? COUNTER.height + 0.15 : 1.0), tz);
+          const blend = smooth((age - 0.35) / 0.55) * (1 - smooth((age - 2.9) / 0.7));
+          c.root.current.updateMatrixWorld(true);
+          pointArm(c.armR.current, c.foreR.current, v.a, blend);
+        }
+      }
+    }
+    // ---- runner: the kitchen, out to the counter with food or to take it back ----
+    const r = runner.current, trip = view.trips.get(key);
+    if (r?.root.current) {
+      const t = trip ? ageNow(L, trip.ago) : 0;
+      const tripPlain: Trip | null = trip ? { task: trip.task, slots: trip.slots } : null;
+      const pose = runnerPose(P, room, tripPlain, t);
+      const [x, z] = toWorld(f, pose.x, pose.z);
+      const w = walk.current;
+      w.phase += dt * pose.speed * 4.2;
+      r.root.current.position.set(x, SIDEWALK_H, z);
+      r.root.current.rotation.set(0, worldYaw(f, pose.yaw), 0);
+      const moving = Math.min(1, pose.speed / 1.3);
+      poseBody(r, w.phase, moving, now + place.seed * 0.7, 0.3 * pose.reach);
+      if (pose.carrying) {
+        // Food in both hands at the waist, forearms bent, arms swinging a little.
+        const s = Math.sin(w.phase) * 0.25 * moving;
+        r.armL.current?.rotation.set(s, 0, 0.22); r.foreL.current?.rotation.set(carryElbow(s), 0, 0);
+        r.armR.current?.rotation.set(-s, 0, -0.22); r.foreR.current?.rotation.set(carryElbow(-s), 0, 0);
+      }
+      if (pose.reach > 0 && trip) {
+        // Reaching over the counter to set the food down (or take it up), each hand to its own spot.
+        r.root.current.updateMatrixWorld(true);
+        const sorted = [...trip.slots].sort((a, b) => (P.slots[b]?.x ?? 0) - (P.slots[a]?.x ?? 0));
+        const kinds = trip.packs.map((id) => view.packs.find((p) => p.id === id)?.kind ?? "bag");
+        // The runner faces +z, so its left hand is on the +x side: it takes the spot furthest that way.
+        sorted.forEach((slot, i) => {
+          const s = P.slots[slot]; if (!s) return;
+          const [sx, sz] = toWorld(f, s.x, s.z);
+          v.b.set(sx, SIDEWALK_H + COUNTER.height + PACK_SIZE[kinds[trip.slots.indexOf(slot)] ?? "bag"].grip, sz);
+          if (i === 0) reachArm(r.armL.current, r.foreL.current, v.b, POLES.low(1), pose.reach);
+          else reachArm(r.armR.current, r.foreR.current, v.b, POLES.low(-1), pose.reach);
+        });
+      }
+      r.root.current.updateMatrixWorld(true);
+      const entry = hands.get(key) ?? { left: new THREE.Vector3(), right: new THREE.Vector3(), yaw: 0 };
+      if (r.foreL.current) handWorld(r.foreL.current, entry.left);
+      if (r.foreR.current) handWorld(r.foreR.current, entry.right);
+      entry.yaw = worldYaw(f, pose.yaw);
+      hands.set(key, entry);
+    }
+    // ---- the speech bubble over the cashier, for anyone in the restaurant ----
+    const show = !!session && state.interior?.key === key && state.interior.phase === "inside";
+    const text = session?.text ?? "";
+    if (show !== said.shown || (show && text !== said.text)) setSaid({ text: show ? text : said.text, shown: show });
+    if (bubble.current) {
+      const [x, z] = toWorld(f, P.cashier.x, P.cashier.z);
+      bubble.current.position.set(x, SIDEWALK_H + 2.28, z);
+    }
+  });
+
+  return <>
+    <Worker rigRef={setCashier} color={colors[0]} kind={kind} />
+    <Worker rigRef={setRunner} color={colors[1]} kind={kind} />
+    <group ref={bubble}>
+      <Html center distanceFactor={5.5} zIndexRange={[8, 0]} pointerEvents="none">
+        <div className={`speech-bubble ${said.shown ? "shown" : ""}`} role="status" aria-live="polite">{said.text}</div>
+      </Html>
+    </group>
+  </>;
+});
+
+// ---------- the food itself ----------
+
+/** Paper, plastic and card for the packs, and each place's printed bag. */
+function usePackLooks() {
+  return useMemo(() => {
+    const m = (color: string, roughness = 0.85, metalness = 0) => new THREE.MeshStandardMaterial({ color, roughness, metalness });
+    const brand = Object.fromEntries((Object.keys(RESTAURANTS) as RestaurantKind[]).map((kind) => {
+      const [c, g] = canvas(256, 256);
+      g.fillStyle = "#c8a27a"; g.fillRect(0, 0, 256, 256);
+      // The place's emblem and name printed on the side.
+      g.fillStyle = "rgba(255,255,255,0.88)"; g.beginPath(); g.arc(128, 104, 74, 0, Math.PI * 2); g.fill();
+      drawBrandIcon(kind, g, 128, 108, 92);
+      g.fillStyle = "#3b2a1e"; g.textAlign = "center"; g.textBaseline = "middle";
+      const name = RESTAURANTS[kind].name;
+      let size = 30; g.font = `800 ${size}px Manrope, Arial, sans-serif`;
+      while (g.measureText(name).width > 230 && size > 12) { size -= 1; g.font = `800 ${size}px Manrope, Arial, sans-serif`; }
+      g.fillText(name, 128, 212);
+      const map = tex(c);
+      return [kind, new THREE.MeshStandardMaterial({ map, roughness: 0.85 })];
+    })) as Record<RestaurantKind, THREE.MeshStandardMaterial>;
+    const cupColor: Record<RestaurantKind, string> = { cafe: "#f3ece0", pizza: "#ffffff", fine: "#f4efe6", burger: "#ffffff" };
+    const sleeve: Record<RestaurantKind, string> = { cafe: "#6b4a2f", pizza: "#2e7d4f", fine: "#b71c1c", burger: "#e53935" };
+    return {
+      kraft: m("#c8a27a"), kraftDark: m("#a8835c"), lid: m("#f8f8f6", 0.35), sticker: Object.fromEntries(Object.entries(sleeve).map(([k, c]) => [k, m(c, 0.6)])) as Record<RestaurantKind, THREE.MeshStandardMaterial>,
+      cup: Object.fromEntries(Object.entries(cupColor).map(([k, c]) => [k, m(c, 0.5)])) as Record<RestaurantKind, THREE.MeshStandardMaterial>,
+      tray: m("#9e9585", 0.95), handle: m("#b48e66", 0.9), brand,
+      geo: {
+        box: new THREE.BoxGeometry(1, 1, 1),
+        cup: new THREE.CylinderGeometry(0.046, 0.036, 0.15, 20),
+        sleeve: new THREE.CylinderGeometry(0.0445, 0.04, 0.06, 20),
+        lidRim: new THREE.CylinderGeometry(0.05, 0.05, 0.012, 24),
+        lidDome: new THREE.CylinderGeometry(0.036, 0.046, 0.014, 24),
+        lidTab: new THREE.BoxGeometry(0.022, 0.006, 0.016),
+        handle: new THREE.TorusGeometry(0.075, 0.009, 6, 16, Math.PI),
+        plane: new THREE.PlaneGeometry(1, 1),
+      },
+    };
+  }, []);
+}
+type Looks = ReturnType<typeof usePackLooks>;
+
+/** A to-go cup: tapered, a printed sleeve, and a snap-on lid with a raised sip lip. Its base at the origin. */
+function cupModel(looks: Looks, kind: RestaurantKind) {
+  const g = new THREE.Group(), G = looks.geo;
+  const add = (geo: THREE.BufferGeometry, mat: THREE.Material, y: number, extra?: (m: THREE.Mesh) => void) => { const mesh = new THREE.Mesh(geo, mat); mesh.position.y = y; mesh.castShadow = true; extra?.(mesh); g.add(mesh); return mesh; };
+  add(G.cup, looks.cup[kind], 0.075);
+  add(G.sleeve, looks.sticker[kind], 0.07);
+  add(G.lidRim, looks.lid, 0.154);
+  add(G.lidDome, looks.lid, 0.166);
+  add(G.lidTab, looks.lid, 0.175, (m) => { m.position.z = 0.03; });
+  return g;
+}
+
+/** Builds a pack's model with its base at the origin and its front (the printed side) toward +z. */
+function packModel(looks: Looks, p: FoodPack, kind: RestaurantKind) {
+  const g = new THREE.Group(), G = looks.geo;
+  const box = (mat: THREE.Material, w: number, h: number, d: number, x: number, y: number, z: number) => { const mesh = new THREE.Mesh(G.box, mat); mesh.scale.set(w, h, d); mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true; g.add(mesh); return mesh; };
+  if (p.kind === "bag") {
+    const s = PACK_SIZE.bag;
+    box(looks.kraft, s.w, s.h - 0.05, s.d, 0, (s.h - 0.05) / 2, 0);
+    // The top folded over twice, and the place's sticker sealing it.
+    box(looks.kraftDark, s.w - 0.01, 0.05, s.d * 0.32, 0, s.h - 0.025, 0);
+    box(looks.sticker[kind], 0.06, 0.04, 0.003, 0, s.h - 0.06, s.d / 2 + 0.002);
+  } else if (p.kind === "cup") {
+    g.add(cupModel(looks, kind));
+  } else {
+    const s = PACK_SIZE.big;
+    box(looks.kraft, s.w, s.h, s.d, 0, s.h / 2, 0);
+    // The printed side faces whoever it is for.
+    const print = new THREE.Mesh(G.plane, looks.brand[kind]); print.scale.set(0.28, 0.28, 1); print.position.set(0, s.h * 0.5, s.d / 2 + 0.002); g.add(print);
+    // Two twisted-paper handles over the top.
+    for (const z of [-0.06, 0.06]) { const h = new THREE.Mesh(G.handle, looks.handle); h.position.set(0, s.h, z); h.scale.set(1.1, 1.45, 1); g.add(h); }
+    // Inside: the cups in their holder, lids peeking over the top; the small bags beside them.
+    if (p.cups > 0) {
+      const tray = box(looks.tray, 0.2, 0.05, 0.2 * 0 + s.d - 0.03, -0.08, s.h - 0.2, 0);
+      tray.castShadow = false;
+      [[-0.045, -0.045], [0.045, -0.045], [-0.045, 0.045], [0.045, 0.045]].slice(0, Math.min(4, p.cups)).forEach(([cx, cz]) => {
+        const cup = cupModel(looks, kind); cup.position.set(-0.08 + cx!, s.h - 0.175, cz! * 0.85); g.add(cup);
+      });
+    }
+    for (let i = 0; i < p.bags; i++) box(looks.kraftDark, 0.1, 0.04, s.d - 0.05, p.cups ? 0.1 : -0.12 + i * 0.12, s.h - 0.01 - i * 0.004, 0);
+  }
+  return g;
+}
+
+const PackObject = memo(function PackObject({ looks, pack, kind, objects }: { looks: Looks; pack: FoodPack; kind: RestaurantKind; objects: Map<number, THREE.Group> }) {
+  const model = useMemo(() => packModel(looks, pack, kind), [looks, pack.kind, pack.bags, pack.cups, kind]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { objects.set(pack.id, model); return () => { objects.delete(pack.id); }; }, [objects, pack.id, model]);
+  return <primitive object={model} />;
+});
+
+/** Every pack of food: on a counter, in a runner's hands, or in a player's hand (always upright). */
+function Packs({ state, live, byKey, runnerHands }: { state: GameState; live: React.RefObject<Live>; byKey: Map<string, Place>; runnerHands: Hands }) {
+  const looks = usePackLooks();
+  const objects = useMemo(() => new Map<number, THREE.Group>(), []);
+  const [list, setList] = useState<FoodPack[]>([]);
+  const at = useMemo(() => new THREE.Vector3(), []);
+  useFrame(() => {
+    const L = live.current; if (!L) return;
+    const view = L.view, me = (state.foodLink ?? null)?.me() ?? "me";
+    const shown = view.packs.filter((p) => p.where !== "kitchen" && p.where !== "gone");
+    const sig = shown.map((p) => `${p.id}:${p.kind}:${p.bags}:${p.cups}`).join();
+    if (sig !== list.map((p) => `${p.id}:${p.kind}:${p.bags}:${p.cups}`).join()) setList(shown);
+    for (const p of shown) {
+      const obj = objects.get(p.id), place = byKey.get(p.key);
+      if (!obj || !place) continue;
+      const f = place.room.frame, size = PACK_SIZE[p.kind];
+      obj.visible = true;
+      const grab = state.grab;
+      const inMyHand = (p.where === "held" && p.holder === me) || (grab?.pack === p.id && state.simulationTime - grab.at >= GRAB_CONTACT);
+      if (inMyHand || p.where === "held") {
+        const hand = inMyHand && grab?.pack === p.id ? grab.hand : p.hand;
+        let fore: THREE.Object3D | null | undefined, yaw = 0;
+        if (inMyHand) { fore = state.avatar.body[hand === "left" ? 9 : 11]; yaw = state.rotY; }
+        else { const rig = state.remoteRigs.get(p.holder); fore = hand === "left" ? rig?.foreL.current : rig?.foreR.current; yaw = rig?.root.current?.rotation.y ?? 0; }
+        if (!fore) { obj.visible = false; continue; }
+        fore.updateWorldMatrix(true, false);
+        handWorld(fore, at);
+        // Hanging from the hand (a cup held by its side, just in front of the palm), always upright.
+        if (p.kind === "cup") at.addScaledVector(new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)), 0.045);
+        obj.position.set(at.x, at.y - size.grip, at.z);
+        obj.rotation.set(0, yaw + (p.kind === "big" ? Math.PI / 2 * (hand === "left" ? 1 : -1) : 0), 0);
+      } else if (p.where === "runner") {
+        const trip = view.trips.get(p.key), h = runnerHands.get(p.key);
+        if (!trip || !h) { obj.visible = false; continue; }
+        // Same hands as the runner reaches with: the pack for the spot furthest toward +x in the left.
+        const P = place.places, slotX = (id: number) => P.slots[trip.slots[trip.packs.indexOf(id)] ?? 0]?.x ?? 0;
+        const order = [...trip.packs].sort((a, b) => slotX(b) - slotX(a));
+        const hp = order.indexOf(p.id) === 0 ? h.left : h.right;
+        obj.position.set(hp.x, hp.y - size.grip, hp.z);
+        obj.rotation.set(0, h.yaw, 0);
+      } else {
+        const slot = place.places.slots[p.slot];
+        if (!slot) { obj.visible = false; continue; }
+        const [x, z] = toWorld(f, slot.x, slot.z);
+        obj.position.set(x, SIDEWALK_H + COUNTER.height, z);
+        obj.rotation.set(0, worldYaw(f, 0), 0);
+      }
+    }
+  });
+  return <>{list.map((p) => <PackObject key={p.id} looks={looks} pack={p} kind={byKey.get(p.key)?.kind ?? "burger"} objects={objects} />)}</>;
+}
+
