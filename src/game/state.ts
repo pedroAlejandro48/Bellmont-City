@@ -134,6 +134,8 @@ export type GameState = {
   trafficLink: TrafficLink | null;
   /** In a multiplayer room: who is using which restaurant door (null playing alone). */
   doorLink: DoorLink | null;
+  /** Restaurant chairs other players are sitting on (or sitting down on), as `roomKey#index`. */
+  takenChairs: Set<string>;
   /** Slow pushes this player's bike gave to other bikes this frame, by bike id: a world velocity (m/s). */
   bikePushes: Map<string, [number, number]>;
   /** In a multiplayer room: how orders, the restaurant staff and food are shared (null playing alone). */
@@ -180,7 +182,7 @@ export function createState(save: SaveData): GameState {
     rooms: new Map(), interior: null, seat: null, script: null, standQueued: false, fade: 0, fadeInAt: null, doorPrompt: false,
     cash: Math.max(0, save.cash ?? STARTING_CASH),
     npcs: [], npcLink: null,
-    trafficLink: null, doorLink: null, bikePushes: new Map(),
+    trafficLink: null, doorLink: null, bikePushes: new Map(), takenChairs: new Set(),
     foodLink: null, hands: { left: null, right: null }, grab: null, foodUi: { open: false, key: null, kind: null, note: null }, foodOrder: null, remoteRigs: new Map(),
     seatOccupants: new Map(save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? [[save.benchSeat, "player"]] : []),
     bench: save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? { seat: save.benchSeat, phase: "seated", startedAt: 0, origin: new THREE.Vector3(...save.pos), originYaw: save.rotY } : null,

@@ -79,7 +79,7 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
       } else {
         let best = Infinity;
         room.items.forEach((it, index) => {
-          if (it.kind !== "chair" || !behindChair(it, lx, lz, yaw)) return;
+          if (it.kind !== "chair" || state.takenChairs.has(`${room.key}#${index}`) || !behindChair(it, lx, lz, yaw)) return;
           const d = Math.hypot(it.x - lx, it.z - lz);
           if (d < best) { best = d; chair = { room, index }; }
         });

@@ -14,6 +14,7 @@ import { makeNpcLink } from "./npcLink";
 import { makeFoodLink } from "./foodLink";
 import { makeTrafficLink } from "./trafficLink";
 import { makeDoorLink } from "./doorLink";
+import { FurnitureSync } from "./FurnitureSync";
 import { bodyColor, playerOf, type Gender } from "@/platform/account";
 
 /** How long after entering a late-arriving position can still move a player who has not moved yet. */
@@ -152,7 +153,7 @@ export function RoomScene({ state, channel, remotes, joinedAt, creator }: { stat
   });
   useEffect(() => () => { state.others = []; state.otherBikes = []; }, [state]);
 
-  return <>{ids.map((entry) => {
+  return <><FurnitureSync state={state} channel={channel} />{ids.map((entry) => {
     const [id = "", uid = ""] = entry.split(" ");
     return <RemoteAvatar key={entry} id={id} uid={uid} creator={uid !== "" && uid === creator} remotes={remotes} state={state} />;
   })}</>;

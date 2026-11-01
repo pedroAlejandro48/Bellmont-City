@@ -28,7 +28,7 @@ export function MainMenu({ username, message, onCity, onRoom, onSignOut }: { use
             <Button type="button" variant={joining ? "secondary" : "outline"} className="flex-1 rounded-none border-0" aria-expanded={joining} onClick={() => { setJoining((v) => !v); setMsg(null); }}>Join a room</Button>
           </div>
           {joining && <form onSubmit={join} className="flex gap-2">
-            <input aria-label="Room code" className="auth-input flex-1 uppercase" autoFocus autoComplete="off" spellCheck={false} maxLength={6} placeholder="Enter the room number" value={code} onChange={(e) => setCode(e.target.value)} />
+            <input aria-label="Room code" className="auth-input flex-1 uppercase placeholder:normal-case" autoFocus autoComplete="off" spellCheck={false} maxLength={6} placeholder="Enter the room code" value={code} onChange={(e) => setCode(e.target.value)} />
             <Button type="submit">Join</Button>
           </form>}
           {(msg ?? message) && <p className="text-center text-sm text-accent">{msg ?? message}</p>}
