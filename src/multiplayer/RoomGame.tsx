@@ -54,7 +54,7 @@ export function RoomEntry({ account, request, onExit }: { account: Account; requ
     })();
   }, [account, request, onExit]);
 
-  if (!session) return <div className="flex min-h-screen items-center justify-center bg-background font-display text-2xl text-foreground">
+  if (!session) return <div className="auth-bg flex min-h-screen items-center justify-center font-display text-2xl text-foreground">
     {request.mode === "create" ? "Building your room…" : "Joining the room…"}
   </div>;
   return <RoomGame account={account} session={session} onExit={onExit} />;

@@ -174,7 +174,11 @@
     transition: filter 0.2s;
   }
   .hud-button:hover { filter: brightness(1.08); }
-  .auth-bg { background: var(--gradient-city); }
+  /* The pages before the game: the park at night (the same scene as the site icon), in a shape for each screen. */
+  /* --city-bg is drawn for the exact screen by lib/cityBackdrop.ts; these pictures stand in until then. */
+  .auth-bg { background: #0b1230 var(--city-bg, url("/bg-city.webp")) center bottom / cover no-repeat; }
+  @media (max-aspect-ratio: 1/1) { .auth-bg { background-image: var(--city-bg, url("/bg-city-tall.webp")); } }
+  @media (min-aspect-ratio: 2/1) { .auth-bg { background-image: var(--city-bg, url("/bg-city-wide.webp")); } }
   .auth-input {
     width: 100%;
     border-radius: var(--radius-md);

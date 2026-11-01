@@ -10,6 +10,7 @@ import { RoomEntry, type RoomRequest } from "@/multiplayer/RoomGame";
 import { isSignedIn, signOutAccount, watchAccount, type Account } from "@/platform/account";
 import { normalizeRoomCode } from "@/platform/rooms";
 import "./styles.css";
+import { startCityBackdrop } from "@/lib/cityBackdrop";
 
 type View = { name: "menu" | "city" | "guest" } | { name: "room"; request: RoomRequest };
 
@@ -72,4 +73,5 @@ function App() {
   return <MainMenu username={account.username} message={menuMessage} onSignOut={() => void signOut()} onCity={() => setView({ name: "city" })} onRoom={(request) => { setMenuMessage(undefined); setView({ name: "room", request }); }} />;
 }
 
+startCityBackdrop();
 createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);

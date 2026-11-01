@@ -132,7 +132,7 @@ export function CloudGame({ account, onExit, world, extras }: { account: Account
 
   if (!state)
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background font-display text-2xl text-foreground">
+      <div className="auth-bg flex min-h-screen items-center justify-center font-display text-2xl text-foreground">
         Loading your city…
       </div>
     );
