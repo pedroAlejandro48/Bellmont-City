@@ -7,13 +7,16 @@ import { canConsume, consume } from "./needs";
 import { CharacterBody, useBodyRig, type BodyRig } from "./CharacterBody";
 import { POLES, carryElbow, handWorld, pointArm, reachArm } from "./arms";
 import {
-  DROP_CONTACT, DROP_TIME, EAT_SECONDS, FoodSim, isDrinkName, priceOf, GRAB_CONTACT, GRAB_TIME, PACK_SIZE, atCounter, canReach, cents, greetingLine, localFoodLink, orderTotal, placesOf, runnerPose, toldLine, viewOf,
+  DROP_CONTACT, DROP_TIME, EAT_SECONDS, FoodSim, isDrinkName, priceOf, readSnapshot, GRAB_CONTACT, GRAB_TIME, PACK_SIZE, atCounter, canReach, cents, greetingLine, localFoodLink, orderTotal, placesOf, runnerPose, toldLine, viewOf,
   type FoodLink, type FoodPack, type FoodView, type Places, type Trip,
 } from "./food";
 import { COUNTER, TABLE, roomLayout, toLocal, toWorld, walkTime, walkTo, worldYaw, type RoomLayout } from "./restaurantRoom";
 import { drawBrandIcon } from "./Restaurants";
 import { canvas, tex } from "./textures";
 import { dishModel } from "./dishes";
+import { DinerSim, type DinerRow } from "./diners";
+import type { DoorUse } from "./doors";
+import { benchJoints } from "./config";
 import { bodyColor } from "@/platform/account";
 import type { GameState } from "./state";
 
@@ -37,6 +40,9 @@ export function Food({ state }: { state: GameState }) {
   }), [state.worldSeed]);
   const byKey = useMemo(() => new Map(places.map((p) => [p.key, p])), [places]);
   const local = useMemo(() => localFoodLink(), []);
+  const diners = useMemo(() => new DinerSim(), []);
+  /** Customers' uses of the doors (food clock). */
+  const npcUses = useMemo<DoorUse[]>(() => [], []);
   const sim = useMemo(() => new FoodSim((key) => { const p = byKey.get(key); return p ? { places: p.places, room: p.room } : null; }), [byKey]);
   const live = useRef<Live>({ view: viewOf(sim, Date.now() / 1000), at: Date.now() });
   const runnerHands = useMemo<Hands>(() => new Map(), []);
@@ -60,12 +66,30 @@ export function Food({ state }: { state: GameState }) {
       m.wasHost = true;
       for (const { by, req } of link.takeRequests()) sim.handle(by, req, nowS);
       const others = link.others();
-      sim.step(nowS, (by, key) => (by === me ? here === key : others.get(by) === key), (by) => by === me || others.has(by));
-      const snap = sim.snapshot(nowS);
-      // Share it when something changed (ages aside), and now and then anyway.
-      const shape = JSON.stringify([snap.s.map((s) => [s[0], s[1], s[2], s[4]]), snap.r.map((r) => [r[0], r[1], r[3], r[4]]), snap.p]);
-      if (shape !== m.published || Date.now() - m.publishedAt > 3000) { m.published = shape; m.publishedAt = Date.now(); link.publish(snap); }
-      live.current = { view: viewOf(sim, nowS), at: Date.now() };
+      // Customers who aren't players: they come in, queue, order, wait or sit and eat, and leave.
+      const clockGap = nowS - performance.now() / 1000;
+      diners.step({
+        now: nowS, hours: timeInfo(state.elapsed).hours, keys: places.map((q) => q.key), random: Math.random,
+        rooms: (key) => { const room = state.rooms.get(key), pl = byKey.get(key); return room && pl ? { room, places: pl.places, kind: pl.kind } : null; },
+        people: (key) => {
+          const pl = byKey.get(key); if (!pl) return [];
+          const out: { x: number; z: number }[] = [];
+          const add = (x: number, z: number) => { const [lx, lz] = toLocal(pl.room.frame, x, z); out.push({ x: lx, z: lz }); };
+          if (here === key) add(state.pos.x, state.pos.z);
+          for (const o of state.others) if (o.id && others.get(o.id) === key) add(o.x, o.z);
+          return out;
+        },
+        takenChairs: new Set([...state.takenChairs, ...(state.seat ? [`${state.seat.room}#${state.seat.plan.chair}`] : [])]),
+        doorUses: (key, leaf) => [...(state.doorUsesNow?.(key, leaf) ?? []).filter((u) => !npcUses.includes(u)).map((u) => ({ ...u, start: u.start + clockGap })), ...npcUses.filter((u) => u.key === key && u.leaf === leaf)],
+        addDoorUse: (use) => { npcUses.push(use); },
+      }, sim);
+      for (let i = npcUses.length - 1; i >= 0; i--) if (nowS - npcUses[i]!.start > 40) npcUses.splice(i, 1);
+      sim.step(nowS, (by, key) => (by === me ? here === key : by.startsWith("npc:") ? diners.inside(by, key) : others.get(by) === key), (by) => by === me || others.has(by) || (by.startsWith("npc:") && diners.present(by)));
+      const snap = { ...sim.snapshot(nowS), c: diners.rows(), u: npcUses.map((u) => [u.key, u.leaf === "left" ? 1 : 0, u.mode === "follow" ? 1 : 0, cents(nowS - u.start), cents(u.lead), cents(u.pass)] as [string, number, number, number, number, number]) };
+      // Share it when something changed (ages aside), and now and then anyway; customers walking: ten times a second.
+      const shape = JSON.stringify([snap.s.map((s) => [s[0], s[1], s[2], s[4]]), snap.r.map((r) => [r[0], r[1], r[3], r[4]]), snap.p, snap.c]);
+      if ((shape !== m.published && Date.now() - m.publishedAt > 100) || Date.now() - m.publishedAt > 3000) { m.published = shape; m.publishedAt = Date.now(); link.publish(snap); }
+      live.current = { view: readSnapshot(snap) ?? viewOf(sim, nowS), at: Date.now() };
     } else {
       m.wasHost = false;
       const got = link.latest();
@@ -73,6 +97,9 @@ export function Food({ state }: { state: GameState }) {
     }
     const view = live.current.view;
     state.staffBodies = [...staffAt.values()].flat();
+    // Customers' door uses, timed on the doors' clock, so every door swings for them as for players.
+    const perf = performance.now() / 1000, sinceView = (Date.now() - live.current.at) / 1000;
+    state.npcDoorUses = view.doors.map((u) => ({ key: u.key, leaf: u.leaf, mode: u.mode, lead: u.lead, pass: u.pass, start: perf - u.ago - sinceView }));
     if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") (window as unknown as { __food?: unknown }).__food = { view, places: [...byKey.values()] };
 
     // ---------- this player at a counter ----------
@@ -343,6 +370,7 @@ export function Food({ state }: { state: GameState }) {
     {places.filter((p) => near.includes(p.key)).map((p) => <Staffed key={p.key} place={p} state={state} live={live} hands={runnerHands} staffAt={staffAt} />)}
     <Packs state={state} live={live} byKey={byKey} runnerHands={runnerHands} dropped={dropped} />
     <EatenFood state={state} live={live} byKey={byKey} />
+    <Diners state={state} live={live} byKey={byKey} staffAt={staffAt} />
     <Bins />
   </>;
 }
@@ -675,6 +703,7 @@ const PackObject = memo(function PackObject({ looks, pack, kind, objects }: { lo
 function Packs({ state, live, byKey, runnerHands, dropped }: { state: GameState; live: React.RefObject<Live>; byKey: Map<string, Place>; runnerHands: Hands; dropped: Map<number, { x: number; z: number; yaw: number; y?: number }> }) {
   const looks = usePackLooks();
   const objects = useMemo(() => new Map<number, THREE.Group>(), []);
+  useEffect(() => { if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") (window as unknown as { __packObjs?: unknown }).__packObjs = objects; }, [objects]);
   const [list, setList] = useState<FoodPack[]>([]);
   const at = useMemo(() => new THREE.Vector3(), []);
   useFrame(() => {
@@ -790,3 +819,74 @@ export function Bins() {
     </group>
   ))}</>;
 }
+
+/** Customers who aren't players, drawn from the shared rows: walking, reaching, sitting and eating like players. */
+export function Diners({ state, live, byKey, staffAt }: { state: GameState; live: React.RefObject<Live>; byKey: Map<string, Place>; staffAt: Map<string, { x: number; z: number; r: number }[]> }) {
+  const [ids, setIds] = useState<string[]>([]);
+  useFrame(() => {
+    const L = live.current; if (!L) return;
+    const next = L.view.diners.map((r) => `${r[0]}:${r[1]}:${r[12]}`);
+    if (next.join() !== ids.join()) setIds(next);
+    // They are solid to players, like the staff.
+    staffAt.set("diners", L.view.diners.flatMap((r) => { const pl = byKey.get(r[1]); if (!pl) return []; const [x, z] = toWorld(pl.room.frame, r[2], r[3]); return [{ x, z, r: 0.3 }]; }));
+  });
+  useEffect(() => () => { staffAt.delete("diners"); }, [staffAt]);
+  return <>{ids.map((k) => { const [id = "0", key = "", seed = "0"] = k.split(":"); return <DinerView key={k} id={Number(id)} roomKey={key.includes(":") ? key : key} seed={Number(seed)} state={state} live={live} byKey={byKey} />; })}</>;
+}
+
+const DinerView = memo(function DinerView({ id, seed, state, live, byKey }: { id: number; roomKey: string; seed: number; state: GameState; live: React.RefObject<Live>; byKey: Map<string, Place> }) {
+  const rig = useBodyRig();
+  const color = useMemo(() => bodyColor(seed % 2 ? "female" : "male"), [seed]);
+  const look = useRef({ x: 0, z: 0, yaw: 0, phase: 0, ready: false });
+  const v = useMemo(() => ({ a: new THREE.Vector3() }), []);
+  useEffect(() => { const k = `npc:${id}`; state.remoteRigs.set(k, rig); return () => { if (state.remoteRigs.get(k) === rig) state.remoteRigs.delete(k); }; }, [state, id, rig]);
+  useFrame((_, raw) => {
+    const dt = Math.min(raw, 0.05), L = live.current, root = rig.root.current;
+    if (!L || !root) return;
+    const row = L.view.diners.find((r) => r[0] === id) as DinerRow | undefined;
+    const pl = row ? byKey.get(row[1]) : undefined;
+    if (!row || !pl) { root.visible = false; return; }
+    root.visible = true;
+    const f = pl.room.frame, [, , lx, lz, lyaw, speed, sit, hand, rx, ry, rz, reach] = row;
+    const [wx, wz] = toWorld(f, lx, lz), wyaw = worldYaw(f, lyaw), lk = look.current;
+    // Glide between the shared updates (ten a second).
+    const k = lk.ready && Math.hypot(wx - lk.x, wz - lk.z) < 3 ? 1 - Math.exp(-12 * dt) : 1;
+    lk.x += (wx - lk.x) * k; lk.z += (wz - lk.z) * k; lk.yaw += Math.atan2(Math.sin(wyaw - lk.yaw), Math.cos(wyaw - lk.yaw)) * k; lk.ready = true;
+    lk.phase += dt * speed * 4.2;
+    root.position.set(lk.x, floorHeight(lk.x, lk.z), lk.z); root.rotation.set(0, lk.yaw, 0);
+    poseBody(rig, lk.phase, Math.min(1, speed / 1.25), state.simulationTime + seed);
+    if (sit > 0) {
+      // Seated: the same sitting pose as the player's.
+      const j = benchJoints(sit);
+      rig.thighL.current?.rotation.set(j.hip, 0, 0.13); rig.thighR.current?.rotation.set(j.hip, 0, -0.13);
+      rig.shinL.current?.rotation.set(j.knee, 0, 0); rig.shinR.current?.rotation.set(j.knee, 0, 0);
+      if (rig.hips.current) rig.hips.current.position.y = 0.95 + (0.46 + 0.077 - 0.95) * sit;
+      rig.torso.current?.rotation.set(j.lean, 0, 0);
+    }
+    // Holding food: at the waist, like players.
+    const me = `npc:${id}`;
+    for (const p of L.view.packs) if (p.where === "held" && p.holder === me) {
+      if (p.hand === "left") { rig.armL.current?.rotation.set(0, 0, 0.2); rig.foreL.current?.rotation.set(carryElbow(0), 0, 0); }
+      else { rig.armR.current?.rotation.set(0, 0, -0.2); rig.foreR.current?.rotation.set(carryElbow(0), 0, 0); }
+    }
+    root.updateMatrixWorld(true);
+    if (hand && reach > 0) {
+      const [hx, hz] = toWorld(f, rx, rz);
+      v.a.set(hx, SIDEWALK_H + ry, hz);
+      if (hand === 1) reachArm(rig.armL.current, rig.foreL.current, v.a, POLES.low(1), reach);
+      else reachArm(rig.armR.current, rig.foreR.current, v.a, POLES.low(-1), reach);
+    }
+    // Eating from their tray: the right hand to the mouth, bite by bite (a drink lifted and sipped).
+    const tray = L.view.packs.find((p) => p.kind === "tray" && p.owner === me && p.eating);
+    if (tray?.eating && rig.head.current) {
+      const t = -tray.eating.at + (Date.now() - L.at) / 1000, drink = isDrinkName(tray.eating.item), T = EAT_SECONDS;
+      let up = 0;
+      if (drink) up = Math.min(smooth(t / 0.6), 1 - smooth((t - (T - 0.6)) / 0.6));
+      else { const u = (t % (T / 3)) / (T / 3); up = u < 0.35 ? smooth(u / 0.35) : u < 0.6 ? 1 : 1 - smooth((u - 0.6) / 0.4); }
+      if (drink) rig.head.current.rotation.x -= 0.3 * up;
+      const mouth = rig.head.current.localToWorld(new THREE.Vector3(0, -0.06, 0.16));
+      reachArm(rig.armR.current, rig.foreR.current, mouth, POLES.low(-1), up);
+    }
+  });
+  return <CharacterBody rig={rig} color={color} />;
+});

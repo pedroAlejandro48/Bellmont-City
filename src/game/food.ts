@@ -549,6 +549,8 @@ const KINDS = ["bag", "cup", "big", "sign", "tray"] as const;
 /** What the host shares: sessions [key, by, text, ago, stage], trips [key, task, ago, slots, packs], packs. */
 export type FoodSnapshot = {
   v: 1;
+  /** Customers who aren't players (diners.ts rows), and their uses of the doors [key, leaf, mode, ago, lead, pass]. */
+  c?: unknown[]; u?: [string, number, number, number, number, number][];
   s: [string, string, string, number, number][];
   r: [string, number, number, number[], number[], number, number, number][];
   p: [number, string, number, number, number, number, number, string, number, number, string, string, number, number, number, number, number, string, number, number, number][];
@@ -558,6 +560,8 @@ export type FoodView = {
   sessions: Map<string, { by: string; text: string; ago: number; stage: "greet" | "told"; mode: Mode | null }>;
   trips: Map<string, Trip & { ago: number; packs: number[] }>;
   packs: FoodPack[];
+  diners: import("./diners").DinerRow[];
+  doors: { key: string; leaf: "left" | "right"; mode: "open" | "follow"; ago: number; lead: number; pass: number }[];
 };
 
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -567,7 +571,7 @@ export function readSnapshot(value: unknown): FoodView | null {
   if (typeof v !== "object" || v === null || v.v !== 1) return null;
   // The realtime database leaves out empty lists, so a missing one is empty.
   const list = (x: unknown): unknown[] => (Array.isArray(x) ? x : typeof x === "object" && x !== null ? Object.values(x) : []);
-  const view: FoodView = { sessions: new Map(), trips: new Map(), packs: [] };
+  const view: FoodView = { sessions: new Map(), trips: new Map(), packs: [], diners: [], doors: [] };
   for (const s of list(v.s)) {
     if (!Array.isArray(s)) continue;
     const [key, by, text, ago, stage] = s;
@@ -591,13 +595,23 @@ export function readSnapshot(value: unknown): FoodView | null {
       eating: isStr(eatItem) && eatItem ? { item: eatItem, at: -(isNum(eatAgo) ? eatAgo : 0) } : null, at: -(isNum(atAgo) ? atAgo : 0), done: done === 1,
     });
   }
+  for (const row of list(v.c)) {
+    if (!Array.isArray(row) || row.length < 13) continue;
+    const r = row as unknown[];
+    if (isNum(r[0]) && isStr(r[1]) && r.slice(2).every(isNum)) view.diners.push(r as import("./diners").DinerRow);
+  }
+  for (const row of list(v.u)) {
+    if (!Array.isArray(row)) continue;
+    const [key, leaf, mode, ago, lead, pass] = row as unknown[];
+    if (isStr(key) && isNum(leaf) && isNum(mode) && isNum(ago) && isNum(lead) && isNum(pass)) view.doors.push({ key, leaf: leaf ? "left" : "right", mode: mode ? "follow" : "open", ago, lead, pass });
+  }
   return view;
 }
 
 /** The host's own state as a view (ages from `now`), so every player draws from the same kind of data. */
 export function viewOf(sim: FoodSim, now: number): FoodView {
   const view = readSnapshot(sim.snapshot(now));
-  return view ?? { sessions: new Map(), trips: new Map(), packs: [] };
+  return view ?? { sessions: new Map(), trips: new Map(), packs: [], diners: [], doors: [] };
 }
 
 /** How one player's game talks to whoever runs the food (themselves when alone). */

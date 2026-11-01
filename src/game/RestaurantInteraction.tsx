@@ -27,8 +27,9 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
     // Everyone's uses of the doors (this player's and, in a room, the others'), on this player's clock.
     const wall = performance.now() / 1000;
     mine.current = mine.current.filter((u) => wall - u.start < 40);
-    const uses = [...mine.current, ...(state.doorLink?.others(wall) ?? [])];
+    const uses = [...mine.current, ...(state.doorLink?.others(wall) ?? []), ...state.npcDoorUses];
     const usesOf = (key: string, leaf: Leaf) => uses.filter((u) => u.key === key && u.leaf === leaf);
+    state.doorUsesNow = usesOf;
     /**
      * Going through a door: open it if it is shut, walk through behind whoever has it open, or (while it swings
      * shut) wait for it to close. Returns how, or null when waiting.
