@@ -157,3 +157,25 @@ describe("a gap too narrow to pass", () => {
     expect(closest).toBeGreaterThan(0.15);
   });
 });
+
+describe("a sit in the park", () => {
+  it("walks from the park's sidewalk corner down the path to the bench beside it", async () => {
+    const { parkVisit, cornerPoint } = await import("@/game/pedestrians");
+    const { BENCH_SEATS, benchPose } = await import("@/game/config");
+    for (let corner = 0; corner < 4; corner++) {
+      const route = parkVisit(corner), [cx, cz] = cornerPoint(0, 0, corner);
+      // The path's end is right by that corner, and both of the bench's seats are offered.
+      expect(Math.hypot(route.entry[0] - cx, route.entry[1] - cz)).toBeLessThan(2.5);
+      expect(route.seats).toHaveLength(2);
+      for (const seat of route.seats) {
+        const [fx, fz] = route.front(seat);
+        expect(Math.hypot(fx - route.beside[0], fz - route.beside[1])).toBeLessThan(3);
+        // Sitting down from that spot ends on the seat, facing the way the bench faces.
+        const sat = benchPose(seat, "sit", 1, { x: fx, z: fz }, 0);
+        expect(sat.seated).toBe(1); expect(Math.cos(sat.yaw - seat.yaw)).toBeCloseTo(1);
+        expect(Math.hypot(sat.x - seat.x, sat.z - seat.z)).toBeLessThan(0.2);
+      }
+    }
+    expect(BENCH_SEATS).toHaveLength(8);
+  });
+});

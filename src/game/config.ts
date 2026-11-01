@@ -86,6 +86,37 @@ export const BENCH_SEATS = PARK_BENCHES.flatMap((b, bench) => [-0.62, 0.62].map(
   id: bench * 2 + slot, bench, slot, x: b.x + Math.cos(b.rot) * side,
   z: b.z - Math.sin(b.rot) * side, yaw: b.rot,
 })));
+/**
+ * Sitting down on a bench seat, sitting, or standing up from it, `t` (0..1) of the way through that phase: where
+ * the body is and how seated it is (0 standing .. 1 sat). The seated pelvis rests 10 cm behind the seat's centre
+ * (back against the backrest); the stand-off point in front keeps the shins clear of the slats. Shared by players
+ * and NPCs so both move the same.
+ */
+export function benchPose(seat: { x: number; z: number; yaw: number }, phase: "sit" | "seated" | "stand", t: number, origin: { x: number; z: number }, originYaw: number) {
+  const smooth = (n: number) => { const v = Math.max(0, Math.min(1, n)); return v * v * (3 - 2 * v); };
+  const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
+  const fx = Math.sin(seat.yaw), fz = Math.cos(seat.yaw);
+  const restX = seat.x - fx * 0.1, restZ = seat.z - fz * 0.1, frontX = seat.x + fx * 0.42, frontZ = seat.z + fz * 0.42;
+  if (phase === "sit") {
+    const step = smooth(t / 0.35), seated = smooth((t - 0.3) / 0.7);
+    const ax = lerp(origin.x, frontX, step), az = lerp(origin.z, frontZ, step);
+    const angle = Math.atan2(Math.sin(seat.yaw - originYaw), Math.cos(seat.yaw - originYaw));
+    return { x: lerp(ax, restX, seated), z: lerp(az, restZ, seated), yaw: originYaw + angle * smooth(t / 0.3), seated };
+  }
+  if (phase === "stand") {
+    const seated = 1 - smooth(t / 0.75), out = smooth((t - 0.6) / 0.4) * 0.1;
+    return { x: lerp(frontX, restX, seated) + fx * out, z: lerp(frontZ, restZ, seated) + fz * out, yaw: seat.yaw, seated };
+  }
+  return { x: restX, z: restZ, yaw: seat.yaw, seated: 1 };
+}
+/**
+ * How a body sits `seated` (0..1) of the way onto a bench: thighs level on the seat (their undersides on the
+ * slats), shins down, a forward lean while lowering, and straight arms from the shoulders to the knees.
+ */
+export function benchJoints(seated: number) {
+  const bend = Math.sin(seated * Math.PI);
+  return { hip: -1.57 * seated, knee: 1.57 * seated, lean: 0.42 * bend, riderOffset: (BENCH_SEAT_TOP + 0.077 - 0.95) * seated, shoulder: -0.62 * seated - 0.35 * bend, elbow: -0.06 * seated, hands: seated };
+}
 export function nearestBenchSeat(x: number, z: number, occupied: ReadonlyMap<number, string>, owner = "player") {
   let nearest: typeof BENCH_SEATS[number] | null = null, distance = BENCH_REACH;
   for (const seat of BENCH_SEATS) {

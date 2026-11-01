@@ -3,7 +3,7 @@
 // Each walks the sidewalk loop around a block, corner to corner, now and then crossing to the next block. Across
 // an avenue they only use a signalled intersection's zebra crossing, starting when the traffic they cross has
 // just got a red light; small streets they cross wherever they reach the corner.
-import { GAME_MINUTE, HALF, SIGNAL, blockCenter, blockIndex, isAvenue, isSignalled, rng, signalState, streetCenter } from "./config";
+import { BENCH_SEATS, GAME_MINUTE, HALF, PARK_CORNERS, SIGNAL, blockCenter, blockIndex, isAvenue, isSignalled, rng, signalState, streetCenter } from "./config";
 
 /** How far from a block's middle its sidewalk loop runs (between the building fronts and the kerb). */
 export const WALK_RING = 18.4;
@@ -55,6 +55,9 @@ export function nextLeg(i: number, j: number, corner: number, from: number, rand
     const toCorner = CORNERS.findIndex(([cx, cz]) => (axis === "x" ? cx === -sx && cz === sz : cx === sx && cz === -sz));
     crossings.push({ kind: "cross", i, j, from: cornerPoint(i, j, corner), to: cornerPoint(ni, nj, toCorner), toBlock: [ni, nj], toCorner, roadAxis: axis === "x" ? "z" : "x", road, avenue });
   }
+  // Across to the park, often (people like to sit in it).
+  const toPark = crossings.find((c) => c.kind === "cross" && c.toBlock[0] === 0 && c.toBlock[1] === 0);
+  if (toPark && random() < 0.5) return toPark;
   if (crossings.length && random() < 0.35) return crossings[Math.floor(random() * crossings.length)]!;
   // Round the loop, usually carrying on the same way.
   const onward = corner + (corner - from === 1 || corner - from === -3 ? 1 : -1);
@@ -253,4 +256,20 @@ export function detour(x: number, z: number, target: [number, number], boxes: re
   }
   if (previous && previousCost < bestCost + 2) return corners.find((k) => Math.hypot(previous[0] - k[0], previous[1] - k[1]) < 1.5) ?? best;
   return best;
+}
+
+
+/**
+ * A walk from the park's sidewalk corner `corner` (of block 0, 0) down that corner's diagonal path to the bench
+ * beside it: the path's end at the corner, the path beside the bench, and the spot in front of `seat`.
+ */
+export function parkVisit(corner: number) {
+  const [sx, sz] = CORNERS[((corner % 4) + 4) % 4]!;
+  const bench = PARK_CORNERS.findIndex(([x, z]) => Math.sign(x) === sx && Math.sign(z) === sz);
+  const [cx, cz] = PARK_CORNERS[bench]!;
+  const a = Math.atan2(cx, cz);
+  const entry: [number, number] = [cx, cz], beside: [number, number] = [Math.sin(a) * 12, Math.cos(a) * 12];
+  const seats = BENCH_SEATS.filter((s) => s.bench === bench);
+  const front = (seat: (typeof BENCH_SEATS)[number]): [number, number] => [seat.x + Math.sin(seat.yaw) * 0.42, seat.z + Math.cos(seat.yaw) * 0.42];
+  return { bench, seats, entry, beside, front };
 }

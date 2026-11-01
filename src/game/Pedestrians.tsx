@@ -1,17 +1,26 @@
 import { useFrame } from "@react-three/fiber";
 import { memo, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { HALF, PARK_LAMPS, SIGNAL_POLES, THROW_DISTANCE, blockIndex, timeInfo, circleBoxPush, floorHeight, rng, scooterFootprint, type City } from "./config";
+import { BENCH_SEATS, BENCH_SIT_SECONDS, BENCH_STAND_SECONDS, HALF, PARK_LAMPS, SIGNAL_POLES, THROW_DISTANCE, benchJoints, benchPose, blockIndex, timeInfo, circleBoxPush, floorHeight, rng, scooterFootprint, type City } from "./config";
 import { bodyColor } from "@/platform/account";
 import { CharacterBody, useBodyRig } from "./CharacterBody";
 import { RagdollBody, type RagdollSubject } from "./Ragdoll";
 import type { Accident, GameState, NpcBody } from "./state";
-import { CROSS_SPEED, NPC_APPEAR_DISTANCE, boxObstacles, detour, NPC_MAX, NPC_RADIUS, WALK_SPEED, npcTarget, legEnd, legFromPosition, type NpcLink, type NpcSnapshot, mayCross, nextLeg, npcGender, spawnBlock, spawnOnRing, steer, type Leg, type Obstacle } from "./pedestrians";
+import { CROSS_SPEED, NPC_APPEAR_DISTANCE, boxObstacles, cornerPoint, detour, parkVisit, NPC_MAX, NPC_RADIUS, WALK_SPEED, npcTarget, legEnd, legFromPosition, type NpcLink, type NpcSnapshot, mayCross, nextLeg, npcGender, spawnBlock, spawnOnRing, steer, type Leg, type Obstacle } from "./pedestrians";
 
 /** Further than this from the player, someone is moved to walk somewhere nearer. */
 const NPC_RANGE = 170;
 /** How quickly a standing person gives way when leaned into (m/s): a slow shove. */
 const SHOVE = 0.8;
+
+type ParkVisit = {
+  corner: number; seat: number; stage: "in" | "bench" | "out";
+  /** Where still to walk, in order. */
+  points: [number, number][];
+  /** When to get up. */
+  until: number;
+  bench: { phase: "sit" | "seated" | "stand"; startedAt: number; origin: { x: number; z: number }; originYaw: number } | null;
+};
 
 type Npc = {
   body: NpcBody; pos: THREE.Vector3; yaw: number; color: string;
@@ -28,6 +37,10 @@ type Npc = {
   offset: [number, number];
   /** Which way they last stepped round something (kept, so they don't dither). */
   side: 1 | -1;
+  /** A visit to a park bench: walking in along the path, sitting, or walking back out to the sidewalk corner. */
+  park: ParkVisit | null;
+  /** How far down onto a bench they are (0 standing .. 1 sat), for the pose. */
+  seated: number;
   /** In a room as a guest of the host: the seed of the knock-down already shown, and when a hit was last reported. */
   shownHit: number; hitSentAt: number;
 };
@@ -38,7 +51,14 @@ const turn = (from: number, to: number, t: number) => from + Math.atan2(Math.sin
 const outOfSight = (x: number, z: number, players: readonly { x: number; z: number }[]) => players.every((p) => Math.hypot(x - p.x, z - p.z) >= NPC_APPEAR_DISTANCE);
 
 /** Puts someone on a sidewalk near block (fi, fj), at least a block from every player in `away`. False if no spot. */
-function place(npc: Npc, fi: number, fj: number, away: readonly { x: number; z: number }[]) {
+/** Off the bench and out of the park (giving the seat back), e.g. when moved elsewhere or knocked down. */
+function leavePark(npc: Npc, seats: Map<number, string>) {
+  if (npc.park && seats.get(npc.park.seat) === `npc:${npc.body.id}`) seats.delete(npc.park.seat);
+  npc.park = null; npc.seated = 0;
+}
+
+function place(npc: Npc, fi: number, fj: number, away: readonly { x: number; z: number }[], seats: Map<number, string>) {
+  leavePark(npc, seats);
   for (let attempt = 0; attempt < 30; attempt++) {
     const [i, j] = spawnBlock(fi, fj, npc.random);
     const at = spawnOnRing(i, j, npc.random);
@@ -52,7 +72,8 @@ function place(npc: Npc, fi: number, fj: number, away: readonly { x: number; z: 
   return false;
 }
 /** Kept aside: nowhere near anything, and ignored by everyone. */
-function putAway(npc: Npc) {
+function putAway(npc: Npc, seats: Map<number, string>) {
+  leavePark(npc, seats);
   npc.active = false; npc.accident = null; npc.speed = 0;
   Object.assign(npc.body, { x: 1e6, z: 1e6, down: true, moving: false, hit: null });
 }
@@ -73,11 +94,11 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       const npc: Npc = {
         body: { id, x: 0, z: 0, down: false, moving: false, hit: null }, pos: new THREE.Vector3(), yaw: 0,
         color: bodyColor(npcGender(state.worldSeed, id)), leg: { kind: "ring", i: 0, j: 0, from: 0, to: 1 }, crossing: false,
-        mode: random() < 0.75 ? "walk" : "stand", until: 2 + random() * 20, speed: 0, phase: random() * 6, accident: null, random, shownHit: -1, hitSentAt: -Infinity, active: true, around: null, side: 1, offset: (() => { const a = random() * Math.PI * 2, d = 0.25 + random() * 0.55; return [Math.cos(a) * d, Math.sin(a) * d] as [number, number]; })(),
+        mode: random() < 0.75 ? "walk" : "stand", until: 2 + random() * 20, speed: 0, phase: random() * 6, accident: null, random, shownHit: -1, hitSentAt: -Infinity, active: true, around: null, side: 1, park: null, seated: 0, offset: (() => { const a = random() * Math.PI * 2, d = 0.25 + random() * 0.55; return [Math.cos(a) * d, Math.sin(a) * d] as [number, number]; })(),
       };
       // At the start everyone the hour calls for is already about (anywhere); the rest are kept aside.
-      place(npc, fi, fj, []);
-      if (id >= target) putAway(npc);
+      place(npc, fi, fj, [], state.seatOccupants);
+      if (id >= target) putAway(npc, state.seatOccupants);
       list.push(npc);
     }
     return list;
@@ -121,10 +142,10 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
     const out = npcs.filter((n) => n.active).length;
     if (out < target) {
       const n = npcs.find((m) => !m.active);
-      if (n && place(n, Math.max(-HALF, Math.min(HALF, fi)), Math.max(-HALF, Math.min(HALF, fj)), players)) { n.active = true; n.mode = "walk"; n.body.down = false; }
+      if (n && place(n, Math.max(-HALF, Math.min(HALF, fi)), Math.max(-HALF, Math.min(HALF, fj)), players, state.seatOccupants)) { n.active = true; n.mode = "walk"; n.body.down = false; }
     } else if (out > target) {
       const n = npcs.find((m) => m.active && !m.accident && outOfSight(m.pos.x, m.pos.z, players));
-      if (n) putAway(n);
+      if (n) putAway(n, state.seatOccupants);
     }
     const bike = state.scooter;
     const bikeBox = scooterFootprint(bike.pos.x, bike.pos.z, bike.yaw, bike.fallen, bike.fallSide);
@@ -133,6 +154,7 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       if (!npc.active) continue;
       // Hit by a vehicle: down they go.
       if (b.hit && !npc.accident) {
+        if (npc.park) { leavePark(npc, state.seatOccupants); npc.leg = legFromPosition(npc.pos.x, npc.pos.z, npc.yaw); }
         npc.accident = { phase: "down", startedAt: now, riseStartedAt: null, vehicleId: null, direction: b.hit.direction, launchSpeed: THROW_DISTANCE * 1.75, seed: Math.floor(npc.random() * 1e8) };
         npc.mode = "walk"; npc.speed = 0;
       }
@@ -140,10 +162,28 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       if (npc.accident) { b.x = npc.pos.x; b.z = npc.pos.z; b.down = true; b.moving = false; continue; }
       b.down = false;
       // Too far away: someone else, somewhere nearer.
-      if (players.every((o) => Math.hypot(npc.pos.x - o.x, npc.pos.z - o.z) > NPC_RANGE)) place(npc, Math.max(-HALF, Math.min(HALF, fi)), Math.max(-HALF, Math.min(HALF, fj)), players);
+      if (players.every((o) => Math.hypot(npc.pos.x - o.x, npc.pos.z - o.z) > NPC_RANGE)) place(npc, Math.max(-HALF, Math.min(HALF, fi)), Math.max(-HALF, Math.min(HALF, fj)), players, state.seatOccupants);
 
-      // Now and then switch between walking and standing (never in the middle of a road).
-      if (now > npc.until && !npc.crossing) {
+      const visit = npc.park;
+      if (visit?.stage === "bench" && visit.bench) {
+        // On the bench: sit down, sit a while, stand up (the same movement as a player's), then walk back out.
+        const seat = BENCH_SEATS[visit.seat]!, sitting = visit.bench;
+        const t = Math.min(1, (now - sitting.startedAt) / (sitting.phase === "stand" ? BENCH_STAND_SECONDS : BENCH_SIT_SECONDS));
+        const pose = benchPose(seat, sitting.phase, t, sitting.origin, sitting.originYaw);
+        npc.pos.set(pose.x, floorHeight(pose.x, pose.z), pose.z); npc.yaw = pose.yaw; npc.seated = pose.seated; npc.speed = 0;
+        if (sitting.phase === "sit" && t >= 1) sitting.phase = "seated";
+        if (sitting.phase === "seated" && now > visit.until) { sitting.phase = "stand"; sitting.startedAt = now; }
+        if (sitting.phase === "stand" && t >= 1) {
+          if (state.seatOccupants.get(visit.seat) === `npc:${b.id}`) state.seatOccupants.delete(visit.seat);
+          const route = parkVisit(visit.corner);
+          visit.stage = "out"; visit.bench = null; npc.seated = 0;
+          visit.points = [route.beside, route.entry, cornerPoint(0, 0, visit.corner)];
+        }
+        b.x = npc.pos.x; b.z = npc.pos.z; b.moving = false;
+        continue;
+      }
+      // Now and then switch between walking and standing (never in the middle of a road, nor on the way to a bench).
+      if (now > npc.until && !npc.crossing && !visit) {
         npc.mode = npc.mode === "walk" && npc.random() < 0.45 ? "stand" : "walk";
         npc.until = now + (npc.mode === "walk" ? 6 + npc.random() * 40 : 3 + npc.random() * 18);
       }
@@ -151,7 +191,31 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       // Someone else already standing at a spot: close by it counts as there (rather than pressing into them).
       const taken = (q: [number, number]) => npcs.some((o) => o !== npc && o.active && !o.accident && Math.hypot(o.pos.x - q[0], o.pos.z - q[1]) < 1);
       let target = mine(legEnd(npc.leg));
-      if (npc.leg.kind === "cross" && !npc.crossing) {
+      if (visit) {
+        // Walking the park path, in to a bench or back out.
+        npc.mode = "walk";
+        let next = visit.points[0];
+        if (next && Math.hypot(next[0] - npc.pos.x, next[1] - npc.pos.z) < (visit.points.length === 1 && visit.stage === "in" ? 0.3 : 0.6)) { visit.points.shift(); next = visit.points[0]; }
+        if (!next && visit.stage === "in") {
+          // At the bench: take the seat if it is still free (or the other one on this bench), else head back.
+          const route = parkVisit(visit.corner);
+          const free = [visit.seat, ...route.seats.map((q) => q.id)].find((id) => !state.seatOccupants.has(id));
+          if (free !== undefined && Math.hypot(route.front(BENCH_SEATS[free]!)[0] - npc.pos.x, route.front(BENCH_SEATS[free]!)[1] - npc.pos.z) < 1.2) {
+            state.seatOccupants.set(free, `npc:${b.id}`);
+            visit.seat = free; visit.stage = "bench";
+            visit.bench = { phase: "sit", startedAt: now, origin: { x: npc.pos.x, z: npc.pos.z }, originYaw: npc.yaw };
+            continue;
+          }
+          visit.stage = "out"; visit.points = [route.beside, route.entry, cornerPoint(0, 0, visit.corner)];
+          next = visit.points[0];
+        }
+        if (!next) {
+          // Back on the sidewalk: on round the park.
+          npc.park = null;
+          npc.leg = { kind: "ring", i: 0, j: 0, from: visit.corner, to: (visit.corner + (npc.random() < 0.5 ? 1 : 3)) % 4 };
+          target = mine(legEnd(npc.leg));
+        } else target = next;
+      } else if (npc.leg.kind === "cross" && !npc.crossing) {
         // At the kerb: go once it is safe to start (avenues: on red for the traffic, with time to get over).
         const kerb = mine(npc.leg.from);
         const atKerb = Math.hypot(kerb[0] - npc.pos.x, kerb[1] - npc.pos.z) < (taken(kerb) ? 1.6 : 0.8);
@@ -161,7 +225,16 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       }
       if (npc.mode === "wait" && (npc.crossing || npc.leg.kind !== "cross")) npc.mode = "walk";
       // Reached the end of this stretch: choose the next.
-      if (Math.hypot(target[0] - npc.pos.x, target[1] - npc.pos.z) < (taken(target) ? 1.6 : 0.45) && (npc.leg.kind === "ring" || npc.crossing)) {
+      if (!npc.park && Math.hypot(target[0] - npc.pos.x, target[1] - npc.pos.z) < (taken(target) ? 1.6 : 0.45) && (npc.leg.kind === "ring" || npc.crossing)) {
+        // At a corner of the park's sidewalk: often, down the path to its bench (if a seat is free).
+        if (npc.leg.kind === "ring" && npc.leg.i === 0 && npc.leg.j === 0 && npc.random() < 0.45) {
+          const route = parkVisit(npc.leg.to);
+          const seat = route.seats.find((q) => !state.seatOccupants.has(q.id));
+          if (seat) {
+            npc.park = { corner: npc.leg.to, seat: seat.id, stage: "in", points: [route.entry, route.beside, route.front(seat)], until: now + 15 + npc.random() * 75, bench: null };
+            continue;
+          }
+        }
         if (npc.leg.kind === "ring") npc.leg = nextLeg(npc.leg.i, npc.leg.j, npc.leg.to, npc.leg.from, npc.random);
         else {
           const [i, j] = npc.leg.toBlock, from = npc.leg.toCorner;
@@ -223,7 +296,7 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       publishTimer.current = 0.1;
       link.publish({ list: npcs.map((n) => {
         const a = n.accident, r = (v: number) => Math.round(v * 100) / 100;
-        return [n.body.id, r(n.pos.x), r(n.pos.z), r(n.yaw), r(n.speed), n.mode === "walk" ? 0 : n.mode === "stand" ? 1 : 2, a ? r(now - a.startedAt) : -1, a ? r(a.direction[0]) : 0, a ? r(a.direction[1]) : 0, a ? a.seed : 0, n.active ? 1 : 0];
+        return [n.body.id, r(n.pos.x), r(n.pos.z), r(n.yaw), r(n.speed), n.mode === "walk" ? 0 : n.mode === "stand" ? 1 : 2, a ? r(now - a.startedAt) : -1, a ? r(a.direction[0]) : 0, a ? r(a.direction[1]) : 0, a ? a.seed : 0, n.active ? 1 : 0, r(n.seated), n.park?.stage === "bench" ? n.park.seat : -1];
       }) });
     }
   });
@@ -242,7 +315,7 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       }
       const row = seen?.snapshot.list.find((r) => r[0] === b.id);
       // Kept aside by the host: kept aside here too.
-      if (row && row[10] === 0) { if (npc.active) putAway(npc); continue; }
+      if (row && row[10] === 0) { if (npc.active) putAway(npc, state.seatOccupants); continue; }
       if (row && !npc.active) { npc.active = true; npc.body.down = false; npc.pos.set(row[1] ?? 0, 0, row[2] ?? 0); }
       if (!npc.active) continue;
       if (row) {
@@ -262,6 +335,11 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
           npc.pos.y = floorHeight(npc.pos.x, npc.pos.z);
           npc.yaw = far ? yaw : turn(npc.yaw, yaw, 10 * dt);
           npc.speed = speed; npc.mode = mode === 0 ? "walk" : mode === 1 ? "stand" : "wait";
+          // Sitting on a bench (the seat is kept from this player too).
+          npc.seated = row[11] ?? 0;
+          const seat = row[12] ?? -1, mine = `npc:${b.id}`;
+          for (const [id, who] of state.seatOccupants) if (who === mine && id !== seat) state.seatOccupants.delete(id);
+          if (seat >= 0 && !state.seatOccupants.has(seat)) state.seatOccupants.set(seat, mine);
           npc.phase += dt * speed * 4.2;
         }
       }
@@ -304,6 +382,19 @@ const NpcView = memo(function NpcView({ npc, state }: { npc: Npc; state: GameSta
     const breathe = Math.sin(state.simulationTime * 2 + npc.body.id) * 0.012 * (1 - mv);
     if (rig.hips.current) rig.hips.current.position.y = 0.95 - Math.abs(c) * 0.035 * mv + breathe;
     rig.torso.current?.rotation.set(0.05 * mv, 0, 0);
+    if (npc.seated > 0) {
+      // On a bench: exactly the player's sitting pose.
+      const j = benchJoints(npc.seated);
+      rig.thighL.current?.rotation.set(j.hip, 0, 0.13);
+      rig.thighR.current?.rotation.set(j.hip, 0, -0.13);
+      rig.shinL.current?.rotation.set(j.knee, 0, 0); rig.shinR.current?.rotation.set(j.knee, 0, 0);
+      rig.armL.current?.rotation.set(j.shoulder, 0, 0.12 * (1 - j.hands) - 0.1 * j.hands);
+      rig.armR.current?.rotation.set(j.shoulder, 0, -0.12 * (1 - j.hands) + 0.1 * j.hands);
+      rig.foreL.current?.rotation.set(j.elbow, 0, 0); rig.foreR.current?.rotation.set(j.elbow, 0, 0);
+      if (rig.hips.current) rig.hips.current.position.y = 0.95 + j.riderOffset;
+      rig.torso.current?.rotation.set(j.lean, 0, 0);
+      rig.head.current?.rotation.set(-j.lean * 0.5, 0, 0);
+    } else rig.head.current?.rotation.set(0, 0, 0);
   });
   return <>
     <CharacterBody rig={rig} color={npc.color} />

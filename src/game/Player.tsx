@@ -1,7 +1,7 @@
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { SIGNAL_POLES, floorHeight, cameraRelativeVelocity, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, type City, PARK_SOLIDS, circleBoxPush, bikePushShare, scooterFootprint, scooterSide, SCOOTER_TIP, BENCH_SEATS, BENCH_SIT_SECONDS, BENCH_STAND_SECONDS, benchStandHeight, BENCH_SEAT_TOP, BENCH_BACK_TOP, BENCH_BACKRESTS } from "./config";
+import { SIGNAL_POLES, benchJoints, benchPose, floorHeight, cameraRelativeVelocity, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, type City, PARK_SOLIDS, circleBoxPush, bikePushShare, scooterFootprint, scooterSide, SCOOTER_TIP, BENCH_SEATS, BENCH_SIT_SECONDS, BENCH_STAND_SECONDS, benchStandHeight, BENCH_SEAT_TOP, BENCH_BACK_TOP, BENCH_BACKRESTS } from "./config";
 import type { GameState } from "./state";
 import { BODY_PARTS, CharacterBody, useBodyRig } from "./CharacterBody";
 import { bumpOthers } from "@/multiplayer/bump";
@@ -393,34 +393,14 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       if (seat) {
         const age = state.simulationTime - state.bench.startedAt;
         const t = Math.min(1, age / (state.bench.phase === "stand" ? BENCH_STAND_SECONDS : BENCH_SIT_SECONDS));
-        const smooth = (n: number) => { const v = Math.max(0, Math.min(1, n)); return v * v * (3 - 2 * v); };
-        // Seated pelvis sits 10cm behind the seat centre so the back rests on the backrest
-        // without entering it; the stand-off point keeps the shins clear of the slats.
-        const fx = Math.sin(seat.yaw), fz = Math.cos(seat.yaw);
-        const restX = seat.x - fx * 0.1, restZ = seat.z - fz * 0.1, frontX = seat.x + fx * 0.42, frontZ = seat.z + fz * 0.42;
-        const start = state.bench.origin;
-        let seated: number;
-        if (state.bench.phase === "sit") {
-          const step = smooth(t / 0.35); seated = smooth((t - 0.3) / 0.7);
-          const ax = THREE.MathUtils.lerp(start.x, frontX, step), az = THREE.MathUtils.lerp(start.z, frontZ, step);
-          p.x = THREE.MathUtils.lerp(ax, restX, seated); p.z = THREE.MathUtils.lerp(az, restZ, seated);
-          const angle = Math.atan2(Math.sin(seat.yaw - state.bench.originYaw), Math.cos(seat.yaw - state.bench.originYaw));
-          state.rotY = state.bench.originYaw + angle * smooth(t / 0.3);
-        } else if (state.bench.phase === "stand") {
-          seated = 1 - smooth(t / 0.75);
-          const out = smooth((t - 0.6) / 0.4) * 0.1;
-          p.x = THREE.MathUtils.lerp(frontX, restX, seated) + fx * out; p.z = THREE.MathUtils.lerp(frontZ, restZ, seated) + fz * out;
-          state.rotY = seat.yaw;
-        } else { seated = 1; p.x = restX; p.z = restZ; state.rotY = seat.yaw; }
+        const pose = benchPose(seat, state.bench.phase, t, state.bench.origin, state.bench.originYaw);
+        p.x = pose.x; p.z = pose.z; state.rotY = pose.yaw;
         p.y = floorHeight(p.x, p.z);
-        // Thighs level on the seat (underside above slats), shins hanging just past the front edge.
-        hipL = hipR = -1.57 * seated; kneeL = kneeR = 1.57 * seated;
-        const bend = Math.sin(seated * Math.PI);
-        // Thigh capsules (r 0.075) rest exactly on the slat tops.
-        lean = 0.42 * bend; riderOffset = (BENCH_SEAT_TOP + 0.077 - 0.95) * seated;
-        // Straight arms reach from the shoulder to the top of each knee; they stay on the knees while lowering.
-        shL = shR = -0.62 * seated - 0.35 * bend; elbow = -0.06 * seated;
-        sitHands = seated;
+        const j = benchJoints(pose.seated);
+        hipL = hipR = j.hip; kneeL = kneeR = j.knee;
+        lean = j.lean; riderOffset = j.riderOffset;
+        shL = shR = j.shoulder; elbow = j.elbow;
+        sitHands = j.hands;
       }
     }
     if (script) {
