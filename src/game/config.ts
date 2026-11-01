@@ -707,6 +707,13 @@ export function scooterFootprint(x: number, z: number, yaw: number, fallen: bool
   return { x: x + Math.cos(yaw) * offset, z: z - Math.sin(yaw) * offset, hx: fallen ? 0.65 : 0.3, hz: 0.925, yaw };
 }
 
+/** The park's four bins, one on each side, on the sidewalk beside a tree: black, round, open at the top. */
+export const BIN = { r: 0.24, h: 0.88 } as const;
+export const PARK_BINS: { x: number; z: number }[] = [
+  { x: 7.8, z: SIDEWALK_TREE_CENTER }, { x: -7.8, z: -SIDEWALK_TREE_CENTER },
+  { x: SIDEWALK_TREE_CENTER, z: -7.8 }, { x: -SIDEWALK_TREE_CENTER, z: 7.8 },
+];
+
 /** How high a bike lying on its side reaches: what someone standing on it stands at. */
 export const FALLEN_BIKE_TOP = 0.5;
 /** Standing on a fallen bike: its top, if (x, z) is over the solid middle of it and the feet are up there already. */

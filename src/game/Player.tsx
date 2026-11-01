@@ -1,9 +1,9 @@
 import { useFrame } from "@react-three/fiber";
 import { POLES, carryElbow, reachArm } from "./arms";
-import { DROP_TIME, GRAB_TIME, PACK_SIZE, dropReach, grabReach } from "./food";
+import { DROP_TIME, EAT_SECONDS, GRAB_TIME, PACK_SIZE, dropReach, grabReach } from "./food";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { SIGNAL_POLES, benchJoints, benchPose, floorHeight, cameraRelativeVelocity, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, type City, PARK_SOLIDS, circleBoxPush, bikePushShare, scooterFootprint, scooterSide, SCOOTER_TIP, BENCH_SEATS, BENCH_SIT_SECONDS, BENCH_STAND_SECONDS, benchStandHeight, BENCH_SEAT_TOP, BENCH_BACK_TOP, BENCH_BACKRESTS, FALLEN_BIKE_TOP, fallenBikeStandHeight } from "./config";
+import { SIGNAL_POLES, benchJoints, benchPose, floorHeight, cameraRelativeVelocity, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, type City, PARK_SOLIDS, circleBoxPush, bikePushShare, scooterFootprint, scooterSide, SCOOTER_TIP, BENCH_SEATS, BENCH_SIT_SECONDS, BENCH_STAND_SECONDS, benchStandHeight, BENCH_SEAT_TOP, BENCH_BACK_TOP, BENCH_BACKRESTS, FALLEN_BIKE_TOP, fallenBikeStandHeight, PARK_BINS, BIN } from "./config";
 import type { GameState } from "./state";
 import { BODY_PARTS, CharacterBody, useBodyRig } from "./CharacterBody";
 import { bumpOthers } from "@/multiplayer/bump";
@@ -77,6 +77,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
         ...city.trees.map((t) => ({ x: t.x, z: t.z, r: 0.25 })),
         ...city.lamps.map((l) => ({ x: l.x, z: l.z, r: 0.15 })),
         ...SIGNAL_POLES.map((l) => ({ x: l.x, z: l.z, r: 0.15 })),
+        ...PARK_BINS.map((b) => ({ x: b.x, z: b.z, r: BIN.r })),
       ],
     }),
     [city],
@@ -130,7 +131,8 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     // Going through a restaurant door or sitting on a chair: the movement is scripted.
     const script = state.script;
     s.reverseBlend = damp(s.reverseBlend, bike.riding && !bike.action && !incapacitated && bike.speed < -0.01 ? 1 : 0, 6, dt);
-    const holdingDrink = (state.hands.left?.cups ?? 0) + (state.hands.right?.cups ?? 0) > 0;
+    const fullDrink = (h: typeof state.hands.left) => !!h && h.cups > 0 && (h.items?.length ?? 1) > 0;
+    const holdingDrink = fullDrink(state.hands.left) || fullDrink(state.hands.right);
     // Reaching for food on a counter: stop, and turn a little toward it.
     const grab = state.grab, grabT = grab ? state.simulationTime - grab.at : Infinity;
     const grabbing = grab !== null && grabT < GRAB_TIME;
@@ -457,8 +459,10 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     // as usual and the other arm moves freely.
     const onFoot = !usingBike && !dead && !incapacitated && !sitting && !script;
     if (onFoot) {
-      if (state.hands.left || grab?.hand === "left") { armL.current?.rotation.set(shL, 0, 0.2); foreL.current?.rotation.set(carryElbow(shL), 0, 0); }
-      if (state.hands.right || grab?.hand === "right") { armR.current?.rotation.set(shR, 0, -0.2); foreR.current?.rotation.set(carryElbow(shR), 0, 0); }
+      // Full packs ride at the waist; an empty one (or a number sign) just hangs from a relaxed arm.
+      const heavy = (h: typeof state.hands.left) => !!h && h.kind !== "sign" && (h.items?.length ?? 1) > 0;
+      if (heavy(state.hands.left) || grab?.hand === "left") { armL.current?.rotation.set(shL, 0, 0.2); foreL.current?.rotation.set(carryElbow(shL), 0, 0); }
+      if (heavy(state.hands.right) || grab?.hand === "right") { armR.current?.rotation.set(shR, 0, -0.2); foreR.current?.rotation.set(carryElbow(shR), 0, 0); }
       if (dropping && root.current) {
         // Each hand sets its food down on the ground beside the feet.
         root.current.updateMatrixWorld(true);
@@ -470,13 +474,6 @@ export function Player({ state, city }: { state: GameState; city: City }) {
           if (side === 1) reachArm(armL.current, foreL.current, at, POLES.low(1), dropReach(dropT));
           else reachArm(armR.current, foreR.current, at, POLES.low(-1), dropReach(dropT));
         }
-      }
-      if (grabbing && grab && root.current) {
-        // Up to the food until the hand touches it, then back to the waist with it: one movement.
-        root.current.updateMatrixWorld(true);
-        const side = grab.hand === "left" ? 1 : -1;
-        if (side === 1) reachArm(armL.current, foreL.current, grab.target, POLES.low(1), grabReach(grabT));
-        else reachArm(armR.current, foreR.current, grab.target, POLES.low(-1), grabReach(grabT));
       }
     }
     if (usingBike && !incapacitated && root.current && torso.current) {
@@ -525,6 +522,28 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       root.current.updateMatrixWorld(true);
       if (script.left) reachArm(armL.current, foreL.current, script.left.at, POLES[script.left.pole](1), script.left.blend);
       if (script.right) reachArm(armR.current, foreR.current, script.right.at, POLES[script.right.pole](-1), script.right.blend);
+    }
+    // Reaching for food (to pick it up, or to set it down on a table or beside the bench), standing or seated:
+    // up until the hand gets there, then back, in one movement.
+    const putting = state.put, putT = putting ? state.simulationTime - putting.at : Infinity;
+    const reachFor = grabbing && grab ? { hand: grab.hand, at: grab.target, k: grabReach(grabT) } : putting && putT < GRAB_TIME ? { hand: putting.hand, at: putting.target, k: grabReach(putT) } : null;
+    if (reachFor && !usingBike && !dead && !incapacitated && root.current) {
+      root.current.updateMatrixWorld(true);
+      if (reachFor.hand === "left") reachArm(armL.current, foreL.current, reachFor.at, POLES.low(1), reachFor.k);
+      else reachArm(armR.current, foreR.current, reachFor.at, POLES.low(-1), reachFor.k);
+    }
+    // Eating and drinking (at a table or on a bench): the right hand brings the food up to the mouth for each bite;
+    // a drink is lifted once and sipped with the head tipped back.
+    const eat = state.eating;
+    if (eat && !dead && !incapacitated && root.current && head.current) {
+      const t = state.simulationTime - eat.at, T = EAT_SECONDS;
+      let up = 0, tip = 0;
+      if (eat.drink) { up = Math.min(smoothstep(t / 0.6), 1 - smoothstep((t - (T - 0.6)) / 0.6)); tip = up * Math.min(1, Math.max(0, (t - 0.5) / 0.5)); }
+      else { const bite = T / 3, u = (t % bite) / bite; up = u < 0.35 ? smoothstep(u / 0.35) : u < 0.6 ? 1 : 1 - smoothstep((u - 0.6) / 0.4); }
+      head.current.rotation.x -= 0.32 * tip;
+      root.current.updateMatrixWorld(true);
+      const mouth = head.current.localToWorld(new THREE.Vector3(0, -0.06, 0.16 + 0.04 * tip));
+      reachArm(armR.current, foreR.current, mouth, POLES.low(-1), up);
     }
 
   });

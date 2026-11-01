@@ -200,7 +200,7 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
       };
       const script: Script = { x, z, yaw, walk, sit: pose.sit, shuffle: pose.shuffle, lean: pose.lean, left: reach(pose.left), right: reach(pose.right) };
       state.script = script;
-    } else { state.script = null; last.current = null; }
+    } else { state.script = state.foodScript; last.current = null; }
     state.fade = 0;
   }, -0.6);
 

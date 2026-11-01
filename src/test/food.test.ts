@@ -84,7 +84,7 @@ describe("orders, the kitchen runner and the food", () => {
     const trip = sim.trips.get(key)!;
     expect(trip.task).toBe("deliver");
     expect(sim.packs.filter((p) => p.where === "runner").length).toBe(trip.packs.length);
-    const times = tripTimes(places, room, trip.slots);
+    const times = tripTimes(places, room, trip);
     t += times.done + 0.1;
     sim.step(t, inside(where), present);
     sim.step(t + 30, inside(where), present);
@@ -115,12 +115,48 @@ describe("orders, the kitchen runner and the food", () => {
 
   it("walks the runner out of the kitchen to the counter and back", () => {
     const trip = { task: "deliver" as const, slots: [0] };
-    const start = runnerPose(places, room, trip, 0), times = tripTimes(places, room, [0]);
+    const start = runnerPose(places, room, trip, 0), times = tripTimes(places, room, trip);
     expect(start.z).toBeLessThan(room.divider.z);
     const there = runnerPose(places, room, trip, times.walk + 0.2);
     expect(there.z).toBeGreaterThan(room.divider.z); expect(there.z).toBeLessThan(room.counter.z);
     expect(there.carrying).toBe(true);
     expect(runnerPose(places, room, trip, times.handover + 0.05).carrying).toBe(false);
     expect(runnerPose(places, room, trip, times.done).z).toBeCloseTo(places.kitchen.z);
+  });
+});
+
+describe("eating in", () => {
+  const room = rooms[0]!, places = placesOf(room), key = room.key;
+  const make = () => new FoodSim((k) => (k === key ? { places, room } : null));
+  const inside = (by: string, k: string) => by === "me" && k === key;
+  it("gives a two-digit sign, serves the tray where the sign is put, and clears it away when done", () => {
+    const sim = make();
+    const food = menuOf(room.kind)[1]!.items[0]!.name;
+    sim.handle("me", { type: "greet", key, text: "Hi" }, 0);
+    sim.handle("me", { type: "order", key, kind: room.kind, names: [food], mode: "here", text: "Sit anywhere" }, 0);
+    const sign = sim.packs.find((p) => p.kind === "sign")!, tray = sim.packs.find((p) => p.kind === "tray")!;
+    expect(sign.sign).toBeGreaterThanOrEqual(10); expect(sign.sign).toBeLessThanOrEqual(99);
+    expect(sign.where).toBe("counter"); expect(tray.sign).toBe(sign.sign);
+    sim.handle("me", { type: "grab", pack: sign.id, hand: "right" }, 1);
+    sim.handle("me", { type: "set", pack: sign.id, where: "table", x: room.frame.ox, y: 0.93, z: room.frame.oz - 4, yaw: 0 }, 2);
+    let t = 30;
+    sim.step(t, inside, () => true);
+    expect(sim.trips.get(key)?.task).toBe("serve");
+    for (let i = 0; i < 40; i++, t += 1) sim.step(t, inside, () => true);
+    expect(tray.where).toBe("table"); expect(sim.packs.includes(sign)).toBe(false);
+    sim.handle("me", { type: "eat", pack: tray.id, item: food }, t);
+    expect(tray.eating?.item).toBe(food);
+    sim.handle("me", { type: "ate", pack: tray.id, item: food }, t + 3);
+    expect(tray.items.length).toBe(0); expect(tray.done).toBe(true);
+    sim.step(t + 4, inside, () => true);
+    expect(sim.trips.get(key)?.task).toBe("bus");
+    for (let i = 0; i < 40; i++, t += 1) sim.step(t + 4, inside, () => true);
+    expect(sim.packs.length).toBe(0);
+  });
+  it("never gives two diners the same number at once", () => {
+    const sim = make();
+    for (let i = 0; i < 20; i++) sim.handle(`p${i}`, { type: "order", key, kind: room.kind, names: [menuOf(room.kind)[1]!.items[0]!.name], mode: "here", text: "" }, i);
+    const signs = sim.packs.filter((p) => p.kind === "sign").map((p) => p.sign);
+    expect(new Set(signs).size).toBe(signs.length);
   });
 });
