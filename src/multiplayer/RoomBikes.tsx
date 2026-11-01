@@ -4,7 +4,7 @@ import type * as THREE from "three";
 import { ScooterModel, type ScooterLook } from "@/game/Scooter";
 import { scooterFootprint } from "@/game/config";
 import { dropScooter, takeScooter, type GameState, type OtherBike } from "@/game/state";
-import { bringBike, claimBike, knockBike, moveBike, pushBike, releaseBike, saveBike, watchBikes, type BikeRecord, type BikeSpot } from "@/platform/bikes";
+import { applyBikePushes, bringBike, claimBike, knockBike, pushBike, releaseBike, saveBike, watchBikes, type BikeRecord, type BikeSpot } from "@/platform/bikes";
 import type { NamedRoom } from "@/platform/realtime";
 import { isPoseWire } from "./pose";
 
@@ -57,8 +57,10 @@ export function RoomBikes({ state, code, uid, channel }: { state: GameState; cod
   const busy = useRef(false);
   const knocks = useRef(new Map<string, number>());
   const saved = useRef({ at: 0, spot: "" });
+  /** Where each parked bike is drawn (with this player's own shove the host has not used yet). */
+  const shown = useRef(new Map<string, [number, number, number]>());
   // Shoving other bikes: totals per bike this tab has pushed (sent now and then), and those seen applied here.
-  const shoves = useRef({ totals: new Map<string, [number, number]>(), moved: new Set<string>(), pushed: new Set<string>(), sentAt: 0, seen: new Map<string, [number, number]>() });
+  const shoves = useRef({ totals: new Map<string, [number, number]>(), pushed: new Set<string>(), sentAt: 0, appliedAt: 0, seen: new Map<string, [number, number]>() });
 
   useEffect(() => {
     dropScooter(state);
@@ -97,18 +99,35 @@ export function RoomBikes({ state, code, uid, channel }: { state: GameState; cod
     // This player's bike shoved other bikes along: a parked one is moved here and now; one someone else controls
     // is moved by them (they are sent how far, in total).
     const sh = shoves.current;
+    // Shoves add up: every player sends how far, in total, they have pushed each bike, and whoever moves it (its
+    // controller, or for a parked one the room's host) moves it by everyone's shoves together.
     for (const [id, [vx, vz]] of state.bikePushes) {
-      const rec = bikes.current.get(id);
-      if (!rec) continue;
-      if (free.some(([fid]) => fid === id)) { rec.pos = [rec.pos[0] + vx * dt, rec.pos[1], rec.pos[2] + vz * dt]; sh.moved.add(id); }
-      else { const t = sh.totals.get(id) ?? [0, 0]; sh.totals.set(id, [t[0] + vx * dt, t[1] + vz * dt]); sh.pushed.add(id); }
+      if (!bikes.current.get(id)) continue;
+      const t = sh.totals.get(id) ?? [0, 0]; sh.totals.set(id, [t[0] + vx * dt, t[1] + vz * dt]); sh.pushed.add(id);
     }
     state.bikePushes.clear();
-    if (now - sh.sentAt > 100 && (sh.moved.size || sh.pushed.size)) {
+    if (now - sh.sentAt > 100 && sh.pushed.size) {
       sh.sentAt = now;
-      for (const id of sh.moved) { const rec = bikes.current.get(id); if (rec) void moveBike(code, id, rec.pos).catch(() => {}); }
       for (const id of sh.pushed) { const t = sh.totals.get(id); if (t && me) void pushBike(code, id, me, t).catch(() => {}); }
-      sh.moved.clear(); sh.pushed.clear();
+      sh.pushed.clear();
+    }
+    // Hosting the room: parked bikes nobody controls are moved here by everyone's shoves.
+    const hosting = (() => { let best: (typeof peers)[number] | null = null; for (const p of peers) if (p.kind === "viewer" && (!best || ((p.presence["joinedAt"] as number) ?? Infinity) < ((best.presence["joinedAt"] as number) ?? Infinity) || (p.presence["joinedAt"] === best.presence["joinedAt"] && p.peer < best.peer))) best = p; return best?.sameTab ?? false; })();
+    if (hosting && now - sh.appliedAt > 100) {
+      sh.appliedAt = now;
+      for (const [id, rec] of free) {
+        let dx = 0, dz = 0;
+        const applied: Record<string, [number, number]> = {};
+        for (const [by, total] of Object.entries(rec.pushes)) {
+          const done = rec.applied[by] ?? [0, 0];
+          if (Math.abs(total[0] - done[0]) < 1e-4 && Math.abs(total[1] - done[1]) < 1e-4) continue;
+          dx += total[0] - done[0]; dz += total[1] - done[1]; applied[by] = total;
+        }
+        if (!Object.keys(applied).length) continue;
+        rec.pos = [rec.pos[0] + dx, rec.pos[1], rec.pos[2] + dz];
+        for (const [by, total] of Object.entries(applied)) rec.applied[by] = total;
+        void applyBikePushes(code, id, rec.pos, applied).catch(() => {});
+      }
     }
     // Others shoving the bike this player controls: it moves by however much more they have pushed it.
     if (bike.id && heldRec && !bike.riding && !bike.action) {
@@ -166,17 +185,20 @@ export function RoomBikes({ state, code, uid, channel }: { state: GameState; cod
 
     // Parked bikes are solid for walking into, and drawn below.
     const boxes: OtherBike[] = [];
-    for (const [id, rec] of free) boxes.push({ id, box: scooterFootprint(rec.pos[0], rec.pos[2], rec.yaw, rec.fallen, rec.fallSide), fallen: rec.fallen });
+    // A parked bike this player is shoving is shown where it is going (its own shove the host has not used yet added).
+    const ahead = (id: string, rec: BikeRecord): [number, number] => { const t = sh.totals.get(id), done = me ? rec.applied[me] : undefined; return t ? [t[0] - (done?.[0] ?? 0), t[1] - (done?.[1] ?? 0)] : [0, 0]; };
+    shown.current = new Map(free.map(([id, rec]) => { const [ox, oz] = hosting ? [0, 0] : ahead(id, rec); return [id, [rec.pos[0] + ox, rec.pos[1], rec.pos[2] + oz] as [number, number, number]]; }));
+    for (const [id, rec] of free) { const at = shown.current.get(id) ?? rec.pos; boxes.push({ id, box: scooterFootprint(at[0], at[2], rec.yaw, rec.fallen, rec.fallSide), fallen: rec.fallen }); }
     state.parkedBikes = boxes;
     const ids = free.map(([id]) => id);
     setParked((old) => (old.length === ids.length && old.every((id, i) => id === ids[i]) ? old : ids));
   });
   useEffect(() => () => { state.parkedBikes = []; }, [state]);
 
-  return <>{parked.map((id) => <ParkedBike key={id} id={id} bikes={bikes} state={state} />)}</>;
+  return <>{parked.map((id) => <ParkedBike key={id} id={id} bikes={bikes} shown={shown} state={state} />)}</>;
 }
 
-const ParkedBike = memo(function ParkedBike({ id, bikes, state }: { id: string; bikes: React.RefObject<Bikes>; state: GameState }) {
+const ParkedBike = memo(function ParkedBike({ id, bikes, shown, state }: { id: string; bikes: React.RefObject<Bikes>; shown: React.RefObject<Map<string, [number, number, number]>>; state: GameState }) {
   const group = useRef<THREE.Group>(null);
   const look = useMemo<ScooterLook>(() => ({ darkness: 0, scooter: { riding: false, steering: 0, braking: false } }), []);
   useFrame(() => {
@@ -184,7 +206,8 @@ const ParkedBike = memo(function ParkedBike({ id, bikes, state }: { id: string; 
     if (!rec || !g) return;
     // Same resting pose as the Scooter: a fallen bike lies on its side, lifted by its own width.
     const lean = rec.fallen ? -Math.PI / 2 * rec.fallSide : -0.08;
-    g.position.set(rec.pos[0], rec.pos[1] + 0.3 * Math.abs(lean) / (Math.PI / 2), rec.pos[2]);
+    const at = shown.current?.get(id) ?? rec.pos;
+    g.position.set(at[0], at[1] + 0.3 * Math.abs(lean) / (Math.PI / 2), at[2]);
     g.rotation.set(0, rec.yaw, lean);
     look.darkness = state.darkness;
   });

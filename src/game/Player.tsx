@@ -3,7 +3,7 @@ import { POLES, carryElbow, reachArm } from "./arms";
 import { DROP_TIME, GRAB_TIME, PACK_SIZE, dropReach, grabReach } from "./food";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { SIGNAL_POLES, benchJoints, benchPose, floorHeight, cameraRelativeVelocity, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, type City, PARK_SOLIDS, circleBoxPush, bikePushShare, scooterFootprint, scooterSide, SCOOTER_TIP, BENCH_SEATS, BENCH_SIT_SECONDS, BENCH_STAND_SECONDS, benchStandHeight, BENCH_SEAT_TOP, BENCH_BACK_TOP, BENCH_BACKRESTS } from "./config";
+import { SIGNAL_POLES, benchJoints, benchPose, floorHeight, cameraRelativeVelocity, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, type City, PARK_SOLIDS, circleBoxPush, bikePushShare, scooterFootprint, scooterSide, SCOOTER_TIP, BENCH_SEATS, BENCH_SIT_SECONDS, BENCH_STAND_SECONDS, benchStandHeight, BENCH_SEAT_TOP, BENCH_BACK_TOP, BENCH_BACKRESTS, FALLEN_BIKE_TOP, fallenBikeStandHeight } from "./config";
 import type { GameState } from "./state";
 import { BODY_PARTS, CharacterBody, useBodyRig } from "./CharacterBody";
 import { bumpOthers } from "@/multiplayer/bump";
@@ -208,7 +208,9 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       }
       const ground0 = floorHeight(p.x, p.z);
       for (const [i, box] of PARK_SOLIDS.entries()) { if (i < 4 && p.y - ground0 >= BENCH_SEAT_TOP - 0.1) { const back = BENCH_BACKRESTS[i]; if (back && p.y - ground0 < BENCH_BACK_TOP - 0.05) { const [bx, bz] = circleBoxPush(p.x, p.z, RADIUS, back); p.x += bx; p.z += bz; } continue; } const [dx, dz] = circleBoxPush(p.x, p.z, RADIUS, box); p.x += dx; p.z += dz; }
-      const [dx, dz] = circleBoxPush(p.x, p.z, RADIUS, scooterFootprint(bike.pos.x, bike.pos.z, bike.yaw, bike.fallen, bike.fallSide));
+      // Up on a fallen bike, it is underfoot rather than in the way.
+      const onTop = (p.y - floorHeight(p.x, p.z)) >= FALLEN_BIKE_TOP - 0.12;
+      const [dx, dz] = bike.fallen && onTop ? [0, 0] : circleBoxPush(p.x, p.z, RADIUS, scooterFootprint(bike.pos.x, bike.pos.z, bike.yaw, bike.fallen, bike.fallSide));
       if (dx || dz) {
         if (!bike.fallen) {
           // Bumping a standing bike tips it over away from the player; it is never shoved upright.
@@ -226,11 +228,23 @@ export function Player({ state, city }: { state: GameState; city: City }) {
         p.x += dx; p.z += dz;
       }
       s.bikeContact = !!(dx || dz);
-      for (const other of [...state.otherBikes, ...state.parkedBikes]) { const [ox, oz] = circleBoxPush(p.x, p.z, RADIUS, other.box); p.x += ox; p.z += oz; }
+      for (const other of [...state.otherBikes, ...state.parkedBikes]) {
+        if (other.fallen && onTop) continue;
+        const [ox, oz] = circleBoxPush(p.x, p.z, RADIUS, other.box);
+        // Walking into someone else's fallen bike shoves it along, as with one's own (whoever moves it moves it).
+        if ((ox || oz) && other.fallen) { const share = bikePushShare(); state.bikePushes.set(other.id, [-ox * share / dt, -oz * share / dt]); }
+        p.x += ox; p.z += oz;
+      }
     }
 
     const ground = floorHeight(p.x, p.z);
-    const floor = sitting || usingBike || incapacitated ? ground : ground + benchStandHeight(p.x, p.z, p.y - ground);
+    // Benches and fallen bikes can be stood on (jumped up onto, walked along).
+    let standOn = benchStandHeight(p.x, p.z, p.y - ground);
+    if (!sitting && !usingBike && !incapacitated) {
+      const fallen = [...(bike.fallen && bike.id !== null ? [scooterFootprint(bike.pos.x, bike.pos.z, bike.yaw, true, bike.fallSide)] : []), ...[...state.otherBikes, ...state.parkedBikes].filter((b) => b.fallen).map((b) => b.box)];
+      for (const box of fallen) standOn = Math.max(standOn, fallenBikeStandHeight(p.x, p.z, p.y - ground, box));
+    }
+    const floor = sitting || usingBike || incapacitated ? ground : ground + standOn;
     if (!s.grounded) {
       s.vy -= GRAVITY * dt;
       p.y += s.vy * dt;

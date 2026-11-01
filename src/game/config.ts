@@ -707,6 +707,16 @@ export function scooterFootprint(x: number, z: number, yaw: number, fallen: bool
   return { x: x + Math.cos(yaw) * offset, z: z - Math.sin(yaw) * offset, hx: fallen ? 0.65 : 0.3, hz: 0.925, yaw };
 }
 
+/** How high a bike lying on its side reaches: what someone standing on it stands at. */
+export const FALLEN_BIKE_TOP = 0.5;
+/** Standing on a fallen bike: its top, if (x, z) is over the solid middle of it and the feet are up there already. */
+export function fallenBikeStandHeight(x: number, z: number, feetY: number, box: SolidBox) {
+  if (feetY < FALLEN_BIKE_TOP - 0.12) return 0;
+  const c = Math.cos(box.yaw), sn = Math.sin(box.yaw), dx = x - box.x, dz = z - box.z;
+  const lx = dx * c - dz * sn, lz = dx * sn + dz * c;
+  return Math.abs(lx) < box.hx - 0.05 && Math.abs(lz) < box.hz - 0.1 ? FALLEN_BIKE_TOP : 0;
+}
+
 // Distance to the scooter's side/seat footprint, not its distant front wheel.
 export function scooterInteractionDistance(player: [number, number], bike: [number, number], yaw: number) {
   const dx = player[0] - bike[0], dz = player[1] - bike[1];

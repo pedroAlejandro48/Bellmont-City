@@ -8,7 +8,9 @@ export type BikeSpot = { pos: [number, number, number]; yaw: number; fallen: boo
 /** `knock` is when another player last crashed into the bike, knocking it onto `knockSide`. */
 export type BikeRecord = BikeSpot & { owner: string; holder: string | null; updatedAt: number; knock: number; knockSide: 1 | -1;
   /** How far each other player's bike has shoved this one so far (in total, by their tab id): its controller moves it. */
-  pushes: Record<string, [number, number]> };
+  pushes: Record<string, [number, number]>;
+  /** For a parked bike: how much of each player's shove the room's host has moved it by so far. */
+  applied: Record<string, [number, number]> };
 
 const bikeRef = (code: string, id: string) => ref(realtime, `rooms/${code}/bikes/${id}`);
 
@@ -32,7 +34,7 @@ function readBike(value: unknown): BikeRecord | null {
     pos: pos as [number, number, number], yaw: v["yaw"], fallen: v["fallen"] === true, fallSide: v["fallSide"] === -1 ? -1 : 1,
     owner: v["owner"], holder: typeof v["holder"] === "string" ? v["holder"] : null, updatedAt: typeof v["updatedAt"] === "number" ? v["updatedAt"] : 0,
     knock: typeof v["knock"] === "number" ? v["knock"] : 0, knockSide: v["knockSide"] === -1 ? -1 : 1,
-    pushes: readPushes(v["push"]),
+    pushes: readPushes(v["push"]), applied: readPushes(v["applied"]),
   };
 }
 
@@ -84,4 +86,11 @@ export function moveBike(code: string, id: string, pos: [number, number, number]
 /** Shoves a bike another player controls: the running total of the shove, which they apply. */
 export function pushBike(code: string, id: string, by: string, total: [number, number]) {
   return update(ref(realtime, `rooms/${code}/bikes/${id}/push/${by}`), { x: Math.round(total[0] * 1000) / 1000, z: Math.round(total[1] * 1000) / 1000 });
+}
+
+/** The room's host moves a parked bike by the shoves it has been given, noting how much of each it has used. */
+export function applyBikePushes(code: string, id: string, pos: [number, number, number], applied: Record<string, [number, number]>) {
+  const patch: Record<string, unknown> = { pos, updatedAt: Date.now() };
+  for (const [by, [x, z]] of Object.entries(applied)) patch[`applied/${by}`] = { x: Math.round(x * 1000) / 1000, z: Math.round(z * 1000) / 1000 };
+  return update(bikeRef(code, id), patch);
 }
