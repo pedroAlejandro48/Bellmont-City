@@ -226,3 +226,11 @@
 .order-choices.open { transform: translateY(0); opacity: 1; pointer-events: auto; }
 .order-choice { display: flex; align-items: center; gap: 0.5rem; padding: 0.55rem 0.8rem; border-radius: 0.6rem; background: #ffffff; color: #1d1f24; font-weight: 700; font-size: 0.9rem; box-shadow: 0 6px 16px rgba(0,0,0,0.3); }
 .order-choice:hover { background: #f1f1f1; }
+
+/* Touchscreen controls: upright, the joystick and buttons sit just above the health bars; on its side, level with them. */
+.touch-stick { left: calc(16px + env(safe-area-inset-left)); bottom: calc(132px + env(safe-area-inset-bottom)); }
+.touch-buttons { right: calc(16px + env(safe-area-inset-right)); bottom: calc(164px + env(safe-area-inset-bottom)); }
+@media (orientation: landscape) {
+  .touch-stick { left: calc(24px + env(safe-area-inset-left)); bottom: calc(14px + env(safe-area-inset-bottom)); }
+  .touch-buttons { right: calc(24px + env(safe-area-inset-right)); bottom: calc(46px + env(safe-area-inset-bottom)); }
+}

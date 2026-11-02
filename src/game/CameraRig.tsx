@@ -30,7 +30,11 @@ export function CameraRig({ state }: { state: GameState }) {
       state.camPitch += y * 0.006;
       // First person: looking down only as far as the chest down, and up to the sky.
       if (state.firstPerson) state.camPitch = Math.max(-1.25, Math.min(FP_DOWN, state.camPitch));
-    }, () => state.firstPerson);
+    }, () => state.firstPerson, (count) => {
+      // Fingers turning the view: while any is down the camera doesn't swing behind; it may two seconds after.
+      if (count === 0 && state.touchLook.fingers > 0) state.touchLook.releasedAt = performance.now();
+      state.touchLook.fingers = count;
+    });
     // The wheel (or two fingers on a touchpad) brings the camera closer (up) or further (down); right in, it
     // becomes first person, looking out from just in front of the face.
     const wheel = (e: WheelEvent) => {
@@ -68,8 +72,18 @@ export function CameraRig({ state }: { state: GameState }) {
     const onFoot = !state.script && !state.bench && !state.scooter.riding && !state.scooter.action && !state.accident && state.health > 0;
     const forward = state.rotY;
     let lookYaw = state.camYaw + Math.PI;
+    const onBike = state.scooter.riding || state.scooter.action === "mount";
     if (onFoot) state.rotY = forward + Math.atan2(Math.sin(lookYaw - forward), Math.cos(lookYaw - forward)) * (1 - Math.exp(-14 * dt));
-    else {
+    else if (onBike) {
+      // Riding: the view turns with the bike, facing the way it goes. A look aside (mouse, or a finger on the
+      // screen) is kept while looking, then eases back to the front.
+      const now = performance.now(), tl = state.touchLook;
+      const looking = now - state.lastMouseLookAt < 1000 || tl.fingers > 0 || now - tl.releasedAt < 2000;
+      let off = Math.atan2(Math.sin(state.camOrbit), Math.cos(state.camOrbit));
+      if (!looking) off *= Math.exp(-3 * dt);
+      off = Math.max(-1.55, Math.min(1.55, off));
+      state.camYaw = forward + Math.PI + off; lookYaw = state.camYaw + Math.PI;
+    } else {
       const off = Math.atan2(Math.sin(lookYaw - forward), Math.cos(lookYaw - forward)), max = 1.55;
       if (Math.abs(off) > max) { lookYaw = forward + Math.sign(off) * max; state.camYaw = lookYaw - Math.PI; }
     }
@@ -90,13 +104,18 @@ export function CameraRig({ state }: { state: GameState }) {
     gl.domElement.style.cursor = state.firstPerson ? "none" : "";
     if (state.firstPerson && firstPerson(dt)) return;
     const riding = state.scooter.riding || state.scooter.action === "mount";
-    const forward = state.movingForward || (riding && state.scooter.speed > 0 && (state.keys.has("KeyW") || state.keys.has("ArrowUp")));
+    const forward = state.movingForward || (riding && state.scooter.speed > 0 && (state.keys.has("KeyW") || state.keys.has("ArrowUp") || (state.stick?.y ?? 0) > 0.3));
     const now = performance.now();
     if (!forward || state.accident) forwardSince.current = null;
     else if (forwardSince.current === null) forwardSince.current = now;
     if (riding) state.camYaw = state.rotY + Math.PI + state.camOrbit;
     state.camOrbit = state.camYaw - state.rotY - Math.PI;
-    const recenter = cameraRecenterReady(forwardSince.current, state.lastMouseLookAt, now);
+    // On a touchscreen, pushing the joystick's top half brings the camera round behind straight away, unless a
+    // finger is turning the view (then two seconds after it lets go).
+    const tl = state.touchLook;
+    const recenter = state.stick
+      ? forwardSince.current !== null && now - forwardSince.current > 150 && tl.fingers === 0 && now - tl.releasedAt > 2000
+      : cameraRecenterReady(forwardSince.current, state.lastMouseLookAt, now);
     state.camOrbit = recenterOrbit(state.camOrbit, recenter, dt);
     if (recenter) {
       const wrappedPitch = Math.asin(Math.sin(state.camPitch));

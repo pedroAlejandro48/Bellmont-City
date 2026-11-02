@@ -93,8 +93,10 @@ export function Scooter({ state }: { state: GameState }) {
       }
     }
     if (bike.riding && !bike.action && !state.accident && state.health > 0) {
-      const left = state.keys.has("KeyA") || state.keys.has("ArrowLeft"), right = state.keys.has("KeyD") || state.keys.has("ArrowRight");
-      const forward = state.keys.has("KeyW") || state.keys.has("ArrowUp"), reverse = state.keys.has("KeyS") || state.keys.has("ArrowDown");
+      // Keys, or the on-screen joystick: up to ride on, down to brake and reverse, sideways to steer.
+      const st = state.stick;
+      const left = state.keys.has("KeyA") || state.keys.has("ArrowLeft") || (!!st && st.x < -0.3), right = state.keys.has("KeyD") || state.keys.has("ArrowRight") || (!!st && st.x > 0.3);
+      const forward = state.keys.has("KeyW") || state.keys.has("ArrowUp") || (!!st && st.y > 0.3), reverse = state.keys.has("KeyS") || state.keys.has("ArrowDown") || (!!st && st.y < -0.3);
       const previousSpeed = bike.speed;
       bike.speed = scooterSpeed(bike.speed, forward, reverse, dt);
       bike.braking = Math.abs(bike.speed) < Math.abs(previousSpeed) - 0.001 || forward && reverse;

@@ -121,6 +121,8 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     const left = k.has("KeyA") || k.has("ArrowLeft");
     const right = k.has("KeyD") || k.has("ArrowRight");
     const shift = k.has("ShiftLeft") || k.has("ShiftRight");
+    // The on-screen joystick: how far it is pushed sets the pace; right to the edge, running.
+    const stick = state.stick, stickPush = stick ? Math.min(1, Math.hypot(stick.x, stick.y)) : 0;
 
     let running = false;
     const dead = state.health === 0;
@@ -159,11 +161,13 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       state.camOrbit = state.camYaw - state.rotY - Math.PI;
     } else if (s.grounded) {
       // Restore view-relative walking; changing the player's facing never rotates the view.
-      const direction = Number(fwdKey) - Number(back);
-      const sideways = Number(right) - Number(left);
+      const useStick = stickPush > 0.12 && !fwdKey && !back && !left && !right;
+      const direction = useStick ? stick!.y : Number(fwdKey) - Number(back);
+      const sideways = useStick ? stick!.x : Number(right) - Number(left);
       // Nobody runs holding a drink.
-      running = shift && fwdKey && !back && !holdingDrink;
-      const [vx, vz] = cameraRelativeVelocity(state.camYaw, direction, sideways, running ? RUN : WALK);
+      running = !holdingDrink && (useStick ? stickPush > 0.92 : shift && fwdKey && !back);
+      const pace = useStick && !running ? WALK * Math.min(1, 0.35 + stickPush * 0.75) : running ? RUN : WALK;
+      const [vx, vz] = cameraRelativeVelocity(state.camYaw, direction, sideways, pace);
       s.vel.set(damp(s.vel.x, vx, ACCEL, dt), 0, damp(s.vel.z, vz, ACCEL, dt));
       if (direction || sideways) {
         const desiredYaw = Math.atan2(vx, vz);
@@ -178,7 +182,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       }
     }
     if (!s.grounded || dead || incapacitated) s.turnRate = 0;
-    state.movingForward = !script && fwdKey && !back && !left && !right && s.grounded && !dead && !incapacitated && !usingBike && !sitting && Math.hypot(s.vel.x, s.vel.z) > 0.1;
+    state.movingForward = !script && (fwdKey && !back && !left && !right || (!!stick && stickPush > 0.12 && stick.y > 0)) && s.grounded && !dead && !incapacitated && !usingBike && !sitting && Math.hypot(s.vel.x, s.vel.z) > 0.1;
     state.jumpQueued = false;
     // airborne: horizontal velocity frozen (no steering, same speed)
 

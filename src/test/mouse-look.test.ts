@@ -96,6 +96,22 @@ describe("looking around (pointer lock, or dragging where there is none)", () =>
     expect(request).not.toHaveBeenCalled();
     expect(move.mock.calls).toEqual([[30, 0]]);
   });
+  it("turns only with the finger pressed on the view, not one moving the joystick at the same time", () => {
+    const fingers: number[] = [];
+    dispose(); dispose = bindMouseLook(canvas, move, () => firstPerson, (n) => fingers.push(n));
+    for (const fp of [false, true]) {
+      firstPerson = fp; move.mockClear();
+      // Finger 7 on the joystick (pressed elsewhere), finger 3 on the view.
+      document.dispatchEvent(pointer("pointermove", { x: 10, y: 300, kind: "touch", id: 7 }));
+      canvas.dispatchEvent(pointer("pointerdown", { x: 200, y: 100, buttons: 1, kind: "touch", id: 3 }));
+      document.dispatchEvent(pointer("pointermove", { x: 60, y: 300, kind: "touch", id: 7, buttons: 1 }));
+      document.dispatchEvent(pointer("pointermove", { x: 230, y: 100, kind: "touch", id: 3, buttons: 1 }));
+      document.dispatchEvent(pointer("pointermove", { x: 90, y: 280, kind: "touch", id: 7, buttons: 1 }));
+      expect(move.mock.calls).toEqual([[30, 0]]);
+      document.dispatchEvent(pointer("pointerup", { kind: "touch", id: 3 }));
+    }
+    expect(fingers).toEqual([1, 0, 1, 0]);
+  });
   it("in first person, looks around by just moving the cursor before any lock", () => {
     firstPerson = true;
     drag(10, 10, 0); drag(25, 5, 0);

@@ -12,7 +12,7 @@
 /** This browser has refused (or can't do) pointer lock: looking around works by dragging instead. */
 export const lookSupport = { lockRefused: typeof document !== "undefined" && typeof document.exitPointerLock !== "function" };
 
-export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: number) => void, sticky: () => boolean = () => false) {
+export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: number) => void, sticky: () => boolean = () => false, onFingers?: (count: number) => void) {
   const doc = element.ownerDocument;
   const win = doc.defaultView;
   let held = false;
@@ -22,7 +22,11 @@ export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: numbe
   let wasLocked = false;
   /** The pointer being dragged without a lock, and where it last was. */
   let dragId: number | null = null;
-  let last: { x: number; y: number } | null = null;
+  /** Where each pointer last was (a finger on the joystick and one turning the view move separately). */
+  const lastBy = new Map<number, { x: number; y: number }>();
+  /** Fingers pressed on the canvas (turning the view), for the camera's follow-behind timing. */
+  const fingers = new Set<number>();
+  const idOf = (event: PointerEvent) => (typeof event.pointerId === "number" ? event.pointerId : -1);
   const prevTouchAction = element.style.touchAction;
   element.style.touchAction = "none";
   const locked = () => doc.pointerLockElement === element;
@@ -30,7 +34,8 @@ export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: numbe
     if (locked()) doc.exitPointerLock();
   };
   const release = () => {
-    held = false; wasLocked = false; last = null;
+    held = false; wasLocked = false; lastBy.clear();
+    if (fingers.size) { fingers.clear(); onFingers?.(0); }
     if (dragId !== null) { try { element.releasePointerCapture?.(dragId); } catch { /* already released */ } dragId = null; }
     unlock();
   };
@@ -42,7 +47,8 @@ export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: numbe
     if (held && locked()) return;
     event.preventDefault();
     held = true; wasLocked = locked();
-    last = { x: event.clientX, y: event.clientY };
+    lastBy.set(idOf(event), { x: event.clientX, y: event.clientY });
+    if (event.pointerType === "touch") { fingers.add(idOf(event)); onFingers?.(fingers.size); }
     dragId = typeof event.pointerId === "number" ? event.pointerId : null;
     if (dragId !== null) { try { element.setPointerCapture?.(dragId); } catch { /* not capturable */ } }
     // Fingers don't lock; a mouse or touchpad asks, synchronously during the press's user activation.
@@ -63,16 +69,21 @@ export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: numbe
       // Some browsers report one huge bogus jump just as the lock starts or ends: no hand moves that far at once.
       if (Math.abs(dx) > 800 || Math.abs(dy) > 800) { dx = 0; dy = 0; }
     }
-    else if (last) { dx = x - last.x; dy = y - last.y; }
-    last = { x, y };
-    // First person, not locked: the cursor's own movement looks around (a mouse or touchpad, not a finger).
-    if (sticky() && !locked()) { if (event.pointerType !== "touch" || held) { if (dx || dy) onMove(dx, dy); } return; }
+    else { const last = lastBy.get(idOf(event)); if (last) { dx = x - last.x; dy = y - last.y; } }
+    lastBy.set(idOf(event), { x, y });
+    // A finger is only ever the one pressed on the canvas (never the joystick's).
+    const isDrag = dragId === null || typeof event.pointerId !== "number" || event.pointerId === dragId;
+    // First person, not locked: the cursor's own movement looks around (a mouse or touchpad; a finger only while
+    // pressed on the view).
+    if (sticky() && !locked()) { if (event.pointerType !== "touch" ? isDrag || !held : held && isDrag) { if (dx || dy) onMove(dx, dy); } return; }
     if (!held) return;
     // (The press ends on pointerup; `buttons` isn't trusted here, as some browsers report 0 while locked.)
     if (!locked() && dragId !== null && typeof event.pointerId === "number" && event.pointerId !== dragId) return;
     if (dx || dy) onMove(dx, dy);
   };
   const up = (event: PointerEvent) => {
+    lastBy.delete(idOf(event));
+    if (fingers.delete(idOf(event))) onFingers?.(fingers.size);
     if (dragId !== null && typeof event.pointerId === "number" && event.pointerId !== dragId) return;
     if (sticky()) { held = false; if (dragId !== null) { try { element.releasePointerCapture?.(dragId); } catch { /* fine */ } dragId = null; } return; }
     if (event.buttons === 0 || event.type === "pointercancel") release();
@@ -81,7 +92,7 @@ export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: numbe
     if (locked()) { if ((!held && !sticky()) || disposed) unlock(); else wasLocked = true; return; }
     // Lost the lock mid-look (Escape, or a browser that grants it and takes it straight back, as iPad Safari and
     // headless browsers can): carry on turning by dragging until the press ends.
-    if (wasLocked) { wasLocked = false; last = null; }
+    if (wasLocked) { wasLocked = false; lastBy.clear(); }
   };
   const visibility = () => { if (doc.visibilityState === "hidden") release(); };
   element.addEventListener("pointerdown", down);

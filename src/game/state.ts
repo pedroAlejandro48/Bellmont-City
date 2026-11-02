@@ -96,6 +96,10 @@ export type GameState = {
   firstPerson: boolean;
   lastMouseLookAt: number;
   movingForward: boolean;
+  /** The on-screen joystick (touchscreens): x to the right, y forward, each -1..1 (length up to 1); null when untouched. */
+  stick: { x: number; y: number } | null;
+  /** Fingers on the screen turning the view (not the joystick's), and when the last one let go (performance.now). */
+  touchLook: { fingers: number; releasedAt: number };
   worldSeed: number;
   darkness: number;
   keys: Set<string>;
@@ -195,6 +199,8 @@ export function createState(save: SaveData): GameState {
     camDistance: 6, firstPerson: false,
     lastMouseLookAt: performance.now(),
     movingForward: false,
+    stick: null,
+    touchLook: { fingers: 0, releasedAt: -Infinity },
     worldSeed: save.worldSeed ?? 1337,
     darkness: 0,
     keys: new Set(),

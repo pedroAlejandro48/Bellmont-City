@@ -24,6 +24,7 @@ import { OrderMenu } from "@/components/OrderMenu";
 import { PhysicsGround, RestaurantWalls } from "./PhysicsGround";
 import type { GameExtras } from "./CloudGame";
 import { lookSupport } from "./mouseLook";
+import { TouchControls } from "./TouchControls";
 
 const BLOCKED = new Set(["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
@@ -84,6 +85,32 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
   const [cash, setCash] = useState(state.cash);
   // First person with the pointer not yet locked: a hint to click (turning is then unlimited).
   const [fpHint, setFpHint] = useState(false);
+  const dayBox = useRef<HTMLDivElement>(null), actionsRow = useRef<HTMLDivElement>(null);
+  // Phones: keep the day box centred, unless the people count or the buttons would cover it; then it sits in the
+  // middle of the space between them (shrunk a little if even that is too narrow).
+  useEffect(() => {
+    const fit = () => {
+      const box = dayBox.current, row = actionsRow.current;
+      if (!box || !row || !box.offsetWidth) return;
+      box.style.transform = ""; box.style.left = "";
+      const width = box.offsetWidth, screen = window.innerWidth;
+      const leftEdge = (document.querySelector("[data-hud-left]")?.getBoundingClientRect().right ?? 8) + 8;
+      const rightEdge = row.getBoundingClientRect().left - 8;
+      const room = rightEdge - leftEdge;
+      let x = screen / 2 - width / 2, scale = 1;
+      if (x < leftEdge || x + width > rightEdge) {
+        scale = Math.min(1, room / width);
+        x = leftEdge + (room - width * scale) / 2;
+      }
+      box.style.left = `${x}px`;
+      box.style.transform = scale < 1 ? `scale(${scale})` : "none";
+      box.style.transformOrigin = "left center";
+    };
+    fit();
+    const id = window.setInterval(fit, 300);
+    window.addEventListener("resize", fit);
+    return () => { window.clearInterval(id); window.removeEventListener("resize", fit); };
+  }, []);
   // Whole dollars as they are; cents once there are any.
   const cashText = Number.isInteger(cash) ? String(cash) : cash.toFixed(2);
   // Test builds only: lets browser tests drive the character.
@@ -153,7 +180,12 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
       <GameScene state={state} x={focus[0] ?? 0} z={focus[1] ?? 0} Extra={extras?.Scene} />
 
       <div className="pointer-events-none fixed inset-0 z-10">
-        {/* Wide screens: the day and time centred at the top. Phones: in the row with the buttons (below). */}
+        {/* Phones: a smaller day box, centred, the same height as the buttons beside it (placed by fitDayBox). */}
+        <div ref={dayBox} className="hud-panel absolute left-1/2 top-4 flex h-8 items-center gap-2 whitespace-nowrap px-2.5 sm:hidden">
+          <span className="font-display text-base leading-none tracking-wide">Day {hud.day}</span>
+          <span className="text-[10px] leading-none text-muted-foreground">{hud.isDay ? "☀" : "☾"} {formatClock(hud.hours)}</span>
+        </div>
+        {/* Wide screens: the day and time centred at the top. */}
         <div className="hidden justify-center pt-5 sm:flex">
           <div className="hud-panel flex items-baseline gap-4 px-6 py-2.5">
             <span className="font-display text-3xl tracking-wide">Day {hud.day}</span>
@@ -163,13 +195,8 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
           </div>
         </div>
         <div className="absolute right-4 top-4 flex flex-col items-end gap-1.5">
-          <div className="hud-actions relative flex items-start gap-2 sm:items-center sm:gap-3">
+          <div ref={actionsRow} className="hud-actions relative flex items-center gap-2 sm:gap-3">
             {saving && <span className="absolute right-0 top-full mt-1 whitespace-nowrap text-xs text-muted-foreground sm:static sm:mt-0">Saving…</span>}
-            {/* Phones: the day on top, the time under it, in one small box next to the buttons. */}
-            <div className="hud-panel flex flex-col items-center px-2.5 py-1 sm:hidden">
-              <span className="font-display text-base leading-tight tracking-wide">Day {hud.day}</span>
-              <span className="whitespace-nowrap text-[10px] leading-tight text-muted-foreground">{hud.isDay ? "☀" : "☾"} {formatClock(hud.hours)}</span>
-            </div>
             {Actions && <Actions />}
             <Button disabled={dead} onClick={onSignOut} className="pointer-events-auto h-8 px-3 text-xs sm:h-9 sm:px-4 sm:text-sm">
               {exitLabel}
@@ -200,6 +227,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
         </div>
       </div>
       {fpHint && <div className="pointer-events-none fixed left-1/2 top-1/2 z-20 -translate-x-1/2 translate-y-10 rounded-md bg-black/55 px-3 py-1.5 text-xs font-semibold text-white">Click to look around freely</div>}
+      {!dead && <TouchControls state={state} />}
       <OrderMenu state={state} />
       <div ref={fade} className="pointer-events-none fixed inset-0 z-30 bg-black" style={{ opacity: 0 }} aria-hidden />
       {dead && (

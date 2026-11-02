@@ -171,7 +171,7 @@ function OnlinePanel({ account, channel, creator }: { account: Account; channel:
 
   return <div className="pointer-events-auto absolute left-4 top-4 z-20">
     <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-label={`${count} ${count === 1 ? "person" : "people"} in this room`}
-      className="hud-panel flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-foreground sm:gap-2 sm:px-3 sm:py-2 sm:text-base">
+      data-hud-left className="hud-panel flex h-8 items-center gap-1.5 px-2.5 text-sm text-foreground sm:h-auto sm:gap-2 sm:px-3 sm:py-2 sm:text-base">
       <User className="h-4 w-4" aria-hidden />
       <span className="font-bold tabular-nums">{count}</span>
       <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
