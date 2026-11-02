@@ -22,7 +22,7 @@ export function RoomMenu({ code, canDelete, onDelete }: { code: string; canDelet
   }
 
   return <div className="pointer-events-auto relative">
-    <Button size="icon" aria-label="Room settings" aria-expanded={open} onClick={toggle}><Settings aria-hidden /></Button>
+    <Button size="icon" className="h-8 w-8 sm:h-9 sm:w-9" aria-label="Room settings" aria-expanded={open} onClick={toggle}><Settings aria-hidden /></Button>
     {open && <ul className="hud-panel absolute right-0 top-full z-30 mt-2 w-44 py-1.5 text-sm">
       <li><button type="button" className="w-full px-3 py-2 text-left text-foreground hover:bg-white/5" onClick={() => void share()}>{copied ? "Link copied!" : "Share"}</button></li>
       {canDelete && <li><button type="button" className="w-full px-3 py-2 text-left text-red-500 hover:bg-white/5" onClick={() => { setOpen(false); setConfirming(true); }}>Delete room</button></li>}

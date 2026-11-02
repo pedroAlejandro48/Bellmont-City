@@ -153,7 +153,8 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
       <GameScene state={state} x={focus[0] ?? 0} z={focus[1] ?? 0} Extra={extras?.Scene} />
 
       <div className="pointer-events-none fixed inset-0 z-10">
-        <div className="flex justify-center pt-5">
+        {/* Wide screens: the day and time centred at the top. Phones: in the row with the buttons (below). */}
+        <div className="hidden justify-center pt-5 sm:flex">
           <div className="hud-panel flex items-baseline gap-4 px-6 py-2.5">
             <span className="font-display text-3xl tracking-wide">Day {hud.day}</span>
             <span className="text-sm text-muted-foreground">
@@ -161,15 +162,20 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
             </span>
           </div>
         </div>
-        <div className="absolute right-4 top-20 flex flex-col items-end gap-1.5 sm:top-4">
-          <div className="flex items-center gap-3">
-            {saving && <span className="text-xs text-muted-foreground">Saving…</span>}
+        <div className="absolute right-4 top-4 flex flex-col items-end gap-1.5">
+          <div className="hud-actions relative flex items-start gap-2 sm:items-center sm:gap-3">
+            {saving && <span className="absolute right-0 top-full mt-1 whitespace-nowrap text-xs text-muted-foreground sm:static sm:mt-0">Saving…</span>}
+            {/* Phones: the day on top, the time under it, in one small box next to the buttons. */}
+            <div className="hud-panel flex flex-col items-center px-2.5 py-1 sm:hidden">
+              <span className="font-display text-base leading-tight tracking-wide">Day {hud.day}</span>
+              <span className="whitespace-nowrap text-[10px] leading-tight text-muted-foreground">{hud.isDay ? "☀" : "☾"} {formatClock(hud.hours)}</span>
+            </div>
             {Actions && <Actions />}
-            <Button disabled={dead} onClick={onSignOut} className="pointer-events-auto">
+            <Button disabled={dead} onClick={onSignOut} className="pointer-events-auto h-8 px-3 text-xs sm:h-9 sm:px-4 sm:text-sm">
               {exitLabel}
             </Button>
           </div>
-          {extras?.exitNote && <span className="text-sm font-bold tracking-wide text-white">{extras.exitNote}</span>}
+          {extras?.exitNote && <span className="text-[11px] font-bold tracking-wide text-white sm:text-sm">{extras.exitNote}</span>}
         </div>
         {Overlay && <Overlay state={state} />}
         {riding && <div className="hud-panel absolute bottom-24 left-1/2 flex h-16 w-40 -translate-x-1/2 items-baseline justify-center gap-2 px-4 py-3" aria-label="Scooter speed"><span className="font-display text-3xl tabular-nums">{speed}</span><span className="text-xs text-muted-foreground">MPH</span></div>}
