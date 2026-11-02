@@ -2,7 +2,7 @@
 // reads as what it is: a burger, fries in their carton, a pizza, nigiri on rice, a latte, a bottle of water.
 import * as THREE from "three";
 
-type Part = { geo: THREE.BufferGeometry; color: string; pos?: [number, number, number]; rot?: [number, number, number]; scale?: [number, number, number]; rough?: number; metal?: number; opacity?: number };
+type Part = { dish?: boolean; geo: THREE.BufferGeometry; color: string; pos?: [number, number, number]; rot?: [number, number, number]; scale?: [number, number, number]; rough?: number; metal?: number; opacity?: number };
 
 const geoCache = new Map<string, THREE.BufferGeometry>();
 const g = (key: string, make: () => THREE.BufferGeometry) => { let x = geoCache.get(key); if (!x) { x = make(); geoCache.set(key, x); } return x; };
@@ -19,9 +19,13 @@ function mat(color: string, rough = 0.7, metal = 0, opacity = 1) {
   if (!m) { m = new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, transparent: opacity < 1, opacity, depthWrite: opacity >= 1 }); matCache.set(key, m); }
   return m;
 }
+/** Which parts to build: everything, only the food (what is picked up to eat), or only the plate it sat on. */
+export type DishPart = "all" | "food" | "plate";
+let building: DishPart = "all";
 function build(parts: Part[]) {
   const group = new THREE.Group();
   for (const p of parts) {
+    if ((building === "food" && p.dish) || (building === "plate" && !p.dish)) continue;
     const mesh = new THREE.Mesh(p.geo, mat(p.color, p.rough ?? 0.7, p.metal ?? 0, p.opacity ?? 1));
     if (p.pos) mesh.position.set(...p.pos);
     if (p.rot) mesh.rotation.set(...p.rot);
@@ -33,7 +37,7 @@ function build(parts: Part[]) {
 }
 
 const PLATE = "#f5f3ee", BUN = "#d99a4e", BUN_TOP = "#c98638", PATTY = "#5a3320", CHEESE = "#f6c445", LETTUCE = "#5fae3c", TOMATO = "#d8422f";
-const plate = (r = 0.11): Part => ({ geo: cyl(r, r * 0.85, 0.012, 28), color: PLATE, pos: [0, 0.006, 0], rough: 0.3 });
+const plate = (r = 0.11): Part => ({ dish: true, geo: cyl(r, r * 0.85, 0.012, 28), color: PLATE, pos: [0, 0.006, 0], rough: 0.3 });
 const bowl = (r = 0.075, h = 0.055, color = "#f7f4ee"): Part => ({ geo: cyl(r, r * 0.6, h, 24), color, pos: [0, h / 2, 0], rough: 0.35 });
 
 function burger(kind: "classic" | "double" | "bacon" | "chicken" | "veggie") {
@@ -96,7 +100,7 @@ function coffee(kind: "espresso" | "americano" | "cappuccino" | "latte" | "mocha
   const r = small ? 0.026 : 0.045, h = small ? 0.04 : 0.07;
   const top = kind === "cappuccino" ? "#efe3cf" : kind === "mocha" ? "#5a3320" : kind === "espresso" ? "#4a2a14" : "#2c180c";
   return build([
-    { geo: cyl(r + 0.03, r + 0.02, 0.008, 24), color: "#f4f1ea", pos: [0, 0.004, 0], rough: 0.3 },
+    { dish: true, geo: cyl(r + 0.03, r + 0.02, 0.008, 24), color: "#f4f1ea", pos: [0, 0.004, 0], rough: 0.3 },
     { geo: cyl(r, r * 0.72, h, 24), color: "#f6f3ec", pos: [0, 0.008 + h / 2, 0], rough: 0.3 },
     { geo: cyl(r * 0.94, r * 0.94, 0.004, 24), color: top, pos: [0, 0.006 + h, 0] },
     { geo: tor(h * 0.25, 0.005, Math.PI), color: "#f6f3ec", pos: [r + 0.008, 0.008 + h * 0.55, 0], rot: [0, 0, -Math.PI / 2] },
@@ -105,7 +109,7 @@ function coffee(kind: "espresso" | "americano" | "cappuccino" | "latte" | "mocha
 }
 function pizza(top: string[], cheese = "#f6d26b") {
   const parts: Part[] = [
-    { geo: cyl(0.17, 0.17, 0.012, 32), color: "#8a5a2b", pos: [0, 0.006, 0] },
+    { dish: true, geo: cyl(0.17, 0.17, 0.012, 32), color: "#8a5a2b", pos: [0, 0.006, 0] },
     { geo: cyl(0.15, 0.15, 0.014, 32), color: "#d79a4c", pos: [0, 0.018, 0] },
     { geo: cyl(0.135, 0.135, 0.006, 32), color: "#c0392b", pos: [0, 0.026, 0] },
     { geo: cyl(0.13, 0.13, 0.005, 32), color: cheese, pos: [0, 0.03, 0], rough: 0.5 },
@@ -117,7 +121,7 @@ function pizza(top: string[], cheese = "#f6d26b") {
   return build(parts);
 }
 function nigiri(fish: string, pairs = 2) {
-  const parts: Part[] = [{ geo: box(0.16, 0.012, 0.09), color: "#2b2b2b", pos: [0, 0.006, 0], rough: 0.4 }];
+  const parts: Part[] = [{ dish: true, geo: box(0.16, 0.012, 0.09), color: "#2b2b2b", pos: [0, 0.006, 0], rough: 0.4 }];
   for (let i = 0; i < pairs; i++) {
     const x = (i - (pairs - 1) / 2) * 0.05;
     parts.push({ geo: cap(0.012, 0.03), color: "#fbfaf4", pos: [x, 0.025, 0], rot: [Math.PI / 2, 0, 0] });
@@ -126,7 +130,7 @@ function nigiri(fish: string, pairs = 2) {
   return build(parts);
 }
 function roll() {
-  const parts: Part[] = [{ geo: box(0.2, 0.012, 0.07), color: "#f1ece0", pos: [0, 0.006, 0], rough: 0.3 }];
+  const parts: Part[] = [{ dish: true, geo: box(0.2, 0.012, 0.07), color: "#f1ece0", pos: [0, 0.006, 0], rough: 0.3 }];
   for (let i = 0; i < 6; i++) {
     const x = (i - 2.5) * 0.03;
     parts.push({ geo: cyl(0.016, 0.016, 0.026, 16), color: "#1e2a1e", pos: [x, 0.026, 0], rot: [0, 0, Math.PI / 2] });
@@ -136,7 +140,7 @@ function roll() {
   return build(parts);
 }
 function sashimi() {
-  const parts: Part[] = [{ geo: cyl(0.12, 0.11, 0.014, 6), color: "#1a1a1a", pos: [0, 0.007, 0], rough: 0.3 }];
+  const parts: Part[] = [{ dish: true, geo: cyl(0.12, 0.11, 0.014, 6), color: "#1a1a1a", pos: [0, 0.007, 0], rough: 0.3 }];
   const colors = ["#f07c5a", "#c62828", "#f5b7a0", "#f07c5a", "#c62828", "#f5b7a0", "#f07c5a", "#c62828"];
   colors.forEach((c, i) => parts.push({ geo: box(0.05, 0.01, 0.024), color: c, pos: [((i % 4) - 1.5) * 0.045, 0.02, (Math.floor(i / 4) - 0.5) * 0.04], rot: [0.25, 0, 0], rough: 0.3 }));
   parts.push({ geo: sph(0.012), color: "#9ccc65", pos: [0.08, 0.02, 0.06] });
@@ -158,8 +162,14 @@ function bowlOf(fill: string, extra: Part[] = []) {
 }
 function plateOf(parts: Part[], r = 0.11) { return build([plate(r), ...parts]); }
 
-/** A model for any menu item (falls back to a covered plate). */
-export function dishModel(name: string): THREE.Group {
+/** A model for any menu item (falls back to a covered plate): all of it, just the food, or just its plate. */
+export function dishModel(name: string, part: DishPart = "all"): THREE.Group {
+  building = part;
+  try { return dishOf(name); } finally { building = "all"; }
+}
+/** Whether an item comes on a plate (or saucer, board) that stays behind when it is picked up. */
+export function hasPlate(name: string) { return dishModel(name, "plate").children.length > 0; }
+function dishOf(name: string): THREE.Group {
   switch (name) {
     // Big Bell Burgers
     case "Classic Bell": return burger("classic");
@@ -217,7 +227,7 @@ export function dishModel(name: string): THREE.Group {
     case "Matcha Mochi": return plateOf([0, 1, 2].map((i): Part => ({ geo: sph(0.022), color: "#9ccc65", pos: [(i - 1) * 0.045, 0.026, 0] as [number, number, number], scale: [1, 0.8, 1] as [number, number, number], rough: 0.8 })), 0.09);
     case "Yuzu Sorbet": return build([{ geo: cyl(0.045, 0.02, 0.04, 20), color: "#e8f2f6", pos: [0, 0.03, 0], rough: 0.05, opacity: 0.5 }, { geo: cyl(0.004, 0.004, 0.02, 8), color: "#e8f2f6", pos: [0, 0.01, 0], opacity: 0.5 }, { geo: sph(0.025), color: "#fff176", pos: [-0.012, 0.06, 0] }, { geo: sph(0.022), color: "#ffee58", pos: [0.016, 0.062, 0.006] }]);
     case "Sencha Green Tea": return build([{ geo: cyl(0.032, 0.028, 0.06, 20), color: "#e0ddd1", pos: [0, 0.03, 0], rough: 0.6 }, { geo: cyl(0.029, 0.029, 0.004, 20), color: "#9ccc65", pos: [0, 0.058, 0] }]);
-    case "Sake (glass)": return build([{ geo: cyl(0.024, 0.022, 0.07, 18), color: "#e8f2f6", pos: [0, 0.035, 0], rough: 0.05, opacity: 0.4 }, { geo: cyl(0.021, 0.02, 0.055, 18), color: "#f8f6ea", pos: [0, 0.03, 0], opacity: 0.6 }, { geo: box(0.06, 0.06, 0.06), color: "#b07a3c", pos: [0, -0.0, 0], scale: [1, 0.05, 1] }]);
+    case "Sake (glass)": return build([{ geo: cyl(0.024, 0.022, 0.07, 18), color: "#e8f2f6", pos: [0, 0.035, 0], rough: 0.05, opacity: 0.4 }, { geo: cyl(0.021, 0.02, 0.055, 18), color: "#f8f6ea", pos: [0, 0.03, 0], opacity: 0.6 }, { dish: true, geo: box(0.06, 0.06, 0.06), color: "#b07a3c", pos: [0, -0.0, 0], scale: [1, 0.05, 1] }]);
     case "Bottled Water": return build([
       { geo: cyl(0.034, 0.034, 0.15, 20), color: "#dff1ff", pos: [0, 0.075, 0], rough: 0.08, opacity: 0.35 },
       { geo: cyl(0.031, 0.031, 0.118, 20), color: "#9fd3f5", pos: [0, 0.06, 0], rough: 0.05, opacity: 0.45 },

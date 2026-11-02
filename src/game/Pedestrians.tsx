@@ -1,11 +1,13 @@
 import { useFrame } from "@react-three/fiber";
 import { memo, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { BENCH_SEATS, BENCH_SIT_SECONDS, BENCH_STAND_SECONDS, HALF, PARK_LAMPS, SIGNAL_POLES, THROW_DISTANCE, benchJoints, benchPose, blockIndex, timeInfo, circleBoxPush, floorHeight, rng, scooterFootprint, type City } from "./config";
+import { BENCH_SEATS, BENCH_SEAT_TOP, BIN, PARK_BINS, BENCH_SIT_SECONDS, BENCH_STAND_SECONDS, HALF, PARK_LAMPS, SIGNAL_POLES, THROW_DISTANCE, benchJoints, benchPose, blockIndex, timeInfo, circleBoxPush, floorHeight, rng, scooterFootprint, type City } from "./config";
 import { bodyColor } from "@/platform/account";
 import { CharacterBody, useBodyRig } from "./CharacterBody";
 import { RagdollBody, type RagdollSubject } from "./Ragdoll";
 import type { Accident, GameState, NpcBody } from "./state";
+import { EAT_SECONDS, PACK_SIZE, isDrinkName, type FoodPack, type FoodRequest } from "./food";
+import { POLES, carryElbow, reachArm } from "./arms";
 import { CROSS_SPEED, NPC_APPEAR_DISTANCE, boxObstacles, cornerPoint, detour, parkVisit, NPC_MAX, NPC_RADIUS, WALK_SPEED, npcTarget, legEnd, legFromPosition, type NpcLink, type NpcSnapshot, mayCross, nextLeg, npcGender, spawnBlock, spawnOnRing, steer, type Leg, type Obstacle } from "./pedestrians";
 
 /** Further than this from the player, someone is moved to walk somewhere nearer. */
@@ -21,6 +23,17 @@ type ParkVisit = {
   until: number;
   bench: { phase: "sit" | "seated" | "stand"; startedAt: number; origin: { x: number; z: number }; originYaw: number } | null;
 };
+
+/** A hand reaching out (to set something down, pick it up, or drop it in a bin), then back; and the request it makes. */
+type Act = { at: number; side: 1 | -1; x: number; y: number; z: number; req: FoodRequest; sent: boolean };
+/**
+ * Food to go, bought by someone who was a restaurant customer: carried to a free park bench, eaten there (set down
+ * beside them, food first, then drinks), the empties taken back up and dropped in a bin on the way round the park.
+ */
+type Meal = { stage: "go" | "bench" | "bin" | "toss"; at: number; eat: { pack: number; item: string; at: number } | null; act: Act | null; bin: number };
+const ACT_TIME = 1.0, ACT_CONTACT = 0.45;
+const smoothT = (t: number) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
+const actBlend = (t: number) => (t < ACT_CONTACT ? smoothT(t / ACT_CONTACT) : 1 - smoothT((t - ACT_CONTACT - 0.1) / 0.4));
 
 type Npc = {
   body: NpcBody; pos: THREE.Vector3; yaw: number; color: string;
@@ -43,6 +56,9 @@ type Npc = {
   seated: number;
   /** In a room as a guest of the host: the seed of the knock-down already shown, and when a hit was last reported. */
   shownHit: number; hitSentAt: number;
+  meal: Meal | null;
+  /** A hand reaching for something this frame (shared with the other players for the pose). */
+  reach: { side: 1 | -1; blend: number; x: number; y: number; z: number } | null;
 };
 
 const turn = (from: number, to: number, t: number) => from + Math.atan2(Math.sin(to - from), Math.cos(to - from)) * Math.min(1, t);
@@ -94,7 +110,7 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       const npc: Npc = {
         body: { id, x: 0, z: 0, down: false, moving: false, hit: null }, pos: new THREE.Vector3(), yaw: 0,
         color: bodyColor(npcGender(state.worldSeed, id)), leg: { kind: "ring", i: 0, j: 0, from: 0, to: 1 }, crossing: false,
-        mode: random() < 0.75 ? "walk" : "stand", until: 2 + random() * 20, speed: 0, phase: random() * 6, accident: null, random, shownHit: -1, hitSentAt: -Infinity, active: true, around: null, side: 1, park: null, seated: 0, offset: (() => { const a = random() * Math.PI * 2, d = 0.25 + random() * 0.55; return [Math.cos(a) * d, Math.sin(a) * d] as [number, number]; })(),
+        mode: random() < 0.75 ? "walk" : "stand", until: 2 + random() * 20, speed: 0, phase: random() * 6, accident: null, random, shownHit: -1, hitSentAt: -Infinity, active: true, around: null, side: 1, park: null, seated: 0, meal: null, reach: null, offset: (() => { const a = random() * Math.PI * 2, d = 0.25 + random() * 0.55; return [Math.cos(a) * d, Math.sin(a) * d] as [number, number]; })(),
       };
       // At the start everyone the hour calls for is already about (anywhere); the rest are kept aside.
       place(npc, fi, fj, [], state.seatOccupants);
@@ -117,6 +133,53 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
     ...SIGNAL_POLES.map((s) => ({ x: s.x, z: s.z, r: 0.15 })),
     ...PARK_LAMPS.map((l) => ({ x: l.x, z: l.z, r: 0.12 })),
   ], [city]);
+
+  /** A reach under way: the hand out and back, the request made as it gets there. */
+  function runAct(npc: Npc, now: number) {
+    const act = npc.meal?.act;
+    if (!act) return;
+    const t = now - act.at;
+    if (!act.sent && t >= ACT_CONTACT) { act.sent = true; state.foodHandle?.(`ped:${npc.body.id}`, act.req); }
+    npc.reach = { side: act.side, blend: actBlend(t), x: act.x, y: act.y, z: act.z };
+    if (t >= ACT_TIME) { npc.meal!.act = null; npc.reach = null; }
+  }
+  /** Sat on a bench with food: set it down alongside, eat it all (food first), take the empties back up, get up. */
+  function mealOnBench(npc: Npc, seat: (typeof BENCH_SEATS)[number], visit: ParkVisit, now: number) {
+    const meal = npc.meal!, me = `ped:${npc.body.id}`, packs: FoodPack[] = state.foodView?.().packs ?? [];
+    meal.stage = "bench";
+    visit.until = Math.max(visit.until, now + 3);
+    if (meal.act) { runAct(npc, now); return; }
+    if (now < meal.at) return;
+    const held = packs.filter((q) => q.holder === me && q.where === "held"), aside = packs.filter((q) => q.holder === me && q.where === "aside");
+    const top = floorHeight(seat.x, seat.z) + BENCH_SEAT_TOP, lx = Math.cos(seat.yaw), lz = -Math.sin(seat.yaw);
+    const r = (v: number) => Math.round(v * 100) / 100;
+    const full = held.find((q) => q.kind !== "sign" && q.kind !== "tray" && q.items.length > 0);
+    if (meal.eat) {
+      if (now - meal.eat.at >= EAT_SECONDS) { state.foodHandle?.(me, { type: "ate", pack: meal.eat.pack, item: meal.eat.item }); meal.eat = null; meal.at = now + 0.5; }
+      return;
+    }
+    if (full) {
+      // Down on the seat beside them, on the side of the hand it was in.
+      const side = full.hand === "left" ? 1 : -1, x = seat.x + lx * side * 0.42, z = seat.z + lz * side * 0.42;
+      meal.act = { at: now, side, x, y: top + PACK_SIZE[full.kind].grip, z, req: { type: "set", pack: full.id, where: "aside", x: r(x), y: r(top), z: r(z), yaw: r(seat.yaw) }, sent: false };
+      return;
+    }
+    const withFood = aside.find((q) => q.items.some((n) => !isDrinkName(n))) ?? aside.find((q) => q.items.length);
+    if (withFood) {
+      const item = withFood.items.find((n) => !isDrinkName(n)) ?? withFood.items[0]!;
+      meal.eat = { pack: withFood.id, item, at: now };
+      state.foodHandle?.(me, { type: "eat", pack: withFood.id, item });
+      return;
+    }
+    const used = new Set(held.map((q) => q.hand)), hand = (["right", "left"] as const).find((h) => !used.has(h)), back = aside[0];
+    if (back && hand) {
+      // The empties back up, one in each hand.
+      meal.act = { at: now, side: hand === "left" ? 1 : -1, x: back.gx, y: back.gy + PACK_SIZE[back.kind].grip, z: back.gz, req: { type: "pickup", pack: back.id, hand }, sent: false };
+      return;
+    }
+    // All eaten: up, and off round the park to a bin.
+    meal.stage = "bin"; visit.until = now;
+  }
 
   const role = useRef<"solo" | "host" | "guest">("solo");
   const lastSnapshot = useRef<{ snapshot: NpcSnapshot; at: number } | null>(null);
@@ -144,9 +207,25 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       const n = npcs.find((m) => !m.active);
       if (n && place(n, Math.max(-HALF, Math.min(HALF, fi)), Math.max(-HALF, Math.min(HALF, fj)), players, state.seatOccupants)) { n.active = true; n.mode = "walk"; n.body.down = false; }
     } else if (out > target) {
-      const n = npcs.find((m) => m.active && !m.accident && outOfSight(m.pos.x, m.pos.z, players));
+      const n = npcs.find((m) => m.active && !m.accident && !m.meal && outOfSight(m.pos.x, m.pos.z, players));
       if (n) putAway(n, state.seatOccupants);
     }
+    // Customers who bought food to go walk out of the restaurant as one of the street's people, food in hand.
+    for (const d of state.npcAdopt.splice(0)) {
+      const free = (m: Npc) => !m.meal && !m.accident && !m.park;
+      const female = (m: Npc) => (npcGender(state.worldSeed, m.body.id) === "female") === d.female;
+      const n = npcs.find((m) => !m.active && female(m)) ?? npcs.find((m) => m.active && free(m) && female(m) && outOfSight(m.pos.x, m.pos.z, players))
+        ?? npcs.find((m) => !m.active) ?? npcs.find((m) => m.active && free(m) && outOfSight(m.pos.x, m.pos.z, players));
+      if (!n) continue;
+      leavePark(n, state.seatOccupants);
+      n.pos.set(d.x, floorHeight(d.x, d.z), d.z); n.yaw = d.yaw;
+      n.leg = legFromPosition(d.x, d.z, d.yaw); n.crossing = false; n.around = null;
+      n.active = true; n.mode = "walk"; n.until = now + 600; n.speed = WALK_SPEED * 0.6; n.accident = null; n.body.down = false;
+      n.meal = { stage: "go", at: now, eat: null, act: null, bin: -1 };
+      state.foodTransfer?.(d.holder, `ped:${n.body.id}`);
+    }
+    state.pedHolders = new Set(npcs.filter((n) => n.active && n.meal).map((n) => `ped:${n.body.id}`));
+    const foodNow = state.foodView?.().packs ?? [];
     const bike = state.scooter;
     const bikeBox = scooterFootprint(bike.pos.x, bike.pos.z, bike.yaw, bike.fallen, bike.fallSide);
     for (const npc of npcs) {
@@ -155,6 +234,12 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       // Hit by a vehicle: down they go.
       if (b.hit && !npc.accident) {
         if (npc.park) { leavePark(npc, state.seatOccupants); npc.leg = legFromPosition(npc.pos.x, npc.pos.z, npc.yaw); }
+        if (npc.meal) {
+          // Whatever was in their hands falls to the ground (anyone's to pick up); the meal is over.
+          const held = foodNow.filter((q) => q.holder === `ped:${b.id}` && q.where === "held");
+          if (held.length) state.foodHandle?.(`ped:${b.id}`, { type: "drop", packs: held.map((q, k) => ({ id: q.id, x: Math.round((npc.pos.x + (k ? 0.3 : -0.3)) * 100) / 100, z: Math.round(npc.pos.z * 100) / 100, yaw: npc.yaw })) });
+          npc.meal = null; npc.reach = null;
+        }
         npc.accident = { phase: "down", startedAt: now, riseStartedAt: null, vehicleId: null, direction: b.hit.direction, launchSpeed: THROW_DISTANCE * 1.75, seed: Math.floor(npc.random() * 1e8) };
         npc.mode = "walk"; npc.speed = 0;
       }
@@ -162,7 +247,7 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       if (npc.accident) { b.x = npc.pos.x; b.z = npc.pos.z; b.down = true; b.moving = false; continue; }
       b.down = false;
       // Too far away: someone else, somewhere nearer.
-      if (players.every((o) => Math.hypot(npc.pos.x - o.x, npc.pos.z - o.z) > NPC_RANGE)) place(npc, Math.max(-HALF, Math.min(HALF, fi)), Math.max(-HALF, Math.min(HALF, fj)), players, state.seatOccupants);
+      if (!npc.meal && players.every((o) => Math.hypot(npc.pos.x - o.x, npc.pos.z - o.z) > NPC_RANGE)) place(npc, Math.max(-HALF, Math.min(HALF, fi)), Math.max(-HALF, Math.min(HALF, fj)), players, state.seatOccupants);
 
       const visit = npc.park;
       if (visit?.stage === "bench" && visit.bench) {
@@ -173,6 +258,8 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
         const pose = benchPose(seat, sitting.phase, t, sitting.origin, sitting.originYaw);
         npc.pos.set(pose.x, floorHeight(pose.x, pose.z), pose.z); npc.yaw = pose.yaw; npc.seated = pose.seated; npc.speed = 0;
         if (sitting.phase === "sit" && t >= 1) sitting.phase = "seated";
+        npc.reach = null;
+        if (sitting.phase === "seated" && (npc.meal?.stage === "go" || npc.meal?.stage === "bench")) mealOnBench(npc, seat, visit, now);
         if (sitting.phase === "seated" && now > visit.until) { sitting.phase = "stand"; sitting.startedAt = now; }
         if (sitting.phase === "stand" && t >= 1) {
           if (state.seatOccupants.get(visit.seat) === `npc:${b.id}`) state.seatOccupants.delete(visit.seat);
@@ -183,8 +270,34 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
         b.x = npc.pos.x; b.z = npc.pos.z; b.moving = false;
         continue;
       }
+      npc.reach = null;
+      if (npc.meal && !visit) {
+        const meal = npc.meal, held = foodNow.filter((q) => q.holder === `ped:${b.id}` && q.where === "held");
+        if (meal.stage === "bin" && !held.length) npc.meal = null;
+        else if (meal.stage === "bin") {
+          // With the empties: into the first bin passed (one on each side of the park).
+          const bin = PARK_BINS.findIndex((q) => Math.hypot(q.x - npc.pos.x, q.z - npc.pos.z) < 1.5);
+          if (bin >= 0) { meal.stage = "toss"; meal.bin = bin; meal.at = now; meal.act = null; }
+          else if (Math.hypot(npc.pos.x, npc.pos.z) > 45) npc.meal = null;
+        }
+        if (npc.meal?.stage === "toss") {
+          // Facing the bin, each hand in turn reaches out over it and lets go.
+          const bin = PARK_BINS[meal.bin]!, over = { x: bin.x, y: floorHeight(bin.x, bin.z) + BIN.h + 0.14, z: bin.z };
+          npc.speed = 0; npc.mode = "stand";
+          npc.yaw = turn(npc.yaw, Math.atan2(bin.x - npc.pos.x, bin.z - npc.pos.z), 6 * dt);
+          if (!meal.act && held.length && now - meal.at > 0.4) {
+            const q = held[0]!;
+            meal.act = { at: now, side: q.hand === "left" ? 1 : -1, ...over, req: { type: "trash", pack: q.id, x: over.x, y: over.y - 0.1, z: over.z }, sent: false };
+          }
+          runAct(npc, now);
+          if (!meal.act && !held.length) { npc.meal = null; npc.mode = "walk"; }
+          b.x = npc.pos.x; b.z = npc.pos.z; b.moving = false;
+          continue;
+        }
+      }
       // Now and then switch between walking and standing (never in the middle of a road, nor on the way to a bench).
-      if (now > npc.until && !npc.crossing && !visit) {
+      if (npc.meal) npc.mode = "walk";
+      else if (now > npc.until && !npc.crossing && !visit) {
         npc.mode = npc.mode === "walk" && npc.random() < 0.45 ? "stand" : "walk";
         npc.until = now + (npc.mode === "walk" ? 6 + npc.random() * 40 : 3 + npc.random() * 18);
       }
@@ -228,7 +341,8 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       // Reached the end of this stretch: choose the next.
       if (!npc.park && Math.hypot(target[0] - npc.pos.x, target[1] - npc.pos.z) < (taken(target) ? 1.6 : 0.45) && (npc.leg.kind === "ring" || npc.crossing)) {
         // At a corner of the park's sidewalk: often, down the path to its bench (if a seat is free).
-        if (npc.leg.kind === "ring" && npc.leg.i === 0 && npc.leg.j === 0 && npc.random() < 0.45) {
+        // With food to eat: always, if that corner's bench has a seat free (else on round to the next corner).
+        if (npc.leg.kind === "ring" && npc.leg.i === 0 && npc.leg.j === 0 && npc.meal?.stage !== "bin" && (npc.meal?.stage === "go" || npc.random() < 0.45)) {
           const route = parkVisit(npc.leg.to);
           const seat = route.seats.find((q) => !state.seatOccupants.has(q.id));
           if (seat) {
@@ -236,7 +350,11 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
             continue;
           }
         }
-        if (npc.leg.kind === "ring") npc.leg = nextLeg(npc.leg.i, npc.leg.j, npc.leg.to, npc.leg.from, npc.random);
+        if (npc.leg.kind === "ring" && npc.meal?.stage === "bin" && npc.leg.i === 0 && npc.leg.j === 0) {
+          // Empties in hand: on round the park (the same way) to the next bin.
+          const { from, to } = npc.leg;
+          npc.leg = { kind: "ring", i: 0, j: 0, from: to, to: (to + (to - from === 1 || to - from === -3 ? 1 : 3)) % 4 };
+        } else if (npc.leg.kind === "ring") npc.leg = nextLeg(npc.leg.i, npc.leg.j, npc.leg.to, npc.leg.from, npc.random, npc.meal?.stage === "go");
         else {
           const [i, j] = npc.leg.toBlock, from = npc.leg.toCorner;
           npc.leg = { kind: "ring", i, j, from, to: (from + (npc.random() < 0.5 ? 1 : 3)) % 4 };
@@ -297,7 +415,7 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       publishTimer.current = 0.1;
       link.publish({ list: npcs.map((n) => {
         const a = n.accident, r = (v: number) => Math.round(v * 100) / 100;
-        return [n.body.id, r(n.pos.x), r(n.pos.z), r(n.yaw), r(n.speed), n.mode === "walk" ? 0 : n.mode === "stand" ? 1 : 2, a ? r(now - a.startedAt) : -1, a ? r(a.direction[0]) : 0, a ? r(a.direction[1]) : 0, a ? a.seed : 0, n.active ? 1 : 0, r(n.seated), n.park?.stage === "bench" ? n.park.seat : -1];
+        return [n.body.id, r(n.pos.x), r(n.pos.z), r(n.yaw), r(n.speed), n.mode === "walk" ? 0 : n.mode === "stand" ? 1 : 2, a ? r(now - a.startedAt) : -1, a ? r(a.direction[0]) : 0, a ? r(a.direction[1]) : 0, a ? a.seed : 0, n.active ? 1 : 0, r(n.seated), n.park?.stage === "bench" ? n.park.seat : -1, n.reach ? n.reach.side : 0, n.reach ? r(n.reach.blend) : 0, r(n.reach?.x ?? 0), r(n.reach?.y ?? 0), r(n.reach?.z ?? 0)];
       }) });
     }
   });
@@ -343,6 +461,8 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
           for (const [id, who] of state.seatOccupants) if (who === mine && id !== seat) state.seatOccupants.delete(id);
           if (seat >= 0 && !state.seatOccupants.has(seat)) state.seatOccupants.set(seat, mine);
           npc.phase += dt * speed * 4.2;
+          const side = row[13] ?? 0;
+          npc.reach = side ? { side: side > 0 ? 1 : -1, blend: row[14] ?? 0, x: row[15] ?? 0, y: row[16] ?? 0, z: row[17] ?? 0 } : null;
         }
       }
       b.x = npc.pos.x; b.z = npc.pos.z; b.down = npc.accident !== null; b.moving = !npc.accident && npc.speed > 0.2;
@@ -364,6 +484,9 @@ const NpcView = memo(function NpcView({ npc, state }: { npc: Npc; state: GameSta
     // Back up, and on along the way they were going.
     stoodUp: (_accident, yaw) => { npc.accident = null; npc.yaw = yaw; npc.mode = "walk"; },
   }), [npc, state]);
+  // Their hands hold food like anyone's (the food is drawn at the rig's hands).
+  useEffect(() => { const k = `ped:${npc.body.id}`; state.remoteRigs.set(k, rig); return () => { if (state.remoteRigs.get(k) === rig) state.remoteRigs.delete(k); }; }, [state, npc, rig]);
+  const target = useMemo(() => new THREE.Vector3(), []);
   useFrame(() => {
     const root = rig.root.current;
     if (!root) return;
@@ -397,6 +520,33 @@ const NpcView = memo(function NpcView({ npc, state }: { npc: Npc; state: GameSta
       rig.torso.current?.rotation.set(j.lean, 0, 0);
       rig.head.current?.rotation.set(-j.lean * 0.5, 0, 0);
     } else rig.head.current?.rotation.set(0, 0, 0);
+    if (!root.visible) return;
+    // Food: carried at the waist (arms still swinging a little), eaten bite by bite, set down and picked up.
+    const view = state.foodView?.(), me = `ped:${npc.body.id}`;
+    if (!view) return;
+    for (const p of view.packs) if (p.where === "held" && p.holder === me) {
+      const sw = (p.hand === "left" ? s : -s) * 0.15 * mv * (1 - npc.seated);
+      if (p.hand === "left") { rig.armL.current?.rotation.set(sw, 0, 0.2); rig.foreL.current?.rotation.set(carryElbow(sw), 0, 0); }
+      else { rig.armR.current?.rotation.set(sw, 0, -0.2); rig.foreR.current?.rotation.set(carryElbow(sw), 0, 0); }
+    }
+    root.updateMatrixWorld(true);
+    const eating = view.packs.find((p) => p.holder === me && p.eating);
+    if (eating?.eating && rig.head.current) {
+      const t = -eating.eating.at + view.age, drink = isDrinkName(eating.eating.item), T = EAT_SECONDS;
+      let up = 0;
+      if (drink) up = Math.min(smoothT(t / 0.6), 1 - smoothT((t - (T - 0.6)) / 0.6));
+      else { const u = (t % (T / 3)) / (T / 3); up = u < 0.35 ? smoothT(u / 0.35) : u < 0.6 ? 1 : 1 - smoothT((u - 0.6) / 0.4); }
+      if (drink) rig.head.current.rotation.x -= 0.3 * up;
+      root.updateMatrixWorld(true);
+      const mouth = rig.head.current.localToWorld(target.set(0, -0.06, 0.16));
+      reachArm(rig.armR.current, rig.foreR.current, mouth, POLES.low(-1), up);
+    }
+    const r = npc.reach;
+    if (r && r.blend > 0) {
+      target.set(r.x, r.y, r.z);
+      if (r.side === 1) reachArm(rig.armL.current, rig.foreL.current, target, POLES.low(1), r.blend);
+      else reachArm(rig.armR.current, rig.foreR.current, target, POLES.low(-1), r.blend);
+    }
   });
   return <>
     <CharacterBody rig={rig} color={npc.color} />

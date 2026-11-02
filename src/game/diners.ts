@@ -25,7 +25,7 @@ export function arrivalGap(kind: RestaurantKind, hours: number) {
   return peak ? 22 : 110;
 }
 
-type Step = "arrive" | "enter" | "queue" | "order" | "sign" | "wait" | "pickup" | "seat" | "eat" | "rise" | "toDoor" | "exit" | "leave" | "away";
+type Step = "arrive" | "enter" | "queue" | "order" | "sign" | "wait" | "pickup" | "toChair" | "seat" | "eat" | "rise" | "toDoor" | "exit" | "leave" | "away";
 export type Diner = {
   id: number; key: string; seed: number; step: Step; since: number;
   x: number; z: number; yaw: number; speed: number;
@@ -37,6 +37,8 @@ export type Diner = {
   reach: [number, number, number] | null; reachK: number; hand: "left" | "right";
   /** The rest of a scripted pose (as a player's): leaning, shuffling in on a chair, and each hand's reach. */
   lean: number; shuffle: number;
+  /** A route through the room (round the furniture), walked a leg at a time. */
+  path: [number, number][];
   left: { at: [number, number, number]; k: number; pole: number } | null; right: { at: [number, number, number]; k: number; pole: number } | null;
 };
 const POLE_IDS = { low: 0, out: 1, back: 2 } as const;
@@ -61,6 +63,8 @@ export type DinerContext = {
   /** Everyone's uses of a door leaf (on this clock), for going through it like a player. */
   doorUses: (key: string, leaf: "left" | "right") => DoorUse[];
   addDoorUse: (use: DoorUse) => void;
+  /** A customer out of the door with food to go: the street takes them over (world position, facing, gender). */
+  adopt?: (d: { x: number; z: number; yaw: number; female: boolean; holder: string }) => void;
   random: () => number;
 };
 
@@ -76,6 +80,7 @@ export class DinerSim {
 
   step(ctx: DinerContext, food: FoodSim) {
     const { now } = ctx;
+    this.rooms = ctx.rooms;
     // New arrivals, now and then, up to a few per place.
     for (const key of ctx.keys) {
       const at = ctx.rooms(key);
@@ -90,7 +95,7 @@ export class DinerSim {
       this.diners.push({
         id: this.nextId++, key, seed: Math.floor(ctx.random() * 1e6), step: "arrive", since: now, x: start[0], z: start[1], yaw: -side * Math.PI / 2, speed: 0,
         from: start, fromYaw: -side * Math.PI / 2, to: [0.15, 1.45], toYaw: Math.PI, door: null, doorOpen: false, side,
-        mode: ctx.random() < 0.5 ? "togo" : "here", order: 0, chair: -1, plan: null, sit: 0, reach: null, reachK: 0, hand: "right", lean: 0, shuffle: 0, left: null, right: null,
+        mode: ctx.random() < 0.5 ? "togo" : "here", order: 0, chair: -1, plan: null, sit: 0, reach: null, reachK: 0, hand: "right", lean: 0, shuffle: 0, left: null, right: null, path: [],
       });
     }
     for (const d of this.diners) this.stepOne(d, ctx, food);
@@ -193,10 +198,23 @@ export class DinerSim {
         if (sign.where === "held" && sign.holder === me) {
           // A free chair at a table: sit down there (the chair pulled out, around, down, and in to the table).
           const chair = room.items.findIndex((it, i) => it.kind === "chair" && !ctx.takenChairs.has(`${d.key}#${i}`) && !this.diners.some((o) => o !== d && o.key === d.key && o.chair === i));
-          const plan = chair >= 0 ? planSit(room, chair, d.x, d.z, d.yaw) : null;
-          if (!plan || plan.table === null) { this.toDoor(d, now); return; }
-          d.chair = chair; d.plan = plan; this.go(d, "seat", now);
+          const c = room.items[chair];
+          if (!c) { this.toDoor(d, now); return; }
+          // Round the furniture to just behind the chair, then sit down there like a player.
+          d.chair = chair;
+          d.path = roomPath(room, [d.x, d.z], [c.x - c.f[0] * 0.66, c.z - c.f[1] * 0.66], chair);
+          this.go(d, "toChair", now); this.nextLeg(d, now, Math.atan2(c.f[0], c.f[1]));
         }
+        return;
+      }
+      case "toChair": {
+        const c = room.items[d.chair];
+        if (!c) { this.toDoor(d, now); return; }
+        if (!this.walking(d, now)) return;
+        if (d.path.length) { this.nextLeg(d, now, Math.atan2(c.f[0], c.f[1])); return; }
+        const plan = planSit(room, d.chair, d.x, d.z, d.yaw);
+        if (!plan || plan.table === null) { d.chair = -1; this.toDoor(d, now); return; }
+        d.plan = plan; this.go(d, "seat", now);
         return;
       }
       case "seat": {
@@ -271,6 +289,7 @@ export class DinerSim {
       }
       case "toDoor": {
         if (!this.walking(d, now)) return;
+        if (d.path.length) { this.nextLeg(d, now, 0); return; }
         const ds = doorState(ctx.doorUses(d.key, "left"), now);
         if (ds.phase === "closing") return;
         const from: [number, number] = [d.x, d.z];
@@ -285,7 +304,15 @@ export class DinerSim {
         d.speed = Math.hypot(pose.x - d.x, pose.z - d.z) > 1e-4 ? DINER_WALK : 0;
         d.x = pose.x; d.z = pose.z; d.yaw = pose.yaw;
         hands(pose);
-        if (t >= end) { this.walk(d, [d.side * 11, 2.3], d.side * Math.PI / 2, now); d.step = "leave"; }
+        if (t >= end) {
+          // Food to go in hand: off to eat it on a park bench, as one of the people about town.
+          if (d.mode === "togo" && food.packs.some((p) => p.where === "held" && p.holder === me) && ctx.adopt) {
+            const [wx, wz] = toWorld(room.frame, d.x, d.z);
+            ctx.adopt({ x: wx, z: wz, yaw: room.frame.rot + d.yaw, female: d.seed % 2 === 1, holder: me });
+            d.step = "away"; return;
+          }
+          this.walk(d, [d.side * 11, 2.3], d.side * Math.PI / 2, now); d.step = "leave";
+        }
         return;
       }
       case "leave": {
@@ -299,7 +326,19 @@ export class DinerSim {
   /** Whether a customer (`npc:<id>`) is still about, and whether they are inside the place. */
   present(by: string) { return this.diners.some((d) => `npc:${d.id}` === by); }
   inside(by: string, key: string) { return this.diners.some((d) => `npc:${d.id}` === by && d.key === key && d.step !== "arrive" && d.step !== "exit" && d.step !== "leave"); }
-  private toDoor(d: Diner, now: number) { this.walk(d, [-0.45, -1.0], 0, now); this.go(d, "toDoor", now); d.from = [d.x, d.z]; }
+  private toDoor(d: Diner, now: number) {
+    const at = this.rooms?.(d.key);
+    d.path = at ? roomPath(at.room, [d.x, d.z], [-0.45, -1.0], -1) : [[-0.45, -1.0]];
+    this.go(d, "toDoor", now); this.nextLeg(d, now, 0);
+  }
+  /** On to the next point of the route (the last one turning to face `endYaw`). */
+  private nextLeg(d: Diner, now: number, endYaw: number) {
+    const next = d.path.shift();
+    if (!next) return;
+    const dx = next[0] - d.x, dz = next[1] - d.z;
+    this.walk(d, next, d.path.length ? Math.atan2(dx, dz) : endYaw, now);
+  }
+  private rooms: DinerContext["rooms"] | null = null;
   private rise(d: Diner, now: number) { this.go(d, "rise", now); }
 }
 
@@ -319,4 +358,64 @@ export function lineAhead(d: Diner, diners: Diner[], people: { x: number; z: num
   for (const q of people) if (inLine(q.x, q.z) && q.z < mine - 0.2) n++;
   for (const o of diners) if (o !== d && o.key === d.key && (o.step === "queue" || o.step === "order") && (o.step === "order" || o.id < d.id)) n++;
   return n;
+}
+
+/**
+ * A walking route across a restaurant's dining room from `from` to `to` that keeps a body's width clear of the
+ * tables, chairs (except `except`, the one being walked up to), the counter, walls and plants: a search on a
+ * 0.2 m grid, then straightened wherever a straight line is clear. Returns the points to walk to (not `from`).
+ */
+export function roomPath(room: Room, from: [number, number], to: [number, number], except: number): [number, number][] {
+  const R = 0.34, step = 0.2, { minX, maxX, minZ, maxZ } = room.bounds;
+  const boxes = [
+    ...room.solids,
+    ...room.items.filter((_, i) => i !== except).map((it) => (it.kind === "table" ? { x: it.x, z: it.z, hx: TABLE.half, hz: TABLE.half } : { x: it.x, z: it.z, hx: 0.24, hz: 0.24 })),
+  ];
+  // A body's width from everything, except right by the start and the end (which may be close to a wall or a
+  // chair): there, just not inside anything.
+  const blocked = (x: number, z: number) => {
+    const near = Math.min(Math.hypot(x - to[0], z - to[1]), Math.hypot(x - from[0], z - from[1])) < 0.5;
+    const r = near ? 0.1 : R;
+    return x < minX + r || x > maxX - r || z < minZ + r || z > maxZ - r || boxes.some((b) => Math.abs(x - b.x) < b.hx + r && Math.abs(z - b.z) < b.hz + r);
+  };
+  const clear = (a: [number, number], b: [number, number]) => {
+    const n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.08);
+    for (let i = 1; i <= n; i++) { const k = i / n; if (blocked(a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k)) return false; }
+    return true;
+  };
+  if (clear(from, to)) return [to];
+  const nx = Math.ceil((maxX - minX) / step) + 1, nz = Math.ceil((maxZ - minZ) / step) + 1;
+  const cell = (x: number, z: number) => [Math.round((x - minX) / step), Math.round((z - minZ) / step)] as const;
+  const at = (i: number, j: number): [number, number] => [minX + i * step, minZ + j * step];
+  const [si, sj] = cell(...from), [ti, tj] = cell(...to);
+  const idx = (i: number, j: number) => j * nx + i;
+  const cost = new Map<number, number>([[idx(si, sj), 0]]), prev = new Map<number, number>();
+  const open: [number, number, number][] = [[Math.hypot(ti - si, tj - sj), si, sj]];
+  let found = false;
+  for (let guard = 0; open.length && guard < 20000; guard++) {
+    open.sort((a, b) => a[0] - b[0]);
+    const [, i, j] = open.shift()!;
+    if (i === ti && j === tj) { found = true; break; }
+    for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]] as const) {
+      const a = i + di, b = j + dj;
+      if (a < 0 || b < 0 || a >= nx || b >= nz) continue;
+      const [x, z] = at(a, b);
+      if (blocked(x, z) && !(a === ti && b === tj)) continue;
+      const c = (cost.get(idx(i, j)) ?? 0) + Math.hypot(di, dj);
+      if (c < (cost.get(idx(a, b)) ?? Infinity)) { cost.set(idx(a, b), c); prev.set(idx(a, b), idx(i, j)); open.push([c + Math.hypot(ti - a, tj - b), a, b]); }
+    }
+  }
+  if (!found) return [to];
+  const cells: [number, number][] = [];
+  for (let k: number | undefined = idx(ti, tj); k !== undefined && k !== idx(si, sj); k = prev.get(k)) cells.unshift(at(k % nx, Math.floor(k / nx)));
+  cells[cells.length - 1] = to;
+  // Straighten: from each point, on to the furthest one in a clear straight line.
+  const out: [number, number][] = [];
+  let here: [number, number] = from;
+  while (cells.length) {
+    let far = 0;
+    for (let k = cells.length - 1; k > 0; k--) if (clear(here, cells[k]!)) { far = k; break; }
+    here = cells[far]!; out.push(here); cells.splice(0, far + 1);
+  }
+  return out;
 }

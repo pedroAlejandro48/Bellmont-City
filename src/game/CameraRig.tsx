@@ -41,7 +41,11 @@ export function CameraRig({ state }: { state: GameState }) {
         return;
       }
       state.camDistance = Math.min(MAX_DISTANCE, state.camDistance * Math.exp(delta * 0.0016));
-      if (state.camDistance < MIN_DISTANCE) { state.firstPerson = true; state.camDistance = MIN_DISTANCE; state.camPitch = Math.max(-1.25, Math.min(FP_DOWN, -0.05)); }
+      if (state.camDistance < MIN_DISTANCE) {
+        state.firstPerson = true; state.camDistance = MIN_DISTANCE; state.camPitch = Math.max(-1.25, Math.min(FP_DOWN, -0.05));
+        // Lock the pointer so turning never runs out at the edge of the screen (browsers may insist on a click first).
+        try { void Promise.resolve(element.requestPointerLock()).catch(() => {}); } catch { /* a click will lock it */ }
+      }
     };
     element.addEventListener("wheel", wheel, { passive: false });
     const context = (e: Event) => e.preventDefault();

@@ -161,6 +161,14 @@ export type GameState = {
   doorUsesNow: ((key: string, leaf: "left" | "right") => import("./doors").DoorUse[]) | null;
   /** Customers' door uses, on RestaurantInteraction's clock (so the doors swing for them too). */
   npcDoorUses: import("./doors").DoorUse[];
+  /** Customers leaving with food to go, to be taken over by the street NPCs (who go and eat it on a bench). */
+  npcAdopt: { x: number; z: number; yaw: number; female: boolean; holder: string }[];
+  /** Running the food: a street NPC's request (`ped:<id>`), handing food over, and which street NPCs hold food. */
+  foodHandle: ((by: string, req: import("./food").FoodRequest) => void) | null;
+  foodTransfer: ((from: string, to: string) => void) | null;
+  pedHolders: Set<string>;
+  /** The shared food as last seen (every player), and how old that view is (s). */
+  foodView: (() => { packs: import("./food").FoodPack[]; age: number }) | null;
   dropQueued: boolean;
   /** Restaurant staff standing or walking about (world), solid to players. */
   staffBodies: { x: number; z: number; r: number }[];
@@ -207,7 +215,7 @@ export function createState(save: SaveData): GameState {
     cash: Math.max(0, save.cash ?? STARTING_CASH),
     npcs: [], npcLink: null,
     trafficLink: null, doorLink: null, bikePushes: new Map(), takenChairs: new Set(),
-    foodLink: null, hands: { left: null, right: null }, grab: null, drop: null, dropQueued: false, staffBodies: [], put: null, eating: null, foodScript: null, doorUsesNow: null, npcDoorUses: [], foodUi: { open: false, key: null, kind: null, note: null }, foodOrder: null, remoteRigs: new Map(),
+    foodLink: null, hands: { left: null, right: null }, grab: null, drop: null, dropQueued: false, staffBodies: [], put: null, eating: null, foodScript: null, doorUsesNow: null, npcDoorUses: [], npcAdopt: [], foodHandle: null, foodTransfer: null, pedHolders: new Set(), foodView: null, foodUi: { open: false, key: null, kind: null, note: null }, foodOrder: null, remoteRigs: new Map(),
     seatOccupants: new Map(save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? [[save.benchSeat, "player"]] : []),
     bench: save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? { seat: save.benchSeat, phase: "seated", startedAt: 0, origin: new THREE.Vector3(...save.pos), originYaw: save.rotY } : null,
     scooter: {

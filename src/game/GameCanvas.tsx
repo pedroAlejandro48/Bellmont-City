@@ -81,6 +81,8 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
   const [speed, setSpeed] = useState(0);
   const [dead, setDead] = useState(state.health === 0);
   const [cash, setCash] = useState(state.cash);
+  // First person with the pointer not yet locked: a hint to click (turning is then unlimited).
+  const [fpHint, setFpHint] = useState(false);
   // Whole dollars as they are; cents once there are any.
   const cashText = Number.isInteger(cash) ? String(cash) : cash.toFixed(2);
   // Test builds only: lets browser tests drive the character.
@@ -101,6 +103,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
       setHealth(state.health);
       setNeeds((old) => (Math.round(old.hunger * 2) === Math.round(state.hunger * 2) && Math.round(old.thirst * 2) === Math.round(state.thirst * 2) ? old : { hunger: state.hunger, thirst: state.thirst }));
       setCash(state.cash);
+      setFpHint(state.firstPerson && !document.pointerLockElement);
       setRiding(state.scooter.riding);
       setSpeed(Math.round(Math.abs(state.scooter.speed) / MPH_TO_MPS));
       if (state.deathStartedAt !== null && !deathSeen) {
@@ -189,6 +192,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
           </div>
         </div>
       </div>
+      {fpHint && <div className="pointer-events-none fixed left-1/2 top-1/2 z-20 -translate-x-1/2 translate-y-10 rounded-md bg-black/55 px-3 py-1.5 text-xs font-semibold text-white">Click to look around freely</div>}
       <OrderMenu state={state} />
       <div ref={fade} className="pointer-events-none fixed inset-0 z-30 bg-black" style={{ opacity: 0 }} aria-hidden />
       {dead && (

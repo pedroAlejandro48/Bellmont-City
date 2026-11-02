@@ -38,7 +38,7 @@ export function legEnd(leg: Leg): [number, number] {
  * same way), or across a street to the facing corner of the next block. Avenues are only crossed where there
  * are lights; the ring road at the city's edge never.
  */
-export function nextLeg(i: number, j: number, corner: number, from: number, random: () => number): Leg {
+export function nextLeg(i: number, j: number, corner: number, from: number, random: () => number, wantPark = false): Leg {
   const [sx, sz] = CORNERS[((corner % 4) + 4) % 4]!;
   const crossings: Leg[] = [];
   // Across the street on the x side (traffic there runs along z), and on the z side (traffic runs along x).
@@ -57,7 +57,7 @@ export function nextLeg(i: number, j: number, corner: number, from: number, rand
   }
   // Across to the park, often (people like to sit in it).
   const toPark = crossings.find((c) => c.kind === "cross" && c.toBlock[0] === 0 && c.toBlock[1] === 0);
-  if (toPark && random() < 0.5) return toPark;
+  if (toPark && (wantPark || random() < 0.5)) return toPark;
   if (crossings.length && random() < 0.35) return crossings[Math.floor(random() * crossings.length)]!;
   // Round the loop, usually carrying on the same way.
   const onward = corner + (corner - from === 1 || corner - from === -3 ? 1 : -1);

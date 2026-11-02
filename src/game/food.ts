@@ -362,6 +362,8 @@ export type FoodPack = Pack & {
   done: boolean;
   /** A bottle of water (still a bottle once it is empty). */
   bottle?: boolean;
+  /** A tray: everything that came on it, in order (eaten things leave their plates behind). */
+  orig?: string[];
 };
 export type Order = { id: number; by: string; key: string; kind: RestaurantKind; mode: Mode; names: string[]; placedAt: number; readyAt: number };
 /** Someone at a counter talking to the cashier. */
@@ -431,7 +433,7 @@ export class FoodSim {
         let slot = -1; slots.forEach((q, i) => { if (!taken.has(i) && (slot < 0 || Math.abs(q.x - (reg?.x ?? 0)) + Math.abs(q.z - (reg?.z ?? 0)) < Math.abs(slots[slot]!.x - (reg?.x ?? 0)) + Math.abs(slots[slot]!.z - (reg?.z ?? 0)))) slot = i; });
         const base = { order: id, key: req.key, holder: "", hand: "right" as const, owner: by, gx: 0, gz: 0, gyaw: 0, gy: 0, eating: null, at: now, done: false, bags: 0, cups: 0 };
         this.packs.push({ ...base, kind: "sign", items: [], id: this.nextId++, where: "counter", slot: Math.max(0, slot), sign: n });
-        this.packs.push({ ...base, kind: "tray", items: names, id: this.nextId++, where: "kitchen", slot: -1, sign: n });
+        this.packs.push({ ...base, kind: "tray", items: [...names], orig: [...names], id: this.nextId++, where: "kitchen", slot: -1, sign: n });
       }
       if (req.mode === "togo") {
         const isDrink = (n: string) => !!priceOf(req.kind, n)?.drink;
@@ -553,9 +555,12 @@ export class FoodSim {
       v: 1,
       s: [...this.sessions].map(([key, s]) => [key, s.by, s.text, cents(now - s.at), s.stage === "told" ? (s.mode === "togo" ? 1 : 2) : 0]),
       r: [...this.trips].map(([key, t]) => [key, TASKS.indexOf(t.task), cents(now - t.at), t.slots, t.packs, cents(t.to?.[0] ?? 0), cents(t.to?.[1] ?? 0), t.to ? 1 : 0, cents(t.stand?.[0] ?? 0), cents(t.stand?.[1] ?? 0), cents(t.face ?? 0)]),
-      p: this.packs.map((p) => [p.id, p.key, KINDS.indexOf(p.kind), p.bags, p.cups, WHERE.indexOf(p.where), p.slot, p.holder, p.hand === "left" ? 0 : 1, p.order, p.owner, p.items.join("|"), cents(p.gx), cents(p.gz), cents(p.gyaw), cents(p.gy), p.sign, p.eating?.item ?? "", p.eating ? cents(now - p.eating.at) : 0, cents(now - p.at), p.done ? 1 : 0, p.bottle ? 1 : 0]),
+      p: this.packs.map((p) => [p.id, p.key, KINDS.indexOf(p.kind), p.bags, p.cups, WHERE.indexOf(p.where), p.slot, p.holder, p.hand === "left" ? 0 : 1, p.order, p.owner, p.items.join("|"), cents(p.gx), cents(p.gz), cents(p.gyaw), cents(p.gy), p.sign, p.eating?.item ?? "", p.eating ? cents(now - p.eating.at) : 0, cents(now - p.at), p.done ? 1 : 0, p.bottle ? 1 : 0, p.orig?.join("|") ?? ""]),
     };
   }
+
+  /** Someone else now holds what `from` held (a customer who has left the restaurant, handed to the street). */
+  transfer(from: string, to: string) { for (const p of this.packs) if (p.holder === from) p.holder = to; }
 
   /** Takes over from what the previous host last showed (when the host leaves). */
   adopt(view: FoodView, now: number) {
@@ -577,7 +582,7 @@ export type FoodSnapshot = {
   c?: unknown[]; u?: [string, number, number, number, number, number][];
   s: [string, string, string, number, number][];
   r: [string, number, number, number[], number[], number, number, number, number, number, number][];
-  p: [number, string, number, number, number, number, number, string, number, number, string, string, number, number, number, number, number, string, number, number, number, number][];
+  p: [number, string, number, number, number, number, number, string, number, number, string, string, number, number, number, number, number, string, number, number, number, number, string][];
 };
 /** A snapshot read back, with times as ages (seconds) when it was taken. */
 export type FoodView = {
@@ -609,14 +614,14 @@ export function readSnapshot(value: unknown): FoodView | null {
   }
   for (const p of list(v.p)) {
     if (!Array.isArray(p)) continue;
-    const [id, key, kind, bags, cups, where, slot, holder, hand, order, owner, items, gx, gz, gyaw, gy, sign, eatItem, eatAgo, atAgo, done, bottle] = p;
+    const [id, key, kind, bags, cups, where, slot, holder, hand, order, owner, items, gx, gz, gyaw, gy, sign, eatItem, eatAgo, atAgo, done, bottle, orig] = p;
     if (!isNum(id) || !isStr(key) || !isNum(kind) || !isNum(bags) || !isNum(cups) || !isNum(where) || !isNum(slot) || !isStr(holder) || !isNum(hand) || !isNum(order)) continue;
     view.packs.push({
       id, key, kind: KINDS[kind] ?? "bag", bags, cups, where: WHERE[where] ?? "gone", slot, holder, hand: hand === 0 ? "left" : "right", order,
       owner: isStr(owner) ? owner : "", items: isStr(items) && items ? items.split("|") : [], gx: isNum(gx) ? gx : 0, gz: isNum(gz) ? gz : 0, gyaw: isNum(gyaw) ? gyaw : 0,
       gy: isNum(gy) ? gy : 0, sign: isNum(sign) ? sign : 0,
       // Ages: `eating.at` and `at` are kept as "seconds ago" in a view (adopt turns them back into times).
-      eating: isStr(eatItem) && eatItem ? { item: eatItem, at: -(isNum(eatAgo) ? eatAgo : 0) } : null, at: -(isNum(atAgo) ? atAgo : 0), done: done === 1, bottle: bottle === 1,
+      eating: isStr(eatItem) && eatItem ? { item: eatItem, at: -(isNum(eatAgo) ? eatAgo : 0) } : null, at: -(isNum(atAgo) ? atAgo : 0), done: done === 1, bottle: bottle === 1, ...(isStr(orig) && orig ? { orig: orig.split("|") } : {}),
     });
   }
   for (const row of list(v.c)) {

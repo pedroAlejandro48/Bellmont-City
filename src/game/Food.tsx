@@ -93,20 +93,25 @@ export function Food({ state }: { state: GameState }) {
         takenChairs: new Set([...state.takenChairs, ...(state.seat ? [`${state.seat.room}#${state.seat.plan.chair}`] : [])]),
         doorUses: (key, leaf) => [...(state.doorUsesNow?.(key, leaf) ?? []).filter((u) => !npcUses.includes(u)).map((u) => ({ ...u, start: u.start + clockGap })), ...npcUses.filter((u) => u.key === key && u.leaf === leaf)],
         addDoorUse: (use) => { npcUses.push(use); },
+        adopt: (d) => { state.npcAdopt.push(d); },
       }, sim);
+      // Street NPCs eat their food to go on the park benches: they ask for things directly.
+      state.foodHandle = (by, req) => sim.handle(by, req, Date.now() / 1000);
+      state.foodTransfer = (from, to) => sim.transfer(from, to);
       for (let i = npcUses.length - 1; i >= 0; i--) if (nowS - npcUses[i]!.start > 40) npcUses.splice(i, 1);
-      sim.step(nowS, (by, key) => (by === me ? here === key : by.startsWith("npc:") ? diners.inside(by, key) : others.get(by) === key), (by) => by === me || others.has(by) || (by.startsWith("npc:") && diners.present(by)));
+      sim.step(nowS, (by, key) => (by === me ? here === key : by.startsWith("npc:") ? diners.inside(by, key) : others.get(by) === key), (by) => by === me || others.has(by) || (by.startsWith("npc:") && (diners.present(by) || state.npcAdopt.some((d) => d.holder === by))) || (by.startsWith("ped:") && state.pedHolders.has(by)));
       const snap = { ...sim.snapshot(nowS), c: diners.rows(), u: npcUses.map((u) => [u.key, u.leaf === "left" ? 1 : 0, u.mode === "follow" ? 1 : 0, cents(nowS - u.start), cents(u.lead), cents(u.pass)] as [string, number, number, number, number, number]) };
       // Share it when something changed (ages aside), and now and then anyway; customers walking: ten times a second.
       const shape = JSON.stringify([snap.s.map((s) => [s[0], s[1], s[2], s[4]]), snap.r.map((r) => [r[0], r[1], r[3], r[4]]), snap.p, snap.c]);
       if ((shape !== m.published && Date.now() - m.publishedAt > 100) || Date.now() - m.publishedAt > 3000) { m.published = shape; m.publishedAt = Date.now(); link.publish(snap); }
       live.current = { view: readSnapshot(snap) ?? viewOf(sim, nowS), at: Date.now() };
     } else {
-      m.wasHost = false;
+      m.wasHost = false; state.foodHandle = null; state.foodTransfer = null;
       const got = link.latest();
       if (got) live.current = got;
     }
     const view = live.current.view;
+    state.foodView = () => ({ packs: live.current.view.packs, age: (Date.now() - live.current.at) / 1000 });
     state.staffBodies = [...staffAt.values()].flat();
     // Customers' door uses, timed on the doors' clock, so every door swings for them as for players.
     const perf = performance.now() / 1000, sinceView = (Date.now() - live.current.at) / 1000;
@@ -388,12 +393,19 @@ export function Food({ state }: { state: GameState }) {
 
 // ---------- the staff ----------
 
-const UNIFORM: Record<RestaurantKind, { apron: string; hat: string }> = {
-  burger: { apron: "#e53935", hat: "#e53935" },
-  pizza: { apron: "#2e7d4f", hat: "#ffffff" },
-  cafe: { apron: "#4a3221", hat: "#2e5d43" },
-  fine: { apron: "#1d1d1d", hat: "#ffffff" },
+const UNIFORM: Record<RestaurantKind, { apron: string; hat: string; trim: string }> = {
+  burger: { apron: "#e53935", hat: "#e53935", trim: "#ffcc00" },
+  pizza: { apron: "#2e7d4f", hat: "#ffffff", trim: "#f6efe2" },
+  cafe: { apron: "#4a3221", hat: "#2e5d43", trim: "#e9c48a" },
+  fine: { apron: "#1d1d1d", hat: "#ffffff", trim: "#c9a54a" },
 };
+/** The place's emblem printed on its staff's aprons. */
+const logoCache = new Map<RestaurantKind, THREE.Texture>();
+function apronLogo(kind: RestaurantKind) {
+  let t = logoCache.get(kind);
+  if (!t) { const [c, g] = canvas(128, 128); g.clearRect(0, 0, 128, 128); drawBrandIcon(kind, g, 64, 66, 84); t = tex(c); logoCache.set(kind, t); }
+  return t;
+}
 
 /** The thing each place's staff wear on their head (red caps at the burger place, and so on), and an apron. */
 function dressUp(rig: BodyRig, kind: RestaurantKind) {
@@ -425,7 +437,25 @@ function dressUp(rig: BodyRig, kind: RestaurantKind) {
     add(hat, new THREE.TorusGeometry(0.143, 0.022, 8, 28), mat(u.hat, 0.8), [0, 0.05, 0], [Math.PI / 2, 0, 0], [1, 1, 1.3]);
     add(hat, new THREE.CircleGeometry(0.025, 16), mat("#c62828"), [0, 0.05, 0.168]);
   }
-  add(apron, new THREE.BoxGeometry(0.27, 0.42, 0.012), mat(u.apron, 0.85), [0, 0.13, 0.163]);
+  // The apron: a bib over the chest with the place's logo, the skirt down over the thighs, a strap from the bib
+  // up and round the back of the neck, and ties from the sides round to a knot at the back.
+  const cloth = mat(u.apron, 0.9), trim = mat(u.trim, 0.8), tie = mat(u.apron, 0.85);
+  add(apron, new THREE.BoxGeometry(0.25, 0.27, 0.012), cloth, [0, 0.335, 0.168], [-0.04, 0, 0]);
+  add(apron, new THREE.BoxGeometry(0.34, 0.5, 0.012), cloth, [0, -0.05, 0.153], [0.1, 0, 0]);
+  add(apron, new THREE.BoxGeometry(0.34, 0.02, 0.014), trim, [0, -0.29, 0.135], [0.1, 0, 0]);
+  add(apron, new THREE.BoxGeometry(0.25, 0.012, 0.014), trim, [0, 0.468, 0.163], [-0.04, 0, 0]);
+  const logo = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.12), new THREE.MeshStandardMaterial({ map: apronLogo(kind), roughness: 0.85, transparent: true }));
+  logo.position.set(0, 0.35, 0.1755); logo.rotation.x = -0.04; apron.add(logo);
+  // Neck strap: from the bib's top corners up to a loop round the back of the neck.
+  for (const side of [-1, 1]) add(apron, new THREE.BoxGeometry(0.018, 0.13, 0.006), tie, [side * 0.1, 0.53, 0.13], [-0.75, 0, -side * 0.35]);
+  add(apron, new THREE.TorusGeometry(0.085, 0.008, 6, 20, Math.PI * 1.15), tie, [0, 0.6, 0.0], [Math.PI / 2 + 0.25, 0, Math.PI * 0.92]);
+  // Waist ties round to the back, and the bow: a knot, two loops and two loose ends.
+  add(apron, new THREE.TorusGeometry(0.163, 0.008, 6, 28), tie, [0, 0.2, 0], [Math.PI / 2, 0, 0], [1, 1.04, 1]);
+  add(apron, new THREE.SphereGeometry(0.016, 10, 8), tie, [0, 0.2, -0.17]);
+  for (const side of [-1, 1]) {
+    add(apron, new THREE.TorusGeometry(0.026, 0.006, 6, 14), tie, [side * 0.028, 0.205, -0.174], [0, 0, side * 0.5], [1, 0.65, 1]);
+    add(apron, new THREE.BoxGeometry(0.014, 0.1, 0.005), tie, [side * 0.022, 0.14, -0.172], [0, 0, side * 0.25]);
+  }
   head.add(hat); torso.add(apron);
   return () => { head.remove(hat); torso.remove(apron); hat.traverse((o) => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); (o.material as THREE.Material).dispose(); } }); apron.traverse((o) => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); (o.material as THREE.Material).dispose(); } }); };
 }
@@ -685,12 +715,15 @@ function packModel(looks: Looks, p: FoodPack, kind: RestaurantKind) {
   } else if (p.kind === "tray") {
     // A tray with the order on it (what is left of it), laid out in rows.
     box(looks.trayTop[kind], PACK_SIZE.tray.w, 0.016, PACK_SIZE.tray.d, 0, 0.008, 0);
-    const rest = [...p.items];
-    if (p.eating) { const i = rest.indexOf(p.eating.item); if (i >= 0) rest.splice(i, 1); }
-    rest.slice(0, 6).forEach((name, i) => {
-      const d = dishModel(name), cols = Math.min(3, rest.length), col = i % 3, row = Math.floor(i / 3);
-      d.scale.setScalar(rest.length > 3 ? 0.62 : 0.78);
-      d.position.set((col - (cols - 1) / 2) * 0.15, 0.016, (row - 0.5 * (rest.length > 3 ? 1 : 0)) * 0.15);
+    // Laid out as it came; whatever has been picked up to eat (or eaten) leaves its plate behind.
+    const all = p.orig ?? p.items, left = [...p.items];
+    if (p.eating) { const i = left.indexOf(p.eating.item); if (i >= 0) left.splice(i, 1); }
+    all.slice(0, 6).forEach((name, i) => {
+      const at = left.indexOf(name);
+      if (at >= 0) left.splice(at, 1);
+      const d = dishModel(name, at >= 0 ? "all" : "plate"), cols = Math.min(3, all.length), col = i % 3, row = Math.floor(i / 3);
+      d.scale.setScalar(all.length > 3 ? 0.62 : 0.78);
+      d.position.set((col - (cols - 1) / 2) * 0.15, 0.016, (row - 0.5 * (all.length > 3 ? 1 : 0)) * 0.15);
       g.add(d);
     });
   } else {
@@ -833,7 +866,8 @@ export function EatenFood({ state, live, byKey }: { state: GameState; live: Reac
       const key = `${p.id}:${p.eating.item}`;
       seen.add(key);
       let it = models.current.get(key);
-      if (!it) { it = biteable(dishModel(p.eating.item)); models.current.set(key, it); g.add(it.group); }
+      // Just the food (or the cup, glass or bottle), lifted off its plate or saucer.
+      if (!it) { it = biteable(dishModel(p.eating.item, "food")); models.current.set(key, it); g.add(it.group); }
       const model = it.group;
       const rig = eater === me ? null : state.remoteRigs.get(eater);
       const fore = eater === me ? state.avatar.body[11] : rig?.foreR.current, head = eater === me ? state.avatar.body[3] : rig?.head.current;

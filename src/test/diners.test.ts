@@ -37,3 +37,20 @@ describe("restaurant customers", () => {
     else expect(seen.has("pickup")).toBe(true);
   });
 });
+
+describe("customers' routes", () => {
+  it("go round the tables and chairs to the chair they are sitting on", async () => {
+    const { roomPath } = await import("@/game/diners");
+    const { TABLE } = await import("@/game/restaurantRoom");
+    room.items.forEach((c, i) => {
+      if (c.kind !== "chair") return;
+      const to: [number, number] = [c.x - c.f[0] * 0.66, c.z - c.f[1] * 0.66];
+      const pts = [[places.customer.x, places.customer.z] as [number, number], ...roomPath(room, [places.customer.x, places.customer.z], to, i)];
+      for (let k = 1; k < pts.length; k++) for (let u = 0; u <= 1; u += 0.05) {
+        const x = pts[k - 1]![0] + (pts[k]![0] - pts[k - 1]![0]) * u, z = pts[k - 1]![1] + (pts[k]![1] - pts[k - 1]![1]) * u;
+        for (const t of room.items) if (t.kind === "table") expect(Math.abs(x - t.x) < TABLE.half + 0.2 && Math.abs(z - t.z) < TABLE.half + 0.2 ? `chair ${i} at ${x.toFixed(2)},${z.toFixed(2)} by table ${t.x},${t.z}` : "clear").toBe("clear");
+      }
+      expect(pts[pts.length - 1]).toEqual(to);
+    });
+  });
+});
