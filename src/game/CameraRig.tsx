@@ -116,7 +116,12 @@ export function CameraRig({ state }: { state: GameState }) {
     const recenter = state.stick
       ? forwardSince.current !== null && now - forwardSince.current > 150 && tl.fingers === 0 && now - tl.releasedAt > 2000
       : cameraRecenterReady(forwardSince.current, state.lastMouseLookAt, now);
-    state.camOrbit = recenterOrbit(state.camOrbit, recenter, dt);
+    if (state.stick && recenter) {
+      // The joystick: the camera eases round behind gently, as much as the push is forward, so a diagonal push
+      // makes a smooth curve rather than the view spinning after the character.
+      const st = state.stick, ahead = Math.max(0, st.y) / (Math.hypot(st.x, st.y) || 1);
+      state.camOrbit = Math.atan2(Math.sin(state.camOrbit), Math.cos(state.camOrbit)) * Math.exp(-1.3 * ahead * ahead * dt);
+    } else state.camOrbit = recenterOrbit(state.camOrbit, recenter, dt);
     if (recenter) {
       const wrappedPitch = Math.asin(Math.sin(state.camPitch));
       state.camPitch = wrappedPitch + (0.22 - wrappedPitch) * (1 - Math.exp(-3 * dt));

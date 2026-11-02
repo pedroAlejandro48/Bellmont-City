@@ -32,7 +32,7 @@ export function TouchControls({ state }: { state: GameState }) {
 function ActionButton({ label, title, primary, onPress }: { label: string; title: string; primary?: boolean; onPress: () => void }) {
   const [down, setDown] = useState(false);
   return <button type="button" aria-label={title}
-    className={`pointer-events-auto flex h-16 w-16 select-none items-center justify-center rounded-full border-2 font-display text-2xl shadow-lg transition-transform ${primary ? "border-[#ffb547] bg-[#ffb547]/85 text-[#1b1206]" : "border-white/70 bg-black/45 text-white"} ${down ? "scale-90" : ""}`}
+    className={`pointer-events-auto flex h-16 w-16 select-none items-center justify-center rounded-full border-2 font-sans text-2xl font-extrabold shadow-lg transition-transform ${primary ? "border-[#ffb547] bg-[#ffb547]/85 text-[#1b1206]" : "border-white/70 bg-black/45 text-white"} ${down ? "scale-90" : ""}`}
     style={{ touchAction: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
     onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setDown(true); onPress(); }}
     onPointerUp={() => setDown(false)} onPointerCancel={() => setDown(false)} onPointerLeave={() => setDown(false)}
