@@ -4,9 +4,9 @@ import { MENU_BOARDS, isDrinkName, isWaterName } from "./food";
 /** Thirst runs out over 24 in-game hours, hunger over 48. */
 export const THIRST_PER_MINUTE = 100 / (24 * 60);
 export const HUNGER_PER_MINUTE = 100 / (48 * 60);
-/** With either at zero, health drops 10% an in-game minute; otherwise it heals 1% a minute. */
+/** With either at zero, health drops 10% an in-game minute; otherwise it heals 1% every 10 in-game minutes. */
 export const STARVING_PER_MINUTE = 10;
-export const HEALING_PER_MINUTE = 1;
+export const HEALING_PER_MINUTE = 0.1;
 
 export type Needs = { health: number; hunger: number; thirst: number };
 const clamp = (n: number) => Math.max(0, Math.min(100, n));

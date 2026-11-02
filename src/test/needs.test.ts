@@ -8,9 +8,9 @@ describe("hunger, thirst and health", () => {
     expect(day.thirst).toBeGreaterThan(0); expect(day.hunger).toBeCloseTo(50, 0);
     expect(stepNeeds({ health: 100, hunger: 100, thirst: 100 }, 24 * 60).thirst).toBe(0);
   });
-  it("loses 10% health a minute with either at zero, and heals 1% a minute otherwise", () => {
+  it("loses 10% health a minute with either at zero, and heals 1% every 10 minutes otherwise", () => {
     expect(stepNeeds({ health: 80, hunger: 0, thirst: 50 }, 1).health).toBeCloseTo(70);
-    expect(stepNeeds({ health: 80, hunger: 50, thirst: 50 }, 1).health).toBeCloseTo(81);
+    expect(stepNeeds({ health: 80, hunger: 50, thirst: 50 }, 10).health).toBeCloseTo(81);
     expect(stepNeeds({ health: 100, hunger: 50, thirst: 50 }, 5).health).toBe(100);
   });
   it("fills hunger by price, 10% to 50%, and never past 100%", () => {
