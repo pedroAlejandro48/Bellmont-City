@@ -14,7 +14,7 @@ import { COUNTER, TABLE, roomLayout, toLocal, toWorld, walkTime, walkTo, worldYa
 import { drawBrandIcon } from "./Restaurants";
 import { canvas, tex } from "./textures";
 import { dishModel } from "./dishes";
-import { DinerSim, type DinerRow } from "./diners";
+import { DinerSim, POLE_NAMES, type DinerRow } from "./diners";
 import type { DoorUse } from "./doors";
 import { benchJoints } from "./config";
 import { bodyColor } from "@/platform/account";
@@ -27,6 +27,17 @@ type Place = { key: string; kind: RestaurantKind; room: RoomLayout; places: Plac
 /** The latest view of the food and staff, and when it was taken (local ms), for working out ages now. */
 type Live = { view: FoodView; at: number };
 const ageNow = (live: Live, ago: number) => ago + (Date.now() - live.at) / 1000;
+/**
+ * How far into a staff trip, timed on this player's clock from when they first heard of it, and only corrected
+ * when the host's word differs by a lot: the delay of each update varies, and following every one makes the
+ * worker jerk back and forth on other players' screens.
+ */
+const tripStarts = new Map<string, { sig: string; start: number }>();
+function tripAge(key: string, trip: { task: string; packs: number[]; ago: number }, live: Live) {
+  const sig = `${trip.task}:${trip.packs.join(",")}`, start = Date.now() / 1000 - ageNow(live, trip.ago), seen = tripStarts.get(key);
+  if (!seen || seen.sig !== sig || Math.abs(seen.start - start) > 0.6) tripStarts.set(key, { sig, start });
+  return Date.now() / 1000 - tripStarts.get(key)!.start;
+}
 const smooth = (t: number) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
 
 /** Where each runner's hands are this frame (for the food it carries), by restaurant. */
@@ -43,7 +54,7 @@ export function Food({ state }: { state: GameState }) {
   const diners = useMemo(() => new DinerSim(), []);
   /** Customers' uses of the doors (food clock). */
   const npcUses = useMemo<DoorUse[]>(() => [], []);
-  const sim = useMemo(() => new FoodSim((key) => { const p = byKey.get(key); return p ? { places: p.places, room: p.room } : null; }), [byKey]);
+  const sim = useMemo(() => new FoodSim((key) => { const p = byKey.get(key); return p ? { places: p.places, room: state.rooms.get(key) ?? p.room } : null; }), [byKey, state]);
   const live = useRef<Live>({ view: viewOf(sim, Date.now() / 1000), at: Date.now() });
   const runnerHands = useMemo<Hands>(() => new Map(), []);
   /** Where each restaurant's staff are standing (world), solid to players. */
@@ -446,11 +457,12 @@ function poseBody(rig: BodyRig, phase: number, moving: number, time: number, lea
 const Staffed = memo(function Staffed({ place, state, live, hands, staffAt }: { place: Place; state: GameState; live: React.RefObject<Live>; hands: Hands; staffAt: Map<string, { x: number; z: number; r: number }[]> }) {
   const { room, places: P, kind, key } = place;
   const f = room.frame;
-  const colors = useMemo(() => { const r = (n: number) => ((Math.sin(place.seed * 12.9898 + n * 78.233) * 43758.5453) % 1 + 1) % 1; return [bodyColor(r(1) < 0.5 ? "female" : "male"), bodyColor(r(2) < 0.5 ? "female" : "male")] as const; }, [place.seed]);
-  const cashier = useRef<BodyRig | null>(null), runner = useRef<BodyRig | null>(null);
+  const colors = useMemo(() => { const r = (n: number) => ((Math.sin(place.seed * 12.9898 + n * 78.233) * 43758.5453) % 1 + 1) % 1; return [bodyColor(r(1) < 0.5 ? "female" : "male"), bodyColor(r(2) < 0.5 ? "female" : "male"), bodyColor(r(3) < 0.5 ? "female" : "male")] as const; }, [place.seed]);
+  const cashier = useRef<BodyRig | null>(null), runner = useRef<BodyRig | null>(null), waiter = useRef<BodyRig | null>(null);
   const setCashier = useMemo(() => (r: BodyRig) => { cashier.current = r; }, []);
   const setRunner = useMemo(() => (r: BodyRig) => { runner.current = r; }, []);
-  const walk = useRef({ phase: 0, x: 0, z: 0 });
+  const setWaiter = useMemo(() => (r: BodyRig) => { waiter.current = r; }, []);
+  const walk = useRef({ phase: 0, x: 0, z: 0 }), walkW = useRef({ phase: 0, x: 0, z: 0 });
   const bubble = useRef<THREE.Group>(null);
   const [said, setSaid] = useState<{ text: string; shown: boolean }>({ text: "", shown: false });
   const v = useMemo(() => ({ a: new THREE.Vector3(), b: new THREE.Vector3(), look: new THREE.Vector3() }), []);
@@ -484,27 +496,34 @@ const Staffed = memo(function Staffed({ place, state, live, hands, staffAt }: { 
       }
     }
     // ---- runner: the kitchen, out to the counter with food or to take it back ----
-    const r = runner.current, trip = view.trips.get(key);
-    if (r?.root.current) {
-      const t = trip ? ageNow(L, trip.ago) : 0;
-      const tripPlain: Trip | null = trip ? { task: trip.task, slots: trip.slots } : null;
-      const pose = runnerPose(P, room, tripPlain, t);
+    // ---- the kitchen: the runner (food to go) and the waiter (the tables), each on their own trips ----
+    const bodies: { x: number; z: number; r: number }[] = [];
+    const [cx, cz] = toWorld(f, P.cashier.x, P.cashier.z);
+    bodies.push({ x: cx, z: cz, r: 0.3 });
+    for (const worker of ["runner", "waiter"] as const) {
+      const r = worker === "runner" ? runner.current : waiter.current, tk = worker === "runner" ? key : `${key}|w`;
+      const trip = view.trips.get(tk);
+      if (!r?.root.current) continue;
+      // How far into the trip: timed from when this player first heard of it (steady, whatever the network does).
+      const t = trip ? tripAge(tk, trip, L) : 0;
+      const tripPlain: Trip | null = trip ? { task: trip.task, slots: trip.slots, ...(trip.to ? { to: trip.to } : {}), ...(trip.stand ? { stand: trip.stand, face: trip.face ?? 0 } : {}) } : null;
+      const pose = runnerPose(P, room, tripPlain, t, worker);
       const [x, z] = toWorld(f, pose.x, pose.z);
-      const w = walk.current;
+      const w = worker === "runner" ? walk.current : walkW.current;
       w.phase += dt * pose.speed * 4.2;
       r.root.current.position.set(x, SIDEWALK_H, z);
       r.root.current.rotation.set(0, worldYaw(f, pose.yaw), 0);
       const moving = Math.min(1, pose.speed / 1.3);
-      poseBody(r, w.phase, moving, now + place.seed * 0.7, 0.3 * pose.reach);
+      poseBody(r, w.phase, moving, now + place.seed * (worker === "runner" ? 0.7 : 1.3), 0.3 * pose.reach);
       if (pose.carrying) {
         // Food in both hands at the waist, forearms bent, arms swinging a little.
-        const s = Math.sin(w.phase) * 0.25 * moving;
-        r.armL.current?.rotation.set(s, 0, 0.22); r.foreL.current?.rotation.set(carryElbow(s), 0, 0);
-        r.armR.current?.rotation.set(-s, 0, -0.22); r.foreR.current?.rotation.set(carryElbow(-s), 0, 0);
+        const sw = Math.sin(w.phase) * 0.25 * moving;
+        r.armL.current?.rotation.set(sw, 0, 0.22); r.foreL.current?.rotation.set(carryElbow(sw), 0, 0);
+        r.armR.current?.rotation.set(-sw, 0, -0.22); r.foreR.current?.rotation.set(carryElbow(-sw), 0, 0);
       }
       if (pose.reach > 0 && trip?.to) {
-        // At a table: the right hand takes the number sign (or a hand clears the tray), and the left sets the tray
-        // down where the sign stood.
+        // At the table: the right hand takes the number sign (or both lift the tray), and the left sets the tray
+        // down right where the sign stood, in front of the diner.
         r.root.current.updateMatrixWorld(true);
         const target = trip.packs.map((id) => view.packs.find((p) => p.id === id)).find((p) => p && (p.where === "table" || p.where === "runner"));
         const [tx, tz] = toWorld(f, trip.to[0], trip.to[1]);
@@ -518,23 +537,23 @@ const Staffed = memo(function Staffed({ place, state, live, hands, staffAt }: { 
         const kinds = trip.packs.map((id) => view.packs.find((p) => p.id === id)?.kind ?? "bag");
         // The runner faces +z, so its left hand is on the +x side: it takes the spot furthest that way.
         sorted.forEach((slot, i) => {
-          const s = P.slots[slot]; if (!s) return;
-          const [sx, sz] = toWorld(f, s.x, s.z);
+          const sp = P.slots[slot]; if (!sp) return;
+          const [sx, sz] = toWorld(f, sp.x, sp.z);
           v.b.set(sx, SIDEWALK_H + COUNTER.height + PACK_SIZE[kinds[trip.slots.indexOf(slot)] ?? "bag"].grip, sz);
           if (i === 0) reachArm(r.armL.current, r.foreL.current, v.b, POLES.low(1), pose.reach);
           else reachArm(r.armR.current, r.foreR.current, v.b, POLES.low(-1), pose.reach);
         });
       }
       r.root.current.updateMatrixWorld(true);
-      const entry = hands.get(key) ?? { left: new THREE.Vector3(), right: new THREE.Vector3(), yaw: 0 };
+      const entry = hands.get(tk) ?? { left: new THREE.Vector3(), right: new THREE.Vector3(), yaw: 0 };
       if (r.foreL.current) handWorld(r.foreL.current, entry.left);
       if (r.foreR.current) handWorld(r.foreR.current, entry.right);
       entry.yaw = worldYaw(f, pose.yaw);
-      hands.set(key, entry);
-      // Both of them are solid: nobody walks through the cashier or the runner.
-      const [cx, cz] = toWorld(f, P.cashier.x, P.cashier.z);
-      staffAt.set(key, [{ x: cx, z: cz, r: 0.3 }, { x, z, r: 0.3 }]);
+      hands.set(tk, entry);
+      bodies.push({ x, z, r: 0.3 });
     }
+    // All three are solid: nobody walks through the cashier, the runner or the waiter.
+    staffAt.set(key, bodies);
     // ---- the speech bubble over the cashier, for anyone in the restaurant ----
     const show = !!session && state.interior?.key === key && state.interior.phase === "inside";
     const text = session?.text ?? "";
@@ -548,6 +567,7 @@ const Staffed = memo(function Staffed({ place, state, live, hands, staffAt }: { 
   return <>
     <Worker rigRef={setCashier} color={colors[0]} kind={kind} />
     <Worker rigRef={setRunner} color={colors[1]} kind={kind} />
+    <Worker rigRef={setWaiter} color={colors[2]} kind={kind} />
     <group ref={bubble}>
       <Html center distanceFactor={5.5} zIndexRange={[8, 0]} pointerEvents="none">
         <div className={`speech-bubble ${said.shown ? "shown" : ""}`} role="status" aria-live="polite">{said.text}</div>
@@ -656,7 +676,7 @@ function packModel(looks: Looks, p: FoodPack, kind: RestaurantKind) {
     box(looks.kraftDark, s.w - 0.01, 0.05, s.d * 0.32, 0, s.h - 0.025, 0);
     box(looks.sticker[kind], 0.06, 0.04, 0.003, 0, s.h - 0.06, s.d / 2 + 0.002);
   } else if (p.kind === "cup") {
-    g.add(p.items[0] === "Bottled Water" ? bottleModel(looks) : cupModel(looks, kind));
+    g.add(p.bottle || p.items[0] === "Bottled Water" ? bottleModel(looks) : cupModel(looks, kind));
   } else if (p.kind === "sign") {
     // A white plastic table number: a little upright card on a base, the number big on both sides.
     box(looks.signBase, 0.09, 0.012, 0.06, 0, 0.006, 0);
@@ -720,6 +740,8 @@ function Packs({ state, live, byKey, runnerHands, dropped }: { state: GameState;
       obj.visible = true;
       const grab = state.grab;
       const inMyHand = (p.where === "held" && p.holder === me && !dropped.has(p.id)) || (grab?.pack === p.id && state.simulationTime - grab.at >= GRAB_CONTACT);
+      // A cup (or bottle) being drunk from is in the drinker's hand (EatenFood), not also where it was standing.
+      if (p.kind === "cup" && p.eating) { obj.visible = false; continue; }
       const set = p.where === "ground" || p.where === "table" || p.where === "aside" || p.where === "trash";
       const down = dropped.get(p.id) ?? (set ? { x: p.gx, z: p.gz, yaw: p.gyaw, y: p.where === "ground" ? undefined : p.gy } : null);
       if (p.where === "trash" || (down && dropped.has(p.id) && view.packs.find((q) => q.id === p.id)?.where === "held" && (down.y ?? 0) > floorHeight(down.x, down.z) + 0.5 && PARK_BINS.some((b) => Math.hypot(b.x - down.x, b.z - down.z) < 0.3))) {
@@ -745,7 +767,8 @@ function Packs({ state, live, byKey, runnerHands, dropped }: { state: GameState;
         obj.position.set(at.x, at.y - size.grip, at.z);
         obj.rotation.set(0, yaw + (p.kind === "big" ? Math.PI / 2 * (hand === "left" ? 1 : -1) : 0), 0);
       } else if (p.where === "runner") {
-        const trip = view.trips.get(p.key), h = runnerHands.get(p.key);
+        const tk = view.trips.get(p.key)?.packs.includes(p.id) ? p.key : `${p.key}|w`;
+        const trip = view.trips.get(tk), h = runnerHands.get(tk);
         if (!trip || !h) { obj.visible = false; continue; }
         // Same hands as the runner reaches with: the pack for the spot furthest toward +x in the left.
         const P = place.places, slotX = (id: number) => P.slots[trip.slots[trip.packs.indexOf(id)] ?? 0]?.x ?? 0;
@@ -768,37 +791,85 @@ function Packs({ state, live, byKey, runnerHands, dropped }: { state: GameState;
 }
 
 
-/** Whatever someone is eating or drinking right now, in their right hand (a bite smaller every few seconds). */
+/**
+ * Food that can be bitten into: its materials cut a round hole wherever a bite has been taken (up to two bites;
+ * the third finishes it). Bites are spheres in world space, set every frame.
+ */
+type Bitten = { group: THREE.Group; bites: THREE.Vector4[]; local: THREE.Vector3[]; radius: number; height: number };
+function biteable(model: THREE.Group): Bitten {
+  const bites = [new THREE.Vector4(0, -100, 0, 0), new THREE.Vector4(0, -100, 0, 0)];
+  model.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(model), size = box.getSize(new THREE.Vector3());
+  model.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    const m = (o.material as THREE.Material).clone() as THREE.MeshStandardMaterial;
+    m.side = THREE.DoubleSide;
+    m.onBeforeCompile = (shader) => {
+      shader.uniforms["bites"] = { value: bites };
+      shader.vertexShader = shader.vertexShader.replace("#include <common>", "#include <common>\nvarying vec3 vBiteWorld;").replace("#include <worldpos_vertex>", "#include <worldpos_vertex>\nvBiteWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;");
+      shader.fragmentShader = shader.fragmentShader.replace("#include <common>", "#include <common>\nvarying vec3 vBiteWorld;\nuniform vec4 bites[2];").replace("void main() {", "void main() {\n  for (int i = 0; i < 2; i++) { if (distance(vBiteWorld, bites[i].xyz) < bites[i].w) discard; }");
+    };
+    m.customProgramCacheKey = () => "bitten";
+    o.material = m;
+  });
+  // Bites come out of one side at mid height, then the other.
+  const mid = (box.min.y + box.max.y) / 2, w = Math.max(size.x, size.z);
+  return { group: model, bites, local: [new THREE.Vector3(box.max.x, mid, 0), new THREE.Vector3(box.min.x, mid, 0)], radius: w * 0.42, height: size.y };
+}
+
+/** Whatever someone is eating or drinking right now, in their right hand (bitten into, or tipped up to drink). */
 export function EatenFood({ state, live, byKey }: { state: GameState; live: React.RefObject<Live>; byKey: Map<string, Place> }) {
   const holder = useRef<THREE.Group>(null);
-  const models = useRef(new Map<string, THREE.Group>());
-  const at = useMemo(() => new THREE.Vector3(), []);
+  const models = useRef(new Map<string, Bitten>());
+  const v = useMemo(() => ({ hand: new THREE.Vector3(), mouth: new THREE.Vector3(), top: new THREE.Vector3(), w: new THREE.Vector3() }), []);
   useFrame(() => {
     const L = live.current, g = holder.current;
     if (!L || !g) return;
+    void byKey;
     const me = state.foodLink?.me() ?? "me", seen = new Set<string>();
     for (const p of L.view.packs) {
       if (!p.eating) continue;
       const eater = p.kind === "tray" ? p.owner : p.holder;
       const key = `${p.id}:${p.eating.item}`;
       seen.add(key);
-      let model = models.current.get(key);
-      if (!model) { model = dishModel(p.eating.item); models.current.set(key, model); g.add(model); }
-      const fore = eater === me ? state.avatar.body[11] : state.remoteRigs.get(eater)?.foreR.current;
-      const yaw = eater === me ? state.rotY : state.remoteRigs.get(eater)?.root.current?.rotation.y ?? 0;
-      if (!fore) { model.visible = false; continue; }
-      void byKey;
-      fore.updateWorldMatrix(true, false); handWorld(fore, at);
+      let it = models.current.get(key);
+      if (!it) { it = biteable(dishModel(p.eating.item)); models.current.set(key, it); g.add(it.group); }
+      const model = it.group;
+      const rig = eater === me ? null : state.remoteRigs.get(eater);
+      const fore = eater === me ? state.avatar.body[11] : rig?.foreR.current, head = eater === me ? state.avatar.body[3] : rig?.head.current;
+      const yaw = eater === me ? state.rotY : rig?.root.current?.rotation.y ?? 0;
+      if (!fore || !head) { model.visible = false; continue; }
+      fore.updateWorldMatrix(true, false); handWorld(fore, v.hand);
+      head.updateWorldMatrix(true, false); head.localToWorld(v.mouth.set(0, -0.06, 0.15));
       const age = (eater === me && state.eating?.pack === p.id ? state.simulationTime - state.eating.at : -p.eating.at + (Date.now() - L.at) / 1000);
-      const k = Math.max(0, Math.min(1, age / EAT_SECONDS)), drink = isDrinkName(p.eating.item);
+      const drink = isDrinkName(p.eating.item);
       model.visible = true;
-      model.position.set(at.x + Math.sin(yaw) * 0.04, at.y - (drink ? 0.09 : 0.03), at.z + Math.cos(yaw) * 0.04);
-      // A drink tips up a little as it is sipped; food gets smaller bite by bite.
-      const tip = drink ? Math.min(1, Math.max(0, (age - 0.5) / 0.6)) * (1 - Math.max(0, Math.min(1, (age - (EAT_SECONDS - 0.6)) / 0.6))) : 0;
-      model.rotation.set(-0.55 * tip, yaw, 0, "YXZ");
-      model.scale.setScalar(drink ? 1 : 1 - 0.55 * Math.floor(k * 3) / 3);
+      const fx = Math.sin(yaw), fz = Math.cos(yaw);
+      if (drink) {
+        // Tipped up toward the face, the rim at the lips, while sipping; held upright going up and coming down.
+        const tip = Math.min(1, Math.max(0, (age - 0.45) / 0.5)) * (1 - Math.max(0, Math.min(1, (age - (EAT_SECONDS - 0.7)) / 0.5)));
+        const th = 1.15 * tip;
+        model.rotation.set(-th, yaw, 0, "YXZ");
+        // Where the rim ends up relative to the base, once tilted.
+        v.top.set(0, it.height * Math.cos(th), -it.height * Math.sin(th)).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+        const atMouth = v.w.copy(v.mouth).addScaledVector(new THREE.Vector3(fx, 0, fz), 0.015).sub(v.top);
+        const inHand = new THREE.Vector3(v.hand.x + fx * 0.04, v.hand.y - 0.09, v.hand.z + fz * 0.04);
+        model.position.copy(inHand.lerp(atMouth, tip));
+      } else {
+        // Bitten: a round piece gone from one side, then the other; the third bite finishes it.
+        model.position.set(v.hand.x + fx * 0.05, v.hand.y - 0.04, v.hand.z + fz * 0.05);
+        model.rotation.set(0, yaw + Math.PI / 2, 0);
+        model.scale.setScalar(1);
+        // Each bite shows as the food reaches the mouth (halfway through each of the three lifts).
+        const bites = Math.min(2, Math.max(0, Math.floor((age / EAT_SECONDS) * 3 + 0.5)));
+        model.updateMatrixWorld(true);
+        it.bites.forEach((b, i) => {
+          if (i < bites) { const c = model.localToWorld(it!.local[i]!.clone()); b.set(c.x, c.y, c.z, it!.radius); }
+          else b.set(0, -100, 0, 0);
+        });
+      }
     }
-    for (const [key, model] of models.current) if (!seen.has(key)) { g.remove(model); models.current.delete(key); }
+    for (const [key, it] of models.current) if (!seen.has(key)) { g.remove(it.group); models.current.delete(key); }
   });
   return <group ref={holder} />;
 }
@@ -809,12 +880,13 @@ export function Bins() {
     outer: new THREE.MeshStandardMaterial({ color: "#1b1d1f", roughness: 0.55, metalness: 0.35, side: THREE.DoubleSide }),
     inside: new THREE.MeshStandardMaterial({ color: "#050505", roughness: 1, side: THREE.BackSide }),
     rim: new THREE.MeshStandardMaterial({ color: "#2a2d30", roughness: 0.4, metalness: 0.5 }),
+    floor: new THREE.MeshStandardMaterial({ color: "#080808", roughness: 1 }),
   }), []);
   return <>{PARK_BINS.map((b, i) => (
     <group key={i} position={[b.x, floorHeight(b.x, b.z), b.z]}>
       <mesh material={parts.outer} position-y={BIN.h / 2} castShadow receiveShadow><cylinderGeometry args={[BIN.r, BIN.r * 0.9, BIN.h, 28, 1, true]} /></mesh>
       <mesh material={parts.inside} position-y={BIN.h / 2 + 0.01}><cylinderGeometry args={[BIN.r - 0.012, BIN.r * 0.9 - 0.012, BIN.h - 0.02, 28, 1, true]} /></mesh>
-      <mesh material={parts.inside} position-y={0.04} rotation-x={-Math.PI / 2}><circleGeometry args={[BIN.r * 0.9 - 0.01, 28]} /></mesh>
+      <mesh material={parts.floor} position-y={0.04} rotation-x={-Math.PI / 2}><circleGeometry args={[BIN.r * 0.9 - 0.01, 28]} /></mesh>
       <mesh material={parts.rim} position-y={BIN.h} rotation-x={Math.PI / 2}><torusGeometry args={[BIN.r, 0.014, 8, 32]} /></mesh>
     </group>
   ))}</>;
@@ -855,13 +927,18 @@ const DinerView = memo(function DinerView({ id, seed, state, live, byKey }: { id
     lk.phase += dt * speed * 4.2;
     root.position.set(lk.x, floorHeight(lk.x, lk.z), lk.z); root.rotation.set(0, lk.yaw, 0);
     poseBody(rig, lk.phase, Math.min(1, speed / 1.25), state.simulationTime + seed);
-    if (sit > 0) {
-      // Seated: the same sitting pose as the player's.
-      const j = benchJoints(sit);
-      rig.thighL.current?.rotation.set(j.hip, 0, 0.13); rig.thighR.current?.rotation.set(j.hip, 0, -0.13);
-      rig.shinL.current?.rotation.set(j.knee, 0, 0); rig.shinR.current?.rotation.set(j.knee, 0, 0);
+    // Sitting down on a chair, seated, getting up: exactly the player's scripted pose (Player.tsx, `script`).
+    const lean = Number(row[13] ?? 0), shuffle = Number(row[14] ?? 0) * Math.sin(state.simulationTime * 9) * 0.32;
+    if (sit > 0 || lean > 0) {
+      const mv = Math.min(1, speed / 1.25), sw = Math.sin(lk.phase);
+      const hip = (side: number) => THREE.MathUtils.lerp(-side * sw * 0.5 * mv, -1.57, sit);
+      const knee = (c: number, sh: number) => THREE.MathUtils.lerp(0.08 + 0.65 * mv * Math.max(0, c), 1.57, sit) + sh;
+      rig.thighL.current?.rotation.set(hip(1), 0, 0.13); rig.thighR.current?.rotation.set(hip(-1), 0, -0.13);
+      rig.shinL.current?.rotation.set(knee(Math.cos(lk.phase), shuffle), 0, 0); rig.shinR.current?.rotation.set(knee(-Math.cos(lk.phase), -shuffle), 0, 0);
       if (rig.hips.current) rig.hips.current.position.y = 0.95 + (0.46 + 0.077 - 0.95) * sit;
-      rig.torso.current?.rotation.set(j.lean, 0, 0);
+      rig.torso.current?.rotation.set(Math.max(0.05 * mv * (1 - sit), lean), 0, 0);
+      rig.head.current?.rotation.set(-Math.max(0.05 * mv * (1 - sit), lean) * 0.5, 0, 0);
+      if (sit > 0) { const sh = THREE.MathUtils.lerp(0, -0.5, sit), el = THREE.MathUtils.lerp(-0.15, -0.6, sit); rig.armL.current?.rotation.set(sh, 0, 0.12); rig.armR.current?.rotation.set(sh, 0, -0.12); rig.foreL.current?.rotation.set(el, 0, 0); rig.foreR.current?.rotation.set(el, 0, 0); }
     }
     // Holding food: at the waist, like players.
     const me = `npc:${id}`;
@@ -870,6 +947,17 @@ const DinerView = memo(function DinerView({ id, seed, state, live, byKey }: { id
       else { rig.armR.current?.rotation.set(0, 0, -0.2); rig.foreR.current?.rotation.set(carryElbow(0), 0, 0); }
     }
     root.updateMatrixWorld(true);
+    // Each hand where the script puts it (door handles, the chair's back and seat, the table), as for players.
+    const n = (i: number) => { const x = row[i]; return typeof x === "number" ? x : 0; };
+    for (const [side, base] of [[1, 15], [-1, 20]] as const) {
+      const k = n(base + 3);
+      if (k <= 0) continue;
+      const [hx, hz] = toWorld(f, n(base), n(base + 2));
+      v.a.set(hx, SIDEWALK_H + n(base + 1), hz);
+      const pole = POLES[POLE_NAMES[n(base + 4)] ?? "low"](side);
+      if (side === 1) reachArm(rig.armL.current, rig.foreL.current, v.a, pole, k);
+      else reachArm(rig.armR.current, rig.foreR.current, v.a, pole, k);
+    }
     if (hand && reach > 0) {
       const [hx, hz] = toWorld(f, rx, rz);
       v.a.set(hx, SIDEWALK_H + ry, hz);

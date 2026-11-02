@@ -1,5 +1,9 @@
 /** Native pointer lock preserves the OS cursor's click position on unlock. */
-export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: number) => void) {
+/**
+ * `sticky()` true (first person): moving the mouse looks around without holding a button, and once a click has
+ * locked the pointer it stays locked until `sticky()` turns false or Escape.
+ */
+export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: number) => void, sticky: () => boolean = () => false) {
   const doc = element.ownerDocument;
   const win = doc.defaultView;
   let held = false;
@@ -24,11 +28,13 @@ export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: numbe
     } catch { pending = false; release(); }
   };
   const move = (event: MouseEvent) => {
+    // First person, not locked yet: the cursor's own movement looks around.
+    if (sticky() && doc.pointerLockElement !== element) { if (event.movementX !== 0 || event.movementY !== 0) onMove(event.movementX, event.movementY); return; }
     if (!held || doc.pointerLockElement !== element) return;
-    if (event.buttons === 0) { release(); return; }
+    if (event.buttons === 0 && !sticky()) { release(); return; }
     if (event.movementX !== 0 || event.movementY !== 0) onMove(event.movementX, event.movementY);
   };
-  const up = (event: MouseEvent) => { if (event.buttons === 0) release(); };
+  const up = (event: MouseEvent) => { if (event.buttons === 0 && !sticky()) release(); };
   const change = () => {
     if (doc.pointerLockElement !== element) held = false;
     else if (!held || disposed) unlock();

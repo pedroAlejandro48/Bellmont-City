@@ -5,6 +5,11 @@ import * as THREE from "three";
 import type { GameState } from "./state";
 import { floorHeight, recenterOrbit, cameraRecenterReady, SIDEWALK_H } from "./config";
 import { CEILING, toLocal } from "./restaurantRoom";
+
+/** Closest third-person distance (closer than that is first person), and furthest. */
+const MIN_DISTANCE = 1.15, MAX_DISTANCE = 9;
+/** First person: how far down the view can look (from the chest down). */
+const FP_DOWN = 1.4;
 import { bindMouseLook } from "./mouseLook";
 
 export function CameraRig({ state }: { state: GameState }) {
@@ -23,16 +28,63 @@ export function CameraRig({ state }: { state: GameState }) {
       state.camYaw -= x * 0.006;
       state.camOrbit = state.camYaw - state.rotY - Math.PI;
       state.camPitch += y * 0.006;
-    });
+      // First person: looking down only as far as the chest down, and up to the sky.
+      if (state.firstPerson) state.camPitch = Math.max(-1.25, Math.min(FP_DOWN, state.camPitch));
+    }, () => state.firstPerson);
+    // The wheel (or two fingers on a touchpad) brings the camera closer (up) or further (down); right in, it
+    // becomes first person, looking out from just in front of the face.
+    const wheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+      if (state.firstPerson) {
+        if (delta > 4) { state.firstPerson = false; state.camDistance = 1.6; if (element.ownerDocument.pointerLockElement === element) element.ownerDocument.exitPointerLock(); }
+        return;
+      }
+      state.camDistance = Math.min(MAX_DISTANCE, state.camDistance * Math.exp(delta * 0.0016));
+      if (state.camDistance < MIN_DISTANCE) { state.firstPerson = true; state.camDistance = MIN_DISTANCE; state.camPitch = Math.max(-1.25, Math.min(FP_DOWN, -0.05)); }
+    };
+    element.addEventListener("wheel", wheel, { passive: false });
     const context = (e: Event) => e.preventDefault();
     element.addEventListener("contextmenu", context);
     return () => {
       unbind();
       element.removeEventListener("contextmenu", context);
+      element.removeEventListener("wheel", wheel);
     };
   }, [gl, state]);
+  /**
+   * First person: the camera just in front of the face, following the head as it moves (walking, sitting, riding,
+   * going through doors), looking where the mouse points. On foot the body turns with the view; otherwise the
+   * view can turn about as far as a head can.
+   */
+  const fpVec = useMemo(() => ({ head: new THREE.Vector3(), look: new THREE.Vector3() }), []);
+  const firstPerson = (dt: number) => {
+    const head = state.avatar.body[3];
+    if (!head) return false;
+    const onFoot = !state.script && !state.bench && !state.scooter.riding && !state.scooter.action && !state.accident && state.health > 0;
+    const forward = state.rotY;
+    let lookYaw = state.camYaw + Math.PI;
+    if (onFoot) state.rotY = forward + Math.atan2(Math.sin(lookYaw - forward), Math.cos(lookYaw - forward)) * (1 - Math.exp(-14 * dt));
+    else {
+      const off = Math.atan2(Math.sin(lookYaw - forward), Math.cos(lookYaw - forward)), max = 1.55;
+      if (Math.abs(off) > max) { lookYaw = forward + Math.sign(off) * max; state.camYaw = lookYaw - Math.PI; }
+    }
+    state.camOrbit = state.camYaw - state.rotY - Math.PI;
+    const pitch = Math.max(-1.25, Math.min(FP_DOWN, state.camPitch));
+    state.camPitch = pitch;
+    head.updateWorldMatrix(true, false);
+    head.getWorldPosition(fpVec.head);
+    // Just in front of the eyes, whichever way the head faces.
+    const body = state.rotY;
+    camera.position.set(fpVec.head.x + Math.sin(body) * 0.2, fpVec.head.y + 0.03, fpVec.head.z + Math.cos(body) * 0.2);
+    fpVec.look.set(Math.sin(lookYaw) * Math.cos(pitch), -Math.sin(pitch), Math.cos(lookYaw) * Math.cos(pitch)).add(camera.position);
+    camera.up.set(0, 1, 0); camera.lookAt(fpVec.look);
+    return true;
+  };
   useFrame((_, raw) => {
     const dt = Math.min(raw, 0.05);
+    gl.domElement.style.cursor = state.firstPerson ? "none" : "";
+    if (state.firstPerson && firstPerson(dt)) return;
     const riding = state.scooter.riding || state.scooter.action === "mount";
     const forward = state.movingForward || (riding && state.scooter.speed > 0 && (state.keys.has("KeyW") || state.keys.has("ArrowUp")));
     const now = performance.now();
@@ -62,10 +114,10 @@ export function CameraRig({ state }: { state: GameState }) {
     const yaw = smoothLook.current.yaw, pitch = smoothLook.current.pitch;
     direction.set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
     // Sweep a sphere, not a ray: the camera's near plane also stays clear.
-    const hit = world.castShape(target, { x: 0, y: 0, z: 0, w: 1 }, direction, sphere, 0, 6, true,
+    const hit = world.castShape(target, { x: 0, y: 0, z: 0, w: 1 }, direction, sphere, 0, state.camDistance, true,
       undefined, undefined, undefined, undefined,
       (collider) => !(collider.shape.type === rapier.ShapeType.Cuboid && collider.halfExtents().x <= 0.25 && collider.halfExtents().z <= 0.25 && collider.halfExtents().y >= 2) && !(state.bench && collider.shape.type === rapier.ShapeType.Cuboid && Math.abs(collider.halfExtents().x - 1.3) < 0.01 && Math.abs(collider.halfExtents().z - 0.4) < 0.01) && collider.parent()?.userData !== "ragdoll" && !(state.interior && state.interior.phase !== "inside" && collider.parent()?.userData === "restaurant") && !((state.scooter.riding || state.scooter.action === "mount") && collider.parent()?.userData === "scooter"));
-    let allowed = hit ? Math.max(0.08, hit.time_of_impact - 0.08) : 6;
+    let allowed = hit ? Math.max(0.08, hit.time_of_impact - 0.08) : state.camDistance;
     const room = inter ? state.rooms.get(inter.key) : undefined;
     if (!inter || !room) doorSide.current = null;
     else {

@@ -91,6 +91,9 @@ export type GameState = {
   camYaw: number;
   camPitch: number;
   camOrbit: number;
+  /** How far behind the character the camera wants to be (the wheel sets it), and first person (zoomed right in). */
+  camDistance: number;
+  firstPerson: boolean;
   lastMouseLookAt: number;
   movingForward: boolean;
   worldSeed: number;
@@ -181,6 +184,7 @@ export function createState(save: SaveData): GameState {
     camYaw: save.camYaw,
     camOrbit: save.camYaw - save.rotY - Math.PI,
     camPitch: save.camPitch ?? 0.22,
+    camDistance: 6, firstPerson: false,
     lastMouseLookAt: performance.now(),
     movingForward: false,
     worldSeed: save.worldSeed ?? 1337,

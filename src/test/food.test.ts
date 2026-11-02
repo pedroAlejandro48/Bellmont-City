@@ -141,7 +141,7 @@ describe("eating in", () => {
     sim.handle("me", { type: "set", pack: sign.id, where: "table", x: room.frame.ox, y: 0.93, z: room.frame.oz - 4, yaw: 0 }, 2);
     let t = 30;
     sim.step(t, inside, () => true);
-    expect(sim.trips.get(key)?.task).toBe("serve");
+    expect(sim.trips.get(`${key}|w`)?.task).toBe("serve");
     for (let i = 0; i < 40; i++, t += 1) sim.step(t, inside, () => true);
     expect(tray.where).toBe("table"); expect(sim.packs.includes(sign)).toBe(false);
     sim.handle("me", { type: "eat", pack: tray.id, item: food }, t);
@@ -149,7 +149,7 @@ describe("eating in", () => {
     sim.handle("me", { type: "ate", pack: tray.id, item: food }, t + 3);
     expect(tray.items.length).toBe(0); expect(tray.done).toBe(true);
     sim.step(t + 4, inside, () => true);
-    expect(sim.trips.get(key)?.task).toBe("bus");
+    expect(sim.trips.get(`${key}|w`)?.task).toBe("bus");
     for (let i = 0; i < 40; i++, t += 1) sim.step(t + 4, inside, () => true);
     expect(sim.packs.length).toBe(0);
   });

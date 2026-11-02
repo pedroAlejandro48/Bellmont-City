@@ -35,9 +35,17 @@ export type Diner = {
   mode: "togo" | "here"; order: number; chair: number; plan: SitPlan | null; sit: number;
   /** Reaching (to the counter, or setting the sign down): where, and how far (0..1); and the bite cycle. */
   reach: [number, number, number] | null; reachK: number; hand: "left" | "right";
+  /** The rest of a scripted pose (as a player's): leaning, shuffling in on a chair, and each hand's reach. */
+  lean: number; shuffle: number;
+  left: { at: [number, number, number]; k: number; pole: number } | null; right: { at: [number, number, number]; k: number; pole: number } | null;
 };
-/** What a diner looks like to everyone: [id, key, x, z, yaw, speed, sit, hand, rx, ry, rz, reach, seed]. */
-export type DinerRow = [number, string, number, number, number, number, number, number, number, number, number, number, number];
+const POLE_IDS = { low: 0, out: 1, back: 2 } as const;
+export const POLE_NAMES = ["low", "out", "back"] as const;
+/**
+ * What a diner looks like to everyone: [id, key, x, z, yaw, speed, sit, hand, rx, ry, rz, reach, seed, lean, shuffle,
+ * left hand x, y, z, reach, pole, right hand x, y, z, reach, pole].
+ */
+export type DinerRow = [number, string, number, number, number, number, number, number, number, number, number, number, number, ...number[]];
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const smooth = (t: number) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
@@ -62,7 +70,8 @@ export class DinerSim {
   private nextAt = new Map<string, number>();
 
   rows(): DinerRow[] {
-    return this.diners.filter((d) => d.step !== "away").map((d) => [d.id, d.key, r2(d.x), r2(d.z), r2(d.yaw), r2(d.speed), r2(d.sit), d.reach ? (d.hand === "left" ? 1 : 2) : 0, r2(d.reach?.[0] ?? 0), r2(d.reach?.[1] ?? 0), r2(d.reach?.[2] ?? 0), r2(d.reachK), d.seed]);
+    const hand = (h: Diner["left"]) => (h ? [r2(h.at[0]), r2(h.at[1]), r2(h.at[2]), r2(h.k), h.pole] : [0, 0, 0, 0, 0]);
+    return this.diners.filter((d) => d.step !== "away").map((d) => [d.id, d.key, r2(d.x), r2(d.z), r2(d.yaw), r2(d.speed), r2(d.sit), d.reach ? (d.hand === "left" ? 1 : 2) : 0, r2(d.reach?.[0] ?? 0), r2(d.reach?.[1] ?? 0), r2(d.reach?.[2] ?? 0), r2(d.reachK), d.seed, r2(d.lean), d.shuffle, ...hand(d.left), ...hand(d.right)]);
   }
 
   step(ctx: DinerContext, food: FoodSim) {
@@ -81,7 +90,7 @@ export class DinerSim {
       this.diners.push({
         id: this.nextId++, key, seed: Math.floor(ctx.random() * 1e6), step: "arrive", since: now, x: start[0], z: start[1], yaw: -side * Math.PI / 2, speed: 0,
         from: start, fromYaw: -side * Math.PI / 2, to: [0.15, 1.45], toYaw: Math.PI, door: null, doorOpen: false, side,
-        mode: ctx.random() < 0.5 ? "togo" : "here", order: 0, chair: -1, plan: null, sit: 0, reach: null, reachK: 0, hand: "right",
+        mode: ctx.random() < 0.5 ? "togo" : "here", order: 0, chair: -1, plan: null, sit: 0, reach: null, reachK: 0, hand: "right", lean: 0, shuffle: 0, left: null, right: null,
       });
     }
     for (const d of this.diners) this.stepOne(d, ctx, food);
@@ -107,7 +116,12 @@ export class DinerSim {
     if (!at) { d.step = "away"; return; }
     const { room, places, kind } = at, me = `npc:${d.id}`;
     const t = now - d.since;
-    d.reach = null; d.reachK = 0;
+    d.reach = null; d.reachK = 0; d.lean = 0; d.shuffle = 0; d.left = null; d.right = null;
+    const hands = (pose: { left: { at: [number, number, number]; blend: number; pole: "low" | "out" | "back" } | null; right: { at: [number, number, number]; blend: number; pole: "low" | "out" | "back" } | null; lean: number; shuffle: number }) => {
+      d.lean = pose.lean; d.shuffle = pose.shuffle;
+      d.left = pose.left ? { at: pose.left.at, k: pose.left.blend, pole: POLE_IDS[pose.left.pole] } : null;
+      d.right = pose.right ? { at: pose.right.at, k: pose.right.blend, pole: POLE_IDS[pose.right.pole] } : null;
+    };
     // Told where to wait and pointed there: the cashier is free for whoever is next.
     const talk = food.sessions.get(d.key);
     if (talk?.by === me && d.step !== "queue" && d.step !== "order" && (talk.stage === "told" ? now - talk.at > 3.8 : true)) food.handle(me, { type: "bye", key: d.key }, now);
@@ -129,7 +143,7 @@ export class DinerSim {
         const pose = d.door ? walkThroughPose(Math.min(t, end), d.door) : enterPose(Math.min(t, end), d.from, d.fromYaw);
         d.speed = Math.hypot(pose.x - d.x, pose.z - d.z) > 1e-4 ? DINER_WALK : 0;
         d.x = pose.x; d.z = pose.z; d.yaw = pose.yaw;
-        if (pose.right) { d.reach = pose.right.at; d.reachK = pose.right.blend; d.hand = "right"; }
+        hands(pose);
         if (t >= end) { this.walk(d, queueSpot(places, 0), Math.PI, now); this.go(d, "queue", now); d.from = [d.x, d.z]; }
         return;
       }
@@ -153,9 +167,11 @@ export class DinerSim {
           const items = menuOf(kind).flatMap((s) => s.items), n = 1 + Math.floor(ctx.random() * 3);
           const foods = items.filter((i) => !i.drink), drinks = items.filter((i) => i.drink);
           const names = [...Array.from({ length: n }, () => foods[Math.floor(ctx.random() * foods.length)]!.name), ...(ctx.random() < 0.7 ? [drinks[Math.floor(ctx.random() * drinks.length)]!.name] : [])];
+          // Three already waiting for food to go: this one eats in instead.
+          if (d.mode === "togo" && this.diners.filter((o) => o.key === d.key && (o.step === "wait" || o.step === "pickup")).length >= MAX_QUEUE) d.mode = "here";
           food.handle(me, { type: "order", key: d.key, kind, names, mode: d.mode, text: toldLine(d.mode, ctx.random) }, now);
           d.order = food.orders[food.orders.length - 1]?.id ?? 0;
-          if (d.mode === "togo") { this.walk(d, pickupSpot(places, this.diners.filter((o) => o.key === d.key && (o.step === "wait" || o.step === "pickup")).length), Math.PI, now); this.go(d, "wait", now); }
+          if (d.mode === "togo") { this.walk(d, pickupSpot(places, this.diners.filter((o) => o !== d && o.key === d.key && (o.step === "wait" || o.step === "pickup")).length), Math.PI, now); this.go(d, "wait", now); }
           else this.go(d, "sign", now);
         }
         return;
@@ -187,7 +203,8 @@ export class DinerSim {
         const plan = d.plan!, done = SIT.done + plan.extra;
         const pose = sitPose(plan, Math.min(t, done), room);
         const c = room.items[plan.chair]; if (c) { c.x = pose.chair[0]; c.z = pose.chair[1]; }
-        d.x = pose.x; d.z = pose.z; d.yaw = pose.yaw; d.sit = pose.sit; d.speed = t < plan.extra + SIT.approach ? DINER_WALK : 0;
+        d.x = pose.x; d.z = pose.z; d.yaw = pose.yaw; d.sit = pose.sit; hands(pose);
+        d.speed = t < plan.extra + SIT.approach || (t > SIT.around[0] + plan.extra && t < SIT.around[1] + plan.extra) ? DINER_WALK : 0;
         if (t >= done) {
           // The sign goes on the table in front.
           const sign = food.packs.find((p) => p.order === d.order && p.kind === "sign" && p.holder === me);
@@ -203,6 +220,7 @@ export class DinerSim {
       }
       case "eat": {
         d.sit = 1;
+        if (d.plan) { const rest = sitPose(d.plan, SIT.done + d.plan.extra, room); hands(rest); d.x = rest.x; d.z = rest.z; d.yaw = rest.yaw; }
         const tray = food.packs.find((p) => p.order === d.order && p.kind === "tray");
         if (!tray) { if (t > 120) this.rise(d, now); return; }
         if (tray.where !== "table") return;
@@ -219,12 +237,17 @@ export class DinerSim {
         const plan = d.plan!, done = SIT.done + plan.extra, back = Math.max(0, done - t);
         const pose = sitPose(plan, back, room);
         const c = room.items[plan.chair]; if (c) { c.x = pose.chair[0]; c.z = pose.chair[1]; }
-        d.x = pose.x; d.z = pose.z; d.yaw = pose.yaw; d.sit = pose.sit;
+        d.x = pose.x; d.z = pose.z; d.yaw = pose.yaw; d.sit = pose.sit; hands(pose);
+        d.speed = back < plan.extra + SIT.approach || (back > SIT.around[0] + plan.extra && back < SIT.around[1] + plan.extra) ? DINER_WALK : 0;
         if (back <= plan.extra + SIT.approach) { d.sit = 0; d.chair = -1; this.toDoor(d, now); }
         return;
       }
       case "wait": {
-        // At the pick-up end of the counter until this order's food is out, then take it, one in each hand.
+        // In line at the far end of the counter (one behind the other) until this order's food is out, moving up
+        // as those ahead take theirs; then take it, one in each hand.
+        const ahead = this.diners.filter((o) => o !== d && o.key === d.key && (o.step === "wait" || o.step === "pickup") && o.id < d.id).length;
+        const spot = pickupSpot(places, ahead);
+        if (Math.hypot(spot[0] - d.to[0], spot[1] - d.to[1]) > 0.05) this.walk(d, spot, Math.PI, now);
         this.walking(d, now);
         const mine = food.packs.filter((p) => p.order === d.order && p.where === "counter");
         if (mine.length && d.speed === 0) { this.go(d, "pickup", now); d.from = [d.x, d.z]; }
@@ -261,7 +284,7 @@ export class DinerSim {
         const pose = d.door ? walkThroughPose(Math.min(t, end), d.door) : leavePose(Math.min(t, end), d.from, d.fromYaw);
         d.speed = Math.hypot(pose.x - d.x, pose.z - d.z) > 1e-4 ? DINER_WALK : 0;
         d.x = pose.x; d.z = pose.z; d.yaw = pose.yaw;
-        if (pose.right) { d.reach = pose.right.at; d.reachK = pose.right.blend; d.hand = "right"; }
+        hands(pose);
         if (t >= end) { this.walk(d, [d.side * 11, 2.3], d.side * Math.PI / 2, now); d.step = "leave"; }
         return;
       }
@@ -284,8 +307,9 @@ export class DinerSim {
 export function queueSpot(p: Places, k: number): [number, number] { return [p.customer.x, p.customer.z + 0.05 + k * QUEUE_GAP]; }
 /** Waiting for food to go: along the counter past the pick-up spots. */
 export function pickupSpot(p: Places, k: number): [number, number] {
-  const far = p.slots[Math.min(p.slots.length - 1, 3)] ?? p.slots[0]!;
-  return [far.x + (p.register.x > far.x ? -1 : 1) * (0.2 + k * 0.7), p.customer.z + 0.6];
+  // Facing the far end of the counter (where food to go is set out first), and back from it in a line.
+  const far = p.slots[0]!;
+  return [far.x, p.customer.z + 0.15 + k * QUEUE_GAP];
 }
 /** How many are in line ahead of this customer (players standing in the line, and customers already queueing). */
 export function lineAhead(d: Diner, diners: Diner[], people: { x: number; z: number }[], p: Places) {

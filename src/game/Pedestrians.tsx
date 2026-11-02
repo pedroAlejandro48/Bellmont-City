@@ -168,7 +168,8 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       if (visit?.stage === "bench" && visit.bench) {
         // On the bench: sit down, sit a while, stand up (the same movement as a player's), then walk back out.
         const seat = BENCH_SEATS[visit.seat]!, sitting = visit.bench;
-        const t = Math.min(1, (now - sitting.startedAt) / (sitting.phase === "stand" ? BENCH_STAND_SECONDS : BENCH_SIT_SECONDS));
+        // Getting up takes a little longer than a player's tap of E, so it reads as getting up (and is seen over the network).
+        const t = Math.min(1, (now - sitting.startedAt) / (sitting.phase === "stand" ? BENCH_STAND_SECONDS * 2.4 : BENCH_SIT_SECONDS * 1.6));
         const pose = benchPose(seat, sitting.phase, t, sitting.origin, sitting.originYaw);
         npc.pos.set(pose.x, floorHeight(pose.x, pose.z), pose.z); npc.yaw = pose.yaw; npc.seated = pose.seated; npc.speed = 0;
         if (sitting.phase === "sit" && t >= 1) sitting.phase = "seated";
@@ -336,7 +337,8 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
           npc.yaw = far ? yaw : turn(npc.yaw, yaw, 10 * dt);
           npc.speed = speed; npc.mode = mode === 0 ? "walk" : mode === 1 ? "stand" : "wait";
           // Sitting on a bench (the seat is kept from this player too).
-          npc.seated = row[11] ?? 0;
+          // Eased, so sitting down and getting up stay smooth between the host's updates.
+          npc.seated += ((row[11] ?? 0) - npc.seated) * (1 - Math.exp(-14 * dt));
           const seat = row[12] ?? -1, mine = `npc:${b.id}`;
           for (const [id, who] of state.seatOccupants) if (who === mine && id !== seat) state.seatOccupants.delete(id);
           if (seat >= 0 && !state.seatOccupants.has(seat)) state.seatOccupants.set(seat, mine);
