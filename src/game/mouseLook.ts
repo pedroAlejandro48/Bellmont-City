@@ -46,6 +46,12 @@ export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: numbe
     if (doc.pointerLockElement && !locked()) return;
     if (held && locked()) return;
     event.preventDefault();
+    // Another finger on the view while one already turns it (a pinch): counted, but the first keeps the turning.
+    if (held && event.pointerType === "touch" && dragId !== null) {
+      lastBy.set(idOf(event), { x: event.clientX, y: event.clientY });
+      fingers.add(idOf(event)); onFingers?.(fingers.size);
+      return;
+    }
     held = true; wasLocked = locked();
     lastBy.set(idOf(event), { x: event.clientX, y: event.clientY });
     if (event.pointerType === "touch") { fingers.add(idOf(event)); onFingers?.(fingers.size); }
@@ -84,6 +90,8 @@ export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: numbe
   const up = (event: PointerEvent) => {
     lastBy.delete(idOf(event));
     if (fingers.delete(idOf(event))) onFingers?.(fingers.size);
+    // The turning finger lifted with another still on the view: that one turns it now.
+    if (event.pointerType === "touch" && idOf(event) === dragId && fingers.size > 0) { dragId = fingers.values().next().value ?? null; return; }
     if (dragId !== null && typeof event.pointerId === "number" && event.pointerId !== dragId) return;
     if (sticky()) { held = false; if (dragId !== null) { try { element.releasePointerCapture?.(dragId); } catch { /* fine */ } dragId = null; } return; }
     if (event.buttons === 0 || event.type === "pointercancel") release();

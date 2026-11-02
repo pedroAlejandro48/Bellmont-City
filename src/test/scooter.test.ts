@@ -121,3 +121,26 @@ describe("fallen scooter reach and wheel bounds", () => {
     expect(SCOOTER_COLLISION_PARTS[0].center[1] - SCOOTER_COLLISION_PARTS[0].half[1]).toBeCloseTo(0.005);
   });
 });
+
+describe("driving with the joystick", () => {
+  it("steers in proportion to the sideways tilt, at any angle", async () => {
+    const { stickDrive } = await import("@/game/config");
+    expect(stickDrive(null)).toBeNull();
+    expect(stickDrive({ x: 0.05, y: 0.05 })).toEqual({ forward: false, reverse: false, throttle: 0, steer: 0 });
+    const slight = stickDrive({ x: 0.2, y: 0.95 })!, more = stickDrive({ x: 0.6, y: 0.75 })!, full = stickDrive({ x: 1, y: 0 })!;
+    expect(slight.forward && more.forward && full.forward).toBe(true);
+    // Right is a negative steer (as the D key), growing with the tilt; straight over is full lock.
+    expect(slight.steer).toBeLessThan(0); expect(more.steer).toBeLessThan(slight.steer); expect(full.steer).toBe(-1);
+    expect(stickDrive({ x: -0.3, y: 0.9 })!.steer).toBeGreaterThan(0);
+    // How far it is pushed is the throttle; pulled back, it brakes and reverses.
+    expect(stickDrive({ x: 0, y: 0.4 })!.throttle).toBeLessThan(stickDrive({ x: 0, y: 1 })!.throttle);
+    expect(stickDrive({ x: 0, y: 1 })!.throttle).toBe(1);
+    expect(stickDrive({ x: 0.2, y: -0.9 })!.reverse).toBe(true);
+  });
+  it("rides at the speed the push asks for", async () => {
+    const { scooterSpeed, SCOOTER_MAX_SPEED } = await import("@/game/config");
+    let half = 0, full = 0;
+    for (let i = 0; i < 600; i++) { half = scooterSpeed(half, true, false, 0.05, 0.5); full = scooterSpeed(full, true, false, 0.05); }
+    expect(full).toBeCloseTo(SCOOTER_MAX_SPEED); expect(half).toBeCloseTo(SCOOTER_MAX_SPEED * 0.5);
+  });
+});

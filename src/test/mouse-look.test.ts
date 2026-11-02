@@ -112,6 +112,16 @@ describe("looking around (pointer lock, or dragging where there is none)", () =>
     }
     expect(fingers).toEqual([1, 0, 1, 0]);
   });
+  it("keeps turning with the first finger when a second lands (a pinch), and hands over when the first lifts", () => {
+    canvas.dispatchEvent(pointer("pointerdown", { x: 100, y: 100, buttons: 1, kind: "touch", id: 1 }));
+    canvas.dispatchEvent(pointer("pointerdown", { x: 300, y: 100, buttons: 1, kind: "touch", id: 2 }));
+    document.dispatchEvent(pointer("pointermove", { x: 110, y: 100, kind: "touch", id: 1, buttons: 1 }));
+    document.dispatchEvent(pointer("pointermove", { x: 290, y: 100, kind: "touch", id: 2, buttons: 1 }));
+    expect(move.mock.calls).toEqual([[10, 0]]);
+    document.dispatchEvent(pointer("pointerup", { kind: "touch", id: 1 }));
+    document.dispatchEvent(pointer("pointermove", { x: 280, y: 104, kind: "touch", id: 2, buttons: 1 }));
+    expect(move.mock.calls).toEqual([[10, 0], [-10, 4]]);
+  });
   it("in first person, looks around by just moving the cursor before any lock", () => {
     firstPerson = true;
     drag(10, 10, 0); drag(25, 5, 0);

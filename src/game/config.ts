@@ -771,6 +771,20 @@ export function scooterTurnRadius(speed: number) {
 export function scooterTurn(yaw: number, steer: number, speed: number, dt: number) {
   return speed === 0 ? yaw : yaw + Math.max(-1, Math.min(1, steer)) * speed / scooterTurnRadius(speed) * dt;
 }
+/**
+ * Driving with the on-screen joystick, at any angle: how far it is pushed is the throttle; its sideways part steers
+ * in proportion (a slight tilt, a slight turn; right over, full lock); pushed back past a little, it brakes and then
+ * reverses. Null when it is barely touched.
+ */
+export function stickDrive(stick: { x: number; y: number } | null) {
+  if (!stick) return null;
+  const push = Math.min(1, Math.hypot(stick.x, stick.y));
+  if (push < 0.12) return { forward: false, reverse: false, throttle: 0, steer: 0 };
+  const side = Math.abs(stick.x) < 0.04 ? 0 : stick.x;
+  const steer = -Math.max(-1, Math.min(1, side * 1.15));
+  const reverse = stick.y < -0.3 * push;
+  return { forward: !reverse, reverse, throttle: Math.min(1, (push - 0.12) / 0.8), steer };
+}
 export function smoothSteer(steer: number, input: number, dt: number) {
   return steer + (input - steer) * (1 - Math.exp(-10 * dt));
 }
@@ -779,8 +793,10 @@ export function recenterOrbit(orbit: number, movingForward: boolean, dt: number)
   const shortest = Math.atan2(Math.sin(orbit), Math.cos(orbit));
   return shortest * Math.exp(-4 * dt);
 }
-export function scooterSpeed(current: number, forward: boolean, reverse: boolean, dt: number) {
-  const requested = forward === reverse ? 0 : reverse ? -SCOOTER_REVERSE_SPEED : SCOOTER_MAX_SPEED;
+/** `throttle` (0..1, the joystick's push): how much of full speed is asked for. Keys always ask for all of it. */
+export function scooterSpeed(current: number, forward: boolean, reverse: boolean, dt: number, throttle = 1) {
+  const t = Math.max(0, Math.min(1, throttle));
+  const requested = forward === reverse ? 0 : reverse ? -SCOOTER_REVERSE_SPEED * t : SCOOTER_MAX_SPEED * t;
   // Brake completely before changing direction; never jump across zero in one step.
   const braking = current * requested < 0;
   const target = braking ? 0 : requested;

@@ -23,7 +23,11 @@ export function CameraRig({ state }: { state: GameState }) {
   const vectors = useMemo(() => ({ target: new THREE.Vector3(), direction: new THREE.Vector3(), up: new THREE.Vector3(), sphere: new rapier.Ball(0.22) }), [rapier]);
   useEffect(() => {
     const element = gl.domElement;
+    /** Fingers on the view, for pinching to zoom (two at once), and the pinch's spread when it last zoomed. */
+    const touches = new Map<number, { x: number; y: number }>();
+    let pinch: { spread: number; out: number } | null = null;
     const unbind = bindMouseLook(element, (x, y) => {
+      if (pinch) return;
       state.lastMouseLookAt = performance.now();
       state.camYaw -= x * 0.006;
       state.camOrbit = state.camYaw - state.rotY - Math.PI;
@@ -35,22 +39,57 @@ export function CameraRig({ state }: { state: GameState }) {
       if (count === 0 && state.touchLook.fingers > 0) state.touchLook.releasedAt = performance.now();
       state.touchLook.fingers = count;
     });
-    // The wheel (or two fingers on a touchpad) brings the camera closer (up) or further (down); right in, it
-    // becomes first person, looking out from just in front of the face.
-    const wheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const delta = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+    /**
+     * Zooming by `factor` (> 1 further out): right in, it becomes first person, looking out from just in front of
+     * the face; out of first person when `leave` (a clear move outward). `lock`: ask for pointer lock going in.
+     */
+    const zoom = (factor: number, leave: boolean, lock: boolean) => {
       if (state.firstPerson) {
-        if (delta > 4) { state.firstPerson = false; state.camDistance = 1.6; if (element.ownerDocument.pointerLockElement === element) element.ownerDocument.exitPointerLock(); }
+        if (leave) { state.firstPerson = false; state.camDistance = 1.6; if (element.ownerDocument.pointerLockElement === element) element.ownerDocument.exitPointerLock(); }
         return;
       }
-      state.camDistance = Math.min(MAX_DISTANCE, state.camDistance * Math.exp(delta * 0.0016));
+      state.camDistance = Math.min(MAX_DISTANCE, state.camDistance * factor);
       if (state.camDistance < MIN_DISTANCE) {
         state.firstPerson = true; state.camDistance = MIN_DISTANCE; state.camPitch = Math.max(-1.25, Math.min(FP_DOWN, -0.05));
         // Lock the pointer so turning never runs out at the edge of the screen (browsers may insist on a click first).
-        try { void Promise.resolve(element.requestPointerLock()).catch(() => {}); } catch { /* a click will lock it */ }
+        if (lock) { try { void Promise.resolve(element.requestPointerLock()).catch(() => {}); } catch { /* a click will lock it */ } }
       }
     };
+    // The wheel (or two fingers on a touchpad) brings the camera closer (up) or further (down).
+    const wheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+      zoom(Math.exp(delta * 0.0016), delta > 4, true);
+    };
+    // Two fingers on a touchscreen: spreading them zooms in, pinching them together zooms out.
+    const spreadOf = () => { const [a, b] = [...touches.values()]; return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0; };
+    const touchDown = (e: PointerEvent) => {
+      if (e.pointerType !== "touch") return;
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touches.size === 2) pinch = { spread: spreadOf(), out: 1 };
+    };
+    const touchMove = (e: PointerEvent) => {
+      const t = touches.get(e.pointerId);
+      if (!t) return;
+      t.x = e.clientX; t.y = e.clientY;
+      if (!pinch || touches.size !== 2) return;
+      const spread = spreadOf();
+      if (spread < 10 || pinch.spread < 10) { pinch.spread = spread; return; }
+      const factor = pinch.spread / spread;
+      // In first person, a clear pinch together (not a wobble) steps back out.
+      pinch.out *= factor;
+      zoom(factor, pinch.out > 1.2, false);
+      pinch.spread = spread;
+      if (pinch.out > 1.2 || pinch.out < 0.8) pinch.out = 1;
+    };
+    const touchUp = (e: PointerEvent) => {
+      if (!touches.delete(e.pointerId)) return;
+      if (touches.size < 2) pinch = null;
+    };
+    element.addEventListener("pointerdown", touchDown);
+    element.ownerDocument.addEventListener("pointermove", touchMove);
+    element.ownerDocument.addEventListener("pointerup", touchUp);
+    element.ownerDocument.addEventListener("pointercancel", touchUp);
     element.addEventListener("wheel", wheel, { passive: false });
     const context = (e: Event) => e.preventDefault();
     element.addEventListener("contextmenu", context);
@@ -58,6 +97,10 @@ export function CameraRig({ state }: { state: GameState }) {
       unbind();
       element.removeEventListener("contextmenu", context);
       element.removeEventListener("wheel", wheel);
+      element.removeEventListener("pointerdown", touchDown);
+      element.ownerDocument.removeEventListener("pointermove", touchMove);
+      element.ownerDocument.removeEventListener("pointerup", touchUp);
+      element.ownerDocument.removeEventListener("pointercancel", touchUp);
     };
   }, [gl, state]);
   /**
@@ -104,7 +147,7 @@ export function CameraRig({ state }: { state: GameState }) {
     gl.domElement.style.cursor = state.firstPerson ? "none" : "";
     if (state.firstPerson && firstPerson(dt)) return;
     const riding = state.scooter.riding || state.scooter.action === "mount";
-    const forward = state.movingForward || (riding && state.scooter.speed > 0 && (state.keys.has("KeyW") || state.keys.has("ArrowUp") || (state.stick?.y ?? 0) > 0.3));
+    const forward = state.movingForward || (riding && state.scooter.speed > 0 && (state.keys.has("KeyW") || state.keys.has("ArrowUp") || state.stick !== null));
     const now = performance.now();
     if (!forward || state.accident) forwardSince.current = null;
     else if (forwardSince.current === null) forwardSince.current = now;

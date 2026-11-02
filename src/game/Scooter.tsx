@@ -4,7 +4,7 @@ import { useRapier } from "@react-three/rapier";
 import { InteractionPrompt } from "./InteractionPrompt";
 import { Headlight } from "./Headlight";
 import * as THREE from "three";
-import { canInteractScooter, scooterSide, floorHeight, headingVelocity, smoothSteer, scooterNextAction, scooterSpeed, scooterCanDismount, scooterTurn, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, nearestBenchSeat, scooterTipStep, SCOOTER_MASS, SCOOTER_COLLISION_PARTS, SCOOTER_COLLISION_GROUPS, bikeOutOfBoxes, bikeCanPushVehicle, BIKE_PUSH_SPEED, bikeImpactCrashes, bikeTouchesCircle, footprintBlocked, scooterFootprint } from "./config";
+import { canInteractScooter, scooterSide, floorHeight, headingVelocity, smoothSteer, stickDrive, scooterNextAction, scooterSpeed, scooterCanDismount, scooterTurn, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, nearestBenchSeat, scooterTipStep, SCOOTER_MASS, SCOOTER_COLLISION_PARTS, SCOOTER_COLLISION_GROUPS, bikeOutOfBoxes, bikeCanPushVehicle, BIKE_PUSH_SPEED, bikeImpactCrashes, bikeTouchesCircle, footprintBlocked, scooterFootprint } from "./config";
 import { crashBike, type GameState } from "./state";
 import { BIKE_SHOVE_SPEED } from "./config";
 
@@ -93,15 +93,18 @@ export function Scooter({ state }: { state: GameState }) {
       }
     }
     if (bike.riding && !bike.action && !state.accident && state.health > 0) {
-      // Keys, or the on-screen joystick: up to ride on, down to brake and reverse, sideways to steer.
-      const st = state.stick;
-      const left = state.keys.has("KeyA") || state.keys.has("ArrowLeft") || (!!st && st.x < -0.3), right = state.keys.has("KeyD") || state.keys.has("ArrowRight") || (!!st && st.x > 0.3);
-      const forward = state.keys.has("KeyW") || state.keys.has("ArrowUp") || (!!st && st.y > 0.3), reverse = state.keys.has("KeyS") || state.keys.has("ArrowDown") || (!!st && st.y < -0.3);
+      // Keys, or the on-screen joystick at any angle (analog throttle and steering, see stickDrive).
+      const keyLeft = state.keys.has("KeyA") || state.keys.has("ArrowLeft"), keyRight = state.keys.has("KeyD") || state.keys.has("ArrowRight");
+      const keyForward = state.keys.has("KeyW") || state.keys.has("ArrowUp"), keyReverse = state.keys.has("KeyS") || state.keys.has("ArrowDown");
+      const keysUsed = keyLeft || keyRight || keyForward || keyReverse;
+      const drive = keysUsed ? null : stickDrive(state.stick);
+      const forward = drive ? drive.forward : keyForward, reverse = drive ? drive.reverse : keyReverse;
+      const steerInput = drive ? drive.steer : Number(keyLeft) - Number(keyRight);
       const previousSpeed = bike.speed;
-      bike.speed = scooterSpeed(bike.speed, forward, reverse, dt);
+      bike.speed = scooterSpeed(bike.speed, forward, reverse, dt, drive ? drive.throttle : 1);
       bike.braking = Math.abs(bike.speed) < Math.abs(previousSpeed) - 0.001 || forward && reverse;
-      turnRate.current = smoothSteer(turnRate.current, Number(left) - Number(right), dt);
-      bike.steering += ((Number(left) - Number(right)) * 0.5 - bike.steering) * (1 - Math.exp(-8 * dt));
+      turnRate.current = smoothSteer(turnRate.current, steerInput, dt);
+      bike.steering += (steerInput * 0.5 - bike.steering) * (1 - Math.exp(-8 * dt));
       bike.yaw = scooterTurn(bike.yaw, turnRate.current, bike.speed, dt);
       // What the bike runs into: above 20 mph anything (vehicles, people, bikes, buildings, trees, lamps)
       // makes it crash; slower, cars and taxis are shoved slowly, and everything else just stops it.
