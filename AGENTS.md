@@ -62,3 +62,4 @@
 - Nothing lying down goes under or into a vehicle: a fallen bike is pushed clear every frame (fallenBikeOutOfBoxes, exact box-vs-box boxBoxPush), and ragdoll parts are pushed out of vehicle footprints while down, getting up somewhere clear (RagdollSubject.vehicles).
 - Room bikes are first brought to freeBikeSpot: beside the player, or the next free bike-width alongside, never overlapping a bike or person.
 - Doors: control returns as soon as the character is clear of the door's swing (ENTER.free / LEAVE.free, or a follow walk's pass), where they stand; the door finishes closing on its own.
+- Pages before the game (AuthForm, MainMenu, UsernameForm): `.auth-split` with `.auth-titles` and `.auth-box`; on any landscape screen titles go left and the box right (compacted on short screens so it fits a phone on its side); portrait keeps them stacked.

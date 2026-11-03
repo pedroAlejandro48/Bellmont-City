@@ -59,12 +59,14 @@ export function AuthForm({ room, onSignedIn, children }: AuthFormProps) {
   const usingEmail = mode === "up" || method === "email";
   return (
     <div className="auth-bg flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <h1 className="font-display text-center text-5xl tracking-tight text-foreground">Bellmont city</h1>
-        {room
-          ? <p className="mt-2 text-center font-display text-2xl tracking-[0.12em] text-foreground">Room {room}</p>
-          : <p className="mt-2 text-center text-sm text-muted-foreground">Twenty minutes of sun. Twenty minutes of moon. Real life in a game.</p>}
-        <form onSubmit={submit} className="hud-panel mt-8 space-y-4 p-6">
+      <div className="auth-split w-full max-w-sm">
+        <div className="auth-titles">
+          <h1 className="font-display text-center text-5xl tracking-tight text-foreground">Bellmont city</h1>
+          {room
+            ? <p className="mt-2 text-center font-display text-2xl tracking-[0.12em] text-foreground">Room {room}</p>
+            : <p className="mt-2 text-center text-sm text-muted-foreground">Twenty minutes of sun. Twenty minutes of moon. Real life in a game.</p>}
+        </div>
+        <form onSubmit={submit} className="auth-box hud-panel mt-8 space-y-4 p-6">
           <div className="flex gap-1 rounded-md bg-muted p-1">
             {(["in", "up"] as const).map((m) => (
               <Button

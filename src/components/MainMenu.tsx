@@ -18,10 +18,12 @@ export function MainMenu({ username, message, onCity, onRoom, onSignOut }: { use
 
   return (
     <div className="auth-bg flex min-h-screen items-center justify-center px-4">
-      <div className="w-full max-w-sm">
-        <h1 className="font-display text-center text-5xl tracking-tight text-foreground">Bellmont city</h1>
-        <p className="mt-2 text-center text-sm text-muted-foreground">{username ? <>Welcome back, <span className="text-foreground">{username}</span>.</> : "Twenty minutes of sun. Twenty minutes of moon. Real life in a game."}</p>
-        <div className="hud-panel mt-8 space-y-4 p-6">
+      <div className="auth-split w-full max-w-sm">
+        <div className="auth-titles">
+          <h1 className="font-display text-center text-5xl tracking-tight text-foreground">Bellmont city</h1>
+          <p className="mt-2 text-center text-sm text-muted-foreground">{username ? <>Welcome back, <span className="text-foreground">{username}</span>.</> : "Twenty minutes of sun. Twenty minutes of moon. Real life in a game."}</p>
+        </div>
+        <div className="auth-box hud-panel mt-8 space-y-4 p-6">
           <Button type="button" className="w-full" onClick={onCity}>Go to my city</Button>
           <div className="flex overflow-hidden rounded-md border border-input">
             <Button type="button" variant="outline" className="flex-1 rounded-none border-0 border-r border-input" onClick={() => onRoom({ mode: "create" })}>Create a room</Button>

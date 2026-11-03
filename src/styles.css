@@ -251,3 +251,28 @@
 /* Where a touch brings up the joystick: the bottom-left of the screen (clear of the health bars' middle). */
 .touch-zone { width: 45vw; height: 45vh; }
 @media (orientation: landscape) { .touch-zone { width: 34vw; height: 60vh; } }
+
+/*
+ * The pages before the game, on any horizontal screen (a computer, or a phone or tablet on its side): the titles on
+ * the left, the form box on the right. Upright phones keep them stacked.
+ */
+@media (orientation: landscape) {
+  .auth-split { max-width: min(60rem, 100%); display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem); align-items: center; column-gap: clamp(1.5rem, 5vw, 4rem); padding-block: 1rem; }
+  .auth-split .auth-titles { text-align: left; }
+  .auth-split .auth-titles > * { text-align: left; }
+  .auth-split .auth-titles h1 { font-size: clamp(2.5rem, 6vw, 4.5rem); line-height: 1.05; }
+  .auth-split .auth-box { margin-top: 0; }
+}
+/* Short horizontal screens (a phone on its side): a tighter form so it fits without much scrolling. */
+@media (orientation: landscape) and (max-height: 560px) {
+  .auth-split .auth-box { padding: 1rem; }
+  .auth-split { padding-block: 0.5rem; }
+  .auth-split .auth-box { padding: 0.75rem 1rem; }
+  .auth-split .auth-box > :not(:last-child) { margin-block-end: 0.4rem; }
+  .auth-split .auth-box :is(button, .auth-input) { height: 2rem; min-height: 0; padding-block: 0; font-size: 0.85rem; }
+  .auth-split .auth-box [role="radiogroup"] button { height: 2.4rem; }
+  .auth-split .auth-box .rounded-md.p-1 { padding: 0.15rem; }
+  .auth-split .auth-box .rounded-md.p-1 button { height: 1.75rem; }
+  .auth-split .auth-box p { font-size: 0.7rem; line-height: 1.2; }
+  .auth-split .auth-titles h1 { font-size: clamp(2rem, 6vw, 3.25rem); }
+}

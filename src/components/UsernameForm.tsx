@@ -36,9 +36,11 @@ export function UsernameForm({ account, password, onComplete, onSignOut }: { acc
   }
 
   return <div className="auth-bg flex min-h-screen items-center justify-center px-4">
-    <div className="w-full max-w-sm">
-      <h1 className="font-display text-center text-4xl text-foreground">{needsName ? "Choose your username" : "Choose your character"}</h1>
-      <form onSubmit={submit} className="hud-panel mt-6 space-y-4 p-6">
+    <div className="auth-split w-full max-w-sm">
+      <div className="auth-titles">
+        <h1 className="font-display text-center text-4xl text-foreground">{needsName ? "Choose your username" : "Choose your character"}</h1>
+      </div>
+      <form onSubmit={submit} className="auth-box hud-panel mt-6 space-y-4 p-6">
         {needsName && <>
           <label className="block text-sm text-foreground" htmlFor="player-username">Username</label>
           <input id="player-username" className="auth-input" autoComplete="username" autoFocus required minLength={3} maxLength={24} value={username} onChange={(e) => setUsername(e.target.value)} />
