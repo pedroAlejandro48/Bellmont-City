@@ -163,12 +163,20 @@ function bowlOf(fill: string, extra: Part[] = []) {
 function plateOf(parts: Part[], r = 0.11) { return build([plate(r), ...parts]); }
 
 /** A model for any menu item (falls back to a covered plate): all of it, just the food, or just its plate. */
+/** Food is drawn this much bigger than life, so it reads clearly from the game's camera. */
+export const FOOD_SCALE = 2;
 export function dishModel(name: string, part: DishPart = "all"): THREE.Group {
   building = part;
-  try { return dishOf(name); } finally { building = "all"; }
+  try {
+    // The item, scaled up inside an outer group (callers set the outer group's own scale and position).
+    const inner = dishOf(name), outer = new THREE.Group();
+    inner.scale.setScalar(FOOD_SCALE);
+    outer.add(inner);
+    return outer;
+  } finally { building = "all"; }
 }
 /** Whether an item comes on a plate (or saucer, board) that stays behind when it is picked up. */
-export function hasPlate(name: string) { return dishModel(name, "plate").children.length > 0; }
+export function hasPlate(name: string) { return (dishModel(name, "plate").children[0]?.children.length ?? 0) > 0; }
 function dishOf(name: string): THREE.Group {
   switch (name) {
     // Big Bell Burgers

@@ -4,7 +4,7 @@ import { useRapier } from "@react-three/rapier";
 import { InteractionPrompt } from "./InteractionPrompt";
 import { Headlight } from "./Headlight";
 import * as THREE from "three";
-import { canInteractScooter, scooterSide, floorHeight, headingVelocity, smoothSteer, stickDrive, scooterNextAction, scooterSpeed, scooterCanDismount, scooterTurn, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, nearestBenchSeat, scooterTipStep, SCOOTER_MASS, SCOOTER_COLLISION_PARTS, SCOOTER_COLLISION_GROUPS, bikeOutOfBoxes, bikeCanPushVehicle, BIKE_PUSH_SPEED, bikeImpactCrashes, bikeTouchesCircle, footprintBlocked, scooterFootprint } from "./config";
+import { canInteractScooter, scooterSide, floorHeight, headingVelocity, smoothSteer, stickDrive, scooterNextAction, scooterSpeed, scooterCanDismount, scooterTurn, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, nearestBenchSeat, scooterTipStep, SCOOTER_MASS, SCOOTER_COLLISION_PARTS, SCOOTER_COLLISION_GROUPS, bikeOutOfBoxes, fallenBikeOutOfBoxes, bikeCanPushVehicle, BIKE_PUSH_SPEED, bikeImpactCrashes, bikeTouchesCircle, footprintBlocked, scooterFootprint } from "./config";
 import { crashBike, type GameState } from "./state";
 import { BIKE_SHOVE_SPEED } from "./config";
 
@@ -165,7 +165,7 @@ export function Scooter({ state }: { state: GameState }) {
       if (bike.riding) { state.pos.copy(bike.pos); state.rotY = bike.yaw; }
     }
     // A slow vehicle rolling into the bike (ridden or not) shoves it aside; fast ones crash it in Traffic.
-    if (!bike.action && bike.throwRemaining <= 0) {
+    if (!bike.action && bike.throwRemaining <= 0 && !bike.fallen) {
       const out = bikeOutOfBoxes(bike.pos.x, bike.pos.z, bike.yaw, state.vehicles.map((v) => v.box));
       if (out.dx || out.dz) { bike.pos.x += out.dx; bike.pos.z += out.dz; if (bike.riding) state.pos.copy(bike.pos); }
     }
@@ -197,6 +197,18 @@ export function Scooter({ state }: { state: GameState }) {
       if (!blocked) bike.pos.copy(next); else { bike.throwVelocity.x *= -0.15; bike.throwVelocity.z *= -0.15; }
       const floor = floorHeight(bike.pos.x, bike.pos.z);
       if (bike.pos.y < floor) { bike.pos.y = floor; bike.throwVelocity.y = Math.abs(bike.throwVelocity.y) * 0.12; bike.throwVelocity.x *= Math.exp(-5 * dt); bike.throwVelocity.z *= Math.exp(-5 * dt); }
+    }
+    // Lying down (thrown in a crash, or tipped over), its whole footprint stays clear of every vehicle, the one that
+    // hit it included: never under one, always somewhere it can be reached and picked up.
+    if (bike.fallen && bike.action !== "pickup") {
+      const out = fallenBikeOutOfBoxes(bike.pos.x, bike.pos.z, bike.yaw, bike.fallSide, state.vehicles.map((v) => v.box));
+      if (out.dx || out.dz) {
+        bike.pos.x += out.dx; bike.pos.z += out.dz; bike.pos.y = Math.max(bike.pos.y, floorHeight(bike.pos.x, bike.pos.z));
+        // Flying into it: the sideways part of the throw stops against it.
+        const n = Math.hypot(out.dx, out.dz), nx = out.dx / n, nz = out.dz / n, into = bike.throwVelocity.x * nx + bike.throwVelocity.z * nz;
+        if (into < 0) { bike.throwVelocity.x -= into * nx; bike.throwVelocity.z -= into * nz; }
+        bike.pushVelocity.set(0, 0, 0);
+      }
     }
     const actionProgress = bike.action === "pickup" ? Math.min(1, (now - bike.actionAt) / SCOOTER_PICKUP_SECONDS) : 0;
     const lift = Math.max(0, Math.min(1, (actionProgress - 0.3) / 0.5));

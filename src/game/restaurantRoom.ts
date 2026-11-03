@@ -286,7 +286,8 @@ export type Pose = {
 export type DoorPose = Pose & { door: { left: number; right: number }; fade: number };
 
 /** Going in: no fade any more; it is done once the door has closed behind (the camera came in with the player). */
-export const ENTER = { open: 0.9, release: 2.0, walk: [2.3, 4.6] as const, close: [3.6, 5.8] as const, done: 5.85 };
+/** `free`: when the character is clear of the door's swing, a step into the room, and can be moved again. */
+export const ENTER = { open: 0.9, release: 2.0, walk: [2.3, 4.6] as const, close: [3.6, 5.8] as const, done: 5.85, free: 3.5 };
 const FACE_IN = Math.PI, FACE_OUT = 0;
 /** The lobby spot just inside, facing into the restaurant with the door behind. */
 export const LOBBY: [number, number] = [0.5, -2.7];
@@ -318,7 +319,8 @@ export function enterPose(time: number, from: [number, number], fromYaw: number)
   };
 }
 
-export const LEAVE = { push: [1.1, 2.3] as const, release: 2.1, walk: [2.3, 4.4] as const, close: [3.4, 5.4] as const, done: 5.45 };
+/** `free`: when the character is out on the sidewalk, clear of the door's swing, and can be moved again. */
+export const LEAVE = { push: [1.1, 2.3] as const, release: 2.1, walk: [2.3, 4.4] as const, close: [3.4, 5.4] as const, done: 5.45, free: 3.45 };
 /** Just outside, facing the street. */
 export const OUTSIDE: [number, number] = [-0.45, 2.6];
 

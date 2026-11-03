@@ -143,22 +143,26 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
       const t = now - active.startedAt;
       if (active.phase === "entering") {
         const lead = enterLead(active.from), walk = active.mode === "follow" ? active.walk : undefined;
-        const end = walk ? walk.done : ENTER.done + lead;
+        // Free to move as soon as they are a step inside, clear of the door (which closes behind on its own).
+        const end = walk ? Math.min(walk.done, walk.pass + 0.15) : ENTER.free + lead;
         pose = walk ? walkThroughPose(Math.min(t, end), walk) : enterPose(Math.min(t, end), active.from, active.fromYaw);
         if (t >= end) {
-          // In the lobby (the camera came in too); the world outside carried on.
-          active.phase = "inside"; active.startedAt = now; pose = null;
-          const [x, z] = toWorld(frame, LOBBY[0], LOBBY[1]);
-          state.pos.x = x; state.pos.z = z; state.rotY = worldYaw(frame, Math.PI);
+          // Inside, where they got to (the camera came in too); the world outside carried on.
+          active.phase = "inside"; active.startedAt = now;
+          const [x, z] = toWorld(frame, pose.x, pose.z);
+          state.pos.x = x; state.pos.z = z; state.rotY = worldYaw(frame, pose.yaw);
+          pose = null;
         }
       } else if (active.phase === "leaving") {
         const lead = leaveLead(active.from), walk = active.mode === "follow" ? active.walk : undefined;
-        const end = walk ? walk.done : LEAVE.done + lead;
+        // Free to move as soon as they are out on the sidewalk, clear of the door's swing.
+        const end = walk ? Math.min(walk.done, walk.pass + 0.15) : LEAVE.free + lead;
         pose = walk ? walkThroughPose(Math.min(t, end), walk) : leavePose(Math.min(t, end), active.from, active.fromYaw);
         if (t >= end) {
-          state.interior = null; pose = null;
-          const [x, z] = toWorld(frame, OUTSIDE[0], OUTSIDE[1]);
-          state.pos.x = x; state.pos.z = z; state.rotY = worldYaw(frame, 0);
+          state.interior = null;
+          const [x, z] = toWorld(frame, pose.x, pose.z);
+          state.pos.x = x; state.pos.z = z; state.rotY = worldYaw(frame, pose.yaw);
+          pose = null;
         }
       } else if (state.seat) {
         const seat = state.seat, plan = seat.plan;

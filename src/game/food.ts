@@ -109,9 +109,35 @@ export const PACK_SIZE: Record<PackKind, { w: number; d: number; h: number; grip
   cup: { w: 0.1, d: 0.1, h: 0.17, grip: 0.1 },
   big: { w: 0.4, d: 0.22, h: 0.36, grip: 0.47 },
   sign: { w: 0.1, d: 0.07, h: 0.15, grip: 0.12 },
-  tray: { w: 0.46, d: 0.34, h: 0.03, grip: 0.02 },
+  tray: { w: 0.56, d: 0.42, h: 0.03, grip: 0.02 },
 };
 /** Eating one item, or drinking one drink, takes two in-game minutes (GAME_MINUTE is 1.67 s). */
+/** A tray shows at most this many items at once (in a 2 × 2 grid); the rest come into view as these are eaten. */
+export const TRAY_SHOWN = 4;
+/**
+ * What a tray shows, in its slots: everything not yet eaten (in the order it came), and, while there is room, the
+ * plates left by what has been eaten. `state`: "left" (still there), "taken" (being eaten: its plate), "eaten".
+ */
+export function trayLayout(orig: readonly string[], items: readonly string[], eating: string | null) {
+  const left = [...items];
+  if (eating) { const i = left.indexOf(eating); if (i >= 0) left.splice(i, 1); }
+  const entries = orig.map((name) => {
+    const i = left.indexOf(name);
+    if (i >= 0) { left.splice(i, 1); return { name, state: "left" as const }; }
+    return { name, state: "eaten" as const };
+  });
+  // The one being eaten is the first eaten-looking entry with that name that's still in `items`.
+  if (eating && items.includes(eating)) { const e = entries.find((x) => x.name === eating && x.state === "eaten"); if (e) (e as { state: string }).state = "taken"; }
+  const waiting = entries.filter((e) => e.state !== "eaten").length;
+  let room = Math.max(0, TRAY_SHOWN - waiting);
+  const shown: { name: string; state: "left" | "taken" | "eaten" }[] = [];
+  for (const e of entries) {
+    if (shown.length >= TRAY_SHOWN) break;
+    if (e.state !== "eaten") shown.push(e);
+    else if (room > 0) { room--; shown.push(e); }
+  }
+  return shown;
+}
 export const EAT_SECONDS = 2 * (1200 / (12 * 60));
 
 /** How long reaching for food on the counter takes, and when the hand gets to it (s). */

@@ -482,6 +482,7 @@ const NpcView = memo(function NpcView({ npc, state }: { npc: Npc; state: GameSta
     time: () => state.simulationTime,
     canRise: () => true,
     // Back up, and on along the way they were going.
+    vehicles: () => state.vehicles.map((v) => v.box),
     stoodUp: (_accident, yaw) => { npc.accident = null; npc.yaw = yaw; npc.mode = "walk"; },
   }), [npc, state]);
   // Their hands hold food like anyone's (the food is drawn at the rig's hands).

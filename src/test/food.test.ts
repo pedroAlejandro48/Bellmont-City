@@ -160,3 +160,19 @@ describe("eating in", () => {
     expect(new Set(signs).size).toBe(signs.length);
   });
 });
+
+describe("what a tray shows", () => {
+  it("shows four at a time, the next coming into view as each is eaten, plates left while there's room", async () => {
+    const { trayLayout, TRAY_SHOWN } = await import("@/game/food");
+    expect(TRAY_SHOWN).toBe(4);
+    const orig = ["A", "B", "C", "D", "E", "F"];
+    expect(trayLayout(orig, orig, null).map((e) => e.name)).toEqual(["A", "B", "C", "D"]);
+    // Eating A: its plate stays... no room for it with five still to eat, so E comes into view.
+    expect(trayLayout(orig, orig, "A").map((e) => `${e.name}:${e.state}`)).toEqual(["A:taken", "B:left", "C:left", "D:left"]);
+    expect(trayLayout(orig, ["B", "C", "D", "E", "F"], null).map((e) => e.name)).toEqual(["B", "C", "D", "E"]);
+    // Near the end the empty plates come back into the free places.
+    expect(trayLayout(orig, ["F"], null).map((e) => `${e.name}:${e.state}`)).toEqual(["A:eaten", "B:eaten", "C:eaten", "F:left"]);
+    // A small order: everything, with its plates.
+    expect(trayLayout(["A", "B"], ["B"], null).map((e) => `${e.name}:${e.state}`)).toEqual(["A:eaten", "B:left"]);
+  });
+});

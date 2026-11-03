@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import type * as THREE from "three";
 import { ScooterModel, type ScooterLook } from "@/game/Scooter";
-import { scooterFootprint } from "@/game/config";
+import { floorHeight, freeBikeSpot, scooterFootprint } from "@/game/config";
 import { dropScooter, takeScooter, type GameState, type OtherBike } from "@/game/state";
 import { applyBikePushes, bringBike, claimBike, knockBike, pushBike, releaseBike, saveBike, watchBikes, type BikeRecord, type BikeSpot } from "@/platform/bikes";
 import type { NamedRoom } from "@/platform/realtime";
@@ -65,8 +65,17 @@ export function RoomBikes({ state, code, uid, channel }: { state: GameState; cod
   useEffect(() => {
     dropScooter(state);
     void channel.presence({ bike: null }).catch(() => {});
-    void bringBike(code, uid, { pos: [state.pos.x + 0.75, state.pos.y, state.pos.z], yaw: state.rotY, fallen: false, fallSide: 1 }).catch(() => {});
-    const stop = watchBikes(code, (next) => { bikes.current = next; });
+    // Once the room's bikes are known, this player's own is brought (the first time only) to a free place beside
+    // them: never on top of a bike already there.
+    let brought = false;
+    const stop = watchBikes(code, (next) => {
+      bikes.current = next;
+      if (brought) return;
+      brought = true;
+      const others = [...next].filter(([id]) => id !== uid).map(([, rec]) => scooterFootprint(rec.pos[0], rec.pos[2], rec.yaw, rec.fallen, rec.fallSide));
+      const [x, z] = freeBikeSpot(state.pos.x, state.pos.z, state.rotY, others, state.others.map((o) => ({ x: o.x, z: o.z, r: o.r })));
+      void bringBike(code, uid, { pos: [x, floorHeight(x, z), z], yaw: state.rotY, fallen: false, fallSide: 1 }).catch(() => {});
+    });
     return () => {
       stop();
       const id = state.scooter.id;

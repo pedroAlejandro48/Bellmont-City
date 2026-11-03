@@ -144,3 +144,31 @@ describe("driving with the joystick", () => {
     expect(full).toBeCloseTo(SCOOTER_MAX_SPEED); expect(half).toBeCloseTo(SCOOTER_MAX_SPEED * 0.5);
   });
 });
+
+describe("bringing a bike into a room", () => {
+  it("stands it beside the player, or beside any bike already there, never overlapping", async () => {
+    const { freeBikeSpot, scooterFootprint, footprintBlocked } = await import("@/game/config");
+    expect(freeBikeSpot(0, 0, 0, [])).toEqual([0.75, 0]);
+    const bikes = [scooterFootprint(0.75, 0, 0, false)];
+    const second = freeBikeSpot(0, 0, 0, bikes);
+    expect(footprintBlocked(scooterFootprint(second[0], 0, 0, false), [], bikes)).toBe(false);
+    expect(Math.hypot(second[0], second[1])).toBeLessThan(2);
+    // Several players joining on the same spot: every bike gets its own place.
+    const all = [...bikes, scooterFootprint(second[0], second[1], 0, false)];
+    for (let i = 0; i < 6; i++) {
+      const [x, z] = freeBikeSpot(0, 0, 0, all);
+      const box = scooterFootprint(x, z, 0, false);
+      expect(footprintBlocked(box, [], all)).toBe(false);
+      all.push(box);
+    }
+  });
+  it("keeps a lying bike clear of a vehicle's footprint, so it is never under one", async () => {
+    const { fallenBikeOutOfBoxes, scooterFootprint, footprintBlocked } = await import("@/game/config");
+    const car = { x: 0, z: 0, hx: 0.95, hz: 2.2, yaw: 0.3 };
+    for (const [x, z] of [[0, 0], [0.5, 1], [-0.9, -1.5], [1.2, 0.2]] as const) {
+      const out = fallenBikeOutOfBoxes(x, z, 1.1, 1, [car]);
+      const box = scooterFootprint(x + out.dx, z + out.dz, 1.1, true, 1);
+      expect(footprintBlocked({ ...box, hx: box.hx - 0.05, hz: box.hz - 0.05 }, [], [car])).toBe(false);
+    }
+  });
+});

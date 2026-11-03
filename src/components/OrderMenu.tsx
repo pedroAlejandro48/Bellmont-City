@@ -37,7 +37,7 @@ export function OrderMenu({ state }: { state: GameState }) {
   return (
     <div className={`order-menu hud-panel pointer-events-auto ${ui.open && kind ? "open" : ""}`} aria-hidden={!ui.open} aria-label="Menu">
       {kind && <>
-        <div className="border-b border-white/10 px-4 pb-2 pt-3">
+        <div className="order-head border-b border-white/10 px-4 pb-2 pt-3">
           <p className="font-display text-lg leading-tight">{RESTAURANTS[kind].name}</p>
           <p className="text-[11px] text-muted-foreground">Tap + to add to your order</p>
         </div>
@@ -55,7 +55,7 @@ export function OrderMenu({ state }: { state: GameState }) {
             </div>
           ))}
         </div>
-        <div className="border-t border-white/10 px-4 py-2">
+        <div className="order-summary border-t border-white/10 px-4 py-2">
           <p className="pb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Your order</p>
           {lines.length === 0 ? <p className="text-xs text-muted-foreground">Nothing yet.</p> : (
             <ul className="order-lines space-y-0.5">
@@ -70,7 +70,7 @@ export function OrderMenu({ state }: { state: GameState }) {
           )}
           <div className="mt-1.5 flex justify-between border-t border-white/10 pt-1.5 text-sm font-bold"><span>Total</span><span className="tabular-nums">{money(total)}</span></div>
         </div>
-        <div className="relative flex items-center justify-end gap-3 px-4 pb-3 pt-1">
+        <div className="order-foot relative flex items-center justify-end gap-3 px-4 pb-3 pt-1">
           {(short || ui.note) && names.length > 0 && <span className="mr-auto text-xs text-accent">Not enough cash</span>}
           <span className="font-display text-lg tabular-nums">{money(total)}</span>
           <div className="relative">

@@ -608,6 +608,62 @@ export function bikeOutOfBoxes(x: number, z: number, yaw: number, boxes: readonl
   return { dx, dz, hit };
 }
 
+/**
+ * A bike lying on its side (its whole footprint, see scooterFootprint) pushed clear of vehicles' boxes, so it never
+ * ends up under or inside one and can always be reached and picked up. Returns how far to move it.
+ */
+export function fallenBikeOutOfBoxes(x: number, z: number, yaw: number, side: 1 | -1, boxes: readonly SolidBox[]): { dx: number; dz: number } {
+  const foot = scooterFootprint(x, z, yaw, true, side);
+  let dx = 0, dz = 0;
+  // Exact box against box, a few times over so a push off one vehicle into another is resolved too.
+  for (let pass = 0; pass < 4; pass++) {
+    let moved = false;
+    for (const box of boxes) {
+      const [px, pz] = boxBoxPush({ ...foot, x: foot.x + dx, z: foot.z + dz }, box, 0.04);
+      if (px || pz) { dx += px; dz += pz; moved = true; }
+    }
+    if (!moved) break;
+  }
+  return { dx, dz };
+}
+/**
+ * How far to move box `a` so it no longer overlaps box `b` (plus `gap`), by the shortest way (separating axes);
+ * [0, 0] if they are already apart.
+ */
+export function boxBoxPush(a: SolidBox, b: SolidBox, gap = 0): [number, number] {
+  const axes = (box: SolidBox): [number, number][] => [[Math.cos(box.yaw), -Math.sin(box.yaw)], [Math.sin(box.yaw), Math.cos(box.yaw)]];
+  const reach = (box: SolidBox, ax: number, az: number) => {
+    const c = Math.cos(box.yaw), sn = Math.sin(box.yaw);
+    return box.hx * Math.abs(c * ax - sn * az) + box.hz * Math.abs(sn * ax + c * az);
+  };
+  const cx = a.x - b.x, cz = a.z - b.z;
+  let best = Infinity, bx = 0, bz = 0;
+  for (const [ax, az] of [...axes(a), ...axes(b)]) {
+    const d = cx * ax + cz * az, overlap = reach(a, ax, az) + reach(b, ax, az) + gap - Math.abs(d);
+    if (overlap <= 0) return [0, 0];
+    if (overlap < best) { best = overlap; const sgn = d >= 0 ? 1 : -1; bx = ax * sgn * overlap; bz = az * sgn * overlap; }
+  }
+  return [bx, bz];
+}
+/**
+ * Where to stand a newly brought bike beside someone at (x, z) facing `yaw`: just to their right, unless another
+ * bike (or a person) is there already; then the next free place alongside, a bike's width further each time,
+ * on the right and then the left.
+ */
+export function freeBikeSpot(x: number, z: number, yaw: number, bikes: readonly SolidBox[], people: readonly { x: number; z: number; r: number }[] = []): [number, number] {
+  const rx = Math.cos(yaw), rz = -Math.sin(yaw), fx = Math.sin(yaw), fz = Math.cos(yaw);
+  const tries: [number, number][] = [];
+  for (let k = 0; k < 8; k++) for (const side of [1, -1]) tries.push([side * (0.75 + k * 0.8), 0]);
+  // Then a row in front and one behind.
+  for (let k = 0; k < 6; k++) for (const ahead of [2.3, -2.3]) for (const side of [1, -1]) tries.push([side * (0.75 + k * 0.8), ahead]);
+  for (const [across, ahead] of tries) {
+    const px = x + rx * across + fx * ahead, pz = z + rz * across + fz * ahead;
+    const box = scooterFootprint(px, pz, yaw, false);
+    const grown = { ...box, hx: box.hx + 0.08, hz: box.hz + 0.08 };
+    if (!footprintBlocked(grown, people, bikes)) return [px, pz];
+  }
+  return [x + rx * 0.75, z + rz * 0.75];
+}
 /** Whether a bike (three circles along its length) overlaps a round body such as a person. */
 export function bikeTouchesCircle(x: number, z: number, yaw: number, body: { x: number; z: number; r: number }) {
   const fx = Math.sin(yaw), fz = Math.cos(yaw);

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useRapier } from "@react-three/rapier";
 import * as THREE from "three";
-import { floorHeight, GET_UP_SECONDS, KNOCKDOWN_SECONDS, rng } from "./config";
+import { circleBoxPush, floorHeight, GET_UP_SECONDS, KNOCKDOWN_SECONDS, rng, type SolidBox } from "./config";
 import { FOURS_END, getUpPose, STAND_FORWARD, type Joint } from "./getUpPose";
 
 // Segment endpoints per ragdoll part for the stand-up animation (null = point part).
@@ -43,7 +43,22 @@ export type RagdollSubject = {
   canRise: () => boolean;
   /** Back on their feet, facing `yaw`. */
   stoodUp: (accident: Accident, yaw: number) => void;
+  /** Vehicles' footprints: the body never ends up inside or under one (the one that hit them included). */
+  vehicles?: () => readonly SolidBox[];
 };
+
+/** The ragdoll's parts' radii (m), for keeping them clear of vehicles. */
+const RADIUS = PARTS.map((_, i) => (i === 0 ? 0.13 : i === 1 ? 0.17 : i === 2 ? 0.14 : i >= 7 ? 0.07 : 0.08));
+/** Pushes a point (and its radius) out of every box it is inside; returns the push, or null if it was clear. */
+function outOfBoxes(x: number, z: number, r: number, boxes: readonly SolidBox[]): [number, number] | null {
+  let dx = 0, dz = 0;
+  for (let pass = 0; pass < 3; pass++) {
+    let moved = false;
+    for (const box of boxes) { const [px, pz] = circleBoxPush(x + dx, z + dz, r, box); if (px || pz) { dx += px; dz += pz; moved = true; } }
+    if (!moved) break;
+  }
+  return dx || dz ? [dx, dz] : null;
+}
 
 /** The player's ragdoll. */
 export function Ragdoll({ state }: { state: GameState }) {
@@ -53,6 +68,7 @@ export function Ragdoll({ state }: { state: GameState }) {
     yaw: () => state.rotY,
     time: () => state.simulationTime,
     canRise: () => state.health > 0,
+    vehicles: () => state.vehicles.map((v) => v.box),
     stoodUp: (accident, yaw) => {
       state.rotY = yaw;
       state.incidents.forEach((incident) => { if (incident.vehicleId === accident.vehicleId) incident.stoodUpAt = state.simulationTime; });
@@ -140,6 +156,17 @@ export function RagdollBody({ subject, color, onMeshes }: { subject: RagdollSubj
     const pelvis = bodies.current[0];
     if (!pelvis) return;
     const position = pelvis.translation();
+    // Thrown about, no part goes into or under a vehicle: pushed back out of its footprint, moving no further in.
+    const boxes = accident.phase === "down" ? subject.vehicles?.() ?? [] : [];
+    if (boxes.length) bodies.current.forEach((body, i) => {
+      const p = body.translation(), near = boxes.filter((b) => Math.abs(b.x - p.x) < b.hx + b.hz + 1 && Math.abs(b.z - p.z) < b.hx + b.hz + 1);
+      if (!near.length || p.y > 2.6) return;
+      const out = outOfBoxes(p.x, p.z, RADIUS[i] ?? 0.08, near);
+      if (!out) return;
+      body.setTranslation({ x: p.x + out[0], y: p.y, z: p.z + out[1] }, true);
+      const n = Math.hypot(out[0], out[1]), nx = out[0] / n, nz = out[1] / n, v = body.linvel(), into = v.x * nx + v.z * nz;
+      if (into < 0) body.setLinvel({ x: v.x - into * nx, y: v.y, z: v.z - into * nz }, true);
+    });
     if (accident.phase === "down") {
       subject.pos.set(position.x, floorHeight(position.x, position.z), position.z);
       if (subject.canRise() && now - accident.startedAt >= KNOCKDOWN_SECONDS) {
@@ -150,7 +177,9 @@ export function RagdollBody({ subject, color, onMeshes }: { subject: RagdollSubj
       // Face the way the head lies, so he pushes up onto hands and knees toward it.
       const head = bodies.current[2]?.translation() ?? position;
       riseYaw.current = Math.atan2(head.x - position.x, head.z - position.z);
-      standOrigin.current.set(position.x, floorHeight(position.x, position.z), position.z);
+      // Getting up somewhere clear of vehicles (with room for the hands-and-knees pose).
+      const clear = outOfBoxes(position.x, position.z, 0.55, subject.vehicles?.() ?? []) ?? [0, 0];
+      standOrigin.current.set(position.x + clear[0], floorHeight(position.x + clear[0], position.z + clear[1]), position.z + clear[1]);
       resting.current = bodies.current.map((body) => { body.sleep(); const p = body.translation(); const q = body.rotation(); return { p: new THREE.Vector3(p.x, p.y, p.z), q: new THREE.Quaternion(q.x, q.y, q.z, q.w) }; });
     }
     const progress = accident.phase === "rising" ? Math.min(1, (now - (accident.riseStartedAt ?? now)) / GET_UP_SECONDS) : 0;

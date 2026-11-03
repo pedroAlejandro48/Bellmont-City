@@ -39,39 +39,53 @@ function ActionButton({ label, title, primary, onPress }: { label: string; title
     onContextMenu={(e) => e.preventDefault()}>{label}</button>;
 }
 
+/**
+ * The joystick appears right under the finger wherever the bottom-left of the screen is touched (it rests, faded,
+ * at its usual spot until then), and follows the finger's push from there.
+ */
 function Joystick({ state }: { state: GameState }) {
   const base = useRef<HTMLDivElement>(null);
   const knob = useRef<HTMLDivElement>(null);
   const finger = useRef<number | null>(null);
+  const centre = useRef({ x: 0, y: 0 });
+  const [active, setActive] = useState(false);
   const place = (clientX: number, clientY: number) => {
-    const b = base.current?.getBoundingClientRect();
-    if (!b) return;
-    let dx = clientX - (b.left + b.width / 2), dy = clientY - (b.top + b.height / 2);
+    let dx = clientX - centre.current.x, dy = clientY - centre.current.y;
     const d = Math.hypot(dx, dy);
     if (d > REACH) { dx *= REACH / d; dy *= REACH / d; }
     if (knob.current) knob.current.style.transform = `translate(${dx}px, ${dy}px)`;
     state.stick = { x: dx / REACH, y: -dy / REACH };
   };
   const end = () => {
-    finger.current = null; state.stick = null;
+    finger.current = null; state.stick = null; setActive(false);
+    const b = base.current;
+    if (b) { b.style.left = ""; b.style.top = ""; b.style.bottom = ""; }
     if (knob.current) knob.current.style.transform = "translate(0px, 0px)";
   };
-  return <div ref={base} role="application" aria-label="Movement joystick"
-    className="touch-stick pointer-events-auto fixed z-20 h-32 w-32 rounded-full border-2 border-white/45 bg-black/30 shadow-lg backdrop-blur-[2px]"
+  return <div role="application" aria-label="Movement joystick"
+    className="touch-zone pointer-events-auto fixed bottom-0 left-0 z-20"
     style={{ touchAction: "none", WebkitUserSelect: "none" }}
     onPointerDown={(e) => {
-      if (finger.current !== null) return;
+      if (finger.current !== null || e.pointerType === "mouse") return;
       e.preventDefault(); e.stopPropagation();
       finger.current = e.pointerId;
       try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* fine */ }
+      // Centred under the finger (kept fully on screen).
+      const half = 64, x = Math.max(half + 4, Math.min(window.innerWidth - half - 4, e.clientX)), y = Math.max(half + 4, Math.min(window.innerHeight - half - 4, e.clientY));
+      centre.current = { x, y };
+      const b = base.current;
+      if (b) { b.style.left = `${x - half}px`; b.style.top = `${y - half}px`; b.style.bottom = "auto"; }
+      setActive(true);
       place(e.clientX, e.clientY);
     }}
     onPointerMove={(e) => { if (e.pointerId === finger.current) place(e.clientX, e.clientY); }}
     onPointerUp={(e) => { if (e.pointerId === finger.current) end(); }}
     onPointerCancel={(e) => { if (e.pointerId === finger.current) end(); }}
     onLostPointerCapture={(e) => { if (e.pointerId === finger.current) end(); }}>
-    {/* The top half: walk ahead and the camera swings round behind. */}
-    <div className="pointer-events-none absolute inset-x-3 top-1/2 h-px bg-white/15" />
-    <div ref={knob} className="pointer-events-none absolute left-1/2 top-1/2 -ml-7 -mt-7 h-14 w-14 rounded-full border-2 border-white/80 bg-white/55 shadow-md" />
+    <div ref={base} data-stick className={`touch-stick pointer-events-none fixed h-32 w-32 rounded-full border-2 border-white/45 bg-black/30 shadow-lg backdrop-blur-[2px] transition-opacity ${active ? "opacity-100" : "opacity-45"}`}>
+      {/* The top half: walk ahead and the camera swings round behind. */}
+      <div className="absolute inset-x-3 top-1/2 h-px bg-white/15" />
+      <div ref={knob} className="absolute left-1/2 top-1/2 -ml-7 -mt-7 h-14 w-14 rounded-full border-2 border-white/80 bg-white/55 shadow-md" />
+    </div>
   </div>;
 }

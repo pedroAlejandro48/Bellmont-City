@@ -7,7 +7,7 @@ import { canConsume, consume } from "./needs";
 import { CharacterBody, useBodyRig, type BodyRig } from "./CharacterBody";
 import { POLES, carryElbow, handWorld, pointArm, reachArm } from "./arms";
 import {
-  DROP_CONTACT, DROP_TIME, EAT_SECONDS, FoodSim, isDrinkName, priceOf, readSnapshot, GRAB_CONTACT, GRAB_TIME, PACK_SIZE, atCounter, canReach, cents, greetingLine, localFoodLink, orderTotal, placesOf, runnerPose, toldLine, viewOf,
+  DROP_CONTACT, DROP_TIME, EAT_SECONDS, FoodSim, isDrinkName, priceOf, readSnapshot, GRAB_CONTACT, GRAB_TIME, PACK_SIZE, atCounter, trayLayout, canReach, cents, greetingLine, localFoodLink, orderTotal, placesOf, runnerPose, toldLine, viewOf,
   type FoodLink, type FoodPack, type FoodView, type Places, type Trip,
 } from "./food";
 import { COUNTER, TABLE, roomLayout, toLocal, toWorld, walkTime, walkTo, worldYaw, type RoomLayout } from "./restaurantRoom";
@@ -715,15 +715,17 @@ function packModel(looks: Looks, p: FoodPack, kind: RestaurantKind) {
   } else if (p.kind === "tray") {
     // A tray with the order on it (what is left of it), laid out in rows.
     box(looks.trayTop[kind], PACK_SIZE.tray.w, 0.016, PACK_SIZE.tray.d, 0, 0.008, 0);
-    // Laid out as it came; whatever has been picked up to eat (or eaten) leaves its plate behind.
-    const all = p.orig ?? p.items, left = [...p.items];
-    if (p.eating) { const i = left.indexOf(p.eating.item); if (i >= 0) left.splice(i, 1); }
-    all.slice(0, 6).forEach((name, i) => {
-      const at = left.indexOf(name);
-      if (at >= 0) left.splice(at, 1);
-      const d = dishModel(name, at >= 0 ? "all" : "plate"), cols = Math.min(3, all.length), col = i % 3, row = Math.floor(i / 3);
-      d.scale.setScalar(all.length > 3 ? 0.62 : 0.78);
-      d.position.set((col - (cols - 1) / 2) * 0.15, 0.016, (row - 0.5 * (all.length > 3 ? 1 : 0)) * 0.15);
+    // Up to four at a time, two by two, as it came; whatever has been picked up to eat (or eaten) leaves its
+    // plate behind while there's room, and the next item takes a place once one is free (trayLayout).
+    const shown = trayLayout(p.orig ?? p.items, p.items, p.eating?.item ?? null);
+    const cols = Math.min(2, shown.length), rows = Math.ceil(shown.length / 2);
+    const cellW = PACK_SIZE.tray.w / 2, cellD = PACK_SIZE.tray.d / 2;
+    shown.forEach((e, i) => {
+      const d = dishModel(e.name, e.state === "left" ? "all" : "plate"), col = i % 2, row = Math.floor(i / 2);
+      // Each fits its quarter of the tray (sized by the whole dish, so a plate left behind stays the same size).
+      const size = new THREE.Box3().setFromObject(dishModel(e.name)).getSize(new THREE.Vector3());
+      d.scale.setScalar(Math.min(1, (cellW * 0.94) / Math.max(size.x, 1e-3), (cellD * 0.94) / Math.max(size.z, 1e-3)));
+      d.position.set((col - (cols - 1) / 2) * cellW, 0.016, (row - (rows - 1) / 2) * cellD);
       g.add(d);
     });
   } else {
