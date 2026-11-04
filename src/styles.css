@@ -278,5 +278,11 @@
 }
 /* A phone on its side: the form fills the right-hand side, so Device speed sits top left, above the title. */
 @media (orientation: landscape) and (max-height: 560px) {
-  .quality-picker { right: auto; left: 0.75rem; top: 0.6rem; }
+  .quality-picker { right: auto; left: 0.75rem; top: 0.6rem; align-items: flex-start; }
+}
+/* "Not using the graphics card": along the bottom of the screen, clear of the title and form; on a phone on its
+   side, under Device speed in the top-left corner instead (the form fills the right-hand side). */
+.gpu-warning { position: fixed; left: 50%; bottom: 0.5rem; transform: translateX(-50%); width: min(26rem, calc(100vw - 1.5rem)); text-align: center; }
+@media (orientation: landscape) and (max-height: 560px) {
+  .gpu-warning { position: static; transform: none; width: auto; max-width: 19rem; text-align: left; }
 }

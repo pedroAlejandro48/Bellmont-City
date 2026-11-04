@@ -37,23 +37,58 @@ export function qualitySettings(q: Quality): QualitySettings {
   return { dpr: [1, 1.25], antialias: true, shadows: true, shadowMap: 2048, far: 1200, fogFar: Infinity, farCity: true, npcShare: 1, lampLights: 12, beams: 8 };
 }
 
+/**
+ * Whether the browser is drawing without the graphics card (software rendering: Chrome or Edge with graphics
+ * acceleration turned off or blocked fall back to it, and everything 3D is many times slower).
+ */
+let software: boolean | null = null;
+export function softwareRendering(): boolean {
+  if (software !== null) return software;
+  software = false;
+  try {
+    const gl = document.createElement("canvas").getContext("webgl");
+    if (!gl) { software = true; return software; }
+    const info = gl.getExtension("WEBGL_debug_renderer_info");
+    const name = String(gl.getParameter(info ? info.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? "");
+    software = /swiftshader|llvmpipe|softpipe|software|basic render|microsoft basic/i.test(name);
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
+  } catch { /* unknown: assume the graphics card */ }
+  return software;
+}
+
 /** A guess for a browser that hasn't chosen: low on very weak devices, otherwise medium (as the game always was). */
 export function guessQuality(): Quality {
   if (typeof navigator === "undefined") return "medium";
+  if (softwareRendering()) return "low";
   const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
   if ((memory !== undefined && memory <= 2) || (navigator.hardwareConcurrency ?? 8) <= 2) return "low";
   return "medium";
 }
 
+/** Set by the game itself when it found this device too slow (only when nobody chose). */
+const AUTO_KEY = "bellmont-quality-auto";
+const valid = (v: string | null): v is Quality => v === "low" || v === "medium" || v === "high";
 let current: Quality | null = null;
 export function readQuality(): Quality {
   if (current) return current;
-  try { const v = localStorage.getItem(KEY); if (v === "low" || v === "medium" || v === "high") return (current = v); } catch { /* storage blocked */ }
+  try {
+    const v = localStorage.getItem(KEY); if (valid(v)) return (current = v);
+    const auto = localStorage.getItem(AUTO_KEY); if (valid(auto)) return (current = auto);
+  } catch { /* storage blocked */ }
   return (current = guessQuality());
+}
+/** Whether someone picked the device speed in this browser (the game then never changes it by itself). */
+export function qualityChosen() {
+  try { return valid(localStorage.getItem(KEY)); } catch { return false; }
 }
 export function saveQuality(q: Quality) {
   current = q;
   try { localStorage.setItem(KEY, q); } catch { /* storage blocked: kept for this visit */ }
+}
+/** The game found this device too slow and dropped to Low: remembered for next time (as its own guess). */
+export function autoLowerQuality() {
+  current = "low";
+  try { localStorage.setItem(AUTO_KEY, "low"); } catch { /* kept for this visit */ }
 }
 /** The settings for the game being played (fixed when it starts). */
 let active: QualitySettings | null = null;

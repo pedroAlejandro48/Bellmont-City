@@ -1,5 +1,6 @@
 import { useFrame } from "@react-three/fiber";
 import { quality } from "./quality";
+import { SOLID_VEHICLE_REACH } from "./nearPhysics";
 import { useEffect, useMemo, useRef } from "react";
 import { useRapier } from "@react-three/rapier";
 import * as THREE from "three";
@@ -315,6 +316,8 @@ export function Traffic({ state }: { state: GameState }) {
   const beamIndices = useRef<number[]>([]);
   const contacts = useRef(new Set<number>());
   const bodies = useRef<ReturnType<typeof world.createRigidBody>[]>([]);
+  /** Which vehicles are full physics bodies now (near the character); the rest glide kinematically. */
+  const solidNear = useRef<boolean[]>([]);
   const colliders = useRef<ReturnType<typeof world.createCollider>[]>([]);
   const brakeMats = useRef<THREE.MeshStandardMaterial[]>([]);
   const crashContacts = useRef(new Set<string>());
@@ -333,6 +336,7 @@ export function Traffic({ state }: { state: GameState }) {
   const upAxis = useMemo(() => new THREE.Vector3(0, 1, 0), []);
 
   useEffect(() => {
+    solidNear.current = [];
     vehicles.forEach((v, i) => {
       const [fx, fz] = roadForward(v); v.vx = fx * v.speed; v.vz = fz * v.speed;
       const yaw = v.axis === "x" ? (v.dir === 1 ? 0 : Math.PI) : v.dir === 1 ? -Math.PI / 2 : Math.PI / 2;
@@ -442,6 +446,20 @@ export function Traffic({ state }: { state: GameState }) {
         }
       });
     }
+    // Running the traffic: only vehicles near the character are full physics bodies (they can crash, be pushed,
+    // bump things); further away they glide along their road at the speed the driving sets (kinematic), which
+    // costs the physics engine almost nothing. They become solid again as they come near.
+    if (hosting) vehicles.forEach((v, i) => {
+      const body = bodies.current[i];
+      if (!body) return;
+      const near = Math.abs(v.x - p.x) < SOLID_VEHICLE_REACH && Math.abs(v.z - p.z) < SOLID_VEHICLE_REACH;
+      if (near === solidNear.current[i]) return;
+      solidNear.current[i] = near;
+      const lin = body.linvel(), ang = body.angvel();
+      body.setBodyType(near ? rapier.RigidBodyType.Dynamic : rapier.RigidBodyType.KinematicVelocityBased, true);
+      body.setLinvel(lin, true); body.setAngvel(ang, true);
+    });
+    else solidNear.current = [];
     if (!hosting && link) {
       const got = link.latest();
       if (got) shared.push(got.snapshot, got.at);

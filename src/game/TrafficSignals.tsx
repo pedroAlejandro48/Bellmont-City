@@ -1,5 +1,6 @@
 import { useFrame } from "@react-three/fiber";
 import { CuboidCollider, RigidBody } from "@react-three/rapier";
+import { isSolidNear, useSolidBlock } from "./nearPhysics";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { CROSSWALK, SIGNALLED, SIGNAL_POLE, SIGNAL_POLES, crosswalks, signalState, stopLineFrom, streetHalfWidth } from "./config";
@@ -132,8 +133,16 @@ export function TrafficSignals({ state }: { state: GameState }) {
     {(["red", "yellow", "green"] as const).map((c) => <Instances key={`halo${c}`} geometry={geo.halo} material={assets.halo} items={assets.halos[c]} refOut={(m) => { halos.current[c] = m; }} />)}
     <Instances geometry={geo.paint} material={assets.paint} items={assets.stripes} />
     <Instances geometry={geo.paint} material={assets.paint} items={assets.stops} />
+    <SignalPoleColliders state={state} />
+  </>;
+}
+
+/** Signal poles are solid only around the character (nearPhysics). */
+function SignalPoleColliders({ state }: { state: GameState }) {
+  const block = useSolidBlock(state);
+  return <>
     <RigidBody type="fixed" colliders={false}>
-      {SIGNAL_POLES.map((s, i) => <CuboidCollider key={i} args={[0.15, SIGNAL_POLE.height / 2, 0.15]} position={[s.x, SIGNAL_POLE.height / 2, s.z]} />)}
+      {SIGNAL_POLES.map((s, i) => !isSolidNear(block, s.x, s.z) ? null : <CuboidCollider key={i} args={[0.15, SIGNAL_POLE.height / 2, 0.15]} position={[s.x, SIGNAL_POLE.height / 2, s.z]} />)}
     </RigidBody>
   </>;
 }

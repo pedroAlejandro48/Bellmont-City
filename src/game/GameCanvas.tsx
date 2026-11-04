@@ -1,3 +1,4 @@
+import * as THREE from "three";
 import { Canvas, useThree } from "@react-three/fiber";
 import { memo, startTransition, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Physics } from "@react-three/rapier";
@@ -25,7 +26,8 @@ import { PhysicsGround, RestaurantWalls } from "./PhysicsGround";
 import type { GameExtras } from "./CloudGame";
 import { lookSupport } from "./mouseLook";
 import { TouchControls } from "./TouchControls";
-import { quality, startQuality } from "./quality";
+import { autoLowerQuality, qualityChosen, quality, readQuality, softwareRendering, startQuality } from "./quality";
+import { useFrame } from "@react-three/fiber";
 
 const BLOCKED = new Set(["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
@@ -41,6 +43,33 @@ function SceneHook() {
   return null;
 }
 
+/**
+ * Keeps slow devices playable in any browser: after the first seconds (loading, first drawing), if the game runs
+ * under 30 frames a second on Medium or High and nobody picked the device speed here, it switches to Low on the
+ * spot (lower resolution, no shadows) and remembers Low for next time, when the rest of Low applies too.
+ */
+function PerformanceGuard() {
+  const gl = useThree((t) => t.gl), scene = useThree((t) => t.scene), setDpr = useThree((t) => t.setDpr);
+  const m = useRef({ start: performance.now(), frames: 0, from: 0, done: readQuality() === "low" || qualityChosen() });
+  useFrame(() => {
+    const r = m.current, now = performance.now();
+    if (r.done) return;
+    if (now - r.start < 8000 || document.hidden) { r.from = now; r.frames = 0; return; }
+    r.frames++;
+    if (now - r.from < 5000) return;
+    const fps = (r.frames * 1000) / (now - r.from);
+    r.frames = 0; r.from = now;
+    if (fps >= 30) return;
+    r.done = true;
+    setDpr(0.65);
+    gl.shadowMap.enabled = false;
+    scene.traverse((o) => { if ((o as THREE.Light).isLight && o.castShadow) o.castShadow = false; });
+    autoLowerQuality();
+    window.dispatchEvent(new CustomEvent("bellmont-notice", { detail: "lowered" }));
+  });
+  return null;
+}
+
 // HUD ticks never reconcile the physics/scene tree. Only a streamed cell does.
 const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameState; x: number; z: number; Extra?: GameExtras["Scene"] }) {
   const city = useMemo(() => generateCity(state.worldSeed, x, z), [state.worldSeed, x, z]);
@@ -50,6 +79,7 @@ const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameS
   const whole = useMemo(() => (q.farCity ? wholeCity(state.worldSeed) : { buildings: [], lamps: [] }), [state.worldSeed, q]);
   const far = useMemo(() => farCity(whole, x, z), [whole, x, z]);
   return <Canvas shadows={q.shadows} dpr={q.dpr} gl={{ antialias: q.antialias, powerPreference: "high-performance", stencil: false }} camera={{ fov: 60, near: 0.1, far: q.far }}>
+    <PerformanceGuard />
     <SkyAndLights state={state} />
     <SceneHook />
     <WorldRoads x={x} z={z} seed={state.worldSeed} />
@@ -58,7 +88,7 @@ const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameS
     <ParkLights state={state} />
     <Suspense fallback={null}>
       <Physics gravity={[0, -9.81, 0]} timeStep={1 / 60} interpolate>
-        <PhysicsGround city={city} x={x} z={z} /><RestaurantWalls city={city} /><TrafficSignals state={state} /><Pedestrians state={state} city={city} />
+        <PhysicsGround city={city} x={x} z={z} state={state} /><RestaurantWalls city={city} state={state} /><TrafficSignals state={state} /><Pedestrians state={state} city={city} />
         <RestaurantInteraction state={state} city={city} />
         <BenchInteraction state={state} /><Traffic state={state} /><Scooter state={state} /><Player state={state} city={city} />
         <Ragdoll state={state} /><CameraRig state={state} />
@@ -88,6 +118,18 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
   const [cash, setCash] = useState(state.cash);
   // First person with the pointer not yet locked: a hint to click (turning is then unlimited).
   const [fpHint, setFpHint] = useState(false);
+  /** A notice about speed: drawing without the graphics card (at the start), or switched to Low while playing. */
+  const [notice, setNotice] = useState<"software" | "lowered" | null>(() => (softwareRendering() ? "software" : null));
+  useEffect(() => {
+    const on = (e: Event) => setNotice((e as CustomEvent<"lowered">).detail);
+    window.addEventListener("bellmont-notice", on);
+    return () => window.removeEventListener("bellmont-notice", on);
+  }, []);
+  useEffect(() => {
+    if (!notice) return;
+    const id = window.setTimeout(() => setNotice(null), notice === "software" ? 20000 : 7000);
+    return () => window.clearTimeout(id);
+  }, [notice]);
   const dayBox = useRef<HTMLDivElement>(null), actionsRow = useRef<HTMLDivElement>(null);
   // Phones: keep the day box centred, unless the people count or the buttons would cover it; then it sits in the
   // middle of the space between them (shrunk a little if even that is too narrow).
@@ -229,6 +271,12 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
           </div>
         </div>
       </div>
+      {notice && <div role="status" className="hud-panel pointer-events-auto fixed left-1/2 top-16 z-30 flex max-w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 items-start gap-3 px-4 py-3 text-sm text-foreground sm:top-24">
+        <p className="flex-1 leading-snug">{notice === "software"
+          ? <>This browser is drawing the game <b>without your graphics card</b>, which makes it very slow, so it's on <b>Low</b>. To fix it in Chrome or Edge: <b>Settings → System</b>, turn on <b>“Use graphics acceleration when available”</b>, then restart the browser.</>
+          : <>The game was running slowly here, so it switched to <b>Device speed: Low</b> for smoother play. You can change it on the home page.</>}</p>
+        <button type="button" aria-label="Close" className="text-muted-foreground hover:text-foreground" onClick={() => setNotice(null)}>✕</button>
+      </div>}
       {fpHint && <div className="pointer-events-none fixed left-1/2 top-1/2 z-20 -translate-x-1/2 translate-y-10 rounded-md bg-black/55 px-3 py-1.5 text-xs font-semibold text-white">Click to look around freely</div>}
       {!dead && <TouchControls state={state} />}
       <OrderMenu state={state} />
