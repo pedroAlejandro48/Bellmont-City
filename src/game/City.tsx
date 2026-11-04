@@ -1,6 +1,8 @@
 import { useFrame } from "@react-three/fiber";
 import { quality } from "./quality";
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useSolidBlock } from "./nearPhysics";
+import { blockCenter } from "./config";
 import * as THREE from "three";
 import { BLOCK, CITY_GROUND_SIZE, SIGNAL_POLE, SIGNAL_POLES, PARK_LAMPS, PARK_LAMP_HEIGHT, SIDEWALK_H, type Building, type Prop, WORLD_HALF, cityRoadDashes, BUILDING_ENTRANCE, FACADE_STYLES, buildingLayout, type City as CityT } from "./config";
 import { buildingGeo, cityAsphalt, makeFacade, makeGlow, makeNoise, makeGroundFloor, makeBlankWall, makeBackDoor } from "./textures";
@@ -32,7 +34,18 @@ function mat4(x: number, y: number, z: number, ry = 0, sx = 1, sy = 1, sz = 1) {
 /** The rest of the city beyond the streamed neighbourhood: buildings and lamps only, so it can be seen from afar. */
 export type FarScenery = { buildings: Building[]; lamps: Prop[] };
 
-export function City({ city, far, state }: { city: CityT; far: FarScenery; state: GameState }) {
+export function City({ city, far: allFar, state }: { city: CityT; far: FarScenery; state: GameState }) {
+  // Only what the fog lets anyone see is drawn: by day it hides everything past ~320 m, at night (lit windows and
+  // lamps showing far off) it reaches much further. The far city is filtered to that reach round the character's
+  // block, refreshed as they cross blocks or as dusk and dawn change the reach (in 100 m steps).
+  const block = useSolidBlock(state);
+  const fogReach = () => Math.ceil((Math.min(quality().fogFar, 320 + state.darkness * 780) + 60) / 100) * 100;
+  const [reach, setReach] = useState(fogReach);
+  useFrame(() => { const r = fogReach(); if (r !== reach) setReach(r); });
+  const far = useMemo(() => {
+    const cx = blockCenter(block[0]), cz = blockCenter(block[1]), inReach = (x: number, z: number) => Math.max(Math.abs(x - cx), Math.abs(z - cz)) < reach;
+    return { buildings: allFar.buildings.filter((b) => inReach(b.x, b.z)), lamps: allFar.lamps.filter((l) => inReach(l.x, l.z)) };
+  }, [allFar, block, reach]);
   // Far away, a restaurant is just a building with a lit ground floor (its own storefront is only drawn nearby).
   const farBuildings = useMemo(() => far.buildings.map(({ restaurant: _r, ...b }): Building => b), [far]);
   const facadeMats = useMemo(
@@ -132,9 +145,11 @@ export function City({ city, far, state }: { city: CityT; far: FarScenery; state
 
   const m = useMemo(() => {
     const lamps = [...city.lamps, ...far.lamps];
-    const poles = lamps.map((l) => mat4(l.x, 3, l.z));
+    // Posts and arms only in the streamed neighbourhood (from further off they are a few pixels at most); the
+    // lamp heads and their pools of light everywhere in sight.
+    const poles = city.lamps.map((l) => mat4(l.x, 3, l.z));
     const out = (l: { rot: number }): [number, number] => [Math.sin(l.rot), Math.cos(l.rot)];
-    const arms = lamps.map((l) => {
+    const arms = city.lamps.map((l) => {
       const [ox, oz] = out(l);
       return mat4(l.x + ox * 0.7, 5.9, l.z + oz * 0.7, l.rot);
     });
@@ -172,6 +187,8 @@ export function City({ city, far, state }: { city: CityT; far: FarScenery; state
     for (const f of facadeMats) f.emissiveIntensity = d * 1.3;
     lampHeadMat.emissiveIntensity = d * 4;
     glowMat.opacity = d * 0.5;
+    // By day the pools of light are invisible: not drawn at all.
+    if (glowRef.current) glowRef.current.visible = d > 0.02;
     for (const g of groundMats) g.emissiveIntensity = d * 1.1;
   });
 

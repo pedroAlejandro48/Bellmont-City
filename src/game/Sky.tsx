@@ -178,7 +178,8 @@ export function SkyAndLights({ state }: { state: GameState }) {
 
   return (
     <>
-      <Environment resolution={64}><Lightformer intensity={1.5} position={[0, 8, 0]} rotation-x={Math.PI / 2} scale={[20, 20, 1]} /><Lightformer intensity={0.7} color="#abc6bb" position={[-8, 2, 0]} rotation-y={Math.PI / 2} scale={[15, 6, 1]} /></Environment>
+      {/* Soft reflections on every material (not on Low: they cost every pixel, and it looks fine without). */}
+      {quality().environment && <Environment resolution={64}><Lightformer intensity={1.5} position={[0, 8, 0]} rotation-x={Math.PI / 2} scale={[20, 20, 1]} /><Lightformer intensity={0.7} color="#abc6bb" position={[-8, 2, 0]} rotation-y={Math.PI / 2} scale={[15, 6, 1]} /></Environment>}
       <hemisphereLight ref={hemi} args={["#bcd3f0", "#3a3530", 0.5]} />
       <directionalLight ref={sun} castShadow {...shadow} />
       <directionalLight ref={moon} color="#9db5ff" {...shadow} />

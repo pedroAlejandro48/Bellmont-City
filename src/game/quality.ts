@@ -28,13 +28,15 @@ export type QualitySettings = {
   /** Real lights following the nearest street lamps, and the nearest vehicles' headlight spotlights. */
   lampLights: number;
   beams: number;
+  /** Image-based reflections on materials. */
+  environment: boolean;
 };
 
 export function qualitySettings(q: Quality): QualitySettings {
   const screen = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
-  if (q === "low") return { dpr: [0.55, 0.7], antialias: false, shadows: false, shadowMap: 512, far: 480, fogFar: 360, farCity: false, npcShare: 0.4, lampLights: 4, beams: 2 };
-  if (q === "high") return { dpr: [1, Math.max(1.25, Math.min(2, screen))], antialias: true, shadows: true, shadowMap: 4096, far: 1200, fogFar: Infinity, farCity: true, npcShare: 1, lampLights: 12, beams: 8 };
-  return { dpr: [1, 1.25], antialias: true, shadows: true, shadowMap: 2048, far: 1200, fogFar: Infinity, farCity: true, npcShare: 1, lampLights: 12, beams: 8 };
+  if (q === "low") return { dpr: [0.55, 0.7], antialias: false, shadows: false, shadowMap: 512, far: 480, fogFar: 360, farCity: false, npcShare: 0.4, lampLights: 4, beams: 2, environment: false };
+  if (q === "high") return { dpr: [1, Math.max(1.25, Math.min(2, screen))], antialias: true, shadows: true, shadowMap: 4096, far: 1200, fogFar: Infinity, farCity: true, npcShare: 1, lampLights: 12, beams: 8, environment: true };
+  return { dpr: [1, 1.25], antialias: true, shadows: true, shadowMap: 2048, far: 1200, fogFar: Infinity, farCity: true, npcShare: 1, lampLights: 12, beams: 8, environment: true };
 }
 
 /**
