@@ -25,7 +25,7 @@ export function mergeColored(root: THREE.Object3D): THREE.BufferGeometry | null 
     if (!normal) g.computeVertexNormals();
     // The part's colour (lights keep their glow colour so they still read as lights).
     colour.copy(material.color ?? new THREE.Color("#ffffff"));
-    if (material.emissive && (material.emissiveIntensity ?? 0) > 0.5) colour.copy(material.emissive);
+    if (material.emissive && (material.emissiveIntensity ?? 0) > 0.5 && material.emissive.getHex() !== 0) colour.copy(material.emissive);
     const n = g.getAttribute("position").count, c = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) { c[i * 3] = colour.r; c[i * 3 + 1] = colour.g; c[i * 3 + 2] = colour.b; }
     g.setAttribute("color", new THREE.BufferAttribute(c, 3));
