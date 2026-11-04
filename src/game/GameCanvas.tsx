@@ -70,6 +70,37 @@ function PerformanceGuard() {
   return null;
 }
 
+/**
+ * Prepares (compiles) everything the browser will need to draw, up front, so nothing stalls mid-game: once the
+ * world has loaded, every object is briefly counted as shown and the drawing code is built for each lighting
+ * the game uses — day, day by a restaurant, and night — without waiting on it. Without this, the first dusk, the
+ * first restaurant visit or the first close-up of a car would each freeze the game while that code is built.
+ */
+function Precompile() {
+  const gl = useThree((t) => t.gl), scene = useThree((t) => t.scene), camera = useThree((t) => t.camera);
+  const done = useRef(false), since = useRef(performance.now());
+  useFrame(() => {
+    if (done.current || performance.now() - since.current < 4000) return;
+    let traffic = false; scene.traverse((o) => { if (o.name === "perf:traffic") traffic = true; });
+    if (!traffic) return;
+    done.current = true;
+    const hidden: THREE.Object3D[] = [];
+    scene.traverse((o) => { if (!o.visible && !(o as THREE.Light).isLight) { hidden.push(o); o.visible = true; } });
+    const lights: THREE.Light[] = [];
+    scene.traverse((o) => { const l = o as THREE.Light; if ((l as THREE.PointLight).isPointLight || (l as THREE.SpotLight).isSpotLight) lights.push(l); });
+    const was = lights.map((l) => l.visible);
+    const restaurant = lights.filter((l) => (l as THREE.PointLight).isPointLight && (l as THREE.PointLight).distance === 11);
+    const variants: ((l: THREE.Light) => boolean)[] = [() => false, (l) => restaurant.includes(l), () => true];
+    for (const on of variants) {
+      lights.forEach((l) => { l.visible = on(l); });
+      void gl.compileAsync(scene, camera).catch(() => {});
+    }
+    lights.forEach((l, i) => { l.visible = was[i] ?? l.visible; });
+    hidden.forEach((o) => { o.visible = false; });
+  });
+  return null;
+}
+
 // HUD ticks never reconcile the physics/scene tree. Only a streamed cell does.
 const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameState; x: number; z: number; Extra?: GameExtras["Scene"] }) {
   const q = useMemo(() => startQuality(), []);
@@ -80,6 +111,7 @@ const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameS
   const far = useMemo(() => farCity(whole, x, z), [whole, x, z]);
   return <Canvas shadows={q.shadows} dpr={q.dpr} gl={{ antialias: q.antialias, powerPreference: "high-performance", stencil: false }} camera={{ fov: 60, near: 0.1, far: q.far }}>
     <PerformanceGuard />
+    <Precompile />
     {/* Each part of the scene in its own named group (no effect on the picture), so performance checks can
         measure what each costs. */}
     <group name="perf:sky"><SkyAndLights state={state} /></group>

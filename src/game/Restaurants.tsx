@@ -759,8 +759,8 @@ export function Restaurants({ city, state }: { city: City; state: GameState }) {
       const spot = spots[i];
       if (spot) light.position.set(spot[0], SIDEWALK_H + CEILING - 0.4, spot[1]);
       light.intensity = spot ? (on ? (i === 0 ? 22 : 9) : 1.2) : 0;
-      // Only near a restaurant (lighting its room); otherwise off altogether.
-      light.visible = !!spot;
+      // At night always on (so the number of lights never changes then); by day only near a restaurant.
+      light.visible = !!spot || d > 0.03;
       if (best) light.color.set(i === 0 ? INSIDE[best.kind].light : "#ffffff");
     });
   });

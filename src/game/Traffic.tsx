@@ -1,5 +1,6 @@
 import { useFrame } from "@react-three/fiber";
 import { quality } from "./quality";
+import { mergeColored } from "./mergeModel";
 import { SOLID_VEHICLE_REACH } from "./nearPhysics";
 import { useEffect, useMemo, useRef } from "react";
 import { useRapier } from "@react-three/rapier";
@@ -10,7 +11,7 @@ import { HALF, PITCH, WORLD_HALF, MAIN_ROAD_CENTER, MAIN_ROAD_WIDTH, ROAD_LANE_W
 /** How far a headlight reaches (m). */
 export const HEADLIGHT_REACH = 100;
 /** How near (m, on either axis) a vehicle is drawn in full detail; further it is a single box. */
-const VEHICLE_DETAIL_REACH = 110;
+const VEHICLE_DETAIL_REACH = 60;
 /** The pool of headlight on the road: bright by the bumper, widening and fading toward its far end. */
 function makeBeam() {
   const c = document.createElement("canvas"); c.width = 256; c.height = 128;
@@ -312,9 +313,23 @@ export function Traffic({ state }: { state: GameState }) {
   }, [vehicles]);
   const refs = useRef<(THREE.Group | null)[]>([]);
   /** Each vehicle's full model and its far stand-in (one box), swapped by distance from the character. */
-  const detail = useRef<(THREE.Group | null)[]>([]), farBox = useRef<(THREE.Mesh | null)[]>([]);
-  const farMatCache = useMemo(() => new Map<string, THREE.MeshStandardMaterial>(), []);
-  const farMats = (color: string) => { let m = farMatCache.get(color); if (!m) { m = new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.2 }); farMatCache.set(color, m); } return m; };
+  const detail = useRef<(THREE.Group | null)[]>([]), farBox = useRef<(THREE.Group | null)[]>([]);
+  // Each vehicle baked into one coloured mesh (shared by every vehicle of the same kind and paint).
+  const farMat = useMemo(() => new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.25 }), []);
+  useEffect(() => {
+    const baked = new Map<string, THREE.BufferGeometry | null>(), made: THREE.Mesh[] = [];
+    vehicles.forEach((v, i) => {
+      const from = detail.current[i], into = farBox.current[i];
+      if (!from || !into) return;
+      const key = `${v.kind}:${v.color}:${"cargo" in v ? String(v.cargo) : ""}`;
+      if (!baked.has(key)) baked.set(key, mergeColored(from));
+      const geometry = baked.get(key);
+      if (!geometry) return;
+      const mesh = new THREE.Mesh(geometry, farMat);
+      into.add(mesh); made.push(mesh);
+    });
+    return () => { made.forEach((m) => m.removeFromParent()); baked.forEach((g) => g?.dispose()); };
+  }, [vehicles, farMat]);
   useFrame(() => {
     const p = state.pos;
     vehicles.forEach((v, i) => {
@@ -843,14 +858,14 @@ export function Traffic({ state }: { state: GameState }) {
             }}
           >
             <group rotation-y={rot}>
-              {/* Near: the whole vehicle. Far (beyond VEHICLE_DETAIL_REACH): one box its colour and size. */}
+              {/* Near: the whole vehicle, part by part. Further (beyond VEHICLE_DETAIL_REACH): the same vehicle baked into one mesh. */}
               <group ref={(el) => { detail.current[i] = el; }}>
                 {v.kind === "car" && <Car color={v.color} mats={mats} />}
                 {v.kind === "taxi" && <Car color={v.color} taxi mats={mats} />}
                 {v.kind === "bus" && <Bus mats={mats} />}
                 {v.kind === "truck" && <Truck color={v.color} cargo={v.cargo} mats={mats} />}
               </group>
-              <mesh ref={(el) => { farBox.current[i] = el; }} visible={false} position={[0, VEHICLE_SIZE[v.kind][1] / 2, 0]} material={farMats(v.kind === "bus" ? "#c62828" : v.kind === "taxi" ? "#f5c518" : v.color)}><boxGeometry args={[VEHICLE_SIZE[v.kind][0], VEHICLE_SIZE[v.kind][1] * 0.8, VEHICLE_SIZE[v.kind][2]]} /></mesh>
+              <group ref={(el) => { farBox.current[i] = el; }} visible={false} />
               {/* Every vehicle's headlights light the road ahead at night, near or far (the nearest also get real spotlights). */}
               <mesh material={beamMat} position={[VEHICLE_SIZE[v.kind][0] / 2 + 20, 0.04, 0]} rotation-x={-Math.PI / 2} scale={[40, 14, 1]}><planeGeometry args={[1, 1]} /></mesh>
             </group>
