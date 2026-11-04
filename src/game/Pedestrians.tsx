@@ -500,7 +500,7 @@ const NpcView = memo(function NpcView({ npc, state }: { npc: Npc; state: GameSta
     const root = rig.root.current;
     if (!root) return;
     // Drawn only within NPC_DRAW_REACH of the camera's character (further, fog and size make them specks).
-    root.visible = npc.active && !npc.accident && Math.abs(npc.pos.x - state.pos.x) < NPC_DRAW_REACH && Math.abs(npc.pos.z - state.pos.z) < NPC_DRAW_REACH;
+    root.visible = npc.active && !npc.accident && Math.abs(npc.pos.x - state.pos.x) < NPC_DRAW_REACH * quality().detail && Math.abs(npc.pos.z - state.pos.z) < NPC_DRAW_REACH * quality().detail;
     if (npc.accident) return;
     root.position.copy(npc.pos); root.rotation.set(0, npc.yaw, 0);
     // Walking: the same stride as the player's walk; standing: a slight breath.

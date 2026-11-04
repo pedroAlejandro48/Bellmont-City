@@ -1,4 +1,5 @@
 import { Html } from "@react-three/drei";
+import { quality } from "./quality";
 import { useFrame } from "@react-three/fiber";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -378,7 +379,7 @@ export function Food({ state }: { state: GameState }) {
   // Only the restaurants nearby are drawn (all four sit around the park).
   const [near, setNear] = useState<string[]>([]);
   useFrame(() => {
-    const list = places.filter((p) => { const [x, z] = toWorld(p.room.frame, 0, 0); return Math.hypot(x - state.pos.x, z - state.pos.z) < 45; }).map((p) => p.key);
+    const list = places.filter((p) => { const [x, z] = toWorld(p.room.frame, 0, 0); return Math.hypot(x - state.pos.x, z - state.pos.z) < 45 * quality().detail; }).map((p) => p.key);
     if (list.join() !== near.join()) setNear(list);
   });
 
@@ -957,7 +958,7 @@ const DinerView = memo(function DinerView({ id, seed, state, live, byKey }: { id
     const f = pl.room.frame, [, , lx, lz, lyaw, speed, sit, hand, rx, ry, rz, reach] = row;
     const [wx, wz] = toWorld(f, lx, lz), wyaw = worldYaw(f, lyaw), lk = look.current;
     // Customers are only drawn near their restaurant (inside it is all they are ever seen).
-    root.visible = Math.hypot(wx - state.pos.x, wz - state.pos.z) < 45;
+    root.visible = Math.hypot(wx - state.pos.x, wz - state.pos.z) < 45 * quality().detail;
     // Glide between the shared updates (ten a second).
     const k = lk.ready && Math.hypot(wx - lk.x, wz - lk.z) < 3 ? 1 - Math.exp(-12 * dt) : 1;
     lk.x += (wx - lk.x) * k; lk.z += (wz - lk.z) * k; lk.yaw += Math.atan2(Math.sin(wyaw - lk.yaw), Math.cos(wyaw - lk.yaw)) * k; lk.ready = true;

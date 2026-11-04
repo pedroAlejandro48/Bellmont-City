@@ -139,7 +139,8 @@ export function SkyAndLights({ state }: { state: GameState }) {
       sun.current.intensity = sunI * 2.6;
       sun.current.color.setHSL(0.1, 0.6, 0.6 + Math.min(1, e * 2) * 0.35);
       moon.current.intensity = moonI;
-      hemi.current.intensity = sunI * 0.7;
+      // On Low there are no reflections lighting the shaded sides, so the sky light makes up for them.
+      hemi.current.intensity = sunI * (quality().environment ? 0.7 : 1.6);
       scene.environmentIntensity = sunI * 0.48;
       hemi.current.color.copy(ti.isDay ? color : NIGHT).lerp(new THREE.Color("#9fb4d8"), ti.isDay ? 0.3 : 0.4);
       const solarAngle = state.elapsed / 1200 * Math.PI * 2;

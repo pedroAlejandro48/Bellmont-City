@@ -1,4 +1,5 @@
 import { useFrame } from "@react-three/fiber";
+import { quality } from "./quality";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { BUILDING_ENTRANCE, RESTAURANTS, SIDEWALK_H, restaurantOpen, timeInfo, type Building, type City, type RestaurantKind } from "./config";
@@ -579,7 +580,7 @@ function Restaurant({ b, mats, state, ready }: { b: Building; mats: Materials; s
   const inner = useRef<THREE.Group>(null), proxy = useRef<THREE.Mesh>(null);
   useFrame(() => {
     // The interior in full only near (or inside); a plain box behind the windows from further away.
-    const near = state.interior?.key === layout.key || Math.hypot(state.pos.x - frame.ox, state.pos.z - frame.oz) < INTERIOR_REACH;
+    const near = state.interior?.key === layout.key || Math.hypot(state.pos.x - frame.ox, state.pos.z - frame.oz) < INTERIOR_REACH * quality().detail;
     if (inner.current) inner.current.visible = near;
     if (proxy.current) proxy.current.visible = !near;
     if (!near) own.inside.emissiveIntensity = state.darkness * 0.25;

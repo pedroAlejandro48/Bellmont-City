@@ -318,7 +318,8 @@ export function Traffic({ state }: { state: GameState }) {
   useFrame(() => {
     const p = state.pos;
     vehicles.forEach((v, i) => {
-      const near = Math.abs(v.x - p.x) < VEHICLE_DETAIL_REACH && Math.abs(v.z - p.z) < VEHICLE_DETAIL_REACH;
+      const reach = VEHICLE_DETAIL_REACH * quality().detail;
+      const near = Math.abs(v.x - p.x) < reach && Math.abs(v.z - p.z) < reach;
       const d = detail.current[i], f = farBox.current[i];
       if (d) d.visible = near;
       if (f) f.visible = !near;
