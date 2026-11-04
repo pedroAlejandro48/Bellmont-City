@@ -1,3 +1,4 @@
+import { useTitleBetweenObeliskAndForm } from "@/lib/fitTitle";
 import { QualityPicker } from "@/components/QualityPicker";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,7 @@ export function AuthForm({ room, onSignedIn, children }: AuthFormProps) {
     void run(async () => { await sendPasswordReset(email); setMsg("Check your email for a password reset link."); });
   }
 
+  useTitleBetweenObeliskAndForm();
   const usingEmail = mode === "up" || method === "email";
   return (
     <div className="auth-bg flex min-h-screen items-center justify-center px-4">

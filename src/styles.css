@@ -258,8 +258,8 @@
  */
 @media (orientation: landscape) {
   .auth-split { max-width: min(60rem, 100%); display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem); align-items: center; column-gap: clamp(1.5rem, 5vw, 4rem); padding-block: 1rem; }
-  .auth-split .auth-titles { text-align: left; }
-  .auth-split .auth-titles > * { text-align: left; }
+  .auth-split .auth-titles { text-align: center; justify-self: start; }
+  .auth-split .auth-titles > * { text-align: center; }
   .auth-split .auth-titles h1 { font-size: clamp(2.5rem, 6vw, 4.5rem); line-height: 1.05; }
   .auth-split .auth-box { margin-top: 0; }
 }

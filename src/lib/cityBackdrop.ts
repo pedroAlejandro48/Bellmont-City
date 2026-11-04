@@ -116,6 +116,14 @@ let url: string | null = null;
 let drawn = "";
 
 /** Draws the backdrop for the current window, and again whenever its size changes. */
+/**
+ * Where the obelisk's base ends on a screen of this size (CSS px from the left): the scene's 512-unit square is
+ * scaled to the shorter side, and the obelisk's pedestal reaches 123 units across (OX 74 + 1.25 m at its scale).
+ */
+export function obeliskRight(width: number, height: number) {
+  return 123 * (Math.min(width, height) / S);
+}
+
 export function startCityBackdrop() {
   if (typeof window === "undefined" || typeof document === "undefined") return;
   const bike = new Image();

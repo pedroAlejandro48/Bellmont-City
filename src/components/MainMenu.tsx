@@ -1,3 +1,4 @@
+import { useTitleBetweenObeliskAndForm } from "@/lib/fitTitle";
 import { QualityPicker } from "@/components/QualityPicker";
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ export function MainMenu({ username, message, onCity, onRoom, onSignOut }: { use
     onRoom({ mode: "join", code: normalized });
   }
 
+  useTitleBetweenObeliskAndForm();
   return (
     <div className="auth-bg flex min-h-screen items-center justify-center px-4">
       <QualityPicker />

@@ -1,3 +1,4 @@
+import { useTitleBetweenObeliskAndForm } from "@/lib/fitTitle";
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { usernameSchema } from "@/lib/usernames";
@@ -35,6 +36,7 @@ export function UsernameForm({ account, password, onComplete, onSignOut }: { acc
     } finally { setBusy(false); }
   }
 
+  useTitleBetweenObeliskAndForm();
   return <div className="auth-bg flex min-h-screen items-center justify-center px-4">
     <div className="auth-split w-full max-w-sm">
       <div className="auth-titles">
