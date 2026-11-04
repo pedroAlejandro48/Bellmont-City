@@ -1,4 +1,5 @@
 import { useFrame } from "@react-three/fiber";
+import { quality } from "./quality";
 import { memo, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { BENCH_SEATS, BENCH_SEAT_TOP, BIN, PARK_BINS, BENCH_SIT_SECONDS, BENCH_STAND_SECONDS, HALF, PARK_LAMPS, SIGNAL_POLES, THROW_DISTANCE, benchJoints, benchPose, blockIndex, timeInfo, circleBoxPush, floorHeight, rng, scooterFootprint, type City } from "./config";
@@ -104,7 +105,7 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
   const npcs = useMemo<Npc[]>(() => {
     const list: Npc[] = [];
     const fi = blockIndex(state.pos.x), fj = blockIndex(state.pos.z);
-    const target = npcTarget(timeInfo(state.elapsed).hours);
+    const target = Math.round(npcTarget(timeInfo(state.elapsed).hours) * quality().npcShare);
     for (let id = 0; id < NPC_MAX; id++) {
       const random = rng(state.worldSeed ^ (id * 7919 + 13));
       const npc: Npc = {
@@ -201,7 +202,7 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
     const fi = blockIndex(anchor.x), fj = blockIndex(anchor.z);
     if (link) for (const hit of link.takeHits()) { const n = npcs[hit.id]; if (n && n.active && !n.accident) n.body.hit = { direction: hit.direction }; }
     // Busier by day, quieter at night: one at a time, people come out or go home, always a block from everyone.
-    const target = npcTarget(timeInfo(state.elapsed).hours);
+    const target = Math.round(npcTarget(timeInfo(state.elapsed).hours) * quality().npcShare);
     const out = npcs.filter((n) => n.active).length;
     if (out < target) {
       const n = npcs.find((m) => !m.active);
@@ -228,6 +229,11 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
     const foodNow = state.foodView?.().packs ?? [];
     const bike = state.scooter;
     const bikeBox = scooterFootprint(bike.pos.x, bike.pos.z, bike.yaw, bike.fallen, bike.fallSide);
+    // Built once a frame for everyone (not once per person): the bikes, vehicles and players they keep clear of.
+    const frameBikes = [...state.otherBikes, ...state.parkedBikes];
+    const frameBikeBoxes = [bikeBox, ...frameBikes.map((o) => o.box)];
+    const frameBoxes = [...frameBikeBoxes, ...state.vehicles.map((v) => v.box)];
+    const framePeople = [...(playerOnFoot ? [{ x: p.x, z: p.z, r: 0.35 }] : []), ...state.others];
     for (const npc of npcs) {
       const b = npc.body;
       if (!npc.active) continue;
@@ -369,9 +375,10 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       for (const o of fixed) if (Math.abs(o.x - x) < 3 && Math.abs(o.z - z) < 3) near.push(o);
       // Bikes (ours, standing or ridden, and everyone else's) and vehicles: kept clear along their whole length.
       if (Math.abs(bike.pos.x - x) < 5 && Math.abs(bike.pos.z - z) < 5) near.push(...boxObstacles(bikeBox));
-      for (const ob of [...state.otherBikes, ...state.parkedBikes]) if (Math.abs(ob.box.x - x) < 5 && Math.abs(ob.box.z - z) < 5) near.push(...boxObstacles(ob.box));
-      const people = [...(playerOnFoot ? [{ x: p.x, z: p.z, r: 0.35 }] : []), ...state.others];
-      for (const o of people) near.push({ x: o.x, z: o.z, r: o.r });
+      for (const ob of frameBikes) if (Math.abs(ob.box.x - x) < 5 && Math.abs(ob.box.z - z) < 5) near.push(...boxObstacles(ob.box));
+      const people = framePeople;
+      // (Anyone further than a few metres can't be in the way this frame.)
+      for (const o of people) if (Math.abs(o.x - x) < 4 && Math.abs(o.z - z) < 4) near.push({ x: o.x, z: o.z, r: o.r });
       for (const other of npcs) if (other !== npc && other.active && !other.accident && Math.abs(other.pos.x - x) < 3 && Math.abs(other.pos.z - z) < 3) near.push({ x: other.pos.x, z: other.pos.z, r: NPC_RADIUS });
       for (const v of state.vehicles) if (Math.abs(v.box.x - x) < 10 && Math.abs(v.box.z - z) < 10) near.push(...boxObstacles(v.box));
 
@@ -380,8 +387,7 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       npc.speed += (pace - npc.speed) * (1 - Math.exp(-5 * dt));
       if (npc.speed > 0.02) {
         // A vehicle or bike standing in the way, however long: head for its nearer end and round it.
-        const boxes = [bikeBox, ...state.otherBikes.map((o) => o.box), ...state.parkedBikes.map((o) => o.box), ...state.vehicles.map((v) => v.box)]
-          .filter((bx) => Math.abs(bx.x - x) < 20 && Math.abs(bx.z - z) < 20);
+        const boxes = frameBoxes.filter((bx) => Math.abs(bx.x - x) < 20 && Math.abs(bx.z - z) < 20);
         npc.around = detour(x, z, target, boxes, npc.around);
         const [dx, dz, side] = steer(x, z, npc.around ?? target, near, npc.side);
         npc.side = side;
@@ -399,7 +405,7 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
         if (d < min && d > 1e-5) { npc.pos.x = o.x + ddx / d * min; npc.pos.z = o.z + ddz / d * min; }
       }
       for (const v of state.vehicles) { const [vx, vz] = circleBoxPush(npc.pos.x, npc.pos.z, NPC_RADIUS, v.box); npc.pos.x += vx; npc.pos.z += vz; }
-      for (const box of [bikeBox, ...state.otherBikes.map((o) => o.box), ...state.parkedBikes.map((o) => o.box)]) { const [bx, bz] = circleBoxPush(npc.pos.x, npc.pos.z, NPC_RADIUS, box); npc.pos.x += bx; npc.pos.z += bz; }
+      for (const box of frameBikeBoxes) { const [bx, bz] = circleBoxPush(npc.pos.x, npc.pos.z, NPC_RADIUS, box); npc.pos.x += bx; npc.pos.z += bz; }
       for (const q of people) {
         // Players are solid to them (each keeps out of NPCs); someone leaned into gives way slowly.
         const ddx = npc.pos.x - q.x, ddz = npc.pos.z - q.z, d = Math.hypot(ddx, ddz), min = NPC_RADIUS + q.r + 0.01;

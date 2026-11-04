@@ -1,3 +1,4 @@
+import { QualityPicker } from "@/components/QualityPicker";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { usernameSchema } from "@/lib/usernames";
@@ -59,6 +60,7 @@ export function AuthForm({ room, onSignedIn, children }: AuthFormProps) {
   const usingEmail = mode === "up" || method === "email";
   return (
     <div className="auth-bg flex min-h-screen items-center justify-center px-4">
+      <QualityPicker />
       <div className="auth-split w-full max-w-sm">
         <div className="auth-titles">
           <h1 className="font-display text-center text-5xl tracking-tight text-foreground">Bellmont city</h1>

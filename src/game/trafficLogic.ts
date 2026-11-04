@@ -1,6 +1,6 @@
 import { CROSSWALK, TRAFFIC_FOLLOW_GAP, brakingGap, isSignalled, nearestStreet, nextStreet, signalState, stopLineFrom, streetHalfWidth, forwardDistance, queueMayResume, roadForward, sameRoad, VEHICLE_SIZE, type RoadPath, type VehicleKind } from "./config";
 import type { RoadIncident } from "./state";
-import { pointAlongTurn, turnSample, type TrafficTurn } from "./trafficRoutes";
+import { pointAlongTurn, pointsAlongTurn, turnSample, type TrafficTurn } from "./trafficRoutes";
 
 export type TrafficAgent = RoadPath & { id: number; kind: VehicleKind; x: number; z: number; vx: number; vz: number; speed: number; heldBy: number | null; crashUntil: number; brake: boolean; turn?: unknown };
 export function holdAccidentQueue(vehicles: TrafficAgent[], source: TrafficAgent, incident: RoadIncident) {
@@ -22,11 +22,18 @@ export function trafficTargetSpeed(vehicle: TrafficAgent, all: TrafficAgent[], i
   // In a turn, a vehicle checks the path its curve will actually take, a point at a time, for anything on it.
   const myTurn = vehicle.turn as TrafficTurn | null | undefined;
   const turning = myTurn && myTurn.progress > 0.02;
-  const path = turning ? Array.from({ length: 18 }, (_, k) => ({ d: length / 2 + k * 1.2, ...pointAlongTurn(myTurn, myTurn.progress, length / 2 + k * 1.2) })) : [];
+  const path = turning ? pointsAlongTurn(myTurn, myTurn.progress, Array.from({ length: 18 }, (_, k) => length / 2 + k * 1.2)).map((at, k) => ({ d: length / 2 + k * 1.2, ...at })) : [];
   const [fx, fz] = turning ? (() => { const yaw = turnSample(myTurn, myTurn.progress).yaw; return [Math.cos(yaw), -Math.sin(yaw)]; })() : roadForward(vehicle);
+  const mySpeed = Math.hypot(vehicle.vx, vehicle.vz);
   for (const other of all) {
     if (other.id === vehicle.id) continue;
     const dx = other.x - vehicle.x; const dz = other.z - vehicle.z;
+    // Too far to follow (beyond the braking gap plus both lengths) or to meet within the 2 s looked ahead at
+    // crossings: it can't change anything below, so it is skipped without the work.
+    if (!turning) {
+      const far = Math.max(Math.abs(dx), Math.abs(dz));
+      if (far > 20 && far > brakingGap(mySpeed) + 15 && far > 2 * (mySpeed + Math.hypot(other.vx, other.vz)) + 15) continue;
+    }
     if (turning) {
       if (Math.abs(dx) > 35 || Math.abs(dz) > 35) continue;
       const otherSwinging = ((other.turn as { progress?: number } | null | undefined)?.progress ?? 0) > 0.02;
@@ -153,6 +160,8 @@ export function crossingStopDistance(me: CrossingAgent, all: readonly CrossingAg
   if (mine.toEntry < -0.3 || mine.toEntry > 45) return null;
   for (const other of all) {
     if (other.id === me.id) continue;
+    // Far from this intersection (well beyond the 30 m that counts as coming), it can't matter: skipped cheaply.
+    if (Math.abs(other.x - mine.ix) > 70 || Math.abs(other.z - mine.iz) > 70) continue;
     const from = relationOf(me, other);
     const theirs = crossingOf(other);
     if (Math.abs(theirs.ix - mine.ix) > 1 || Math.abs(theirs.iz - mine.iz) > 1) continue;

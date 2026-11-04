@@ -111,3 +111,18 @@ describe("the ring road", () => {
     expect(turnLeavesCity({ axis: "z", dir: -1, lane: 93 }, 90, 506, "left")).toBe(false);
   });
 });
+
+describe("points along a turn, walked once", () => {
+  it("gives exactly the points the one-at-a-time version does", async () => {
+    const { makeTrafficTurn, pointAlongTurn, pointsAlongTurn } = await import("@/game/trafficRoutes");
+    for (const side of ["left", "right"] as const) for (const dir of [1, -1] as const) {
+      const turn = makeTrafficTurn({ axis: "x", dir, lane: 93 * dir }, 90, side);
+      for (const from of [0, 0.1, 0.5, 0.95]) {
+        const ds = Array.from({ length: 18 }, (_, k) => 2.2 + k * 1.2);
+        const once = pointsAlongTurn(turn, from, ds);
+        expect(once.every((q) => Number.isFinite(q.x) && Number.isFinite(q.z))).toBe(true);
+        ds.forEach((d, k) => { const one = pointAlongTurn(turn, from, d); expect(once[k]!.x).toBeCloseTo(one.x, 9); expect(once[k]!.z).toBeCloseTo(one.z, 9); });
+      }
+    }
+  });
+});

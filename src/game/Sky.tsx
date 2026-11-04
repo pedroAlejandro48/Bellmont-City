@@ -1,4 +1,5 @@
 import { stepNeeds } from "./needs";
+import { quality } from "./quality";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
@@ -128,7 +129,8 @@ export function SkyAndLights({ state }: { state: GameState }) {
     fog.color.copy(color);
     // At night the haze thins out so the lit city shows all the way to the horizon.
     fog.near = 60 + ti.darkness * 140;
-    fog.far = 320 + ti.darkness * 780;
+    fog.far = Math.min(quality().fogFar, 320 + ti.darkness * 780);
+    if (fog.near > fog.far * 0.6) fog.near = fog.far * 0.6;
 
     const p = state.pos;
     if (sun.current && moon.current && hemi.current) {
@@ -163,8 +165,8 @@ export function SkyAndLights({ state }: { state: GameState }) {
   });
 
   const shadow = {
-    "shadow-mapSize-width": 2048,
-    "shadow-mapSize-height": 2048,
+    "shadow-mapSize-width": quality().shadowMap,
+    "shadow-mapSize-height": quality().shadowMap,
     "shadow-camera-left": -50,
     "shadow-camera-right": 50,
     "shadow-camera-top": 50,

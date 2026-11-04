@@ -1,3 +1,4 @@
+import { QualityPicker } from "@/components/QualityPicker";
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { normalizeRoomCode } from "@/platform/rooms";
@@ -18,6 +19,7 @@ export function MainMenu({ username, message, onCity, onRoom, onSignOut }: { use
 
   return (
     <div className="auth-bg flex min-h-screen items-center justify-center px-4">
+      <QualityPicker />
       <div className="auth-split w-full max-w-sm">
         <div className="auth-titles">
           <h1 className="font-display text-center text-5xl tracking-tight text-foreground">Bellmont city</h1>

@@ -1,4 +1,5 @@
 import { useFrame } from "@react-three/fiber";
+import { quality } from "./quality";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { BLOCK, CITY_GROUND_SIZE, SIGNAL_POLE, SIGNAL_POLES, PARK_LAMPS, PARK_LAMP_HEIGHT, SIDEWALK_H, type Building, type Prop, WORLD_HALF, cityRoadDashes, BUILDING_ENTRANCE, FACADE_STYLES, buildingLayout, type City as CityT } from "./config";
@@ -222,13 +223,14 @@ export function City({ city, far, state }: { city: CityT; far: FarScenery; state
 }
 
 /** How many real lamp lights there are (a fixed number, so turning them on and off never rebuilds shaders). */
-const LAMP_LIGHTS = 12;
 /**
  * Real point lights on the lamps (street lamps and the park's lamp posts) nearest the player, so their light
  * falls on the ground, walls and people around them. Every other lamp still glows and lights its patch of
  * ground (City draws those), wherever it is.
  */
 export function LampLights({ city, state }: { city: CityT; state: GameState }) {
+  /** How many real lights follow the nearest lamps (by device speed). */
+  const LAMP_LIGHTS = useMemo(() => quality().lampLights, []);
   const lights = useRef<(THREE.PointLight | null)[]>([]);
   const timer = useRef(0);
   const heads = useMemo(

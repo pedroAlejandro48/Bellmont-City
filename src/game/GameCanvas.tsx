@@ -25,6 +25,7 @@ import { PhysicsGround, RestaurantWalls } from "./PhysicsGround";
 import type { GameExtras } from "./CloudGame";
 import { lookSupport } from "./mouseLook";
 import { TouchControls } from "./TouchControls";
+import { quality, startQuality } from "./quality";
 
 const BLOCKED = new Set(["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
@@ -44,9 +45,11 @@ function SceneHook() {
 const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameState; x: number; z: number; Extra?: GameExtras["Scene"] }) {
   const city = useMemo(() => generateCity(state.worldSeed, x, z), [state.worldSeed, x, z]);
   // Everything else in the city, drawn (lit at night) out to the horizon.
-  const whole = useMemo(() => wholeCity(state.worldSeed), [state.worldSeed]);
+  const q = useMemo(() => startQuality(), []);
+  // (On low, none: less to build, hold in memory and draw.)
+  const whole = useMemo(() => (q.farCity ? wholeCity(state.worldSeed) : { buildings: [], lamps: [] }), [state.worldSeed, q]);
   const far = useMemo(() => farCity(whole, x, z), [whole, x, z]);
-  return <Canvas shadows dpr={[1, 1.25]} camera={{ fov: 60, near: 0.1, far: 1200 }}>
+  return <Canvas shadows={q.shadows} dpr={q.dpr} gl={{ antialias: q.antialias, powerPreference: "high-performance", stencil: false }} camera={{ fov: 60, near: 0.1, far: q.far }}>
     <SkyAndLights state={state} />
     <SceneHook />
     <WorldRoads x={x} z={z} seed={state.worldSeed} />

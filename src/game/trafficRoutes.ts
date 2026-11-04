@@ -75,6 +75,26 @@ export function progressOnTurn(turn: TrafficTurn, x: number, z: number, from: nu
   return Math.max(from, best);
 }
 
+/**
+ * The points at each of `distances` (ascending) metres further along the turn from `from`: the same as calling
+ * pointAlongTurn for each, but walking the curve only once.
+ */
+export function pointsAlongTurn(turn: TrafficTurn, from: number, distances: readonly number[]) {
+  const out: { x: number; z: number }[] = [];
+  let u = from, walked = 0, prev = turnSample(turn, from), k = 0;
+  while (k < distances.length && u < 1) {
+    const nu = Math.min(1, u + 0.02), next = turnSample(turn, nu);
+    const segment = Math.hypot(next.x - prev.x, next.z - prev.z);
+    while (k < distances.length && distances[k]! - walked <= segment) {
+      const left = distances[k]! - walked, f = segment > 0 ? left / segment : 0;
+      out.push({ x: prev.x + (next.x - prev.x) * f, z: prev.z + (next.z - prev.z) * f }); k++;
+    }
+    walked += segment; u = nu; prev = next;
+  }
+  const n = turn.next;
+  for (; k < distances.length; k++) { const left = distances[k]! - walked; out.push(n.axis === "x" ? { x: prev.x + n.dir * left, z: prev.z } : { x: prev.x, z: prev.z + n.dir * left }); }
+  return out;
+}
 /** The point `distance` metres further along the turn from parameter `from` (past its end, along the new road). */
 export function pointAlongTurn(turn: TrafficTurn, from: number, distance: number) {
   // March along the curve in small fixed steps (a turn is ~20 m long), accumulating arc length.

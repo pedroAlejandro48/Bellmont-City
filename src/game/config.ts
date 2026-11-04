@@ -168,6 +168,8 @@ export function benchStandHeight(x: number, z: number, feetY: number) {
 export const BENCH_BACKRESTS: SolidBox[] = PARK_BENCHES.map((b) => ({ x: b.x - Math.sin(b.rot) * 0.32, z: b.z - Math.cos(b.rot) * 0.32, hx: 1.25, hz: 0.0425, yaw: b.rot }));
 /** Minimum translation out of an oriented obstacle, shared by feet and bike. */
 export function circleBoxPush(x: number, z: number, radius: number, box: SolidBox): [number, number] {
+  // Clearly apart (further than the box's half-diagonal plus the radius on either axis): nothing to do.
+  if (Math.abs(x - box.x) > box.hx + box.hz + radius || Math.abs(z - box.z) > box.hx + box.hz + radius) return [0, 0];
   const c = Math.cos(box.yaw), s = Math.sin(box.yaw), dx = x - box.x, dz = z - box.z;
   const lx = dx * c - dz * s, lz = dx * s + dz * c;
   const nx = Math.max(-box.hx, Math.min(box.hx, lx)), nz = Math.max(-box.hz, Math.min(box.hz, lz));

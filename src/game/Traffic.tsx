@@ -1,11 +1,11 @@
 import { useFrame } from "@react-three/fiber";
+import { quality } from "./quality";
 import { useEffect, useMemo, useRef } from "react";
 import { useRapier } from "@react-three/rapier";
 import * as THREE from "three";
 import { HALF, PITCH, WORLD_HALF, MAIN_ROAD_CENTER, MAIN_ROAD_WIDTH, ROAD_LANE_WIDTH, STREET, roadLaneOffsets, streetCenter, nextStreet, rng, VEHICLE_SIZE, VEHICLE_MASS, VEHICLE_COLLISION_GROUPS, vehicleContactHurts, vehicleFootprint, THROW_DISTANCE, ACCIDENT_STOP_SECONDS, CRASH_STOP_SECONDS, TRAFFIC_SPEED, TRAFFIC_CORNER_SPEED, brakingGap, scooterBypassReady, wildernessCenter, roadForward, roadLeft, forwardDistance, roadLane, trafficSpawnClear, isTrafficRoad, isAvenue, isSignalled, onCrosswalk, type VehicleKind } from "./config";
 
 /** How many vehicles carry real headlight spotlights at once (the ones nearest the player). */
-const BEAMS = 8;
 /** How far a headlight reaches (m). */
 export const HEADLIGHT_REACH = 100;
 /** The pool of headlight on the road: bright by the bumper, widening and fading toward its far end. */
@@ -250,6 +250,8 @@ function exitRoad(v: Vehicle) {
 }
 
 export function Traffic({ state }: { state: GameState }) {
+  /** How many of the nearest vehicles carry real headlight spotlights (by device speed). */
+  const BEAMS = useMemo(() => quality().beams, []);
   const { world, rapier } = useRapier();
   const mats = useMats();
   const vehicles = useMemo<Vehicle[]>(() => {
