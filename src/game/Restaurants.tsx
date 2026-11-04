@@ -431,6 +431,8 @@ const FH = BUILDING_ENTRANCE.floorHeight;
 const SIGN = { w: 6.6, h: 1.34, y: 3.98, depth: 0.18 };
 /** Exterior wall panels sit this far out from the building's face, and overlap at the corners by as much. */
 const SKIN = 0.03;
+/** How near (m) a restaurant's whole interior is drawn; further, a plain box shows behind its windows. */
+const INTERIOR_REACH = 40;
 
 /** A flat panel `w` × `h` centred at (x, y, z), turned `ry` about the vertical. */
 function Panel({ x, y, z, w, h, ry = 0, material }: { x: number; y: number; z: number; w: number; h: number; ry?: number; material: THREE.Material }) {
@@ -563,6 +565,8 @@ function Restaurant({ b, mats, state, ready }: { b: Building; mats: Materials; s
       table: solid(look.table, 0.45), leg: solid(look.leg, 0.5, 0.3), chair: solid(look.chair, 0.6), seat: solid(look.seat, 0.7),
       metal: solid(look.metal, 0.35, 0.6), pot: solid(kind === "fine" ? "#1c1c1c" : kind === "pizza" ? "#b5651d" : kind === "burger" ? "#e53935" : "#f6ecd9", 0.7),
       lamp: new THREE.MeshStandardMaterial({ color: look.light, emissive: new THREE.Color(look.light), emissiveIntensity: 0 }),
+      // Seen from inside the box: the room's walls from afar (lit up a little when it's open at night).
+      inside: new THREE.MeshStandardMaterial({ color: look.wall, roughness: 0.9, side: THREE.BackSide, emissive: new THREE.Color(look.light), emissiveIntensity: 0 }),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, width, depth, b.variant, ready, look, layout]);
@@ -572,6 +576,14 @@ function Restaurant({ b, mats, state, ready }: { b: Building; mats: Materials; s
   const pieces = useRef<(THREE.Group | null)[]>([]);
   const leaves = useRef<{ left: THREE.Group | null; right: THREE.Group | null }>({ left: null, right: null });
   const arms = useRef<(THREE.Mesh | null)[]>([]);
+  const inner = useRef<THREE.Group>(null), proxy = useRef<THREE.Mesh>(null);
+  useFrame(() => {
+    // The interior in full only near (or inside); a plain box behind the windows from further away.
+    const near = state.interior?.key === layout.key || Math.hypot(state.pos.x - frame.ox, state.pos.z - frame.oz) < INTERIOR_REACH;
+    if (inner.current) inner.current.visible = near;
+    if (proxy.current) proxy.current.visible = !near;
+    if (!near) own.inside.emissiveIntensity = state.darkness * 0.25;
+  });
   useFrame(() => {
     const room = state.rooms.get(layout.key);
     const items = room?.items ?? initial;
@@ -650,6 +662,10 @@ function Restaurant({ b, mats, state, ready }: { b: Building; mats: Materials; s
     {[1, -1].map((s) => <mesh key={s} position={[s * (LEAF - 0.48), DOOR_H - 0.01, 0.07]} material={mats.closer}><boxGeometry args={[0.06, 0.05, 0.06]} /></mesh>)}
     {[0, 1, 2, 3].map((i) => <mesh key={i} ref={(el) => { arms.current[i] = el; }} material={mats.closer}><boxGeometry args={[CLOSER_ARM, 0.022, 0.03]} /></mesh>)}
 
+    {/* From further than INTERIOR_REACH, the room behind the windows is just its walls' colour (one box); the
+        whole interior (walls, kitchen, counter, furniture, decorations) is only drawn nearer than that. */}
+    <mesh ref={proxy} position={[0, CEILING / 2, -depth / 2]} material={own.inside} visible={false}><boxGeometry args={[width - 0.3, CEILING - 0.05, depth - 0.3]} /></mesh>
+    <group ref={inner}>
     {/* Dining room. */}
     <mesh position={[0, 0.004, (divFace + 0) / 2]} rotation-x={-Math.PI / 2} material={own.floor} receiveShadow><planeGeometry args={[width, -divFace]} /></mesh>
     <mesh position={[0, CEILING, -depth / 2]} rotation-x={Math.PI / 2} material={own.ceiling}><planeGeometry args={[width, depth]} /></mesh>
@@ -699,6 +715,7 @@ function Restaurant({ b, mats, state, ready }: { b: Building; mats: Materials; s
     {initial.map((it, i) => it.kind === "table"
       ? <Table key={i} material={own.table} legs={own.leg} at={(g) => { pieces.current[i] = g; }} />
       : <Chair key={i} frame={own.chair} seat={own.seat} at={(g) => { pieces.current[i] = g; }} />)}
+    </group>
   </group>;
 }
 
@@ -741,6 +758,8 @@ export function Restaurants({ city, state }: { city: City; state: GameState }) {
       const spot = spots[i];
       if (spot) light.position.set(spot[0], SIDEWALK_H + CEILING - 0.4, spot[1]);
       light.intensity = spot ? (on ? (i === 0 ? 22 : 9) : 1.2) : 0;
+      // Only near a restaurant (lighting its room); otherwise off altogether.
+      light.visible = !!spot;
       if (best) light.color.set(i === 0 ? INSIDE[best.kind].light : "#ffffff");
     });
   });

@@ -65,7 +65,7 @@ export function ParkLights({ state }: { state: GameState }) {
     assets.lantern.emissiveIntensity = d * 3.2;
     assets.lens.emissiveIntensity = d * 4;
     assets.glow.opacity = d * 0.5;
-    for (const s of spots.current) if (s) s.intensity = d * 70;
+    for (const s of spots.current) if (s) { s.intensity = d * 70; s.visible = d > 0.03; }
   });
   // Two opposite floodlights each light two faces of the obelisk.
   const lit = [OBELISK_UPLIGHTS[0]!, OBELISK_UPLIGHTS[2]!];

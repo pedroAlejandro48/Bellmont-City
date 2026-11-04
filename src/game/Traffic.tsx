@@ -9,6 +9,8 @@ import { HALF, PITCH, WORLD_HALF, MAIN_ROAD_CENTER, MAIN_ROAD_WIDTH, ROAD_LANE_W
 /** How many vehicles carry real headlight spotlights at once (the ones nearest the player). */
 /** How far a headlight reaches (m). */
 export const HEADLIGHT_REACH = 100;
+/** How near (m, on either axis) a vehicle is drawn in full detail; further it is a single box. */
+const VEHICLE_DETAIL_REACH = 110;
 /** The pool of headlight on the road: bright by the bumper, widening and fading toward its far end. */
 function makeBeam() {
   const c = document.createElement("canvas"); c.width = 256; c.height = 128;
@@ -309,6 +311,19 @@ export function Traffic({ state }: { state: GameState }) {
     (window as unknown as { __traffic?: Vehicle[] }).__traffic = vehicles;
   }, [vehicles]);
   const refs = useRef<(THREE.Group | null)[]>([]);
+  /** Each vehicle's full model and its far stand-in (one box), swapped by distance from the character. */
+  const detail = useRef<(THREE.Group | null)[]>([]), farBox = useRef<(THREE.Mesh | null)[]>([]);
+  const farMatCache = useMemo(() => new Map<string, THREE.MeshStandardMaterial>(), []);
+  const farMats = (color: string) => { let m = farMatCache.get(color); if (!m) { m = new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.2 }); farMatCache.set(color, m); } return m; };
+  useFrame(() => {
+    const p = state.pos;
+    vehicles.forEach((v, i) => {
+      const near = Math.abs(v.x - p.x) < VEHICLE_DETAIL_REACH && Math.abs(v.z - p.z) < VEHICLE_DETAIL_REACH;
+      const d = detail.current[i], f = farBox.current[i];
+      if (d) d.visible = near;
+      if (f) f.visible = !near;
+    });
+  });
   const beams = useRef<(THREE.SpotLight | null)[]>([]);
   const beamMat = useMemo(() => new THREE.MeshBasicMaterial({ map: makeBeam(), color: "#fff0cd", transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0, fog: false }), []);
   const beamTargets = useMemo(() => Array.from({ length: BEAMS }, () => new THREE.Object3D()), []);
@@ -430,6 +445,7 @@ export function Traffic({ state }: { state: GameState }) {
       light.position.set(v.x + dx * reach, v.kind === "car" || v.kind === "taxi" ? 0.78 : 0.95, v.z + dz * reach);
       target.position.set(v.x + dx * (reach + 30), 0, v.z + dz * (reach + 30)); target.updateMatrixWorld();
       light.intensity = 10 + d * 70;
+      light.visible = d > 0.03;
     });
     // ---------- in a room, run by someone else: draw their traffic, and be hit by it ----------
     const link = state.trafficLink, hosting = !link || link.isHost();
@@ -826,10 +842,14 @@ export function Traffic({ state }: { state: GameState }) {
             }}
           >
             <group rotation-y={rot}>
-              {v.kind === "car" && <Car color={v.color} mats={mats} />}
-              {v.kind === "taxi" && <Car color={v.color} taxi mats={mats} />}
-              {v.kind === "bus" && <Bus mats={mats} />}
-              {v.kind === "truck" && <Truck color={v.color} cargo={v.cargo} mats={mats} />}
+              {/* Near: the whole vehicle. Far (beyond VEHICLE_DETAIL_REACH): one box its colour and size. */}
+              <group ref={(el) => { detail.current[i] = el; }}>
+                {v.kind === "car" && <Car color={v.color} mats={mats} />}
+                {v.kind === "taxi" && <Car color={v.color} taxi mats={mats} />}
+                {v.kind === "bus" && <Bus mats={mats} />}
+                {v.kind === "truck" && <Truck color={v.color} cargo={v.cargo} mats={mats} />}
+              </group>
+              <mesh ref={(el) => { farBox.current[i] = el; }} visible={false} position={[0, VEHICLE_SIZE[v.kind][1] / 2, 0]} material={farMats(v.kind === "bus" ? "#c62828" : v.kind === "taxi" ? "#f5c518" : v.color)}><boxGeometry args={[VEHICLE_SIZE[v.kind][0], VEHICLE_SIZE[v.kind][1] * 0.8, VEHICLE_SIZE[v.kind][2]]} /></mesh>
               {/* Every vehicle's headlights light the road ahead at night, near or far (the nearest also get real spotlights). */}
               <mesh material={beamMat} position={[VEHICLE_SIZE[v.kind][0] / 2 + 20, 0.04, 0]} rotation-x={-Math.PI / 2} scale={[40, 14, 1]}><planeGeometry args={[1, 1]} /></mesh>
             </group>

@@ -199,9 +199,9 @@ export function City({ city, far, state }: { city: CityT; far: FarScenery; state
       <instancedMesh ref={roofRef} args={[undefined, roofMat, 2048]} castShadow><boxGeometry args={[1, 1, 1]} /></instancedMesh>
       {groundMats.map((mat, i) => <instancedMesh key={`g${i}`} ref={(mesh) => { groundRefs.current[i] = mesh; }} args={[unitPlane, mat, 1024]} receiveShadow />)}
       <instancedMesh ref={backDoorRef} args={[unitPlane, backDoorMat, 128]} receiveShadow />
-      <Restaurants city={city} state={state} />
-      <Trees trees={city.trees} />
-      {city.blocks.some((b) => b.x === 0 && b.z === 0) && <Park />}
+      <group name="perf:restaurants"><Restaurants city={city} state={state} /></group>
+      <group name="perf:trees"><Trees trees={city.trees} state={state} /></group>
+      {city.blocks.some((b) => b.x === 0 && b.z === 0) && <group name="perf:parkprops"><Park /></group>}
 
       {/* street lights */}
       <instancedMesh ref={poleRef} args={[undefined, undefined, 4096]} castShadow>
@@ -252,7 +252,8 @@ export function LampLights({ city, state }: { city: CityT; state: GameState }) {
         .slice(0, LAMP_LIGHTS);
       sorted.forEach(([h], i) => lights.current[i]?.position.copy(h));
     }
-    for (const l of lights.current) if (l) l.intensity = state.darkness * 28;
+    // By day they are switched off altogether (a light at zero still costs every lit pixel its sums).
+    for (const l of lights.current) if (l) { l.intensity = state.darkness * 28; l.visible = state.darkness > 0.03; }
   });
   return (
     <>

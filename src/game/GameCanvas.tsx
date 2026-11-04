@@ -36,7 +36,7 @@ function SceneHook() {
   const scene = useThree((t) => t.scene), camera = useThree((t) => t.camera), gl = useThree((t) => t.gl);
   useEffect(() => {
     if (import.meta.env["VITE_TRAFFIC_AUDIT"] !== "1") return;
-    Object.assign(window, { __scene: scene, __camera: camera });
+    Object.assign(window, { __scene: scene, __camera: camera, __gl: gl });
     // ?norender: run the game without drawing it, so logic checks see a realistic frame rate.
     if (new URLSearchParams(location.search).has("norender")) gl.render = () => {};
   }, [scene, camera, gl]);
@@ -80,20 +80,26 @@ const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameS
   const far = useMemo(() => farCity(whole, x, z), [whole, x, z]);
   return <Canvas shadows={q.shadows} dpr={q.dpr} gl={{ antialias: q.antialias, powerPreference: "high-performance", stencil: false }} camera={{ fov: 60, near: 0.1, far: q.far }}>
     <PerformanceGuard />
-    <SkyAndLights state={state} />
+    {/* Each part of the scene in its own named group (no effect on the picture), so performance checks can
+        measure what each costs. */}
+    <group name="perf:sky"><SkyAndLights state={state} /></group>
     <SceneHook />
-    <WorldRoads x={x} z={z} seed={state.worldSeed} />
-    <City city={city} far={far} state={state} />
-    <LampLights city={city} state={state} />
-    <ParkLights state={state} />
+    <group name="perf:roads"><WorldRoads x={x} z={z} seed={state.worldSeed} /></group>
+    <group name="perf:city"><City city={city} far={far} state={state} /></group>
+    <group name="perf:lamplights"><LampLights city={city} state={state} /></group>
+    <group name="perf:park"><ParkLights state={state} /></group>
     <Suspense fallback={null}>
       <Physics gravity={[0, -9.81, 0]} timeStep={1 / 60} interpolate>
-        <PhysicsGround city={city} x={x} z={z} state={state} /><RestaurantWalls city={city} state={state} /><TrafficSignals state={state} /><Pedestrians state={state} city={city} />
+        <PhysicsGround city={city} x={x} z={z} state={state} /><RestaurantWalls city={city} state={state} />
+        <group name="perf:signals"><TrafficSignals state={state} /></group>
+        <group name="perf:npcs"><Pedestrians state={state} city={city} /></group>
         <RestaurantInteraction state={state} city={city} />
-        <BenchInteraction state={state} /><Traffic state={state} /><Scooter state={state} /><Player state={state} city={city} />
-        <Ragdoll state={state} /><CameraRig state={state} />
-        {Extra && <Extra state={state} />}
-        <Food state={state} />
+        <BenchInteraction state={state} />
+        <group name="perf:traffic"><Traffic state={state} /></group>
+        <group name="perf:player"><Scooter state={state} /><Player state={state} city={city} /><Ragdoll state={state} /></group>
+        <CameraRig state={state} />
+        {Extra && <group name="perf:room"><Extra state={state} /></group>}
+        <group name="perf:food"><Food state={state} /></group>
       </Physics>
     </Suspense>
   </Canvas>;

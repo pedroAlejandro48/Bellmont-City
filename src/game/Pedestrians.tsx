@@ -15,6 +15,8 @@ import { CROSS_SPEED, NPC_APPEAR_DISTANCE, boxObstacles, cornerPoint, detour, pa
 const NPC_RANGE = 170;
 /** How quickly a standing person gives way when leaned into (m/s): a slow shove. */
 const SHOVE = 0.8;
+/** People further than this (m, on either axis) from the character aren't drawn (they still walk about). */
+const NPC_DRAW_REACH = 85;
 
 type ParkVisit = {
   corner: number; seat: number; stage: "in" | "bench" | "out";
@@ -497,7 +499,8 @@ const NpcView = memo(function NpcView({ npc, state }: { npc: Npc; state: GameSta
   useFrame(() => {
     const root = rig.root.current;
     if (!root) return;
-    root.visible = npc.active && !npc.accident;
+    // Drawn only within NPC_DRAW_REACH of the camera's character (further, fog and size make them specks).
+    root.visible = npc.active && !npc.accident && Math.abs(npc.pos.x - state.pos.x) < NPC_DRAW_REACH && Math.abs(npc.pos.z - state.pos.z) < NPC_DRAW_REACH;
     if (npc.accident) return;
     root.position.copy(npc.pos); root.rotation.set(0, npc.yaw, 0);
     // Walking: the same stride as the player's walk; standing: a slight breath.
