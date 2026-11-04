@@ -1,3 +1,4 @@
+import { guideDone, lifeEvent } from "./lifeRuntime";
 import { Html } from "@react-three/drei";
 import { quality } from "./quality";
 import { useFrame } from "@react-three/fiber";
@@ -68,6 +69,7 @@ export function Food({ state }: { state: GameState }) {
 
   useFrame(() => {
     const link: FoodLink = state.foodLink ?? local;
+    state.foodSend = link.send;
     const me = link.me(), nowS = Date.now() / 1000, m = mine.current;
     const inter = state.interior, here = inter && inter.phase !== "leaving" ? inter.key : null;
     if (here !== m.inside) { m.inside = here; link.setInside(here); }
@@ -298,6 +300,7 @@ export function Food({ state }: { state: GameState }) {
     if (eat && st - eat.at >= EAT_SECONDS) {
       const pk = view.packs.find((p) => p.id === eat.pack), price = pk ? priceOf(kindOf(pk), eat.item)?.price ?? 0 : 0;
       const after = consume(state, eat.item, price);
+      lifeEvent(state, "eat", 1); guideDone(state, 2);
       state.hunger = after.hunger; state.thirst = after.thirst;
       link.send({ type: "ate", pack: eat.pack, item: eat.item });
       // Until the shared state shows it gone, that item is not started again.

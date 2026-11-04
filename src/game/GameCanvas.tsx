@@ -26,6 +26,11 @@ import { PhysicsGround, RestaurantWalls } from "./PhysicsGround";
 import type { GameExtras } from "./CloudGame";
 import { lookSupport } from "./mouseLook";
 import { TouchControls } from "./TouchControls";
+import { LifeWorld } from "./LifeWorld";
+import { Billboards } from "./Billboards";
+import { LevelBadge, Phone, RouteHint, Toasts } from "@/components/Phone";
+import { HomeView } from "./HomeView";
+import { guideDone } from "./lifeRuntime";
 import { autoLowerQuality, qualityChosen, quality, readQuality, softwareRendering, startQuality } from "./quality";
 import { useFrame } from "@react-three/fiber";
 
@@ -40,6 +45,16 @@ function SceneHook() {
     // ?norender: run the game without drawing it, so logic checks see a realistic frame rate.
     if (new URLSearchParams(location.search).has("norender")) gl.render = () => {};
   }, [scene, camera, gl]);
+  return null;
+}
+
+/**
+ * Draws the city each frame, except while the player is inside their home (a full-screen view of its own): the
+ * city keeps living (traffic, people, the clock) but costs nothing to draw. Taking over drawing (priority 1) also
+ * means three draws exactly once per frame, after every other update.
+ */
+function RenderGate({ state }: { state: GameState }) {
+  useFrame((s) => { if (!state.home) s.gl.render(s.scene, s.camera); }, 1);
   return null;
 }
 
@@ -112,6 +127,7 @@ const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameS
   return <Canvas shadows={q.shadows} dpr={q.dpr} gl={{ antialias: q.antialias, powerPreference: "high-performance", stencil: false }} camera={{ fov: 60, near: 0.1, far: q.far }}>
     <PerformanceGuard />
     <Precompile />
+    <RenderGate state={state} />
     {/* Each part of the scene in its own named group (no effect on the picture), so performance checks can
         measure what each costs. */}
     <group name="perf:sky"><SkyAndLights state={state} /></group>
@@ -120,6 +136,7 @@ const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameS
     <group name="perf:city"><City city={city} far={far} state={state} /></group>
     <group name="perf:lamplights"><LampLights city={city} state={state} /></group>
     <group name="perf:park"><ParkLights state={state} /></group>
+    <group name="perf:billboards"><Billboards state={state} /></group>
     <Suspense fallback={null}>
       <Physics gravity={[0, -9.81, 0]} timeStep={1 / 60} interpolate>
         <PhysicsGround city={city} x={x} z={z} state={state} /><RestaurantWalls city={city} state={state} />
@@ -132,6 +149,7 @@ const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameS
         <CameraRig state={state} />
         {Extra && <group name="perf:room"><Extra state={state} /></group>}
         <group name="perf:food"><Food state={state} /></group>
+        <group name="perf:life"><LifeWorld state={state} /></group>
       </Physics>
     </Suspense>
   </Canvas>;
@@ -233,6 +251,10 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
+      // The phone: P opens and closes it, Escape closes it; while it's open the character stays put.
+      if (e.code === "KeyP" && !e.repeat) { state.phone = state.phone.open ? { open: false, app: null, atm: false } : { open: true, app: null, atm: false }; if (state.phone.open) { state.keys.clear(); guideDone(state, 0); } e.preventDefault(); return; }
+      if (e.code === "Escape" && state.phone.open) { state.phone = { open: false, app: null, atm: false }; return; }
+      if (state.phone.open || state.home) return;
       if (BLOCKED.has(e.code)) e.preventDefault();
       if (state.health === 0 || state.accident) return;
       if (e.code === "KeyE" && !e.repeat) { state.interactQueued = true; e.preventDefault(); }
@@ -307,6 +329,11 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
               ${cashText}
             </span>
           </div>
+          <LevelBadge state={state} />
+          <button type="button" className="hud-panel phone-button pointer-events-auto" aria-label="Open phone (P)" onClick={() => { state.phone = state.phone.open ? { open: false, app: null, atm: false } : { open: true, app: null, atm: false }; if (state.phone.open) { state.keys.clear(); guideDone(state, 0); } }}>
+            <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden><rect x="6" y="2" width="12" height="20" rx="2.5" fill="none" stroke="currentColor" strokeWidth="2" /><circle cx="12" cy="18" r="1.2" fill="currentColor" /></svg>
+            <span>P</span>
+          </button>
         </div>
       </div>
       {notice && <div role="status" className="hud-panel pointer-events-auto fixed left-1/2 top-16 z-30 flex max-w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 items-start gap-3 px-4 py-3 text-sm text-foreground sm:top-24">
@@ -318,6 +345,10 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
       {fpHint && <div className="pointer-events-none fixed left-1/2 top-1/2 z-20 -translate-x-1/2 translate-y-10 rounded-md bg-black/55 px-3 py-1.5 text-xs font-semibold text-white">Click to look around freely</div>}
       {!dead && <TouchControls state={state} />}
       <OrderMenu state={state} />
+      <RouteHint state={state} />
+      <Toasts state={state} />
+      <Phone state={state} />
+      {!dead && <HomeView state={state} />}
       <div ref={fade} className="pointer-events-none fixed inset-0 z-30 bg-black" style={{ opacity: 0 }} aria-hidden />
       {dead && (
         <div role="alert" className="death-screen pointer-events-auto fixed inset-0 z-20 flex items-center justify-center">

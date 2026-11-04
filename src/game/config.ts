@@ -516,6 +516,8 @@ export type SaveData = {
   /** 0..100: how fed and how watered the character is. */
   hunger?: number;
   thirst?: number;
+  /** Bank, loans, levels, skills, goals, home and jobs (life.ts `Life`; read with readLife). */
+  life?: unknown;
 };
 /** Every character starts with this much money. */
 export const STARTING_CASH = 200;

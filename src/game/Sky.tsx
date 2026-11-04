@@ -6,11 +6,16 @@ import * as THREE from "three";
 import { GAME_MINUTE, rng, timeInfo } from "./config";
 import { Environment, Lightformer } from "@react-three/drei";
 import type { GameState } from "./state";
+import { weatherAt } from "./weather";
+import { Rain } from "./Rain";
 
 const DAY = new THREE.Color("#8cbfe9");
 const DUSK = new THREE.Color("#f0a46c");
 const TWILIGHT = new THREE.Color("#3a2c4a");
 const NIGHT = new THREE.Color("#060a17");
+const OVERCAST = new THREE.Color("#8d96a3");
+const OVERCAST_NIGHT = new THREE.Color("#0b0e15");
+const FOGGY = new THREE.Color("#b7bec7");
 
 function canvas(size: number) {
   const c = document.createElement("canvas");
@@ -126,21 +131,29 @@ export function SkyAndLights({ state }: { state: GameState }) {
     } else {
       color.copy(TWILIGHT).lerp(NIGHT, Math.min(1, e * 6));
     }
+    // Weather: clouds grey the sky (less so at night), fog and rain pull the haze in.
+    const w = weatherAt(state.elapsed, state.worldSeed);
+    state.weather = w;
+    const grey = Math.max(w.clouds * 0.75 + w.rain * 0.15, w.fog * 0.85);
+    if (grey > 0) color.lerp(ti.isDay ? (w.fog > w.clouds ? FOGGY : OVERCAST) : OVERCAST_NIGHT, grey * (ti.isDay ? 1 : 0.5));
     fog.color.copy(color);
     // At night the haze thins out so the lit city shows all the way to the horizon.
     fog.near = 60 + ti.darkness * 140;
     fog.far = Math.min(quality().fogFar, 320 + ti.darkness * 780);
+    const thick = Math.max(w.fog, w.rain * 0.55);
+    if (thick > 0) { fog.near *= 1 - thick * 0.8; fog.far *= 1 - thick * 0.62; }
     if (fog.near > fog.far * 0.6) fog.near = fog.far * 0.6;
 
     const p = state.pos;
     if (sun.current && moon.current && hemi.current) {
       const sunI = 1 - ti.darkness;
       const moonI = ti.darkness * (0.18 + e * 0.32);
-      sun.current.intensity = sunI * 2.6;
+      // Under cloud the sun is dimmer and the shadows softer (the sky light makes up some of it).
+      sun.current.intensity = sunI * 2.6 * (1 - grey * 0.6);
       sun.current.color.setHSL(0.1, 0.6, 0.6 + Math.min(1, e * 2) * 0.35);
       moon.current.intensity = moonI;
       // On Low there are no reflections lighting the shaded sides, so the sky light makes up for them.
-      hemi.current.intensity = sunI * (quality().environment ? 0.7 : 1.6);
+      hemi.current.intensity = sunI * (quality().environment ? 0.7 : 1.6) * (1 - grey * 0.2);
       scene.environmentIntensity = sunI * 0.48;
       hemi.current.color.copy(ti.isDay ? color : NIGHT).lerp(new THREE.Color("#9fb4d8"), ti.isDay ? 0.3 : 0.4);
       const solarAngle = state.elapsed / 1200 * Math.PI * 2;
@@ -157,6 +170,8 @@ export function SkyAndLights({ state }: { state: GameState }) {
       const away = Math.min(450, quality().far * 0.85);
       const body = new THREE.Vector3().copy(camera.position).addScaledVector(dir, away);
       sunMesh.current.visible = ti.isDay;
+      // Behind cloud the sun and moon fade (a glow is left in thin cloud).
+      bodies.sun.opacity = 1 - grey * 0.92; bodies.halo.opacity = 0.85 * (1 - grey * 0.9); bodies.moon.opacity = 1 - grey * 0.85; bodies.moon.transparent = grey > 0.01;
       moonMesh.current.visible = !ti.isDay;
       const shown = ti.isDay ? sunMesh.current : moonMesh.current;
       // Nearer, smaller in proportion: the same size in the sky either way.
@@ -164,7 +179,7 @@ export function SkyAndLights({ state }: { state: GameState }) {
     }
     if (stars.current) {
       stars.current.position.copy(camera.position);
-      starMat.opacity = ti.darkness;
+      starMat.opacity = ti.darkness * (1 - grey);
       stars.current.rotation.y = state.elapsed * 0.002;
     }
   });
@@ -198,6 +213,7 @@ export function SkyAndLights({ state }: { state: GameState }) {
         <mesh material={bodies.moon} rotation={[0.3, -1.2, 0]}><sphereGeometry args={[20, 32, 24]} /></mesh>
       </group>
       <points ref={stars} geometry={starGeo} material={starMat} />
+      <Rain state={state} />
     </>
   );
 }

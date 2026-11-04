@@ -1,3 +1,4 @@
+import { ATMS } from "./places";
 import { useFrame } from "@react-three/fiber";
 import { quality } from "./quality";
 import { memo, useEffect, useMemo, useRef } from "react";
@@ -135,6 +136,7 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
     ...city.lamps.map((l) => ({ x: l.x, z: l.z, r: 0.15 })),
     ...SIGNAL_POLES.map((s) => ({ x: s.x, z: s.z, r: 0.15 })),
     ...PARK_LAMPS.map((l) => ({ x: l.x, z: l.z, r: 0.12 })),
+    ...ATMS.map((a) => ({ x: a.x, z: a.z, r: 0.5 })),
   ], [city]);
 
   /** A reach under way: the hand out and back, the request made as it gets there. */

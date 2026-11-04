@@ -1,3 +1,4 @@
+import type { Weather } from "./weather";
 import * as THREE from "three";
 import type { Room, SitPlan } from "./restaurantRoom";
 import type { NpcLink } from "./pedestrians";
@@ -5,6 +6,8 @@ import type { FoodLink, Mode, PackKind } from "./food";
 import type { TrafficLink } from "./trafficShare";
 import type { DoorLink } from "./doors";
 import type { BodyRig } from "./CharacterBody";
+import { readLife, type JobId, type Life } from "./life";
+import { timeInfo } from "./config";
 import { THROW_DISTANCE, healthAfterImpact, type SaveData, type SolidBox, type VehicleKind, type RoadPath, GET_UP_SECONDS, KNOCKDOWN_SECONDS, floorHeight, BENCH_SEATS, STARTING_CASH } from "./config";
 
 export type Accident = {
@@ -102,6 +105,8 @@ export type GameState = {
   touchLook: { fingers: number; releasedAt: number };
   worldSeed: number;
   darkness: number;
+  /** The weather now (from the clock and the world seed; set by the sky each frame). */
+  weather: Weather;
   keys: Set<string>;
   jumpQueued: boolean;
   simulationTime: number;
@@ -136,6 +141,20 @@ export type GameState = {
   /** Shown when the player can use a restaurant door, so the bike's hint stays out of the way. */
   doorPrompt: boolean;
   cash: number;
+  /** Bank, levels, skills, goals, home (saved whole). */
+  life: Life;
+  /** Messages popping in at the top of the screen (pay, level up, goals done). */
+  toasts: { id: number; title: string; body?: string; kind: "money" | "level" | "quest" | "info" | "warn"; at: number }[];
+  /** Where the GPS is guiding the player (a job's next stop, or a place picked on the map). */
+  waypoint: { x: number; z: number; label: string } | null;
+  /** The phone: open or not, and which app (opened by P or the phone button, or by an ATM). */
+  phone: { open: boolean; app: string | null; atm: boolean };
+  /** The job under way (not saved: it ends with the session). */
+  job: ActiveJob | null;
+  /** Inside the player's home (its own little world below the city), and where to come back out. */
+  home: { returnTo: [number, number]; returnYaw: number } | null;
+  /** Busking right now: since when, and the tips so far. */
+  busking: { since: number; tips: number; nextTip: number } | null;
   /** The NPCs around the player this frame (Pedestrians keeps them; Traffic and Player bump into them). */
   npcs: NpcBody[];
   /** In a multiplayer room: how the NPCs are shared with the others (null playing alone). */
@@ -161,6 +180,8 @@ export type GameState = {
   eating: { pack: number; item: string; at: number; drink: boolean } | null;
   /** A scripted movement from the food side (walking up to a bin and throwing things in). */
   foodScript: Script | null;
+  /** Sends a request to the shared food (set by Food every frame), for things outside it (the home fridge). */
+  foodSend: ((req: import("./food").FoodRequest) => void) | null;
   /** Everyone's door uses as RestaurantInteraction sees them (its clock), for customers who aren't players. */
   doorUsesNow: ((key: string, leaf: "left" | "right") => import("./doors").DoorUse[]) | null;
   /** Customers' door uses, on RestaurantInteraction's clock (so the doors swing for them too). */
@@ -203,6 +224,7 @@ export function createState(save: SaveData): GameState {
     touchLook: { fingers: 0, releasedAt: -Infinity },
     worldSeed: save.worldSeed ?? 1337,
     darkness: 0,
+    weather: { kind: "clear", clouds: 0, rain: 0, fog: 0 },
     keys: new Set(),
     jumpQueued: false,
     simulationTime: 0,
@@ -219,9 +241,11 @@ export function createState(save: SaveData): GameState {
     vehiclePushes: new Map(),
     rooms: new Map(), interior: null, seat: null, script: null, standQueued: false, fade: 0, fadeInAt: null, doorPrompt: false,
     cash: Math.max(0, save.cash ?? STARTING_CASH),
+    life: readLife(save.life, timeInfo(save.elapsed).day),
+    toasts: [], waypoint: null, phone: { open: false, app: null, atm: false }, job: null, home: null, busking: null,
     npcs: [], npcLink: null,
     trafficLink: null, doorLink: null, bikePushes: new Map(), takenChairs: new Set(),
-    foodLink: null, hands: { left: null, right: null }, grab: null, drop: null, dropQueued: false, staffBodies: [], put: null, eating: null, foodScript: null, doorUsesNow: null, npcDoorUses: [], npcAdopt: [], foodHandle: null, foodTransfer: null, pedHolders: new Set(), foodView: null, foodUi: { open: false, key: null, kind: null, note: null }, foodOrder: null, remoteRigs: new Map(),
+    foodLink: null, hands: { left: null, right: null }, grab: null, drop: null, dropQueued: false, staffBodies: [], put: null, eating: null, foodScript: null, foodSend: null, doorUsesNow: null, npcDoorUses: [], npcAdopt: [], foodHandle: null, foodTransfer: null, pedHolders: new Set(), foodView: null, foodUi: { open: false, key: null, kind: null, note: null }, foodOrder: null, remoteRigs: new Map(),
     seatOccupants: new Map(save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? [[save.benchSeat, "player"]] : []),
     bench: save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? { seat: save.benchSeat, phase: "seated", startedAt: 0, origin: new THREE.Vector3(...save.pos), originYaw: save.rotY } : null,
     scooter: {
@@ -236,14 +260,25 @@ export function createState(save: SaveData): GameState {
   };
 }
 
+/** A job in progress: where to collect, where to deliver, and when it began. */
+export type ActiveJob = { id: JobId; stage: "pickup" | "deliver"; from: [number, number]; to: [number, number]; label: string; startedAt: number; metres: number };
+
+let toastId = 1;
+/** Pops a message in at the top of the screen. */
+export function toast(state: GameState, title: string, kind: GameState["toasts"][number]["kind"] = "info", body?: string) {
+  state.toasts.push({ id: toastId++, title, kind, at: performance.now(), ...(body ? { body } : {}) });
+  if (state.toasts.length > 4) state.toasts.shift();
+}
+
 export function toSave(s: GameState): SaveData {
   return {
     health: s.health,
     elapsed: s.elapsed,
     // Saved inside a restaurant, the game comes back just outside its door.
-    pos: s.interior ? [s.interior.outside[0], s.pos.y, s.interior.outside[1]] : [s.pos.x, s.pos.y, s.pos.z],
+    pos: s.home ? [s.home.returnTo[0], 0.15, s.home.returnTo[1]] : s.interior ? [s.interior.outside[0], s.pos.y, s.interior.outside[1]] : [s.pos.x, s.pos.y, s.pos.z],
     rotY: s.interior ? s.interior.outsideYaw : s.rotY,
     cash: s.cash,
+    life: s.life,
     hunger: Math.round(s.hunger * 100) / 100,
     thirst: Math.round(s.thirst * 100) / 100,
     camYaw: s.camYaw,

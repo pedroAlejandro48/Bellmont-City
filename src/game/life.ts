@@ -1,0 +1,247 @@
+// Life in the city (pure, testable): money in the bank, loans and credit, taxes and bills, experience and
+// levels, skills, daily goals and the first-day guide, jobs' pay, and a home. The game state keeps one `Life`;
+// the save keeps it whole.
+
+/** Skills that grow by doing things. */
+export const SKILLS = ["fitness", "riding", "work", "charm"] as const;
+export type Skill = (typeof SKILLS)[number];
+export const SKILL_NAMES: Record<Skill, string> = { fitness: "Fitness", riding: "Riding", work: "Work ethic", charm: "Charm" };
+
+export type Txn = { day: number; label: string; amount: number };
+export type Quest = { id: QuestId; goal: number; progress: number; done: boolean; reward: number };
+export type QuestId = "eat" | "ride" | "earn" | "work" | "walk" | "atm" | "park";
+
+export type Home = { kind: HomeKind; building: [number, number]; since: number } | null;
+export type HomeKind = "studio" | "loft";
+
+export type Life = {
+  /** Money in the bank (cash is kept on the character, separately). */
+  bank: number;
+  /** What is owed to the bank, and when the next repayment falls due (game day). */
+  loan: number;
+  /** 300..850, as real credit scores: paying on time raises it, missing payments drops it. */
+  credit: number;
+  xp: number;
+  skills: Record<Skill, number>;
+  /** Today's goals (rolled each game day) and the day they belong to. */
+  quests: Quest[];
+  questDay: number;
+  /** First-day guide: which step the new player is on (GUIDE.length = finished). */
+  guide: number;
+  home: Home;
+  /** The last game day bills were charged on. */
+  billedDay: number;
+  /** Food kept in the fridge at home (menu item names). */
+  fridge: string[];
+  /** Recent money movements, newest first. */
+  ledger: Txn[];
+  /** Totals for the profile and the leaderboard. */
+  earned: number;
+  jobsDone: number;
+};
+
+export function newLife(day = 1): Life {
+  return {
+    bank: 300, loan: 0, credit: 650, xp: 0,
+    skills: { fitness: 0, riding: 0, work: 0, charm: 0 },
+    quests: rollQuests(day), questDay: day, guide: 0, home: null, billedDay: day, fridge: [], ledger: [],
+    earned: 0, jobsDone: 0,
+  };
+}
+
+/** Reads a saved life defensively (unknown or broken fields fall back to a fresh one's). */
+export function readLife(value: unknown, day = 1): Life {
+  const base = newLife(day);
+  if (!value || typeof value !== "object") return base;
+  const v = value as Record<string, unknown>;
+  const num = (k: string, lo: number, hi: number, d: number) => (typeof v[k] === "number" && Number.isFinite(v[k]) ? Math.max(lo, Math.min(hi, v[k] as number)) : d);
+  const skills = { ...base.skills };
+  if (v["skills"] && typeof v["skills"] === "object") for (const s of SKILLS) { const x = (v["skills"] as Record<string, unknown>)[s]; if (typeof x === "number" && Number.isFinite(x)) skills[s] = Math.max(0, x); }
+  const home = v["home"] && typeof v["home"] === "object" ? (v["home"] as Home) : null;
+  const quests = Array.isArray(v["quests"]) ? (v["quests"] as Quest[]).filter((q) => q && typeof q.id === "string" && typeof q.goal === "number") : base.quests;
+  return {
+    bank: num("bank", 0, 1e9, base.bank), loan: num("loan", 0, 1e9, 0), credit: num("credit", 300, 850, base.credit), xp: num("xp", 0, 1e9, 0),
+    skills, quests, questDay: num("questDay", 0, 1e9, day), guide: num("guide", 0, GUIDE.length, 0),
+    home: home && (home.kind === "studio" || home.kind === "loft") && Array.isArray(home.building) ? home : null,
+    billedDay: num("billedDay", 0, 1e9, day),
+    fridge: Array.isArray(v["fridge"]) ? (v["fridge"] as unknown[]).filter((x): x is string => typeof x === "string").slice(0, 12) : [],
+    ledger: Array.isArray(v["ledger"]) ? (v["ledger"] as Txn[]).filter((t) => t && typeof t.amount === "number").slice(0, 30) : [],
+    earned: num("earned", 0, 1e12, 0), jobsDone: num("jobsDone", 0, 1e9, 0),
+  };
+}
+
+const round = (n: number) => Math.round(n * 100) / 100;
+export function record(life: Life, day: number, label: string, amount: number) {
+  life.ledger.unshift({ day, label, amount: round(amount) });
+  if (life.ledger.length > 30) life.ledger.length = 30;
+}
+
+// ---------- levels ----------
+/** Experience needed to go from level n to n + 1 (gentle at first, steeper later). */
+export const xpForLevel = (level: number) => 100 + (level - 1) * 60;
+/** The level for a total of experience, and progress (0..1) toward the next. */
+export function levelOf(xp: number) {
+  let level = 1, left = xp;
+  while (left >= xpForLevel(level)) { left -= xpForLevel(level); level++; }
+  return { level, into: left, need: xpForLevel(level), progress: left / xpForLevel(level) };
+}
+/** Adds experience; returns the new level if it went up. */
+export function gainXp(life: Life, amount: number): number | null {
+  const before = levelOf(life.xp).level;
+  life.xp += Math.max(0, Math.round(amount));
+  const after = levelOf(life.xp).level;
+  return after > before ? after : null;
+}
+export const skillLevel = (points: number) => Math.min(10, Math.floor(Math.sqrt(points / 25)));
+export function gainSkill(life: Life, skill: Skill, points: number): number | null {
+  const before = skillLevel(life.skills[skill]);
+  life.skills[skill] += points;
+  const after = skillLevel(life.skills[skill]);
+  return after > before ? after : null;
+}
+
+// ---------- pay, taxes ----------
+export const INCOME_TAX = 0.1;
+/** Gross pay for a job, with the work-skill bonus (up to +50%), and what is kept after tax. */
+export function payslip(base: number, workSkill: number) {
+  const gross = round(base * (1 + skillLevel(workSkill) * 0.05));
+  const tax = round(gross * INCOME_TAX);
+  return { gross, tax, net: round(gross - tax) };
+}
+
+// ---------- the bank ----------
+/** How much the bank will lend: grows with credit score and level. */
+export function loanLimit(life: Life) {
+  const { level } = levelOf(life.xp);
+  return Math.max(0, Math.round(((life.credit - 500) * 8 + level * 150) / 50) * 50);
+}
+export const LOAN_RATE = 0.02; // per game day
+export const SAVINGS_RATE = 0.002; // per game day
+
+export function deposit(life: Life, cash: number, amount: number, day: number) {
+  const a = round(Math.min(amount, cash));
+  if (a <= 0) return { ok: false as const, cash };
+  life.bank = round(life.bank + a); record(life, day, "Cash deposit", a);
+  return { ok: true as const, cash: round(cash - a) };
+}
+export function withdraw(life: Life, cash: number, amount: number, day: number) {
+  const a = round(Math.min(amount, life.bank));
+  if (a <= 0) return { ok: false as const, cash };
+  life.bank = round(life.bank - a); record(life, day, "Cash withdrawal", -a);
+  return { ok: true as const, cash: round(cash + a) };
+}
+export function borrow(life: Life, amount: number, day: number) {
+  const a = Math.min(amount, loanLimit(life) - life.loan);
+  if (a <= 0) return false;
+  life.loan = round(life.loan + a); life.bank = round(life.bank + a); record(life, day, "Loan", a);
+  return true;
+}
+export function repay(life: Life, amount: number, day: number) {
+  const a = round(Math.min(amount, life.loan, life.bank));
+  if (a <= 0) return false;
+  life.loan = round(life.loan - a); life.bank = round(life.bank - a); record(life, day, "Loan repayment", -a);
+  life.credit = Math.min(850, life.credit + Math.ceil(a / 100));
+  return true;
+}
+
+// ---------- homes and bills ----------
+export const HOMES: Record<HomeKind, { name: string; rent: number; deposit: number; utilities: number; minLevel: number }> = {
+  studio: { name: "Studio apartment", rent: 40, deposit: 80, utilities: 6, minLevel: 1 },
+  loft: { name: "City loft", rent: 110, deposit: 220, utilities: 12, minLevel: 4 },
+};
+/** Phone bill and the like, for everyone. */
+export const BASE_BILL = 3;
+
+/** Each new game day (at 6 am): rent, utilities and loan interest come out of the bank, savings earn interest. */
+export function dailyBills(life: Life, day: number) {
+  const lines: Txn[] = [];
+  for (let d = life.billedDay + 1; d <= day; d++) {
+    const interest = round(life.bank * SAVINGS_RATE);
+    if (interest > 0) { life.bank = round(life.bank + interest); lines.push({ day: d, label: "Savings interest", amount: interest }); }
+    const charges: [string, number][] = [["Phone plan", BASE_BILL]];
+    if (life.home) { const h = HOMES[life.home.kind]; charges.push(["Rent", h.rent], ["Utilities", h.utilities]); }
+    if (life.loan > 0) charges.push(["Loan interest", round(life.loan * LOAN_RATE)]);
+    for (const [label, amount] of charges) {
+      if (life.bank >= amount) { life.bank = round(life.bank - amount); lines.push({ day: d, label, amount: -amount }); life.credit = Math.min(850, life.credit + 1); }
+      else {
+        // Not enough in the bank: it goes on the loan, and the credit score suffers.
+        life.loan = round(life.loan + amount); lines.push({ day: d, label: `${label} (unpaid, added to loan)`, amount: 0 }); life.credit = Math.max(300, life.credit - 15);
+      }
+    }
+  }
+  life.billedDay = Math.max(life.billedDay, day);
+  for (const l of lines.reverse()) { life.ledger.unshift(l); }
+  if (life.ledger.length > 30) life.ledger.length = 30;
+  return lines;
+}
+export function rentHome(life: Life, kind: HomeKind, building: [number, number], day: number) {
+  const h = HOMES[kind];
+  if (levelOf(life.xp).level < h.minLevel) return "level" as const;
+  if (life.bank < h.deposit) return "money" as const;
+  life.bank = round(life.bank - h.deposit); record(life, day, `${h.name}: deposit`, -h.deposit);
+  life.home = { kind, building, since: day };
+  return "ok" as const;
+}
+export function leaveHome(life: Life, day: number) {
+  if (!life.home) return;
+  const h = HOMES[life.home.kind];
+  life.bank = round(life.bank + h.deposit / 2); record(life, day, "Deposit returned (half)", h.deposit / 2);
+  life.home = null; life.fridge = [];
+}
+
+// ---------- daily goals ----------
+const QUEST_POOL: Omit<Quest, "progress" | "done">[] = [
+  { id: "eat", goal: 2, reward: 15 }, { id: "ride", goal: 1000, reward: 20 }, { id: "earn", goal: 60, reward: 25 },
+  { id: "work", goal: 2, reward: 30 }, { id: "walk", goal: 600, reward: 15 }, { id: "atm", goal: 1, reward: 10 }, { id: "park", goal: 1, reward: 10 },
+];
+export const QUEST_TEXT: Record<QuestId, (q: Quest) => string> = {
+  eat: (q) => `Eat or drink ${q.goal} things`,
+  ride: (q) => `Ride a bike ${q.goal / 1000} km`,
+  earn: (q) => `Earn $${q.goal} from work`,
+  work: (q) => `Finish ${q.goal} jobs`,
+  walk: (q) => `Walk ${q.goal} m`,
+  atm: () => "Use an ATM",
+  park: () => "Sit on a bench in the park",
+};
+/** Three goals for a game day, the same for everyone on that day. */
+export function rollQuests(day: number): Quest[] {
+  let s = (day * 2654435761) >>> 0;
+  const rand = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  const pool = [...QUEST_POOL], out: Quest[] = [];
+  while (out.length < 3 && pool.length) { const q = pool.splice(Math.floor(rand() * pool.length), 1)[0]!; out.push({ ...q, progress: 0, done: false }); }
+  return out;
+}
+/** Moves a goal along; returns the goals finished by this step (their reward is paid by the caller). */
+export function progressQuest(life: Life, id: QuestId, amount: number): Quest[] {
+  const finished: Quest[] = [];
+  for (const q of life.quests) {
+    if (q.id !== id || q.done) continue;
+    q.progress = Math.min(q.goal, q.progress + amount);
+    if (q.progress >= q.goal) { q.done = true; finished.push(q); }
+  }
+  return finished;
+}
+
+// ---------- the first-day guide ----------
+export const GUIDE = [
+  { text: "Open your phone (P, or the phone button)", hint: "Everything you own and can do is in it." },
+  { text: "Take cash out at an ATM (marked on the map)", hint: "Walk up to one and press E." },
+  { text: "Buy something to eat at a restaurant", hint: "Restaurants face the park." },
+  { text: "Do a job from the Jobs app", hint: "Courier gigs are the easiest start." },
+  { text: "Rent a home from the Home app", hint: "Sleep there and keep food in the fridge." },
+] as const;
+
+// ---------- jobs ----------
+export type JobId = "courier" | "delivery" | "busker";
+export const JOBS: Record<JobId, { name: string; code: string; blurb: string; base: number; minLevel: number; needsBike?: boolean }> = {
+  courier: { name: "Courier gig", code: "J14", blurb: "Pick up a parcel and walk it to the address. Paid by distance.", base: 14, minLevel: 1 },
+  delivery: { name: "Bike delivery", code: "J2", blurb: "Collect a take-out order at a restaurant and ride it to the customer. Tips for speed.", base: 24, minLevel: 2, needsBike: true },
+  busker: { name: "Street performer", code: "J13", blurb: "Play music at the park's spot; people walking past drop tips.", base: 0, minLevel: 1 },
+};
+/** Pay for carrying something `metres` in `seconds` (a tip for beating the expected time). */
+export function deliveryPay(job: JobId, metres: number, seconds: number) {
+  const base = JOBS[job].base + metres * (job === "delivery" ? 0.06 : 0.05);
+  const expected = metres / (job === "delivery" ? 6 : 1.6) + 20;
+  const tip = seconds < expected ? Math.min(base * 0.5, (expected - seconds) * 0.2) : 0;
+  return { base: round(base), tip: round(tip) };
+}

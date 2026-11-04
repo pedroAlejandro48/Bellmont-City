@@ -1,3 +1,4 @@
+import { ATMS } from "./places";
 import { useFrame } from "@react-three/fiber";
 import { POLES, carryElbow, reachArm } from "./arms";
 import { DROP_TIME, EAT_SECONDS, GRAB_TIME, PACK_SIZE, dropReach, grabReach } from "./food";
@@ -78,6 +79,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
         ...city.lamps.map((l) => ({ x: l.x, z: l.z, r: 0.15 })),
         ...SIGNAL_POLES.map((l) => ({ x: l.x, z: l.z, r: 0.15 })),
         ...PARK_BINS.map((b) => ({ x: b.x, z: b.z, r: BIN.r })),
+        ...ATMS.map((a) => ({ x: a.x, z: a.z, r: 0.45 })),
       ],
     }),
     [city],

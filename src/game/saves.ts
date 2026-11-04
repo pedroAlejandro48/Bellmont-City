@@ -18,6 +18,7 @@ export function readSave(value: unknown): SaveData {
     cash: Math.max(0, number("cash", DEFAULT_SAVE.cash ?? 200)),
     hunger: Math.max(0, Math.min(100, number("hunger", 100))),
     thirst: Math.max(0, Math.min(100, number("thirst", 100))),
+    ...(data['life'] && typeof data['life'] === 'object' ? { life: data['life'] } : {}),
     pos: [...pos], rotY: number("rotY", DEFAULT_SAVE.rotY), camYaw: number("camYaw", DEFAULT_SAVE.camYaw),
     ...(data['accident'] ? { accident: readAccident(data['accident']) } : {}),
   };
