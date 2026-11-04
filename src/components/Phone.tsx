@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Banknote, Briefcase, CircleUser, Home as HomeIcon, ListChecks, Map as MapIcon, X } from "lucide-react";
 import { HALF, blockCenter, formatClock, generateCity, timeInfo, BLOCK } from "@/game/config";
-import { GUIDE, HOMES, JOBS, QUEST_TEXT, SKILLS, SKILL_NAMES, borrow, deposit, leaveHome, levelOf, loanLimit, rentHome, repay, skillLevel, withdraw, type HomeKind, type JobId } from "@/game/life";
+import { FINE_DAYS, finesOwed, payFines, GUIDE, HOMES, JOBS, QUEST_TEXT, SKILLS, SKILL_NAMES, borrow, deposit, leaveHome, levelOf, loanLimit, rentHome, repay, skillLevel, withdraw, type HomeKind, type JobId } from "@/game/life";
 import { canStart, quitJob, startJob } from "@/game/jobs";
 import { ATMS, BUSK_SPOT, doorOf, homeBuilding } from "@/game/places";
 import { guideDone, lifeEvent } from "@/game/lifeRuntime";
 import { toast, type GameState } from "@/game/state";
 import { WEATHER_NAME } from "@/game/weather";
+import { SHOPS, shopPlaces } from "@/game/shops";
 
 const money = (n: number) => `$${n.toFixed(2)}`;
 const APPS = [
@@ -77,6 +78,11 @@ function BankApp({ state, atm }: { state: GameState; atm: boolean }) {
         <button type="button" className="phone-btn ghost" disabled={state.cash < 0.01} onClick={() => { state.cash = deposit(life, state.cash, state.cash, day).cash; refresh(); }}>Deposit all cash</button>
       </div>
     </> : <p className="phone-note">For cash, use an ATM (they're on the park's sidewalks; see the Map).</p>}
+    {life.fines.length > 0 && <>
+      <p className="phone-label">Tickets</p>
+      <div className="phone-stat"><span>{life.fines.length} unpaid (due within {FINE_DAYS} days)</span><b className="bad">{money(finesOwed(life))}</b></div>
+      <button type="button" className="phone-btn" disabled={life.bank < finesOwed(life)} onClick={() => { if (payFines(life, day)) toast(state, "Fines paid", "money"); refresh(); }}>Pay all tickets</button>
+    </>}
     <p className="phone-label">Credit and loans</p>
     <div className="phone-stat"><span>Credit score</span><b className={life.credit >= 700 ? "good" : life.credit < 580 ? "bad" : ""}>{life.credit}</b></div>
     <div className="phone-stat"><span>Loan</span><b>{money(life.loan)}</b></div>
@@ -112,6 +118,7 @@ function JobsApp({ state, onDone }: { state: GameState; onDone: () => void }) {
 function MapApp({ state, onPick }: { state: GameState; onPick: () => void }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const city = useMemo(() => generateCity(state.worldSeed, 0, 0), [state.worldSeed]);
+  const shops = useMemo(() => shopPlaces(state.worldSeed), [state.worldSeed]);
   const span = blockCenter(4) + BLOCK / 2 + 10;
   useEffect(() => {
     const c = canvas.current; if (!c) return;
@@ -128,6 +135,7 @@ function MapApp({ state, onPick }: { state: GameState; onPick: () => void }) {
       city.buildings.filter((b) => b.restaurant).forEach((b) => dot(b.x, b.z, "#ff9f43", 5));
       ATMS.forEach((a) => dot(a.x, a.z, "#4fb3ff", 3.5));
       dot(BUSK_SPOT.x, BUSK_SPOT.z, "#ffd166", 3.5);
+      shops.forEach((s) => { dot(s.door.x, s.door.z, "#ffffff", 5); dot(s.door.x, s.door.z, SHOPS[s.kind].color === "#ffffff" ? "#d62f3a" : SHOPS[s.kind].color, 3.6); });
       const home = state.life.home ? homeBuilding(state.worldSeed, state.life.home.kind) : null;
       if (home) { const d = doorOf(home); dot(d.x, d.z, "#b388ff", 5.5); }
       const w = state.waypoint;
@@ -139,7 +147,7 @@ function MapApp({ state, onPick }: { state: GameState; onPick: () => void }) {
     draw();
     const id = window.setInterval(draw, 300);
     return () => window.clearInterval(id);
-  }, [city, span, state]);
+  }, [city, shops, span, state]);
   const pick = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const r = e.currentTarget.getBoundingClientRect(), s = r.width / (2 * span);
     const x = (e.clientX - r.left - r.width / 2) / s, z = (e.clientY - r.top - r.height / 2) / s;
@@ -149,7 +157,7 @@ function MapApp({ state, onPick }: { state: GameState; onPick: () => void }) {
   };
   return <>
     <canvas ref={canvas} className="phone-map" width={600} height={600} onPointerDown={pick} />
-    <div className="phone-legend"><span><i style={{ background: "#ff9f43" }} />Restaurants</span><span><i style={{ background: "#4fb3ff" }} />ATMs</span><span><i style={{ background: "#b388ff" }} />Home</span><span><i style={{ background: "#ffd166" }} />Busking</span></div>
+    <div className="phone-legend"><span><i style={{ background: "#ff9f43" }} />Restaurants</span><span><i style={{ background: "#4fb3ff" }} />ATMs</span><span><i style={{ background: "#b388ff" }} />Home</span><span><i style={{ background: "#ffd166" }} />Busking</span><span><i style={{ background: "#fff", boxShadow: "inset 0 0 0 3px #2e9d5b" }} />Shops</span></div>
     <p className="phone-note">Tap the map to set a route. </p>
     {state.waypoint && <button type="button" className="phone-btn ghost" onClick={() => { state.waypoint = null; }}>Clear route</button>}
   </>;
@@ -216,6 +224,8 @@ function ProfileApp({ state }: { state: GameState }) {
     <div className="phone-stat"><span>Earned from work</span><b>{money(life.earned)}</b></div>
     <div className="phone-stat"><span>Jobs done</span><b>{life.jobsDone}</b></div>
     <div className="phone-stat"><span>Credit score</span><b>{life.credit}</b></div>
+    <div className="phone-stat"><span>Criminal record</span><b className={life.record ? "bad" : "good"}>{life.record || "Clean"}</b></div>
+    <div className="phone-stat"><span>Health plan</span><b>{life.insured ? "On" : "None"}</b></div>
   </>;
 }
 

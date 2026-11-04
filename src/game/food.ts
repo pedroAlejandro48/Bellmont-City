@@ -49,7 +49,7 @@ export const MENU_BOARDS: Record<RestaurantKind, { sections: MenuBoardSection[];
 const DRINKS = new Set([
   "Espresso", "Americano", "Cappuccino", "Latte", "Mocha", "Cold Brew",
   "San Pellegrino", "Sencha Green Tea", "Sake (glass)",
-  "Vanilla Shake", "Chocolate Shake", "Strawberry Shake", "Fountain Soda", "Bottled Water",
+  "Vanilla Shake", "Chocolate Shake", "Strawberry Shake", "Fountain Soda", "Bottled Water", "Orange Juice",
 ]);
 export const isDrinkName = (name: string) => DRINKS.has(name);
 /** Bottled water comes in a bottle (everything else to drink in a lidded cup). */

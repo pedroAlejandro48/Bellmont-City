@@ -38,14 +38,26 @@ export type Life = {
   /** Totals for the profile and the leaderboard. */
   earned: number;
   jobsDone: number;
+  /** Unpaid tickets (paid at the police station or in the Bank app; overdue ones go on the loan and the record). */
+  fines: Fine[];
+  /** Convictions: overdue fines; each one lowers what the bank will lend. */
+  record: number;
+  /** The health plan (a daily premium; hospital care is free while it's on). */
+  insured: boolean;
+  /** The character's outfit colour and the bike's paint, once bought (null: as they came). */
+  outfit: string | null;
+  bikePaint: string | null;
+  /** The last game day of a gym workout (one a day). */
+  workoutDay: number;
 };
+export type Fine = { day: number; reason: string; amount: number };
 
 export function newLife(day = 1): Life {
   return {
     bank: 300, loan: 0, credit: 650, xp: 0,
     skills: { fitness: 0, riding: 0, work: 0, charm: 0 },
     quests: rollQuests(day), questDay: day, guide: 0, home: null, billedDay: day, fridge: [], ledger: [],
-    earned: 0, jobsDone: 0,
+    earned: 0, jobsDone: 0, fines: [], record: 0, insured: false, outfit: null, bikePaint: null, workoutDay: 0,
   };
 }
 
@@ -67,6 +79,11 @@ export function readLife(value: unknown, day = 1): Life {
     fridge: Array.isArray(v["fridge"]) ? (v["fridge"] as unknown[]).filter((x): x is string => typeof x === "string").slice(0, 12) : [],
     ledger: Array.isArray(v["ledger"]) ? (v["ledger"] as Txn[]).filter((t) => t && typeof t.amount === "number").slice(0, 30) : [],
     earned: num("earned", 0, 1e12, 0), jobsDone: num("jobsDone", 0, 1e9, 0),
+    fines: Array.isArray(v["fines"]) ? (v["fines"] as Fine[]).filter((f) => f && typeof f.amount === "number" && typeof f.day === "number").slice(0, 20) : [],
+    record: num("record", 0, 100, 0), insured: v["insured"] === true,
+    outfit: typeof v["outfit"] === "string" && /^#[0-9a-f]{6}$/i.test(v["outfit"]) ? v["outfit"] : null,
+    bikePaint: typeof v["bikePaint"] === "string" && /^#[0-9a-f]{6}$/i.test(v["bikePaint"]) ? v["bikePaint"] : null,
+    workoutDay: num("workoutDay", 0, 1e9, 0),
   };
 }
 
@@ -113,7 +130,8 @@ export function payslip(base: number, workSkill: number) {
 /** How much the bank will lend: grows with credit score and level. */
 export function loanLimit(life: Life) {
   const { level } = levelOf(life.xp);
-  return Math.max(0, Math.round(((life.credit - 500) * 8 + level * 150) / 50) * 50);
+  // A criminal record costs $200 of borrowing each.
+  return Math.max(0, Math.round(((life.credit - 500) * 8 + level * 150 - life.record * 200) / 50) * 50);
 }
 export const LOAN_RATE = 0.02; // per game day
 export const SAVINGS_RATE = 0.002; // per game day
@@ -159,6 +177,7 @@ export function dailyBills(life: Life, day: number) {
     const interest = round(life.bank * SAVINGS_RATE);
     if (interest > 0) { life.bank = round(life.bank + interest); lines.push({ day: d, label: "Savings interest", amount: interest }); }
     const charges: [string, number][] = [["Phone plan", BASE_BILL]];
+    if (life.insured) charges.push(["Health plan", HEALTH_PLAN]);
     if (life.home) { const h = HOMES[life.home.kind]; charges.push(["Rent", h.rent], ["Utilities", h.utilities]); }
     if (life.loan > 0) charges.push(["Loan interest", round(life.loan * LOAN_RATE)]);
     for (const [label, amount] of charges) {
@@ -169,11 +188,46 @@ export function dailyBills(life: Life, day: number) {
       }
     }
   }
+  // Tickets left unpaid FINE_DAYS days go on the loan with a 25% surcharge, and on the record.
+  const overdue = life.fines.filter((f) => day - f.day >= FINE_DAYS);
+  if (overdue.length) {
+    const owed = round(overdue.reduce((a, f) => a + f.amount, 0) * 1.25);
+    life.fines = life.fines.filter((f) => day - f.day < FINE_DAYS);
+    life.loan = round(life.loan + owed); life.record += overdue.length; life.credit = Math.max(300, life.credit - 40 * overdue.length);
+    lines.push({ day, label: `Overdue fines (+25%, added to loan)`, amount: 0 });
+  }
   life.billedDay = Math.max(life.billedDay, day);
   for (const l of lines.reverse()) { life.ledger.unshift(l); }
   if (life.ledger.length > 30) life.ledger.length = 30;
   return lines;
 }
+/** The health plan's daily premium, and how many days a ticket can wait before it goes on the record. */
+export const HEALTH_PLAN = 4;
+export const FINE_DAYS = 3;
+
+// ---------- law ----------
+export function addFine(life: Life, day: number, reason: string, amount: number) {
+  life.fines.unshift({ day, reason, amount: round(amount) });
+  if (life.fines.length > 20) life.fines.length = 20;
+}
+export const finesOwed = (life: Life) => round(life.fines.reduce((a, f) => a + f.amount, 0));
+/** Pays every ticket from the bank, if there's enough; true if paid. */
+export function payFines(life: Life, day: number) {
+  const owed = finesOwed(life);
+  if (owed <= 0 || life.bank < owed) return false;
+  life.bank = round(life.bank - owed); record(life, day, `Fines paid (${life.fines.length})`, -owed); life.fines = [];
+  return true;
+}
+
+// ---------- spending ----------
+/** Pays `amount` with cash first, then the bank card; false (nothing taken) if both together aren't enough. */
+export function spend(life: Life, cash: number, amount: number, day: number, label: string): { ok: boolean; cash: number } {
+  if (cash + life.bank < amount - 1e-9) return { ok: false, cash };
+  const fromCash = Math.min(cash, amount), fromBank = round(amount - fromCash);
+  if (fromBank > 0) { life.bank = round(life.bank - fromBank); record(life, day, `${label} (card)`, -fromBank); }
+  return { ok: true, cash: round(cash - fromCash) };
+}
+
 export function rentHome(life: Life, kind: HomeKind, building: [number, number], day: number) {
   const h = HOMES[kind];
   if (levelOf(life.xp).level < h.minLevel) return "level" as const;
@@ -232,11 +286,12 @@ export const GUIDE = [
 ] as const;
 
 // ---------- jobs ----------
-export type JobId = "courier" | "delivery" | "busker";
+export type JobId = "courier" | "delivery" | "busker" | "clerk";
 export const JOBS: Record<JobId, { name: string; code: string; blurb: string; base: number; minLevel: number; needsBike?: boolean }> = {
   courier: { name: "Courier gig", code: "J14", blurb: "Pick up a parcel and walk it to the address. Paid by distance.", base: 14, minLevel: 1 },
   delivery: { name: "Bike delivery", code: "J2", blurb: "Collect a take-out order at a restaurant and ride it to the customer. Tips for speed.", base: 24, minLevel: 2, needsBike: true },
   busker: { name: "Street performer", code: "J13", blurb: "Play music at the park's spot; people walking past drop tips.", base: 0, minLevel: 1 },
+  clerk: { name: "Shop clerk", code: "J10", blurb: "Restock the shelves at Fresh Market in a 40-second shift. Paid per shelf.", base: 6, minLevel: 1 },
 };
 /** Pay for carrying something `metres` in `seconds` (a tip for beating the expected time). */
 export function deliveryPay(job: JobId, metres: number, seconds: number) {

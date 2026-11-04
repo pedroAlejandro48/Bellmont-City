@@ -28,6 +28,7 @@ import { lookSupport } from "./mouseLook";
 import { TouchControls } from "./TouchControls";
 import { LifeWorld } from "./LifeWorld";
 import { Billboards } from "./Billboards";
+import { ShopPanel } from "@/components/ShopPanel";
 import { LevelBadge, Phone, RouteHint, Toasts } from "@/components/Phone";
 import { HomeView } from "./HomeView";
 import { guideDone } from "./lifeRuntime";
@@ -254,7 +255,8 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
       // The phone: P opens and closes it, Escape closes it; while it's open the character stays put.
       if (e.code === "KeyP" && !e.repeat) { state.phone = state.phone.open ? { open: false, app: null, atm: false } : { open: true, app: null, atm: false }; if (state.phone.open) { state.keys.clear(); guideDone(state, 0); } e.preventDefault(); return; }
       if (e.code === "Escape" && state.phone.open) { state.phone = { open: false, app: null, atm: false }; return; }
-      if (state.phone.open || state.home) return;
+      if (e.code === "Escape" && state.shop) { state.shop = null; return; }
+      if (state.phone.open || state.home || state.shop) return;
       if (BLOCKED.has(e.code)) e.preventDefault();
       if (state.health === 0 || state.accident) return;
       if (e.code === "KeyE" && !e.repeat) { state.interactQueued = true; e.preventDefault(); }
@@ -347,7 +349,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
       <OrderMenu state={state} />
       <RouteHint state={state} />
       <Toasts state={state} />
-      <Phone state={state} />
+      <Phone state={state} /><ShopPanel state={state} />
       {!dead && <HomeView state={state} />}
       <div ref={fade} className="pointer-events-none fixed inset-0 z-30 bg-black" style={{ opacity: 0 }} aria-hidden />
       {dead && (

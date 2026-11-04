@@ -1,9 +1,11 @@
+import { useCharacterColor } from "./characterColor";
+import { foodValue } from "./shops";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { RESTAURANTS, timeInfo, type RestaurantKind } from "./config";
+import { timeInfo } from "./config";
 import { CharacterBody, useBodyRig } from "./CharacterBody";
-import { isDrinkName, menuOf } from "./food";
+import { isDrinkName } from "./food";
 import { HOMES } from "./life";
 import { lifeEvent } from "./lifeRuntime";
 import { canConsume, consume } from "./needs";
@@ -27,11 +29,6 @@ const SPOTS = {
 };
 type Spot = keyof typeof SPOTS;
 
-/** What a menu item cost (for its nutrition), wherever it is sold. */
-function priceAnywhere(name: string) {
-  for (const k of Object.keys(RESTAURANTS) as RestaurantKind[]) for (const s of menuOf(k)) for (const it of s.items) if (it.name === name) return it.price;
-  return 4;
-}
 
 /**
  * Home: the player's apartment, shown over the city (which keeps running, undrawn). Walk with the same keys or
@@ -124,7 +121,7 @@ function FridgePanel({ state, onClose }: { state: GameState; onClose: () => void
   const eat = (i: number) => {
     const name = life.fridge[i]!;
     if (!canConsume(state, name)) { toast(state, isDrinkName(name) ? "Not thirsty" : "You're full", "warn"); return; }
-    const after = consume(state, name, priceAnywhere(name));
+    const after = consume(state, name, foodValue(name));
     state.hunger = after.hunger; state.thirst = after.thirst;
     life.fridge.splice(i, 1);
     lifeEvent(state, "eat", 1);
@@ -143,6 +140,7 @@ function Apartment({ state, pos, keys, interact, onNear, onUse, busy }: {
   state: GameState; pos: React.RefObject<{ x: number; z: number; yaw: number; speed: number }>; keys: React.RefObject<Set<string>>; interact: React.RefObject<boolean>;
   onNear: (s: Spot | null) => void; onUse: (s: Spot) => void; busy: boolean;
 }) {
+  const color = useCharacterColor(state);
   const rig = useBodyRig();
   const { camera } = useThree();
   const nearRef = useRef<Spot | null>(null), phase = useRef(0);
@@ -270,7 +268,7 @@ function Apartment({ state, pos, keys, interact, onNear, onUse, busy }: {
         nothing stands between the camera and you. */}
     <mesh material={m.door} position={[SPOTS.door.x, 0.012, D / 2 - 0.4]} rotation-x={-Math.PI / 2}><planeGeometry args={[1.2, 0.7]} /></mesh>
     <mesh material={m.door} position={[SPOTS.door.x, 0.03, D / 2 - 0.02]}><boxGeometry args={[1.1, 0.06, 0.1]} /></mesh>
-    <CharacterBody rig={rig} color={state.bodyColor} />
+    <CharacterBody rig={rig} color={color} />
   </>;
 }
 

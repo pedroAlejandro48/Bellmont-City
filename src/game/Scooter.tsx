@@ -9,7 +9,7 @@ import { crashBike, type GameState } from "./state";
 import { BIKE_SHOVE_SPEED } from "./config";
 
 /** What the model reads to draw lights and steering; a remote player's scooter passes its own copy. */
-export type ScooterLook = { darkness: number; scooter: { riding: boolean; steering: number; braking: boolean } };
+export type ScooterLook = { darkness: number; scooter: { riding: boolean; steering: number; braking: boolean }; life?: { bikePaint: string | null } };
 
 export function ScooterModel({ state, headlight = true, frontRef }: { state: ScooterLook; headlight?: boolean; frontRef?: (group: THREE.Group | null) => void }) {
   const tail = useRef<THREE.MeshStandardMaterial>(null);
@@ -19,6 +19,7 @@ export function ScooterModel({ state, headlight = true, frontRef }: { state: Sco
     // Headlight only while ridden.
     const on = state.scooter.riding;
     if (beam.current) { beam.current.intensity = on ? 10 + state.darkness * 70 : 0; beam.current.visible = state.darkness > 0.03; }
+    materials.paint.color.set(state.life?.bikePaint ?? "#27877b");
     materials.light.emissiveIntensity = on ? 0.65 + state.darkness * 2.5 : 0; if (front.current) front.current.rotation.y = state.scooter.steering; if (tail.current) tail.current.emissiveIntensity = state.scooter.braking ? 5 : 0.65; });
   const materials = useMemo(() => ({
     paint: new THREE.MeshStandardMaterial({ color: "#27877b", metalness: 0.45, roughness: 0.3 }),

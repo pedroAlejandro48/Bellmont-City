@@ -4,6 +4,7 @@ import { JOBS, deliveryPay, gainSkill, gainXp, levelOf, type JobId } from "./lif
 import { lifeEvent, payJob } from "./lifeRuntime";
 import { BUSK_SPOT, pickAddress } from "./places";
 import { OUTSIDE, roomLayout, toWorld } from "./restaurantRoom";
+import { shopPlaces } from "./shops";
 import { toast, type GameState } from "./state";
 
 /** How near (m) a stop must be to count as reached. */
@@ -21,6 +22,13 @@ export function startJob(state: GameState, id: JobId): string | null {
   const why = canStart(state, id);
   if (why) return why;
   const random = Math.random, p = state.pos;
+  if (id === "clerk") {
+    const shop = shopPlaces(state.worldSeed).find((s) => s.kind === "grocery");
+    if (!shop) return "No shop open";
+    state.waypoint = { x: shop.door.x, z: shop.door.z, label: "Fresh Market" };
+    toast(state, "Shop clerk", "info", "Go to Fresh Market, press E, then Work a shift.");
+    return null;
+  }
   if (id === "busker") {
     state.waypoint = { x: BUSK_SPOT.x, z: BUSK_SPOT.z, label: "Busking spot" };
     toast(state, "Street performer", "info", "Go to the busking spot in the park and press E to play.");

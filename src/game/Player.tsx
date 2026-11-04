@@ -1,3 +1,5 @@
+import { skillLevel } from "./life";
+import { useCharacterColor } from "./characterColor";
 import { ATMS } from "./places";
 import { useFrame } from "@react-three/fiber";
 import { POLES, carryElbow, reachArm } from "./arms";
@@ -71,6 +73,7 @@ function stepYaw(k: number, fromYaw: number, from: THREE.Vector3, to: THREE.Vect
 }
 
 export function Player({ state, city }: { state: GameState; city: City }) {
+  const color = useCharacterColor(state);
   const colliders = useMemo<Colliders>(
     () => ({
       boxes: city.buildings.map((b) => ({ minX: b.x - b.w / 2, maxX: b.x + b.w / 2, minZ: b.z - b.d / 2, maxZ: b.z + b.d / 2, key: `${b.x}:${b.z}` })),
@@ -168,7 +171,9 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       const sideways = useStick ? stick!.x : Number(right) - Number(left);
       // Nobody runs holding a drink.
       running = !holdingDrink && (useStick ? stickPush > 0.92 : shift && fwdKey && !back);
-      const pace = useStick && !running ? WALK * Math.min(1, 0.35 + stickPush * 0.75) : running ? RUN : WALK;
+      // Fitness (from the gym and running) makes running faster: 2.5% a level.
+      const run = RUN * (1 + 0.025 * skillLevel(state.life.skills.fitness));
+      const pace = useStick && !running ? WALK * Math.min(1, 0.35 + stickPush * 0.75) : running ? run : WALK;
       const [vx, vz] = cameraRelativeVelocity(state.camYaw, direction, sideways, pace);
       s.vel.set(damp(s.vel.x, vx, ACCEL, dt), 0, damp(s.vel.z, vz, ACCEL, dt));
       if (direction || sideways) {
@@ -554,5 +559,5 @@ export function Player({ state, city }: { state: GameState; city: City }) {
 
   });
 
-  return <CharacterBody rig={rig} color={state.bodyColor} />;
+  return <CharacterBody rig={rig} color={color} />;
 }

@@ -1,5 +1,9 @@
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
+import { FINE, SPEED_LIMIT_MPH, newWatch, watchRider } from "./law";
+import { addFine } from "./life";
+import { SHOPS, SHOP_REACH, shopPlaces } from "./shops";
+import { Storefronts } from "./Storefronts";
 import * as THREE from "three";
 import { SIDEWALK_H, floorHeight, timeInfo } from "./config";
 import { InteractionPrompt } from "./InteractionPrompt";
@@ -29,6 +33,8 @@ export function LifeWorld({ state }: { state: GameState }) {
   const door = useRef<ReturnType<typeof homeDoor>>(null);
   const doorKey = useRef("");
   const sky = useRef<string | null>(null);
+  const law = useRef(newWatch());
+  const shops = useMemo(() => shopPlaces(state.worldSeed), [state.worldSeed]);
   const t = useMemo(() => ({ v: new THREE.Vector3(), f: new THREE.Vector3(), r: new THREE.Vector3() }), []);
 
   useFrame((_, raw) => {
@@ -45,6 +51,20 @@ export function LifeWorld({ state }: { state: GameState }) {
       if (d < 5) { if (state.scooter.riding) ridden = d; else if (!state.script && !state.accident) walked = d; }
     }
     last.current = { x: p.x, z: p.z };
+    // A marked place (not a job's stop, which the job clears) is done with once you're there.
+    const w = state.waypoint;
+    if (w && !state.job && w.label !== "Busking spot" && Math.hypot(w.x - p.x, w.z - p.z) < 3) { state.waypoint = null; toast(state, `You've arrived: ${w.label}`, "info"); }
+
+    // ---- traffic law: speeding and red lights on the bike ----
+    if (state.scooter.riding && prev && dt > 0 && !state.accident) {
+      const ticket = watchRider(law.current, state.simulationTime, dt, p.x, p.z, (p.x - prev.x) / dt, (p.z - prev.z) / dt, state.elapsed);
+      if (ticket) {
+        const day = timeInfo(state.elapsed).day, amount = FINE[ticket.kind];
+        const reason = ticket.kind === "speeding" ? `Speeding (${Math.round(ticket.mph)} in a ${SPEED_LIMIT_MPH})` : "Ran a red light";
+        addFine(state.life, day, reason, amount);
+        toast(state, `Ticket: $${amount}`, "ticket", `${reason}. Pay at the police station or in the Bank app within 3 days.`);
+      }
+    } else law.current.over = 0;
     // A word when the weather turns (not for the weather already there when the game starts).
     const kind = state.weather.kind;
     if (sky.current !== null && kind !== sky.current) {
@@ -97,6 +117,8 @@ export function LifeWorld({ state }: { state: GameState }) {
         return;
       }
       if (nearBuskSpot(state) && !state.job && !state.bench) { state.interactQueued = false; startBusking(state); return; }
+      const shop = shops.find((sh) => near(state, sh.door.x, sh.door.z, SHOP_REACH));
+      if (shop) { state.interactQueued = false; state.shop = shop.kind; state.keys.clear(); return; }
       const d = door.current;
       if (d && near(state, d.x, d.z, 1.8) && !state.job) {
         state.interactQueued = false;
@@ -109,6 +131,7 @@ export function LifeWorld({ state }: { state: GameState }) {
 
   return <>
     <Atms />
+    <Storefronts shops={shops} />
     <BuskSpot />
     <HomeMarker state={state} door={door} />
     <Beacon state={state} />
@@ -122,6 +145,8 @@ export function LifeWorld({ state }: { state: GameState }) {
       const atm = ATMS.find((a) => near(state, a.x, a.z, ATM_REACH));
       if (atm) return { visible: true, x: atm.x, y: 2.2, z: atm.z, time: state.simulationTime, label: "E  ATM" };
       if (nearBuskSpot(state) && !state.job) return { visible: true, x: BUSK_SPOT.x, y: 2.1, z: BUSK_SPOT.z, time: state.simulationTime, label: state.busking ? "E  STOP" : "E  PLAY" };
+      const shop = !hide && !state.scooter.riding ? shops.find((sh) => near(state, sh.door.x, sh.door.z, SHOP_REACH)) : undefined;
+      if (shop && !state.shop) return { visible: true, x: shop.door.x, y: 2.4, z: shop.door.z, time: state.simulationTime, label: `E  ${SHOPS[shop.kind].name.toUpperCase()}` };
       const d = door.current;
       if (d && near(state, d.x, d.z, 1.8)) return { visible: true, x: d.x, y: 2.4, z: d.z, time: state.simulationTime, label: "E  HOME" };
       return { visible: false, x: 0, y: 0, z: 0, time: 0 };

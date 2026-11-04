@@ -1,4 +1,5 @@
 import type { Weather } from "./weather";
+import type { ShopKind } from "./shops";
 import * as THREE from "three";
 import type { Room, SitPlan } from "./restaurantRoom";
 import type { NpcLink } from "./pedestrians";
@@ -107,6 +108,8 @@ export type GameState = {
   darkness: number;
   /** The weather now (from the clock and the world seed; set by the sky each frame). */
   weather: Weather;
+  /** The shop whose counter is open (its panel), or null. */
+  shop: ShopKind | null;
   keys: Set<string>;
   jumpQueued: boolean;
   simulationTime: number;
@@ -144,7 +147,7 @@ export type GameState = {
   /** Bank, levels, skills, goals, home (saved whole). */
   life: Life;
   /** Messages popping in at the top of the screen (pay, level up, goals done). */
-  toasts: { id: number; title: string; body?: string; kind: "money" | "level" | "quest" | "info" | "warn"; at: number }[];
+  toasts: { id: number; title: string; body?: string; kind: "money" | "level" | "quest" | "info" | "warn" | "ticket"; at: number }[];
   /** Where the GPS is guiding the player (a job's next stop, or a place picked on the map). */
   waypoint: { x: number; z: number; label: string } | null;
   /** The phone: open or not, and which app (opened by P or the phone button, or by an ATM). */
@@ -225,6 +228,7 @@ export function createState(save: SaveData): GameState {
     worldSeed: save.worldSeed ?? 1337,
     darkness: 0,
     weather: { kind: "clear", clouds: 0, rain: 0, fog: 0 },
+    shop: null,
     keys: new Set(),
     jumpQueued: false,
     simulationTime: 0,

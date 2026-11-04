@@ -1,3 +1,4 @@
+import { useCharacterColor } from "./characterColor";
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useRapier } from "@react-three/rapier";
@@ -62,6 +63,7 @@ function outOfBoxes(x: number, z: number, r: number, boxes: readonly SolidBox[])
 
 /** The player's ragdoll. */
 export function Ragdoll({ state }: { state: GameState }) {
+  const color = useCharacterColor(state);
   const subject = useMemo<RagdollSubject>(() => ({
     accident: () => state.accident,
     pos: state.pos,
@@ -76,7 +78,7 @@ export function Ragdoll({ state }: { state: GameState }) {
     },
   }), [state]);
   const onMeshes = useMemo(() => (meshes: THREE.Group[]) => { state.avatar.ragdoll = meshes; }, [state]);
-  return <RagdollBody subject={subject} color={state.bodyColor} onMeshes={onMeshes} />;
+  return <RagdollBody subject={subject} color={color} onMeshes={onMeshes} />;
 }
 
 /**
