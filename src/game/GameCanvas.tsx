@@ -72,9 +72,9 @@ function PerformanceGuard() {
 
 // HUD ticks never reconcile the physics/scene tree. Only a streamed cell does.
 const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameState; x: number; z: number; Extra?: GameExtras["Scene"] }) {
-  const city = useMemo(() => generateCity(state.worldSeed, x, z), [state.worldSeed, x, z]);
-  // Everything else in the city, drawn (lit at night) out to the horizon.
   const q = useMemo(() => startQuality(), []);
+  const city = useMemo(() => generateCity(state.worldSeed, x, z, q.streamBlocks), [state.worldSeed, x, z, q]);
+  // Everything else in the city, drawn (lit at night) out to the horizon.
   // (On low, none: less to build, hold in memory and draw.)
   const whole = useMemo(() => (q.farCity ? wholeCity(state.worldSeed) : { buildings: [], lamps: [] }), [state.worldSeed, q]);
   const far = useMemo(() => farCity(whole, x, z), [whole, x, z]);

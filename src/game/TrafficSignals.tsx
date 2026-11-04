@@ -1,9 +1,10 @@
 import { useFrame } from "@react-three/fiber";
 import { CuboidCollider, RigidBody } from "@react-three/rapier";
 import { isSolidNear, useSolidBlock } from "./nearPhysics";
+import { useDrawReach } from "./drawReach";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { CROSSWALK, SIGNALLED, SIGNAL_POLE, SIGNAL_POLES, crosswalks, signalState, stopLineFrom, streetHalfWidth } from "./config";
+import { blockCenter, CROSSWALK, SIGNALLED, SIGNAL_POLE, SIGNAL_POLES, crosswalks, signalState, stopLineFrom, streetHalfWidth } from "./config";
 import { makeGlow } from "./textures";
 import type { GameState } from "./state";
 
@@ -58,22 +59,42 @@ export function TrafficSignals({ state }: { state: GameState }) {
     const glow = new THREE.MeshBasicMaterial({ map: makeGlow(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0, fog: false });
     const paint = new THREE.MeshStandardMaterial({ color: "#e9ece6", roughness: 0.8 });
     const bulb = new THREE.MeshBasicMaterial({ color: "#ffffff", fog: false, toneMapped: false });
-    const poles = SIGNAL_POLES.map((s) => place(s.x, SIGNAL_POLE.height / 2, s.z));
+    const halo = new THREE.MeshBasicMaterial({ map: makeHalo(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.4, fog: false, toneMapped: false });
+    return {
+      iron, housing, lamp, glow, paint, bulb, halo,
+      geo: {
+        pole: new THREE.CylinderGeometry(0.11, 0.15, SIGNAL_POLE.height, 10), arm: new THREE.BoxGeometry(0.12, 0.12, 1),
+        lamp: new THREE.BoxGeometry(0.6, 0.18, 0.35), plane: new THREE.PlaneGeometry(1, 1), housing: new THREE.BoxGeometry(1.15, 0.42, 0.34),
+        hanger: new THREE.BoxGeometry(0.05, SIGNAL_POLE.height - SIGNAL_POLE.head - 0.25, 0.05), bulb: new THREE.CircleGeometry(0.13, 20), halo: new THREE.PlaneGeometry(0.75, 0.75), paint: new THREE.BoxGeometry(1, 0.02, 1),
+      },
+    };
+  }, []);
+  // Only the signals (and their crossings) the fog lets anyone see, round the character's block.
+  const block = useSolidBlock(state), reach = useDrawReach(state);
+  const shownPoles = useMemo(() => {
+    const cx = blockCenter(block[0]), cz = blockCenter(block[1]);
+    return SIGNAL_POLES.filter((s) => Math.max(Math.abs(s.x - cx), Math.abs(s.z - cz)) < reach);
+  }, [block, reach]);
+  const shownCrossings = useMemo(() => {
+    const cx = blockCenter(block[0]), cz = blockCenter(block[1]);
+    return SIGNALLED.filter(([x, z]) => Math.max(Math.abs(x - cx), Math.abs(z - cz)) < reach);
+  }, [block, reach]);
+  const placed = useMemo(() => {
+    const poles = shownPoles.map((s) => place(s.x, SIGNAL_POLE.height / 2, s.z));
     // The arm runs from the pole back over the road (against the right-hand direction).
-    const arms = SIGNAL_POLES.map((s) => place((s.x + s.tipX) / 2 - s.rx * 0.4, SIGNAL_POLE.height - 0.15, (s.z + s.tipZ) / 2 - s.rz * 0.4, Math.atan2(s.rx, s.rz), 1, 1, s.reach + 0.8));
-    const lamps = SIGNAL_POLES.map((s) => place(s.tipX - s.rx * 0.4, SIGNAL_POLE.height - 0.32, s.tipZ - s.rz * 0.4, Math.atan2(s.rx, s.rz)));
-    const glows = SIGNAL_POLES.map((s) => place(s.tipX, 0.03, s.tipZ, 0, 14, 14, 1, true));
+    const arms = shownPoles.map((s) => place((s.x + s.tipX) / 2 - s.rx * 0.4, SIGNAL_POLE.height - 0.15, (s.z + s.tipZ) / 2 - s.rz * 0.4, Math.atan2(s.rx, s.rz), 1, 1, s.reach + 0.8));
+    const lamps = shownPoles.map((s) => place(s.tipX - s.rx * 0.4, SIGNAL_POLE.height - 0.32, s.tipZ - s.rz * 0.4, Math.atan2(s.rx, s.rz)));
+    const glows = shownPoles.map((s) => place(s.tipX, 0.03, s.tipZ, 0, 14, 14, 1, true));
     // The light housing lies across the lanes; its lights face the oncoming traffic.
-    const facing = (s: (typeof SIGNAL_POLES)[number]) => Math.atan2(-s.fx, -s.fz);
-    const housings = SIGNAL_POLES.map((s) => place(s.tipX - s.fx * 0.05, SIGNAL_POLE.head, s.tipZ - s.fz * 0.05, facing(s)));
-    const hangers = SIGNAL_POLES.map((s) => place(s.tipX, (SIGNAL_POLE.head + SIGNAL_POLE.height) / 2 - 0.1, s.tipZ));
+    const facing = (s: (typeof shownPoles)[number]) => Math.atan2(-s.fx, -s.fz);
+    const housings = shownPoles.map((s) => place(s.tipX - s.fx * 0.05, SIGNAL_POLE.head, s.tipZ - s.fz * 0.05, facing(s)));
+    const hangers = shownPoles.map((s) => place(s.tipX, (SIGNAL_POLE.head + SIGNAL_POLE.height) / 2 - 0.1, s.tipZ));
     // Red on the driver's left (-right), yellow in the middle, green on the right.
     // The lights sit on the housing's front face (it is 0.34 deep, centred 0.05 behind the arm's tip), their
     // glows just in front of them.
-    const bulbAt = (offset: number, out = 0.235) => SIGNAL_POLES.map((s) => place(s.tipX + s.rx * offset - s.fx * out, SIGNAL_POLE.head, s.tipZ + s.rz * offset - s.fz * out, facing(s)));
-    const halo = new THREE.MeshBasicMaterial({ map: makeHalo(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.4, fog: false, toneMapped: false });
+    const bulbAt = (offset: number, out = 0.235) => shownPoles.map((s) => place(s.tipX + s.rx * offset - s.fx * out, SIGNAL_POLE.head, s.tipZ + s.rz * offset - s.fz * out, facing(s)));
     const stripes: THREE.Matrix4[] = [], stops: THREE.Matrix4[] = [];
-    for (const [cx, cz] of SIGNALLED) {
+    for (const [cx, cz] of shownCrossings) {
       for (const c of crosswalks(cx, cz)) {
         // Bars run with the traffic, spaced across the road.
         const acrossZ = c.across === "z", span = acrossZ ? c.hz : c.hx;
@@ -86,16 +107,11 @@ export function TrafficSignals({ state }: { state: GameState }) {
       }
     }
     return {
-      iron, housing, lamp, glow, paint, bulb, poles, arms, lamps, glows, housings, hangers, stripes, stops,
+      poles, arms, lamps, glows, housings, hangers, stripes, stops,
       bulbs: { red: bulbAt(-0.36), yellow: bulbAt(0), green: bulbAt(0.36) },
-      halo, halos: { red: bulbAt(-0.36, 0.26), yellow: bulbAt(0, 0.26), green: bulbAt(0.36, 0.26) },
-      geo: {
-        pole: new THREE.CylinderGeometry(0.11, 0.15, SIGNAL_POLE.height, 10), arm: new THREE.BoxGeometry(0.12, 0.12, 1),
-        lamp: new THREE.BoxGeometry(0.6, 0.18, 0.35), plane: new THREE.PlaneGeometry(1, 1), housing: new THREE.BoxGeometry(1.15, 0.42, 0.34),
-        hanger: new THREE.BoxGeometry(0.05, SIGNAL_POLE.height - SIGNAL_POLE.head - 0.25, 0.05), bulb: new THREE.CircleGeometry(0.13, 20), halo: new THREE.PlaneGeometry(0.75, 0.75), paint: new THREE.BoxGeometry(1, 0.02, 1),
-      },
+      halos: { red: bulbAt(-0.36, 0.26), yellow: bulbAt(0, 0.26), green: bulbAt(0.36, 0.26) },
     };
-  }, []);
+  }, [shownPoles, shownCrossings]);
   const bulbs = useRef<Record<"red" | "yellow" | "green", THREE.InstancedMesh | null>>({ red: null, yellow: null, green: null });
   const halos = useRef<Record<"red" | "yellow" | "green", THREE.InstancedMesh | null>>({ red: null, yellow: null, green: null });
   const shown = useRef("");
@@ -106,13 +122,13 @@ export function TrafficSignals({ state }: { state: GameState }) {
     // The glow round a lit light is always there, and shows more at night.
     assets.halo.opacity = 0.35 + d * 0.6;
     const x = signalState("x", state.elapsed), z = signalState("z", state.elapsed), key = `${x}${z}`;
-    if (key === shown.current && bulbs.current.red?.instanceColor && halos.current.red?.instanceColor) return;
-    shown.current = key;
+    if (key + shownPoles.length === shown.current && bulbs.current.red?.instanceColor && halos.current.red?.instanceColor) return;
+    shown.current = key + shownPoles.length;
     for (const colour of ["red", "yellow", "green"] as const) {
       const mesh = bulbs.current[colour];
       if (!mesh) continue;
       const glow = halos.current[colour];
-      SIGNAL_POLES.forEach((s, i) => {
+      shownPoles.forEach((s, i) => {
         const on = (s.axis === "x" ? x : z) === colour;
         mesh.setColorAt(i, on ? LIT[colour] : DARK[colour]);
         glow?.setColorAt(i, on ? LIT[colour] : NO_HALO);
@@ -123,16 +139,16 @@ export function TrafficSignals({ state }: { state: GameState }) {
   });
   const { geo } = assets;
   return <>
-    <Instances geometry={geo.pole} material={assets.iron} items={assets.poles} />
-    <Instances geometry={geo.arm} material={assets.iron} items={assets.arms} />
-    <Instances geometry={geo.lamp} material={assets.lamp} items={assets.lamps} />
-    <Instances geometry={geo.plane} material={assets.glow} items={assets.glows} />
-    <Instances geometry={geo.housing} material={assets.housing} items={assets.housings} />
-    <Instances geometry={geo.hanger} material={assets.iron} items={assets.hangers} />
-    {(["red", "yellow", "green"] as const).map((c) => <Instances key={c} geometry={geo.bulb} material={assets.bulb} items={assets.bulbs[c]} refOut={(m) => { bulbs.current[c] = m; }} />)}
-    {(["red", "yellow", "green"] as const).map((c) => <Instances key={`halo${c}`} geometry={geo.halo} material={assets.halo} items={assets.halos[c]} refOut={(m) => { halos.current[c] = m; }} />)}
-    <Instances geometry={geo.paint} material={assets.paint} items={assets.stripes} />
-    <Instances geometry={geo.paint} material={assets.paint} items={assets.stops} />
+    <Instances geometry={geo.pole} material={assets.iron} items={placed.poles} />
+    <Instances geometry={geo.arm} material={assets.iron} items={placed.arms} />
+    <Instances geometry={geo.lamp} material={assets.lamp} items={placed.lamps} />
+    <Instances geometry={geo.plane} material={assets.glow} items={placed.glows} />
+    <Instances geometry={geo.housing} material={assets.housing} items={placed.housings} />
+    <Instances geometry={geo.hanger} material={assets.iron} items={placed.hangers} />
+    {(["red", "yellow", "green"] as const).map((c) => <Instances key={c} geometry={geo.bulb} material={assets.bulb} items={placed.bulbs[c]} refOut={(m) => { bulbs.current[c] = m; }} />)}
+    {(["red", "yellow", "green"] as const).map((c) => <Instances key={`halo${c}`} geometry={geo.halo} material={assets.halo} items={placed.halos[c]} refOut={(m) => { halos.current[c] = m; }} />)}
+    <Instances geometry={geo.paint} material={assets.paint} items={placed.stripes} />
+    <Instances geometry={geo.paint} material={assets.paint} items={placed.stops} />
     <SignalPoleColliders state={state} />
   </>;
 }

@@ -388,13 +388,14 @@ export function cityRoadDashes(x: number, z: number) {
   return dashes;
 }
 
-export function generateCity(seed = 1337, focusX = 0, focusZ = 0): City {
+/** The streamed neighbourhood: every block within `radius` blocks of the focus (3 → 7 × 7 blocks). */
+export function generateCity(seed = 1337, focusX = 0, focusZ = 0, radius = 3): City {
   const fi = blockIndex(focusX);
   const fj = blockIndex(focusZ);
   const city: City = { blocks: [], buildings: [], trees: [], lamps: [] };
   const restaurants = restaurantSpots(seed);
-  for (let i = Math.max(-HALF, fi - 3); i <= Math.min(HALF, fi + 3); i++) {
-    for (let j = Math.max(-HALF, fj - 3); j <= Math.min(HALF, fj + 3); j++) {
+  for (let i = Math.max(-HALF, fi - radius); i <= Math.min(HALF, fi + radius); i++) {
+    for (let j = Math.max(-HALF, fj - radius); j <= Math.min(HALF, fj + radius); j++) {
       const r = blockRandom(seed, i, j);
       const restaurant = restaurants.get(`${i},${j}`);
       const [x0, x1] = blockSpan(i), [z0, z1] = blockSpan(j);

@@ -153,10 +153,14 @@ export function SkyAndLights({ state }: { state: GameState }) {
       moon.current.castShadow = !ti.isDay;
     }
     if (sunMesh.current && moonMesh.current) {
-      const body = new THREE.Vector3().copy(camera.position).addScaledVector(dir, 450);
+      // Just inside the far clip (Low sees less far), so the sun and moon always show.
+      const away = Math.min(450, quality().far * 0.85);
+      const body = new THREE.Vector3().copy(camera.position).addScaledVector(dir, away);
       sunMesh.current.visible = ti.isDay;
       moonMesh.current.visible = !ti.isDay;
-      (ti.isDay ? sunMesh.current : moonMesh.current).position.copy(body);
+      const shown = ti.isDay ? sunMesh.current : moonMesh.current;
+      // Nearer, smaller in proportion: the same size in the sky either way.
+      shown.position.copy(body); shown.scale.setScalar(away / 450);
     }
     if (stars.current) {
       stars.current.position.copy(camera.position);
