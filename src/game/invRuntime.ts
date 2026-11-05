@@ -39,6 +39,14 @@ export function pressInventorySlot(state: GameState, slot: number) {
     return;
   }
   if (r.kind === "store") {
+    const fromBag = state.groceryBag?.find((k) => k !== "phone");
+    if (fromBag && state.groceryBag) {
+      addItem(inv, fromBag, slot);
+      state.groceryBag.splice(state.groceryBag.indexOf(fromBag), 1);
+      if (!state.groceryBag.length) state.groceryBag = null;
+      toast(state, `${ITEMS[fromBag].name} from the bag`, "info", `In slot ${slot + 1}.`);
+      return;
+    }
     const water = carriedWater(state);
     if (!water) { toast(state, `Slot ${slot + 1} is empty`, "info"); return; }
     addItem(inv, "water", slot);
@@ -63,10 +71,10 @@ export function consumeHeld(state: GameState) {
 /** Q with something out: put it down on the ground in front. True if it did. */
 export function dropHeld(state: GameState) {
   if (busy(state)) return false;
-  const kind = state.heldTrash ?? (state.heldSlot !== null ? state.life.inventory[state.heldSlot] : null);
+  const kind = state.heldTrash ?? (state.heldSlot !== null ? state.life.inventory[state.heldSlot] : null) ?? (state.groceryBag && !state.groceryBasket ? "groceryBag" : null);
   if (!kind) return false;
   const f = new THREE.Vector3(Math.sin(state.rotY), 0, Math.cos(state.rotY)), l = new THREE.Vector3(Math.cos(state.rotY), 0, -Math.sin(state.rotY));
-  const at = state.pos.clone().addScaledVector(f, 0.36).addScaledVector(l, -0.24);
+  const at = state.pos.clone().addScaledVector(f, 0.36).addScaledVector(l, kind === "groceryBag" ? 0.26 : -0.24);
   state.invAct = { kind: "drop", at: state.simulationTime, item: kind, target: at, done: false };
   return true;
 }
@@ -78,8 +86,9 @@ export function pickUpNear(state: GameState) {
   for (const g of state.groundItems) { const d = Math.hypot(g.x - state.pos.x, g.z - state.pos.z); if (d < bd) { bd = d; best = g; } }
   if (!best) return false;
   // Can't take it (hand or inventory full): the press is left for something else (eating what's in the hand).
-  if (best.kind === "bottle" ? !!(state.heldTrash || state.heldSlot !== null || state.hands.right) : !state.life.inventory.some((x, i) => i > 0 && x === null)) {
-    if (state.heldSlot === null) { toast(state, best.kind === "bottle" ? "Your right hand is full" : "Your inventory is full", "warn"); return true; }
+  const blocked = best.kind === "groceryBag" ? !!(state.groceryBag || state.hands.left) : best.kind === "bottle" ? !!(state.heldTrash || state.heldSlot !== null || state.hands.right) : !state.life.inventory.some((x, i) => i > 0 && x === null);
+  if (blocked) {
+    if (state.heldSlot === null) { toast(state, best.kind === "groceryBag" ? "Your left hand is full" : best.kind === "bottle" ? "Your right hand is full" : "Your inventory is full", "warn"); return true; }
     return false;
   }
   state.invAct = { kind: "pickup", at: state.simulationTime, item: best.kind, target: new THREE.Vector3(best.x, state.pos.y, best.z), done: false, ground: best.id };
@@ -109,8 +118,10 @@ export function stepInventory(state: GameState) {
   if (a.kind === "drop") {
     if (!a.done && t >= DROP_CONTACT && a.target) {
       a.done = true;
-      state.groundItems.push({ id: nextGround++, kind: a.item, x: a.target.x, z: a.target.z, yaw: state.rotY, at: state.simulationTime });
+      const contents = a.item === "groceryBag" ? state.groceryBag ?? [] : undefined;
+      state.groundItems.push({ id: nextGround++, kind: a.item, x: a.target.x, z: a.target.z, yaw: state.rotY, at: state.simulationTime, ...(contents ? { contents } : {}) });
       if (a.item === "bottle") state.heldTrash = null;
+      else if (a.item === "groceryBag") state.groceryBag = null;
       else if (state.heldSlot !== null) { removeItem(state.life.inventory, state.heldSlot); state.heldSlot = null; }
       // Old things on the ground fade from the world after a while (and never more than 40).
       if (state.groundItems.length > 40) state.groundItems.shift();
@@ -122,6 +133,7 @@ export function stepInventory(state: GameState) {
       if (g) {
         state.groundItems = state.groundItems.filter((x) => x !== g);
         if (g.kind === "bottle") state.heldTrash = "bottle";
+        else if (g.kind === "groceryBag") state.groceryBag = g.contents ?? [];
         else { const slot = addItem(state.life.inventory, g.kind); if (slot > 0) toast(state, `${ITEMS[g.kind].name} → slot ${slot + 1}`, "info"); }
       }
     }

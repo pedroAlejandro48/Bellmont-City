@@ -1,5 +1,5 @@
 import { useFrame } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { handWorld } from "./arms";
 import { canInteractScooter, floorHeight, nearestBenchSeat } from "./config";
@@ -10,8 +10,23 @@ import type { GameState } from "./state";
 
 type Thing = ItemKind | "bottle";
 
+/**
+ * A white plastic bag of groceries: a soft body that fills out with what's in it, round things pushing at its sides
+ * (bulges), two loop handles at the top. Origin at the handles (where a hand holds it).
+ */
+export function GroceryBagModel({ items, looks }: { items: number; looks: Looks }) {
+  const fill = Math.min(1, items / 8);
+  const bulges = useMemo(() => Array.from({ length: 10 }, (_, i) => ({ a: i * 2.39996, y: 0.06 + ((i * 0.37) % 1) * 0.18, r: 0.055 + ((i * 0.53) % 1) * 0.02 })), []);
+  return <group>
+    <mesh material={looks.bag} position={[0, -0.21 - 0.02 * (1 - fill), 0]} scale={[1 + 0.18 * fill, 1, 0.75 + 0.2 * fill]} castShadow><cylinderGeometry args={[0.12, 0.14, 0.3 - 0.06 * (1 - fill), 16, 1]} /></mesh>
+    <mesh material={looks.bag} position={[0, -0.36, 0]} scale={[1 + 0.18 * fill, 0.5, 0.75 + 0.2 * fill]}><sphereGeometry args={[0.14, 16, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2]} /></mesh>
+    {bulges.slice(0, items).map((b, i) => <mesh key={i} material={looks.bag} position={[Math.cos(b.a) * 0.12, -0.36 + b.y, Math.sin(b.a) * 0.09]} scale={[1, 0.9, 0.8]}><sphereGeometry args={[b.r, 10, 8]} /></mesh>)}
+    {[-1, 1].map((s) => <mesh key={s} material={looks.bag} position={[s * 0.035, -0.02, 0]} rotation-y={Math.PI / 2}><torusGeometry args={[0.05, 0.008, 6, 14, Math.PI]} /></mesh>)}
+  </group>;
+}
+
 /** Shared looks for the things kept in an inventory. */
-function useLooks() {
+export function useLooks() {
   return useMemo(() => ({
     phone: new THREE.MeshStandardMaterial({ color: "#16171c", roughness: 0.35, metalness: 0.4 }),
     screen: new THREE.MeshBasicMaterial({ color: "#3d6fd6", toneMapped: false }),
@@ -25,9 +40,15 @@ function useLooks() {
     banana: new THREE.MeshStandardMaterial({ color: "#f3d23b", roughness: 0.55 }),
     orange: new THREE.MeshStandardMaterial({ color: "#f28a1a", roughness: 0.75 }),
     key: new THREE.MeshStandardMaterial({ color: "#d9b44a", roughness: 0.3, metalness: 0.85 }),
+    pear: new THREE.MeshStandardMaterial({ color: "#b5c94a", roughness: 0.55 }),
+    lemon: new THREE.MeshStandardMaterial({ color: "#f5e04a", roughness: 0.6 }),
+    lime: new THREE.MeshStandardMaterial({ color: "#6cbf3c", roughness: 0.6 }),
+    grape: new THREE.MeshStandardMaterial({ color: "#6b2d6b", roughness: 0.35 }),
+    peach: new THREE.MeshStandardMaterial({ color: "#f6a57a", roughness: 0.7 }),
+    bag: new THREE.MeshStandardMaterial({ color: "#f7f7f5", roughness: 0.55, transparent: true, opacity: 0.93, side: THREE.DoubleSide }),
   }), []);
 }
-type Looks = ReturnType<typeof useLooks>;
+export type Looks = ReturnType<typeof useLooks>;
 
 /** One thing, modelled at life size with its origin where a hand holds it (or where it rests on the ground). */
 export function ItemModel({ kind, looks, empty = false }: { kind: Thing; looks: Looks; empty?: boolean }) {
@@ -52,6 +73,21 @@ export function ItemModel({ kind, looks, empty = false }: { kind: Thing; looks: 
       <mesh material={looks.banana} position={[0.07, 0, 0]} rotation-z={Math.PI / 2}><torusGeometry args={[0.07, 0.018, 8, 16, Math.PI * 0.7]} /></mesh>
       <mesh material={looks.stem} position={[0.07 + 0.07 * Math.cos(Math.PI * 0.7 + Math.PI / 2), 0.07 * Math.sin(Math.PI * 0.7 + Math.PI / 2), 0]}><sphereGeometry args={[0.009, 6, 6]} /></mesh>
     </group>;
+    case "pear": return <group>
+      <mesh material={looks.pear} position={[0, 0.035, 0]}><sphereGeometry args={[0.04, 14, 10]} /></mesh>
+      <mesh material={looks.pear} position={[0, 0.08, 0]}><sphereGeometry args={[0.026, 12, 8]} /></mesh>
+      <mesh material={looks.stem} position={[0, 0.112, 0]} rotation-z={0.3}><cylinderGeometry args={[0.003, 0.003, 0.02, 5]} /></mesh>
+    </group>;
+    case "lemon": case "lime": return <group>
+      <mesh material={kind === "lemon" ? looks.lemon : looks.lime} position={[0, 0.03, 0]} rotation-z={Math.PI / 2} scale={[1.25, 0.9, 0.9]}><sphereGeometry args={[0.032, 14, 10]} /></mesh>
+    </group>;
+    case "grape": return <group>
+      {[[0, 0.1, 0], [-0.018, 0.08, 0.01], [0.018, 0.08, -0.008], [0, 0.075, 0.02], [-0.01, 0.055, -0.012], [0.012, 0.052, 0.01], [0, 0.032, 0]].map(([x, y, z], i) => <mesh key={i} material={looks.grape} position={[x!, y!, z!]}><sphereGeometry args={[0.014, 8, 6]} /></mesh>)}
+      <mesh material={looks.stem} position={[0, 0.118, 0]}><cylinderGeometry args={[0.002, 0.002, 0.02, 4]} /></mesh>
+    </group>;
+    case "peach": return <group>
+      <mesh material={looks.peach} position={[0, 0.038, 0]}><sphereGeometry args={[0.04, 14, 10]} /></mesh>
+    </group>;
     case "orange": return <group>
       <mesh material={looks.orange} position={[0, 0.04, 0]}><icosahedronGeometry args={[0.04, 2]} /></mesh>
       <mesh material={looks.leaf} position={[0, 0.079, 0]}><sphereGeometry args={[0.006, 6, 6]} /></mesh>
@@ -73,14 +109,16 @@ export function InventoryWorld({ state }: { state: GameState }) {
   const looks = useLooks();
   const held = useRef<THREE.Group>(null);
   const shown = useRef<Thing | null>(null);
-  const kinds = useMemo(() => ["phone", "water", "bottle", "apple", "banana", "orange", "key"] as Thing[], []);
+  const kinds = useMemo(() => ["phone", "water", "bottle", "apple", "banana", "orange", "pear", "lemon", "lime", "grape", "peach", "key"] as Thing[], []);
   const parts = useRef<Map<Thing, THREE.Group>>(new Map());
   const ground = useRef<THREE.Group>(null);
+  const bagHeld = useRef<THREE.Group>(null), bagCount = useRef(-1);
+  const [, rerender] = useState(0);
   const tmp = useMemo(() => ({ v: new THREE.Vector3(), q: new THREE.Quaternion(), e: new THREE.Euler() }), []);
 
   // Before the food's own Q and E (which would take the press otherwise).
   useFrame(() => {
-    if (state.dropQueued && (state.heldTrash || state.heldSlot !== null)) { if (dropHeld(state)) state.dropQueued = false; }
+    if (state.dropQueued && (state.heldTrash || state.heldSlot !== null || (state.groceryBag && !state.groceryBasket))) { if (dropHeld(state)) state.dropQueued = false; }
     if (state.interactQueued && !state.scooter.riding && pickUpNear(state)) state.interactQueued = false;
     stepInventory(state);
   }, -0.8);
@@ -120,6 +158,16 @@ export function InventoryWorld({ state }: { state: GameState }) {
         if (kind === "phone") g.position.y += 0.05;
       }
     }
+    // A bag of groceries in the left hand (held by its handles).
+    const bg = bagHeld.current, foreL = state.avatar.body[9];
+    if (bg) {
+      const bagAct = act && act.item === "groceryBag" && (act.kind === "drop" ? act.done : !act.done);
+      const show = !!state.groceryBag && !!foreL && !state.home && !state.accident && state.health > 0 && !bagAct;
+      bg.visible = show;
+      if (show && foreL) { foreL.updateWorldMatrix(true, false); handWorld(foreL, bg.position); bg.rotation.set(0, state.rotY, 0); }
+      const n = state.groceryBag?.length ?? 0;
+      if (n !== bagCount.current) { bagCount.current = n; rerender((k) => k + 1); }
+    }
     // Things on the ground: shown where they lie (rebuilt only when the list changes).
     const gr = ground.current;
     if (gr) {
@@ -130,7 +178,7 @@ export function InventoryWorld({ state }: { state: GameState }) {
           const it = items[i];
           c.visible = !!it;
           if (!it) return;
-          c.position.set(it.x, floorHeight(it.x, it.z), it.z);
+          c.position.set(it.x, floorHeight(it.x, it.z) + (it.kind === "groceryBag" ? 0.4 : 0), it.z);
           c.rotation.set(it.kind === "bottle" || it.kind === "water" ? Math.PI / 2 : 0, it.yaw, 0, "YXZ");
           (c.children as THREE.Group[]).forEach((m) => { m.visible = m.userData["kind"] === it.kind; });
         });
@@ -145,9 +193,11 @@ export function InventoryWorld({ state }: { state: GameState }) {
     <group ref={held} visible={false}>
       {kinds.map((k) => <group key={k} ref={(el) => { if (el) parts.current.set(k, el); }} visible={false}><ItemModel kind={k} looks={looks} empty={k === "bottle"} /></group>)}
     </group>
+    <group ref={bagHeld} visible={false}><GroceryBagModel items={bagCount.current < 0 ? 0 : bagCount.current} looks={looks} /></group>
     <group ref={ground}>
       {Array.from({ length: 40 }, (_, i) => <group key={i} visible={false}>
         {kinds.filter((k) => k !== "phone").map((k) => <group key={k} userData={{ kind: k }} visible={false}><ItemModel kind={k} looks={looks} empty={k === "bottle"} /></group>)}
+        <group userData={{ kind: "groceryBag" }} visible={false}><GroceryBagModel items={6} looks={looks} /></group>
       </group>)}
     </group>
     <InteractionPrompt sample={() => {
@@ -155,7 +205,7 @@ export function InventoryWorld({ state }: { state: GameState }) {
       let best: GameState["groundItems"][number] | null = null, bd = 1.0;
       for (const g of state.groundItems) { const d = Math.hypot(g.x - state.pos.x, g.z - state.pos.z); if (d < bd) { bd = d; best = g; } }
       if (!best) return { visible: false, x: 0, y: 0, z: 0, time: 0 };
-      return { visible: true, x: best.x, y: floorHeight(best.x, best.z) + 0.45, z: best.z, time: state.simulationTime, label: `E  ${best.kind === "bottle" ? "EMPTY BOTTLE" : ITEMS[best.kind].name.toUpperCase()}` };
+      return { visible: true, x: best.x, y: floorHeight(best.x, best.z) + 0.45, z: best.z, time: state.simulationTime, label: `E  ${best.kind === "bottle" ? "EMPTY BOTTLE" : best.kind === "groceryBag" ? "GROCERIES" : ITEMS[best.kind].name.toUpperCase()}` };
     }} />
   </>;
 }

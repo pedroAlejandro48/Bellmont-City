@@ -1,5 +1,6 @@
 import { useCharacterColor } from "./characterColor";
 import { foodValue } from "./shops";
+import { ITEMS } from "./inventory";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -115,6 +116,11 @@ function FridgePanel({ state, onClose }: { state: GameState; onClose: () => void
       // The pack itself is used up (its contents are in the fridge now).
       state.foodSend?.({ type: "trash", pack: h.id, x: state.pos.x, y: -5, z: state.pos.z });
     }
+    // A bag of groceries empties into the fridge too (what doesn't fit stays in the bag).
+    if (state.groceryBag) {
+      while (state.groceryBag.length && life.fridge.length < 12) life.fridge.push(ITEMS[state.groceryBag.shift()!].name);
+      if (!state.groceryBag.length) state.groceryBag = null;
+    }
     life.fridge = life.fridge.slice(0, 12);
     tick((n) => n + 1);
   };
@@ -131,7 +137,7 @@ function FridgePanel({ state, onClose }: { state: GameState; onClose: () => void
     <div className="home-panel-head"><b>Fridge</b><button type="button" onClick={onClose} aria-label="Close">✕</button></div>
     {life.fridge.length === 0 ? <p className="phone-note">Empty. Bring food home and store it here.</p> :
       <ul className="phone-list">{life.fridge.map((f, i) => <li key={i}><span>{f}</span><button type="button" className="phone-btn" onClick={() => eat(i)}>{isDrinkName(f) ? "Drink" : "Eat"}</button></li>)}</ul>}
-    <button type="button" className="phone-btn ghost" disabled={!held.length || life.fridge.length >= 12} onClick={store}>Store the food you're carrying</button>
+    <button type="button" className="phone-btn ghost" disabled={(!held.length && !state.groceryBag) || life.fridge.length >= 12} onClick={store}>Store the food you're carrying</button>
     <small className="phone-note">Holds 12 things.</small>
   </div>;
 }

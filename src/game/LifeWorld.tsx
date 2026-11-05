@@ -57,7 +57,8 @@ export function LifeWorld({ state }: { state: GameState }) {
     // Inside a venue, stepping up to its counter (or the police desk) brings up what it offers; it comes up again
     // only after stepping away.
     const inter = state.interior, room = inter?.phase === "inside" ? state.rooms.get(inter.key) : undefined;
-    if (room?.venue && !state.script) {
+    // (The grocery's register is handled by Grocery: E pays for a full basket.)
+    if (room?.venue && room.venue !== "grocery" && !state.script) {
       const s = venueService(room), [lx, lz] = toLocal(room.frame, p.x, p.z), d = Math.hypot(lx - s.x, lz - s.z);
       if (d < 0.7 && !served.current && !state.shop) {
         served.current = true; state.shop = room.venue; state.keys.clear();

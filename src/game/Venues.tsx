@@ -417,8 +417,9 @@ export function Venue({ b, mats, state }: { b: Building; mats: Materials; state:
       <Wall a0={minX} a1={maxX} place={(a) => [a, minZ]} ry={0} low={own.trim} high={own.wall} />
       {lamps.map(([x, z], i) => <mesh key={i} position={[x, CEILING - 0.03, z]} rotation-x={Math.PI / 2} material={m.lamp}><planeGeometry args={[1.2, 0.3]} /></mesh>)}
       {plants.map(([x, z]) => <Plant key={`${x}`} x={x} z={z} kind="cafe" mats={mats} pot={own.pot} />)}
-      {fixtures.map((f, i) => <group key={i} position={[f.x, 0, f.z]} rotation-y={f.rot}><FixtureModel f={f} m={m} kind={kind} /></group>)}
-      <Staff layout={layout} kind={kind} m={m} />
+      {/* (The grocery's basket pile and its cashier are drawn by Grocery, which moves them.) */}
+      {fixtures.filter((f) => !(kind === "grocery" && f.type === "baskets")).map((f, i) => <group key={i} position={[f.x, 0, f.z]} rotation-y={f.rot}><FixtureModel f={f} m={m} kind={kind} /></group>)}
+      {kind !== "grocery" && <Staff layout={layout} kind={kind} m={m} />}
     </group>
   </group>;
 }

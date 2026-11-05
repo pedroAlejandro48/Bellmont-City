@@ -1,6 +1,6 @@
 // The inventory (pure): nine slots (3 × 3), the phone always in the first. Things that can be kept are listed in
 // ITEMS; trash (an empty bottle) can't go in.
-export type ItemKind = "phone" | "water" | "apple" | "banana" | "orange" | "key";
+export type ItemKind = "phone" | "water" | "apple" | "banana" | "orange" | "pear" | "lemon" | "lime" | "grape" | "peach" | "key";
 export type Inventory = (ItemKind | null)[];
 export const SLOTS = 9;
 
@@ -10,6 +10,11 @@ export const ITEMS: Record<ItemKind, { name: string; icon: string; use: "eat" | 
   apple: { name: "Apple", icon: "🍎", use: "eat", value: 3 },
   banana: { name: "Banana", icon: "🍌", use: "eat", value: 3.5 },
   orange: { name: "Orange", icon: "🍊", use: "eat", value: 3 },
+  pear: { name: "Pear", icon: "🍐", use: "eat", value: 3 },
+  lemon: { name: "Lemon", icon: "🍋", use: "eat", value: 1.5 },
+  lime: { name: "Lime", icon: "🟢", use: "eat", value: 1.5 },
+  grape: { name: "Grapes", icon: "🍇", use: "eat", value: 4 },
+  peach: { name: "Peach", icon: "🍑", use: "eat", value: 3 },
   key: { name: "Apartment key", icon: "🔑", use: "hold" },
 };
 export const isItemKind = (k: unknown): k is ItemKind => typeof k === "string" && k in ITEMS;

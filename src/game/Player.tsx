@@ -451,7 +451,10 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       root.current.rotation.x = collapse * Math.PI / 2 + Math.sin(fall * Math.PI * 2) * 0.12;
       root.current.rotation.z = usingBike && !incapacitated && bike.action !== "pickup" ? bike.lean : collapse * 0.12;
     }
-    if (crouch > 0 && !script && !usingBike) {
+    // A scripted squat (taking a shopping basket off the pile) works the same way.
+    const crouchNow = script?.crouch ? script.crouch : !script ? crouch : 0;
+    if (crouchNow > 0 && !usingBike) {
+      const crouch = crouchNow;
       // Down on the haunches: hips low, thighs forward, knees bent, leaning over the hands.
       hipL = THREE.MathUtils.lerp(hipL, -1.3, crouch); hipR = THREE.MathUtils.lerp(hipR, -1.3, crouch);
       kneeL = THREE.MathUtils.lerp(kneeL, 2.0, crouch); kneeR = THREE.MathUtils.lerp(kneeR, 2.0, crouch);
@@ -476,9 +479,9 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     if (onFoot) {
       // Full packs ride at the waist; an empty one (or a number sign) just hangs from a relaxed arm.
       const heavy = (h: typeof state.hands.left) => !!h && h.kind !== "sign" && (h.items?.length ?? 1) > 0;
-      if (heavy(state.hands.left) || grab?.hand === "left") { armL.current?.rotation.set(shL, 0, 0.2); foreL.current?.rotation.set(carryElbow(shL), 0, 0); }
+      if (heavy(state.hands.left) || grab?.hand === "left" || state.groceryBag) { armL.current?.rotation.set(shL, 0, 0.2); foreL.current?.rotation.set(carryElbow(shL), 0, 0); }
       // A thing from the inventory (or an emptied bottle) is carried the same way in the right hand.
-      if (heavy(state.hands.right) || grab?.hand === "right" || state.heldSlot !== null || state.heldTrash) { armR.current?.rotation.set(shR, 0, -0.2); foreR.current?.rotation.set(carryElbow(shR), 0, 0); }
+      if (heavy(state.hands.right) || grab?.hand === "right" || state.heldSlot !== null || state.heldTrash || state.groceryBasket) { armR.current?.rotation.set(shR, 0, -0.2); foreR.current?.rotation.set(carryElbow(shR), 0, 0); }
       // The phone out: held up in front of the chest, the screen toward the face.
       if (state.phone.open && !state.hands.right && root.current) {
         root.current.updateMatrixWorld(true);
@@ -488,8 +491,11 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       // Setting a thing down on the ground, or picking one up: the right hand goes down to it.
       if (invLow && inv?.target) {
         root.current?.updateMatrixWorld(true);
-        const at = new THREE.Vector3(inv.target.x, floorHeight(inv.target.x, inv.target.z) + 0.2, inv.target.z);
-        reachArm(armR.current, foreR.current, at, POLES.low(-1), dropReach(invT));
+        // A bag of groceries is set down (and picked up) with the left hand; everything else with the right.
+        const bag = inv.item === "groceryBag";
+        const at = new THREE.Vector3(inv.target.x, floorHeight(inv.target.x, inv.target.z) + (bag ? 0.38 : 0.2), inv.target.z);
+        if (bag) reachArm(armL.current, foreL.current, at, POLES.low(1), dropReach(invT));
+        else reachArm(armR.current, foreR.current, at, POLES.low(-1), dropReach(invT));
       }
       if (dropping && root.current) {
         // Each hand sets its food down on the ground beside the feet.

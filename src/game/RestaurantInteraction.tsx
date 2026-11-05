@@ -28,7 +28,7 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
     // Everyone's uses of the doors (this player's and, in a room, the others'), on this player's clock.
     const wall = performance.now() / 1000;
     mine.current = mine.current.filter((u) => wall - u.start < 40);
-    const uses = [...mine.current, ...(state.doorLink?.others(wall) ?? []), ...state.npcDoorUses];
+    const uses = [...mine.current, ...(state.doorLink?.others(wall) ?? []), ...state.npcDoorUses, ...state.extraDoorUses];
     const usesOf = (key: string, leaf: Leaf) => uses.filter((u) => u.key === key && u.leaf === leaf);
     state.doorUsesNow = usesOf;
     /**

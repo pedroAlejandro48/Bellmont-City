@@ -56,7 +56,7 @@ export type WorldReach = { at: THREE.Vector3; blend: number; pole: "low" | "out"
  * A scripted movement this frame (going through a door, sitting on a chair): where the character is and how it
  * holds itself. `walk` is the speed along its facing, for the stepping legs.
  */
-export type Script = { x: number; z: number; yaw: number; walk: number; sit: number; shuffle: number; lean: number; left: WorldReach | null; right: WorldReach | null };
+export type Script = { x: number; z: number; yaw: number; walk: number; sit: number; shuffle: number; lean: number; left: WorldReach | null; right: WorldReach | null; crouch?: number };
 /** Inside (or going into, or out of) a restaurant. */
 export type Interior = {
   key: string; phase: "entering" | "inside" | "leaving"; startedAt: number;
@@ -118,9 +118,15 @@ export type GameState = {
   /** Trash in the right hand (an emptied bottle): it can't go in the inventory, only be put down (Q). */
   heldTrash: "bottle" | null;
   /** Doing something with a thing from the inventory: eating or drinking it, putting it down, picking one up. */
-  invAct: { kind: "eat" | "drink" | "drop" | "pickup"; at: number; item: ItemKind | "bottle"; target: THREE.Vector3 | null; done: boolean; ground?: number } | null;
-  /** Things from inventories lying on the ground (this player's world only). */
-  groundItems: { id: number; kind: ItemKind | "bottle"; x: number; z: number; yaw: number; at: number }[];
+  invAct: { kind: "eat" | "drink" | "drop" | "pickup"; at: number; item: ItemKind | "bottle" | "groceryBag"; target: THREE.Vector3 | null; done: boolean; ground?: number } | null;
+  /** Things from inventories lying on the ground (this player's world only); a grocery bag keeps what's in it. */
+  groundItems: { id: number; kind: ItemKind | "bottle" | "groceryBag"; x: number; z: number; yaw: number; at: number; contents?: ItemKind[] }[];
+  /** A shopping basket in the right hand (what's in it), or null. */
+  groceryBasket: ItemKind[] | null;
+  /** A bag of groceries in the left hand (what's in it), or null: it can't go in the inventory, only be put down. */
+  groceryBag: ItemKind[] | null;
+  /** Door uses by the grocery's shoppers (their doors swing like everyone's). */
+  extraDoorUses: import("./doors").DoorUse[];
   /** Some other panel that needs the mouse (a reception desk, an elevator's buttons…), by name. */
   uiLock: string | null;
   keys: Set<string>;
@@ -247,6 +253,9 @@ export function createState(save: SaveData): GameState {
     heldTrash: null,
     invAct: null,
     groundItems: [],
+    groceryBasket: null,
+    groceryBag: null,
+    extraDoorUses: [],
     uiLock: null,
     keys: new Set(),
     jumpQueued: false,

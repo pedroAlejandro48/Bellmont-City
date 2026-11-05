@@ -64,6 +64,8 @@ function Grocery({ state, refresh }: Props) {
   const life = state.life, home = !!life.home, full = life.fridge.length >= 12;
   if (shift) return <ClerkShift state={state} onDone={() => { setShift(false); refresh(); }} />;
   return <>
+    <p className="phone-note">Take what you want from the crates and shelves with your basket (E), then bring it here and press E to pay. Fruit and water go in your inventory from the bag (number keys).</p>
+    {false && <>
     <p className="phone-label">Groceries</p>
     <ul className="phone-list">{GROCERIES.map((g) => <li key={g.name}>
       <span>{g.name}<small>{money(g.price)}{isDrinkName(g.name) ? "" : ` · as filling as a ${money(g.value)} restaurant meal`}</small></span>
@@ -84,6 +86,7 @@ function Grocery({ state, refresh }: Props) {
       </span>
     </li>)}</ul>
     <p className="phone-note">{home ? `Fridge: ${life.fridge.length}/12.` : "Rent a home (Phone › Home) to keep groceries in a fridge."}</p>
+    </>}
     <p className="phone-label">Work here</p>
     <div className="phone-job"><div><b>Shop clerk</b> <small>J10</small><p>Restock the shelves for 40 seconds. Paid per shelf filled.</p></div>
       <button type="button" className="phone-btn" disabled={!!state.job} title={state.job ? "Finish your current job first" : ""} onClick={() => setShift(true)}>Work a shift</button></div>

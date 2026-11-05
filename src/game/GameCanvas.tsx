@@ -31,6 +31,7 @@ import { Billboards } from "./Billboards";
 import { ShopPanel } from "@/components/ShopPanel";
 import { InventoryButton } from "@/components/Inventory";
 import { InventoryWorld } from "./InventoryWorld";
+import { Grocery } from "./Grocery";
 import { pressInventorySlot } from "./invRuntime";
 import { LevelBadge, Phone, RouteHint, Toasts } from "@/components/Phone";
 import { HomeView } from "./HomeView";
@@ -153,7 +154,7 @@ const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameS
         <CameraRig state={state} />
         {Extra && <group name="perf:room"><Extra state={state} /></group>}
         <group name="perf:food"><Food state={state} /></group>
-        <group name="perf:life"><LifeWorld state={state} /><InventoryWorld state={state} /></group>
+        <group name="perf:life"><LifeWorld state={state} /><InventoryWorld state={state} /><Grocery state={state} city={city} /></group>
       </Physics>
     </Suspense>
   </Canvas>;
