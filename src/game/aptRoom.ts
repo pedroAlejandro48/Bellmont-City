@@ -16,12 +16,16 @@ export const FLOOR_CLEAR = 2.8;
 export const WIN = { y0: 0.95, y1: 2.35, kitchenY0: 1.25 } as const;
 
 export type AptFurniture = { type: "counter" | "sink" | "oven" | "microwave" | "fridge" | "table" | "chair" | "couch" | "tvTable" | "tv" | "rug" | "bed" | "desk" | "deskChair" | "closet" | "lamp"; x: number; z: number; rot: number; w: number; d: number; solid: boolean };
+export type DoorFrame = { ox: number; oz: number; theta: number };
 export type AptFloor = Room & {
   upper: number; y: number;
   hallZ: [number, number]; wallZ: number; divX: number;
   /** The apartment door: its frame (origin at the doorway's right edge, +z into the apartment; the opening spans
    * local x from -1 to 0, like the restaurants' left leaf). */
   door: { x: number; z: number };
+  /** Both hinged doors as frames like that one: origin, and the turn from the room's axes (θ: frame +z = into the
+   * room the door opens into). */
+  hinged: { apartment: DoorFrame; bedroom: DoorFrame };
   bedroomDoor: [number, number];
   furniture: AptFurniture[];
   /** The full-height walls inside (the shaft, the storage, the hallway's wall and door, the bedroom's wall). */
@@ -47,13 +51,15 @@ export function aptFloor(b: Building, floor: number): AptFloor {
   box(minX + SHAFT, maxX, minZ, hall0);
   // The wall between the hallway and the apartment, either side of the door; the door itself (shut, it's a wall
   // too: going through is a scripted move).
-  box(minX, doorX - 1.05, wallZ, inside0);
-  box(doorX + 0.02, maxX, wallZ, inside0);
-  box(doorX - 1.05, doorX + 0.02, wallZ - 0.02, inside0 + 0.02);
-  // The wall between the main room and the bedroom, with the bedroom doorway at its back end.
-  const bd0 = inside0 + 0.2, bd1 = bd0 + 0.9;
+  box(minX, doorX - 1, wallZ, inside0);
+  box(doorX, maxX, wallZ, inside0);
+  box(doorX - 1, doorX, wallZ - 0.02, inside0 + 0.02);
+  // The wall between the main room and the bedroom, with the bedroom doorway (1 m) at its back end; its door is
+  // shut unless someone's going through (a scripted move), so it's solid too.
+  const bd0 = inside0 + 0.2, bd1 = bd0 + 1;
   box(divX - INNER_WALL / 2, divX + INNER_WALL / 2, bd1, maxZ);
   box(divX - INNER_WALL / 2, divX + INNER_WALL / 2, inside0, bd0);
+  box(divX - INNER_WALL / 2 - 0.02, divX + INNER_WALL / 2 + 0.02, bd0, bd1);
 
   // (Everything so far is a wall, floor to ceiling: the camera keeps to this side of them.)
   const walls = solids.map((w) => ({ ...w }));
@@ -97,6 +103,8 @@ export function aptFloor(b: Building, floor: number): AptFloor {
     ...base, items: [], doors: { left: 0, right: 0 },
     key: floorKey(b, floor), upper: floor, y: floorY(floor),
     solids, walls, plants: [], hallZ: [hall0, hall1], wallZ, divX, door: { x: doorX, z: wallZ }, bedroomDoor: [bd0, bd1], furniture: F, front, side,
+    // (The bedroom door opens into the bedroom, toward −x: its frame's +z is the room's −x.)
+    hinged: { apartment: { ox: doorX, oz: inside0, theta: 0 }, bedroom: { ox: divX - INNER_WALL / 2, oz: bd1, theta: -Math.PI / 2 } },
     spots: { elevator: [minX + SHAFT / 2, hall0 + 0.65], bed: [minX + 1.08 + 0.75, maxZ - 1.6], fridge: [maxX - 0.36 - 0.75, maxZ - 1.25] },
   };
 }
