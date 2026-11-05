@@ -106,7 +106,7 @@ export function stepInventory(state: GameState) {
       a.done = true;
       const kind = a.item as ItemKind, name = ITEMS[kind].name;
       const after = consume(state, name, ITEMS[kind].value ?? foodValue(name));
-      state.hunger = after.hunger; state.thirst = after.thirst; state.energy = after.energy;
+      state.hunger = after.hunger; state.thirst = after.thirst; state.energy = after.energy; state.health = after.health;
       if (state.heldSlot !== null) removeItem(state.life.inventory, state.heldSlot);
       state.heldSlot = null;
       // The bottle is empty now: trash in the hand, to put down (Q).

@@ -8,9 +8,9 @@ describe("hunger, thirst and health", () => {
     expect(day.thirst).toBeGreaterThan(0); expect(day.hunger).toBeCloseTo(50, 0);
     expect(stepNeeds({ health: 100, hunger: 100, thirst: 100 }, 24 * 60).thirst).toBe(0);
   });
-  it("loses 10% health a minute with either at zero, and heals 1% every 10 minutes otherwise", () => {
+  it("loses 10% health a minute with either at zero, and heals 10% a day otherwise", () => {
     expect(stepNeeds({ health: 80, hunger: 0, thirst: 50 }, 1).health).toBeCloseTo(70);
-    expect(stepNeeds({ health: 80, hunger: 50, thirst: 50 }, 10).health).toBeCloseTo(81);
+    expect(stepNeeds({ health: 80, hunger: 100, thirst: 100 }, 12 * 60).health).toBeCloseTo(85);
     expect(stepNeeds({ health: 100, hunger: 50, thirst: 50 }, 5).health).toBe(100);
   });
   it("fills hunger by price, 10% to 50%, and never past 100%", () => {
@@ -49,5 +49,20 @@ describe("energy and sleep", () => {
     const evening = at(3, 22), small = at(3, 2);
     expect(Math.round(timeInfo(wakeElapsed(evening)).hours)).toBe(6); expect(timeInfo(wakeElapsed(evening)).day).toBe(4);
     expect(Math.round(timeInfo(wakeElapsed(small)).hours)).toBe(6); expect(wakeElapsed(small) - small).toBeLessThan(CYCLE / 2);
+  });
+});
+
+import { hoursTo6, sleepEnergy } from "@/game/needs";
+describe("sleep energy and the energy drink's cost", () => {
+  it("an hour or less gives 20%, eight or more fills it, evenly in between", () => {
+    expect(sleepEnergy(30, 0.5)).toBe(50); expect(sleepEnergy(30, 1)).toBe(50);
+    expect(sleepEnergy(10, 8)).toBe(100); expect(sleepEnergy(10, 9)).toBe(100);
+    expect(sleepEnergy(0, 4.5)).toBeCloseTo(60, 5);
+    expect(sleepEnergy(90, 3)).toBe(100);
+    expect(hoursTo6(22)).toBe(8); expect(hoursTo6(2)).toBe(4); expect(hoursTo6(21)).toBe(9);
+  });
+  it("an energy drink takes 15% health", () => {
+    expect(consume({ health: 80, hunger: 50, thirst: 50, energy: 30 }, "Volt Energy", 2).health).toBe(65);
+    expect(consume({ health: 80, hunger: 50, thirst: 50, energy: 30 }, "Cola", 1).health).toBe(80);
   });
 });

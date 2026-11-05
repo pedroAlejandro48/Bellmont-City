@@ -5,22 +5,34 @@ import { MENU_BOARDS, isDrinkName, isWaterName } from "./food";
 /** Thirst runs out over 24 in-game hours, hunger over 48. */
 export const THIRST_PER_MINUTE = 100 / (24 * 60);
 export const HUNGER_PER_MINUTE = 100 / (48 * 60);
-/** With either at zero, health drops 10% an in-game minute; otherwise it heals 1% every 10 in-game minutes. */
+/** With either at zero, health drops 10% an in-game minute; otherwise it heals 10% an in-game day. */
 export const STARVING_PER_MINUTE = 10;
-export const HEALING_PER_MINUTE = 0.1;
+export const HEALING_PER_MINUTE = 10 / (24 * 60);
 
 /** Energy runs down 75% over an in-game day (three times as fast while running); sleep fills it. */
 export const ENERGY_PER_MINUTE = 75 / (24 * 60);
 export const RUN_ENERGY_FACTOR = 3;
 export type Needs = { health: number; hunger: number; thirst: number; energy?: number };
 /** Shop drinks: what one does (juices fill a little too; an energy drink gives energy). */
-export const DRINK_EFFECTS: Record<string, { hunger: number; thirst: number; energy: number }> = {
+export const DRINK_EFFECTS: Record<string, { hunger: number; thirst: number; energy: number; health?: number }> = {
   "Orange Juice": { hunger: 5, thirst: 30, energy: 0 },
   "Apple Juice": { hunger: 5, thirst: 30, energy: 0 },
   "Cola": { hunger: 3, thirst: 25, energy: 5 },
   "Lemon Soda": { hunger: 3, thirst: 25, energy: 5 },
-  "Volt Energy": { hunger: 0, thirst: 15, energy: 40 },
+  // Energy, at a cost: 15% of your health.
+  "Volt Energy": { hunger: 0, thirst: 15, energy: 40, health: -15 },
 };
+/**
+ * Energy after sleeping `hours` (in-game): an hour or less gives 20%, eight or more fills it, and in between it
+ * grows evenly (20% + 80% × (hours − 1) / 7: 2 h ≈ 31%, 4 h ≈ 54%, 6 h ≈ 77%).
+ */
+export function sleepEnergy(energy: number, hours: number) {
+  if (hours >= 8) return 100;
+  const gain = hours <= 1 ? 20 : 20 + 80 * (hours - 1) / 7;
+  return clamp(energy + gain);
+}
+/** In-game hours from `hours` (time of day) to 6 AM. */
+export const hoursTo6 = (hours: number) => ((6 - hours) % 24 + 24) % 24;
 /** Energy after `minutes` in-game minutes (running uses it faster). */
 export function stepEnergy(energy: number, minutes: number, running: boolean) {
   return clamp(energy - ENERGY_PER_MINUTE * minutes * (running ? RUN_ENERGY_FACTOR : 1));
@@ -56,8 +68,8 @@ export function canConsume(n: Needs, name: string) {
   return isDrinkName(name) ? n.thirst < 100 : n.hunger < 100;
 }
 export function consume(n: Needs, name: string, price: number): Needs & { energy: number } {
-  const g = nutrition(name, price);
-  return { health: n.health, hunger: clamp(n.hunger + g.hunger), thirst: clamp(n.thirst + g.thirst), energy: clamp((n.energy ?? 100) + g.energy) };
+  const g = nutrition(name, price), hurt = DRINK_EFFECTS[name]?.health ?? 0;
+  return { health: clamp(n.health + hurt), hunger: clamp(n.hunger + g.hunger), thirst: clamp(n.thirst + g.thirst), energy: clamp((n.energy ?? 100) + g.energy) };
 }
 
 /** Bedtime: from 9 PM to 5 AM. */

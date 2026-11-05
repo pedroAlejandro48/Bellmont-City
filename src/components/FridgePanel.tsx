@@ -41,7 +41,7 @@ export function FridgePanel({ state, onClose }: { state: GameState; onClose: () 
   const eat = (name: string) => {
     if (!canConsume(state, name)) { toast(state, isDrinkName(name) ? "Not thirsty" : "You're full", "warn"); return; }
     const after = consume(state, name, foodValue(name));
-    state.hunger = after.hunger; state.thirst = after.thirst; state.energy = after.energy;
+    state.hunger = after.hunger; state.thirst = after.thirst; state.energy = after.energy; state.health = after.health;
     life.fridge.splice(life.fridge.indexOf(name), 1);
     lifeEvent(state, "eat", 1);
     tick((n) => n + 1);

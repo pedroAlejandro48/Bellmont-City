@@ -301,7 +301,7 @@ export function Food({ state }: { state: GameState }) {
       const pk = view.packs.find((p) => p.id === eat.pack), price = pk ? priceOf(kindOf(pk), eat.item)?.price ?? 0 : 0;
       const after = consume(state, eat.item, price);
       lifeEvent(state, "eat", 1); guideDone(state, 2);
-      state.hunger = after.hunger; state.thirst = after.thirst; state.energy = after.energy;
+      state.hunger = after.hunger; state.thirst = after.thirst; state.energy = after.energy; state.health = after.health;
       link.send({ type: "ate", pack: eat.pack, item: eat.item });
       // Until the shared state shows it gone, that item is not started again.
       mm.justAte = { pack: eat.pack, item: eat.item, left: (pk?.items.filter((n) => n === eat.item).length ?? 1) - 1, until: Date.now() + 4000 };

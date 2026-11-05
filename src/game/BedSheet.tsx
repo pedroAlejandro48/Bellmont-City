@@ -13,7 +13,8 @@ const NX = 16, NZ = 22, OVER = 0.3, THICK = 0.014, ITER = 12;
 const SETTLE = 2.5;
 
 /** What the apartment's moves and the sheet share: where its held corner is now, and where a hand holds it (or null). */
-export type SheetLink = { corner: [number, number, number] | null; pin: [number, number, number] | null; /** Someone is getting in or out of the bed: the sheet moves. */ active: boolean };
+export type SheetLink = { corner: [number, number, number] | null; pin: [number, number, number] | null; /** Someone is getting in or out of the bed: the sheet moves. */ active: boolean;
+  /** Making the bed: 0..1 of the way from how the sheet lies back to made (null: not making it). */ make: number | null };
 
 /** Links: [a, b, rest length, stiff] — stiff ones (two apart) also resist folding, so it's fabric, not liquid. */
 type Cloth = { p: Float32Array; q: Float32Array; links: [number, number, number, boolean][]; pos0: Float32Array };
@@ -147,6 +148,9 @@ export function BedSheet({ fl, state, mat, live, link }: { fl: AptFloor; state: 
   };
   /** Until when the sheet still moves (it settles a moment after someone gets in or out, then is still). */
   const movingUntil = useRef(-1);
+  /** Where the sheet lay when the bed began to be made. */
+  const makeFrom = useRef<Float32Array | null>(null);
+  const showNow = () => { const attr = geo.getAttribute("position") as THREE.BufferAttribute; (attr.array as Float32Array).set(cloth.p); attr.needsUpdate = true; geo.computeVertexNormals(); geo.computeBoundingSphere(); };
 
   const mesh = useRef<THREE.Mesh>(null);
   // Seen from both sides (it folds and hangs).
@@ -157,6 +161,26 @@ export function BedSheet({ fl, state, mat, live, link }: { fl: AptFloor; state: 
     const P = cloth.p;
     { const k = CORNER * 3; link.corner = [P[k]!, P[k + 1]!, P[k + 2]!]; }
     if (!on) return;
+    // Making the bed: the sheet is lifted, shaken out and laid back flat — from how it lies to made, along an arc.
+    if (link.make !== null) {
+      if (!makeFrom.current) makeFrom.current = P.slice();
+      const k = link.make, s = k * k * (3 - 2 * k), lift = Math.sin(Math.PI * k) * 0.35, from = makeFrom.current, to = cloth.pos0;
+      for (let n = 0; n < NX * NZ; n++) {
+        const i = n % NX, j = Math.floor(n / NX), k3 = n * 3;
+        // The top edge leads (it's where the hands hold it), the foot follows a little behind: a wave down the bed.
+        const lag = Math.max(0, Math.min(1, s * 1.25 - j / (NZ - 1) * 0.25));
+        const wave = lift * (1 - j / (NZ - 1) * 0.6) * (0.85 + 0.15 * Math.cos(i * 0.9 + k * 9));
+        P[k3] = from[k3]! + (to[k3]! - from[k3]!) * lag;
+        P[k3 + 1] = from[k3 + 1]! + (to[k3 + 1]! - from[k3 + 1]!) * lag + wave;
+        P[k3 + 2] = from[k3 + 2]! + (to[k3 + 2]! - from[k3 + 2]!) * lag;
+      }
+      cloth.q.set(P);
+      { const kk = CORNER * 3; link.corner = [P[kk]!, P[kk + 1]!, P[kk + 2]!]; }
+      showNow();
+      if (k >= 1) { P.set(to); cloth.q.set(to); showNow(); }
+      return;
+    }
+    makeFrom.current = null;
     // Still unless someone is getting into or out of the bed (and a moment after, while it settles).
     const now = state.simulationTime;
     if (link.active || link.pin) movingUntil.current = now + SETTLE;
