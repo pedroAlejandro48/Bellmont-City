@@ -1,12 +1,17 @@
 // The inventory (pure): nine slots (3 × 3), the phone always in the first. Things that can be kept are listed in
 // ITEMS; trash (an empty bottle) can't go in.
-export type ItemKind = "phone" | "water" | "apple" | "banana" | "orange" | "pear" | "lemon" | "lime" | "grape" | "peach" | "key";
+export type ItemKind = "phone" | "water" | "orangeJuice" | "appleJuice" | "cola" | "lemonSoda" | "energy" | "apple" | "banana" | "orange" | "pear" | "lemon" | "lime" | "grape" | "peach" | "key";
 export type Inventory = (ItemKind | null)[];
 export const SLOTS = 9;
 
-export const ITEMS: Record<ItemKind, { name: string; icon: string; use: "eat" | "drink" | "open" | "hold"; value?: number }> = {
+export const ITEMS: Record<ItemKind, { name: string; icon: string; use: "eat" | "drink" | "open" | "hold"; value?: number; trash?: "bottle" | "can" }> = {
   phone: { name: "Phone", icon: "📱", use: "open" },
-  water: { name: "Bottled Water", icon: "💧", use: "drink" },
+  water: { name: "Bottled Water", icon: "💧", use: "drink", trash: "bottle" },
+  orangeJuice: { name: "Orange Juice", icon: "🧃", use: "drink", trash: "bottle" },
+  appleJuice: { name: "Apple Juice", icon: "🧃", use: "drink", trash: "bottle" },
+  cola: { name: "Cola", icon: "🥤", use: "drink", trash: "can" },
+  lemonSoda: { name: "Lemon Soda", icon: "🥤", use: "drink", trash: "can" },
+  energy: { name: "Volt Energy", icon: "⚡", use: "drink", trash: "can" },
   apple: { name: "Apple", icon: "🍎", use: "eat", value: 3 },
   banana: { name: "Banana", icon: "🍌", use: "eat", value: 3.5 },
   orange: { name: "Orange", icon: "🍊", use: "eat", value: 3 },

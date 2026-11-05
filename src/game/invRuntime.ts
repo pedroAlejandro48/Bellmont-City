@@ -62,8 +62,8 @@ export function consumeHeld(state: GameState) {
   if (!kind || busy(state)) return false;
   const use = ITEMS[kind].use;
   if (use !== "eat" && use !== "drink") return false;
-  const name = use === "drink" ? "Bottled Water" : ITEMS[kind].name;
-  if (!canConsume(state, use === "drink" ? "Bottled Water" : name)) { toast(state, use === "drink" ? "Not thirsty" : "You're full", "warn"); return true; }
+  const name = ITEMS[kind].name;
+  if (!canConsume(state, name)) { toast(state, use === "drink" ? "Not thirsty" : "You're full", "warn"); return true; }
   state.invAct = { kind: use, at: state.simulationTime, item: kind, target: null, done: false };
   return true;
 }
@@ -86,9 +86,10 @@ export function pickUpNear(state: GameState) {
   for (const g of state.groundItems) { const d = Math.hypot(g.x - state.pos.x, g.z - state.pos.z) + Math.abs((g.y ?? 0) - (state.level?.y ?? 0)) * 10; if (d < bd) { bd = d; best = g; } }
   if (!best) return false;
   // Can't take it (hand or inventory full): the press is left for something else (eating what's in the hand).
-  const blocked = best.kind === "groceryBag" ? !!(state.groceryBag || state.hands.left) : best.kind === "bottle" ? !!(state.heldTrash || state.heldSlot !== null || state.hands.right) : !state.life.inventory.some((x, i) => i > 0 && x === null);
+  const trash = best.kind === "bottle" || best.kind === "can";
+  const blocked = best.kind === "groceryBag" ? !!(state.groceryBag || state.hands.left) : trash ? !!(state.heldTrash || state.heldSlot !== null || state.hands.right) : !state.life.inventory.some((x, i) => i > 0 && x === null);
   if (blocked) {
-    if (state.heldSlot === null) { toast(state, best.kind === "groceryBag" ? "Your left hand is full" : best.kind === "bottle" ? "Your right hand is full" : "Your inventory is full", "warn"); return true; }
+    if (state.heldSlot === null) { toast(state, best.kind === "groceryBag" ? "Your left hand is full" : trash ? "Your right hand is full" : "Your inventory is full", "warn"); return true; }
     return false;
   }
   state.invAct = { kind: "pickup", at: state.simulationTime, item: best.kind, target: new THREE.Vector3(best.x, state.pos.y, best.z), done: false, ground: best.id };
@@ -103,13 +104,13 @@ export function stepInventory(state: GameState) {
   if (a.kind === "eat" || a.kind === "drink") {
     if (!a.done && t >= USE_SECONDS * 0.85) {
       a.done = true;
-      const kind = a.item as ItemKind, name = a.kind === "drink" ? "Bottled Water" : ITEMS[kind].name;
+      const kind = a.item as ItemKind, name = ITEMS[kind].name;
       const after = consume(state, name, ITEMS[kind].value ?? foodValue(name));
-      state.hunger = after.hunger; state.thirst = after.thirst;
+      state.hunger = after.hunger; state.thirst = after.thirst; state.energy = after.energy;
       if (state.heldSlot !== null) removeItem(state.life.inventory, state.heldSlot);
       state.heldSlot = null;
       // The bottle is empty now: trash in the hand, to put down (Q).
-      if (a.kind === "drink") state.heldTrash = "bottle";
+      if (a.kind === "drink") state.heldTrash = ITEMS[kind].trash ?? "bottle";
       lifeEvent(state, "eat", 1);
     }
     if (t >= USE_SECONDS) state.invAct = null;
@@ -120,7 +121,7 @@ export function stepInventory(state: GameState) {
       a.done = true;
       const contents = a.item === "groceryBag" ? state.groceryBag ?? [] : undefined;
       state.groundItems.push({ id: nextGround++, kind: a.item, x: a.target.x, z: a.target.z, ...(state.level ? { y: state.level.y } : {}), yaw: state.rotY, at: state.simulationTime, ...(contents ? { contents } : {}) });
-      if (a.item === "bottle") state.heldTrash = null;
+      if (a.item === "bottle" || a.item === "can") state.heldTrash = null;
       else if (a.item === "groceryBag") state.groceryBag = null;
       else if (state.heldSlot !== null) { removeItem(state.life.inventory, state.heldSlot); state.heldSlot = null; }
       // Old things on the ground fade from the world after a while (and never more than 40).
@@ -132,7 +133,7 @@ export function stepInventory(state: GameState) {
       const g = state.groundItems.find((x) => x.id === a.ground);
       if (g) {
         state.groundItems = state.groundItems.filter((x) => x !== g);
-        if (g.kind === "bottle") state.heldTrash = "bottle";
+        if (g.kind === "bottle" || g.kind === "can") state.heldTrash = g.kind;
         else if (g.kind === "groceryBag") state.groceryBag = g.contents ?? [];
         else { const slot = addItem(state.life.inventory, g.kind); if (slot > 0) toast(state, `${ITEMS[g.kind].name} → slot ${slot + 1}`, "info"); }
       }

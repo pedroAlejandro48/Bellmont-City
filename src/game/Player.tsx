@@ -13,6 +13,8 @@ import type { GameState } from "./state";
 import { BODY_PARTS, CharacterBody, useBodyRig } from "./CharacterBody";
 import { bumpOthers } from "@/multiplayer/bump";
 import { CHAIR, stepPerson, toLocal, toWorld } from "./restaurantRoom";
+/** Hip height (above the floor) sat on a bed's edge, and lying on it. */
+export const BED_SIT_HIPS = 0.62, BED_LIE_HIPS = 0.71;
 
 // feel constants
 const WALK = 2.2;
@@ -175,7 +177,9 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       const direction = useStick ? stick!.y : Number(fwdKey) - Number(back);
       const sideways = useStick ? stick!.x : Number(right) - Number(left);
       // Nobody runs holding a drink, nor anywhere indoors.
-      running = !holdingDrink && !state.interior && (useStick ? stickPush > 0.92 : shift && fwdKey && !back);
+      // (Out of energy: no running.)
+      running = !holdingDrink && !state.interior && state.energy > 0 && (useStick ? stickPush > 0.92 : shift && fwdKey && !back);
+      state.runningNow = running;
       // Fitness (from the gym and running) makes running faster: 2.5% a level.
       const run = RUN * (1 + 0.025 * skillLevel(state.life.skills.fitness));
       const pace = useStick && !running ? WALK * Math.min(1, 0.35 + stickPush * 0.75) : running ? run : WALK;
@@ -461,13 +465,25 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       kneeL = THREE.MathUtils.lerp(kneeL, 2.0, crouch); kneeR = THREE.MathUtils.lerp(kneeR, 2.0, crouch);
       bob = THREE.MathUtils.lerp(bob, -0.42, crouch); lean = Math.max(lean, 0.55 * crouch);
     }
-    if (hips.current) hips.current.position.y = 0.95 + bob + riderOffset;
+    // In bed: sat on the edge, the legs up and straight, lying back flat (the whole body turns about the hips: the
+    // legs stay level with the mattress as the back goes down).
+    const bed = script?.bed;
+    if (bed) {
+      const sitK = bed.sit * (1 - bed.lie);
+      hipL = hipR = -Math.PI / 2 * sitK;
+      kneeL = 1.57 * bed.sit * (1 - bed.legL); kneeR = 1.57 * bed.sit * (1 - bed.legR);
+      lean = script!.lean * (1 - bed.lie); bob = 0;
+      riderOffset = THREE.MathUtils.lerp(THREE.MathUtils.lerp(0.95, BED_SIT_HIPS, bed.sit), BED_LIE_HIPS, bed.lie) - 0.95;
+      shL = shR = THREE.MathUtils.lerp(shL, 0, bed.sit); elbow = THREE.MathUtils.lerp(elbow, -0.1, bed.sit);
+    }
+    if (hips.current) { hips.current.position.y = 0.95 + bob + riderOffset; hips.current.rotation.x = bed ? -Math.PI / 2 * bed.lie : 0; }
     // Leaning in over the counter while reaching for food.
     if (grabbing && !script && !usingBike && !lowGrab) lean = Math.max(lean, 0.3 * grabReach(grabT));
     if (torso.current) torso.current.rotation.set(lean, s.reverseBlend * 0.65, 0);
     if (head.current) head.current.rotation.set(-lean * 0.5, s.reverseBlend * 1.05, 0);
-    thighL.current?.rotation.set(hipL, 0, 0.13 + Math.max(0, -legSwing) + Math.max(0, plantSwing) + 0.32 * straddle);
-    thighR.current?.rotation.set(hipR, 0, -0.13 - Math.max(0, legSwing) + Math.min(0, plantSwing) - 0.32 * straddle);
+    const splay = bed ? 0.15 : 1;
+    thighL.current?.rotation.set(hipL, 0, (0.13 + Math.max(0, -legSwing) + Math.max(0, plantSwing) + 0.32 * straddle) * splay);
+    thighR.current?.rotation.set(hipR, 0, (-0.13 - Math.max(0, legSwing) + Math.min(0, plantSwing) - 0.32 * straddle) * splay);
     shinL.current?.rotation.set(kneeL, 0, 0);
     shinR.current?.rotation.set(kneeR, 0, 0);
     armL.current?.rotation.set(shL, 0, (0.12 + air * 0.2) * (1 - sitHands) - 0.1 * sitHands);

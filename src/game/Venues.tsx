@@ -10,6 +10,8 @@ import { ScooterModel, type ScooterLook } from "./Scooter";
 import type { GameState } from "./state";
 import { canvas, groundY, makeBlankWall, tex } from "./textures";
 import { LIFT_DOOR, venueLayout, type Fixture, type VenueLayout } from "./venueRoom";
+import { DRINK_SHELF, drinkSection } from "./groceryRun";
+import type { ItemKind } from "./inventory";
 
 const FH = BUILDING_ENTRANCE.floorHeight;
 
@@ -221,14 +223,15 @@ function FixtureModel({ f, m, kind }: { f: Fixture; m: VMats; kind: VenueKind })
       <mesh position={[-w / 2 + 0.3, 1.0, 0.1]} material={m.solid("#3a5a8a", 0.4, 0.5)}>{box([0.2, 0.14, 0.16])}</mesh>
       <mesh position={[w / 2 - 0.45, 1.05, 0]} material={m.solid("#d62f3a", 0.5, 0.3)}>{box([0.5, 0.24, 0.26])}</mesh>
     </group>;
-    case "shelf": return <group>
+    case "shelf": if (f.tag === "bottles") return <DrinkShelf f={f} m={m} />;
+    return <group>
       <mesh position={[0, 0.9, 0]} material={m.white}>{box([w, 1.8, 0.04])}</mesh>
       {[-1, 1].map((s) => <mesh key={s} position={[s * w / 2, 0.9, 0]} material={m.white}>{box([0.04, 1.8, d])}</mesh>)}
       {[0.12, 0.55, 1.0, 1.45].map((y, r) => <group key={y}>
         <mesh position={[0, y, 0]} material={m.white}>{box([w, 0.03, d])}</mesh>
         {[-1, 1].map((side) => Array.from({ length: Math.floor(w / 0.22) }, (_, k) => {
           const mat = m.products[(k * 3 + r + (side > 0 ? 1 : 4)) % m.products.length]!, x = -w / 2 + 0.14 + k * 0.22, z = side * d / 4;
-          return f.tag === "cans" ? <mesh key={`${side}${k}`} position={[x, y + 0.08, z]} material={mat}><cylinderGeometry args={[0.04, 0.04, 0.13, 10]} /></mesh>
+          return f.tag === "jars" ? <mesh key={`${side}${k}`} position={[x, y + 0.07, z]} material={mat}><cylinderGeometry args={[0.05, 0.05, 0.12, 10]} /></mesh>
             : f.tag === "bottles" ? <group key={`${side}${k}`} position={[x, y, z]}><mesh position-y={0.12} material={mat}><cylinderGeometry args={[0.045, 0.045, 0.22, 10]} /></mesh><mesh position-y={0.27} material={mat}><cylinderGeometry args={[0.015, 0.03, 0.08, 8]} /></mesh></group>
             : <mesh key={`${side}${k}`} position={[x, y + 0.13, z]} material={mat}>{box([0.17, 0.24, 0.08])}</mesh>;
         }))}
@@ -303,23 +306,85 @@ function FixtureModel({ f, m, kind }: { f: Fixture; m: VMats; kind: VenueKind })
   }
 }
 
-/** A wooden crate of one fruit, heaped. */
+/** A wooden crate of one fruit, heaped high (three layers, one instanced mesh). */
 function Crate({ f, m }: { f: Fixture; m: VMats }) {
   const fruit = m.fruit[f.tag ?? "apple"]!, banana = f.tag === "banana", grape = f.tag === "grape";
   const heap = useMemo(() => {
     const out: [number, number, number][] = [];
-    for (let a = 0; a < 5; a++) for (let b = 0; b < 4; b++) out.push([-0.22 + a * 0.11 + (b % 2) * 0.04, 0.0, -0.16 + b * 0.105]);
-    for (let a = 0; a < 4; a++) for (let b = 0; b < 3; b++) out.push([-0.17 + a * 0.11, 0.07, -0.11 + b * 0.105]);
+    const layer = (nx: number, nz: number, y: number) => {
+      const sx = (f.w - 0.12) / nx, sz = (f.d - 0.12) / nz;
+      for (let a = 0; a < nx; a++) for (let b = 0; b < nz; b++) out.push([-(f.w - 0.12) / 2 + (a + 0.5) * sx + ((b % 2) - 0.5) * 0.02, y, -(f.d - 0.12) / 2 + (b + 0.5) * sz]);
+    };
+    layer(7, 5, 0); layer(6, 4, 0.07); layer(4, 3, 0.13); layer(2, 2, 0.18);
     return out;
-  }, []);
+  }, [f.w, f.d]);
+  const inst = useMemo(() => {
+    const geo = banana ? new THREE.TorusGeometry(0.06, 0.016, 6, 10, Math.PI * 0.7) : new THREE.SphereGeometry(0.05, 10, 8);
+    const im = new THREE.InstancedMesh(geo, fruit, heap.length), o = new THREE.Object3D();
+    heap.forEach(([x, y, z], i) => {
+      o.position.set(x, 0.42 + y, z);
+      if (banana) o.rotation.set(Math.PI / 2, 0, i); else o.rotation.set(0, i, 0);
+      const s = grape ? 0.55 : 1;
+      if (f.tag === "lemon" || f.tag === "lime") o.scale.set(1, 0.8, 0.8); else o.scale.setScalar(s);
+      o.updateMatrix(); im.setMatrixAt(i, o.matrix);
+    });
+    im.castShadow = true;
+    return im;
+  }, [heap, fruit, banana, grape, f.tag]);
+  useEffect(() => () => { inst.geometry.dispose(); inst.dispose(); }, [inst]);
   return <group rotation-x={-0.12}>
     <mesh position={[0, 0.35, 0]} material={m.crate} castShadow>{box([f.w, 0.04, f.d])}</mesh>
     {[-1, 1].map((s) => <mesh key={s} position={[s * f.w / 2, 0.45, 0]} material={m.crate}>{box([0.03, 0.22, f.d])}</mesh>)}
     {[-1, 1].map((s) => <mesh key={s} position={[0, 0.45, s * f.d / 2]} material={m.crate}>{box([f.w, 0.22, 0.03])}</mesh>)}
     {[-1, 1].flatMap((a) => [-1, 1].map((b) => <mesh key={`${a}${b}`} position={[a * (f.w / 2 - 0.03), 0.17, b * (f.d / 2 - 0.03)]} material={m.crate}>{box([0.05, 0.34, 0.05])}</mesh>))}
-    {heap.map(([x, y, z], i) => banana
-      ? <mesh key={i} position={[x, 0.42 + y, z]} rotation={[Math.PI / 2, 0, i]} material={fruit}><torusGeometry args={[0.06, 0.016, 6, 10, Math.PI * 0.7]} /></mesh>
-      : <mesh key={i} position={[x, 0.42 + y, z]} material={fruit} scale={grape ? 0.55 : f.tag === "lemon" || f.tag === "lime" ? [1, 0.8, 0.8] : 1}><sphereGeometry args={[0.05, 10, 8]} /></mesh>)}
+    <primitive object={inst} />
+  </group>;
+}
+
+/**
+ * The drinks shelf: a section for each drink (water, the juices, the sodas, the energy drink), four shelves of them
+ * a row deep, drawn as the real things (bottles with their juice and label, cans in their colours). Instanced.
+ */
+const DRINK_LOOK: Record<string, { can: boolean; body: string; band: string; cap: string; liquid?: string }> = {
+  water: { can: false, body: "#bfe3ff", band: "#ffffff", cap: "#1f5fbf", liquid: "#6fb6ff" },
+  orangeJuice: { can: false, body: "#ff9a1f", band: "#ffd166", cap: "#f07f12" },
+  appleJuice: { can: false, body: "#e8b53c", band: "#8ac34a", cap: "#3f8f2f" },
+  cola: { can: true, body: "#c81d25", band: "#f6f6f4", cap: "#c9cdd2" },
+  lemonSoda: { can: true, body: "#f2e14b", band: "#3fa34d", cap: "#c9cdd2" },
+  energy: { can: true, body: "#16181d", band: "#7dff3a", cap: "#c9cdd2" },
+};
+function DrinkShelf({ f, m }: { f: Fixture; m: VMats }) {
+  const { w, d } = f, levels = [0.12, 0.55, 1.0, 1.45];
+  const meshes = useMemo(() => {
+    const out: THREE.InstancedMesh[] = [], o = new THREE.Object3D(), sec = w / DRINK_SHELF.length;
+    DRINK_SHELF.forEach((kind: ItemKind, k) => {
+      const look = DRINK_LOOK[kind]!, per = Math.max(3, Math.floor((sec - 0.06) / (look.can ? 0.085 : 0.09)));
+      const spots: [number, number, number][] = [];
+      levels.forEach((y) => [-1, 1].forEach((row) => { for (let i = 0; i < per; i++) spots.push([drinkSection(w, k) - sec / 2 + 0.06 + (i + 0.5) * (sec - 0.12) / per, y + 0.015, row * d / 4]); }));
+      const mat = (c: string, extra: Partial<THREE.MeshStandardMaterialParameters> = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: look.can ? 0.3 : 0.2, metalness: look.can ? 0.5 : 0, ...extra });
+      // A can: body, band, top; a bottle: clear body (the drink inside), label, neck, cap.
+      const parts: [THREE.BufferGeometry, THREE.Material, number][] = look.can
+        ? [[new THREE.CylinderGeometry(0.033, 0.033, 0.12, 12), mat(look.body), 0.06], [new THREE.CylinderGeometry(0.0336, 0.0336, 0.03, 12, 1, true), mat(look.band), 0.06], [new THREE.CylinderGeometry(0.027, 0.033, 0.012, 12), mat(look.cap, { metalness: 0.85 }), 0.126]]
+        : [[new THREE.CylinderGeometry(0.031, 0.031, 0.17, 12), mat(look.liquid ?? look.body, { transparent: !!look.liquid, opacity: look.liquid ? 0.7 : 1 }), 0.085], [new THREE.CylinderGeometry(0.0325, 0.0325, 0.07, 12, 1, true), mat(look.band), 0.08], [new THREE.CylinderGeometry(0.013, 0.031, 0.04, 10), mat(look.liquid ? "#cfe9ff" : look.body, { transparent: true, opacity: 0.8 }), 0.19], [new THREE.CylinderGeometry(0.015, 0.015, 0.02, 8), mat(look.cap), 0.22]];
+      for (const [geo, material, y] of parts) {
+        const im = new THREE.InstancedMesh(geo, material, spots.length);
+        spots.forEach(([x, sy, z], i) => { o.position.set(x, sy + y, z); o.updateMatrix(); im.setMatrixAt(i, o.matrix); });
+        out.push(im);
+      }
+    });
+    return out;
+  }, [w, d]);
+  useEffect(() => () => meshes.forEach((im) => { im.geometry.dispose(); (im.material as THREE.Material).dispose(); im.dispose(); }), [meshes]);
+  return <group>
+    <mesh position={[0, 0.9, -d / 2 + 0.02]} material={m.white}>{box([w, 1.8, 0.04])}</mesh>
+    {[-1, 1].map((s) => <mesh key={s} position={[s * w / 2, 0.9, 0]} material={m.white}>{box([0.04, 1.8, d])}</mesh>)}
+    {/* Dividers between the drinks, and a price strip along each shelf's edge. */}
+    {DRINK_SHELF.slice(1).map((_, k) => <mesh key={k} position={[-w / 2 + (k + 1) * w / DRINK_SHELF.length, 0.9, 0]} material={m.white}>{box([0.015, 1.8, d])}</mesh>)}
+    {levels.map((y) => <group key={y}>
+      <mesh position={[0, y, 0]} material={m.white}>{box([w, 0.03, d])}</mesh>
+      <mesh position={[0, y - 0.005, d / 2]} material={m.products[0]!}>{box([w, 0.035, 0.01])}</mesh>
+    </group>)}
+    {meshes.map((im, i) => <primitive key={i} object={im} />)}
   </group>;
 }
 

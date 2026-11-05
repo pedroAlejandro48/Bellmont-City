@@ -6,8 +6,11 @@ import type { ItemKind } from "./inventory";
 import { smooth, walkTo, type Reach } from "./restaurantRoom";
 import type { Fixture, VenueLayout } from "./venueRoom";
 
+/** The drinks shelf's sections, left to right, and where each one's middle is along a shelf `w` wide. */
+export const DRINK_SHELF: ItemKind[] = ["water", "orangeJuice", "appleJuice", "cola", "lemonSoda", "energy"];
+export const drinkSection = (w: number, k: number) => -w / 2 + (k + 0.5) * (w / DRINK_SHELF.length);
 /** What the grocery sells off its crates and shelf, and the price of one. */
-export const GROCERY_PRICE: Partial<Record<ItemKind, number>> = { apple: 0.6, banana: 0.4, orange: 0.7, pear: 0.65, lemon: 0.5, lime: 0.45, grape: 2.2, peach: 0.8, water: 0.8 };
+export const GROCERY_PRICE: Partial<Record<ItemKind, number>> = { apple: 0.6, banana: 0.4, orange: 0.7, pear: 0.65, lemon: 0.5, lime: 0.45, grape: 2.2, peach: 0.8, water: 0.8, orangeJuice: 1.6, appleJuice: 1.6, cola: 1.2, lemonSoda: 1.2, energy: 2.4 };
 export const BASKET_MAX = 10;
 /** Held at the waist, out in front and to the right (body frame: x right, y up, z forward). */
 export const CARRY = { right: 0.2, y: 0.92, fwd: 0.3 } as const;
@@ -102,8 +105,13 @@ export function sources(layout: VenueLayout): Source[] {
       out.push({ kind: f.tag as ItemKind, stand: [f.x + fx * (f.d / 2 + 0.5), f.z + fz * (f.d / 2 + 0.5)], yaw: f.rot + Math.PI, take: [f.x + fx * 0.04, 0.5, f.z + fz * 0.04], fixture: i });
     }
     if (f.type === "shelf" && f.tag === "bottles") {
-      const fx = Math.sin(f.rot), fz = Math.cos(f.rot);
-      out.push({ kind: "water", stand: [f.x + fx * (f.d / 2 + 0.5), f.z + fz * (f.d / 2 + 0.5)], yaw: f.rot + Math.PI, take: [f.x + fx * 0.15, 1.12, f.z + fz * 0.15], fixture: i });
+      // The drinks shelf: a section for each drink, side by side; stand in front of the one you want.
+      const fx = Math.sin(f.rot), fz = Math.cos(f.rot), ax = Math.cos(f.rot), az = -Math.sin(f.rot);
+      DRINK_SHELF.forEach((kind, k) => {
+        const u = drinkSection(f.w, k);
+        const cx = f.x + ax * u, cz = f.z + az * u;
+        out.push({ kind, stand: [cx + fx * (f.d / 2 + 0.5), cz + fz * (f.d / 2 + 0.5)], yaw: f.rot + Math.PI, take: [cx + fx * 0.15, 1.12, cz + fz * 0.15], fixture: i });
+      });
     }
   });
   return out;

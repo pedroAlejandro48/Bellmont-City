@@ -33,6 +33,8 @@ export type AptFloor = Room & {
   /** Window openings: on the front wall (x from–to) and on the window side's wall (z from–to), with sill height. */
   front: { a0: number; a1: number; y0: number }[];
   side: { a0: number; a1: number; y0: number }[];
+  /** The bed: its middle, size; where one sits on its edge (hips), lies (hips), and stands beside it to get in. */
+  bed: { x: number; z: number; w: number; l: number; edgeX: number; sit: [number, number]; lie: [number, number]; stand: [number, number] };
   /** Spots: in front of the elevator (hallway), the bed, the fridge. */
   spots: { elevator: [number, number]; bed: [number, number]; fridge: [number, number] };
 };
@@ -86,7 +88,9 @@ export function aptFloor(b: Building, floor: number): AptFloor {
   add("tvTable", divX + INNER_WALL / 2 + 0.26, lz, Math.PI / 2, 1.1, 0.42);
   add("tv", divX + INNER_WALL / 2 + 0.1, lz, Math.PI / 2, 1.0, 0.06, false);
   // The bedroom: a single bed, a desk under the window, a closet by the door.
-  add("bed", minX + 1.08, maxZ - 1.6, Math.PI / 2, 0.98, 2.05);
+  // The bed in the front corner, its head against the front wall (under the window), the long side to the room.
+  const BW = 0.98, BL = 2.05, bedX = minX + BW / 2 + 0.05, bedZ = maxZ - BL / 2 - 0.05;
+  add("bed", bedX, bedZ, Math.PI, BW, BL);
   add("desk", divX - INNER_WALL / 2 - 0.75, maxZ - 0.35, Math.PI, 1.1, 0.55);
   // The desk chair sits like a dining chair: the desk counts as a table (its near edge where the desk's is).
   items.push({ kind: "table", x: divX - INNER_WALL / 2 - 0.75, z: maxZ - 0.625 + TABLE.half, f: [0, 1] });
@@ -109,6 +113,7 @@ export function aptFloor(b: Building, floor: number): AptFloor {
     solids, walls, plants: [], hallZ: [hall0, hall1], wallZ, divX, door: { x: doorX, z: wallZ }, bedroomDoor: [bd0, bd1], furniture: F, front, side,
     // (The bedroom door opens into the bedroom, toward −x: its frame's +z is the room's −x.)
     hinged: { apartment: { ox: doorX, oz: inside0, theta: 0 }, bedroom: { ox: divX - INNER_WALL / 2, oz: bd1, theta: -Math.PI / 2 } },
-    spots: { elevator: [minX + SHAFT / 2, hall0 + 0.65], bed: [minX + 1.08 + 0.75, maxZ - 1.6], fridge: [maxX - 0.37 - 0.8, maxZ - 1.3] },
+    bed: { x: bedX, z: bedZ, w: BW, l: BL, edgeX: bedX + BW / 2, sit: [bedX + BW / 2 - 0.22, maxZ - 1.12], lie: [bedX, maxZ - 1.12], stand: [bedX + BW / 2 + 0.48, maxZ - 1.12] },
+    spots: { elevator: [minX + SHAFT / 2, hall0 + 0.65], bed: [bedX + BW / 2 + 0.48, maxZ - 1.12], fridge: [maxX - 0.37 - 0.8, maxZ - 1.3] },
   };
 }

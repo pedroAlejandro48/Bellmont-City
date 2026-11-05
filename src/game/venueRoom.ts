@@ -128,8 +128,9 @@ export function venueLayout(b: Building): VenueLayout {
     add("checkout", maxX - 0.95, cz, -Math.PI / 2, 2.6, 0.7);
     // The register is at the counter's left end as the customer faces it (deeper in the store): pay there.
     service = { x: maxX - 0.95 - 0.35 - 0.5, z: cz - 0.85, yaw: Math.PI / 2 }; staff = { x: maxX - 0.25, z: cz - 0.85, yaw: -Math.PI / 2, sit: false };
-    FRUITS.forEach((tag, k) => add("crate", minX + 0.4, -2.8 - k * 0.62, Math.PI / 2, 0.58, 0.5, true, tag));
-    add("shelf", -1.4, -7.2, 0, 3.6, 0.6, true, "cans");
+    // Big crates heaped with fruit; one shelf of drinks at the back (the middle aisles are the pantry).
+    FRUITS.forEach((tag, k) => add("crate", minX + 0.42, -2.55 - k * 0.88, Math.PI / 2, 0.82, 0.62, true, tag));
+    add("shelf", -1.2, -7.2, 0, 3.2, 0.6, true, "jars");
     add("shelf", 1.6, -7.2, 0, 3.0, 0.6, true, "boxes");
     add("shelf", 0, minZ + 0.35, 0, Math.min(6, width - 4), 0.6, true, "bottles");
     add("baskets", -1.9, -1.0, 0, 0.5, 0.4, true);

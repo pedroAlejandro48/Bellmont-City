@@ -544,6 +544,7 @@ export type SaveData = {
   /** 0..100: how fed and how watered the character is. */
   hunger?: number;
   thirst?: number;
+  energy?: number;
   /** Bank, loans, levels, skills, goals, home and jobs (life.ts `Life`; read with readLife). */
   life?: unknown;
   /** Saved up in an apartment building (floor 2 or higher: the hallway, an apartment, the elevator): the game comes
@@ -571,6 +572,7 @@ export const DEFAULT_SAVE: SaveData = {
   cash: STARTING_CASH,
   hunger: 100,
   thirst: 100,
+  energy: 100,
 };
 
 export const VEHICLE_DAMAGE = 20;

@@ -243,7 +243,7 @@ export function CameraRig({ state }: { state: GameState }) {
       }
     }
     // Riding an elevator: close behind, inside the car.
-    if (state.elevator && state.elevator.phase !== "leaving") allowed = Math.min(allowed, 0.55);
+    if (state.elevator && state.elevator.phase !== "leaving" && state.elevator.phase !== "waiting" && state.elevator.phase !== "calling") allowed = Math.min(allowed, 0.55);
     distance.current = allowed < distance.current ? allowed : distance.current + (allowed - distance.current) * (1 - Math.exp(-5 * dt));
     camera.position.copy(target).addScaledVector(direction, distance.current);
     // Analytic floor safety also covers freshly streamed colliders before their first physics step.

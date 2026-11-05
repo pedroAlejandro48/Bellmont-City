@@ -15,7 +15,7 @@ export function InventoryButton({ state }: { state: GameState }) {
   const toggle = () => { state.inventoryOpen = !state.inventoryOpen; if (state.inventoryOpen) state.keys.clear(); tick((n) => n + 1); };
   return <div className="inventory-anchor">
     <button type="button" className={`hud-panel hud-square inventory-button pointer-events-auto ${state.inventoryOpen ? "on" : ""}`} aria-label="Inventory (I)" aria-expanded={state.inventoryOpen} onClick={toggle}>
-      <span className="inventory-button-icon" aria-hidden>{state.heldTrash ? "🧴" : kind ? ITEMS[kind].icon : <GridIcon />}</span>
+      <span className="inventory-button-icon" aria-hidden>{state.heldTrash ? (state.heldTrash === "can" ? "🥫" : "🧴") : kind ? ITEMS[kind].icon : <GridIcon />}</span>
       <span>I</span>
     </button>
     {/* All nine slots in a row above the health bars (no panel behind them). */}
@@ -28,7 +28,7 @@ export function InventoryButton({ state }: { state: GameState }) {
           {k && <span className="inventory-name">{ITEMS[k].name}</span>}
         </button>)}
       </div>
-      {state.heldTrash && <p className="inventory-note">Holding an empty bottle: press Q to put it down.</p>}
+      {state.heldTrash && <p className="inventory-note">Holding an empty {state.heldTrash === "can" ? "can" : "bottle"}: press Q to put it down.</p>}
     </div>
   </div>;
 }

@@ -1,4 +1,4 @@
-import { stepNeeds } from "./needs";
+import { stepEnergy, stepNeeds } from "./needs";
 import { quality } from "./quality";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
@@ -117,6 +117,7 @@ export function SkyAndLights({ state }: { state: GameState }) {
       // Hunger and thirst run down; either at zero hurts, otherwise health slowly comes back.
       const next = stepNeeds(state, step / GAME_MINUTE);
       state.hunger = next.hunger; state.thirst = next.thirst; state.health = next.health;
+      state.energy = stepEnergy(state.energy, step / GAME_MINUTE, state.runningNow);
       if (state.health <= 0) { state.health = 0; state.deathStartedAt = performance.now(); state.keys.clear(); state.jumpQueued = false; }
     }
     const ti = timeInfo(state.elapsed);

@@ -174,7 +174,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
   }, [state]);
   const [hud, setHud] = useState(() => timeInfo(state.elapsed));
   const [health, setHealth] = useState(state.health);
-  const [needs, setNeeds] = useState({ hunger: state.hunger, thirst: state.thirst });
+  const [needs, setNeeds] = useState({ hunger: state.hunger, thirst: state.thirst, energy: state.energy });
   const [riding, setRiding] = useState(state.scooter.riding);
   const [speed, setSpeed] = useState(0);
   const [dead, setDead] = useState(state.health === 0);
@@ -237,7 +237,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
     let deathSeen = false;
     const id = window.setInterval(() => {
       setHealth(state.health);
-      setNeeds((old) => (Math.round(old.hunger * 2) === Math.round(state.hunger * 2) && Math.round(old.thirst * 2) === Math.round(state.thirst * 2) ? old : { hunger: state.hunger, thirst: state.thirst }));
+      setNeeds((old) => (Math.round(old.hunger * 2) === Math.round(state.hunger * 2) && Math.round(old.thirst * 2) === Math.round(state.thirst * 2) && Math.round(old.energy * 2) === Math.round(state.energy * 2) ? old : { hunger: state.hunger, thirst: state.thirst, energy: state.energy }));
       setCash(state.cash);
       setFpHint(state.firstPerson && !document.pointerLockElement && !lookSupport.lockRefused);
       setRiding(state.scooter.riding);
@@ -327,7 +327,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
         {riding && <div className="hud-panel absolute bottom-24 left-1/2 flex h-16 w-40 -translate-x-1/2 items-baseline justify-center gap-2 px-4 py-3" aria-label="Scooter speed"><span className="font-display text-3xl tabular-nums">{speed}</span><span className="text-xs text-muted-foreground">MPH</span></div>}
         <div className="hud-bottom absolute bottom-6 left-1/2 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-stretch justify-center gap-2">
           <div className="hud-needs hud-panel w-64 min-w-0 space-y-1.5 px-4 py-2.5">
-            {([["HEALTH", health, "health"], ["HUNGER", needs.hunger, "hunger"], ["THIRST", needs.thirst, "thirst"]] as const).map(([label, value, kind]) => (
+            {([["HEALTH", health, "health"], ["HUNGER", needs.hunger, "hunger"], ["THIRST", needs.thirst, "thirst"], ["ENERGY", needs.energy, "energy"]] as const).map(([label, value, kind]) => (
               <div key={kind}>
                 <div className="mb-0.5 flex justify-between text-[10px] font-bold leading-none tracking-wide">
                   <span>{label}</span><span className="tabular-nums">{Math.round(value)}%</span>

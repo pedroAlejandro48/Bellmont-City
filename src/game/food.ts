@@ -50,6 +50,7 @@ const DRINKS = new Set([
   "Espresso", "Americano", "Cappuccino", "Latte", "Mocha", "Cold Brew",
   "San Pellegrino", "Sencha Green Tea", "Sake (glass)",
   "Vanilla Shake", "Chocolate Shake", "Strawberry Shake", "Fountain Soda", "Bottled Water", "Orange Juice",
+  "Apple Juice", "Cola", "Lemon Soda", "Volt Energy",
 ]);
 export const isDrinkName = (name: string) => DRINKS.has(name);
 /** Bottled water comes in a bottle (everything else to drink in a lidded cup). */

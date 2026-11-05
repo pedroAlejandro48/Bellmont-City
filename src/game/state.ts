@@ -57,7 +57,13 @@ export type WorldReach = { at: THREE.Vector3; blend: number; pole: "low" | "out"
  * A scripted movement this frame (going through a door, sitting on a chair): where the character is and how it
  * holds itself. `walk` is the speed along its facing, for the stepping legs.
  */
-export type Script = { x: number; z: number; yaw: number; walk: number; sit: number; shuffle: number; lean: number; left: WorldReach | null; right: WorldReach | null; crouch?: number };
+export type Script = { x: number; z: number; yaw: number; walk: number; sit: number; shuffle: number; lean: number; left: WorldReach | null; right: WorldReach | null; crouch?: number;
+  /** Getting into bed: sat on its edge (sit), each leg up straight on it (legL, legR), lying back flat (lie); 0..1. */
+  bed?: { sit: number; lie: number; legL: number; legR: number } };
+/** Someone's use of an apartment building's elevator: the car going `from` → `to` (the same: standing there), `at`
+ * seconds into that (t0: when it started, on this player's clock), and whether they're using it now. */
+export type LiftUse = { b: string; from: number; to: number; at: number; active: boolean; t0?: number };
+export type LiftLink = { publish: (use: LiftUse) => void; others: (now: number) => LiftUse[] };
 /** Inside (or going into, or out of) a restaurant. */
 export type Interior = {
   key: string; phase: "entering" | "inside" | "leaving"; startedAt: number;
@@ -88,6 +94,10 @@ export type GameState = {
   health: number;
   /** 0..100: how fed and how watered the character is (either at zero hurts). */
   hunger: number;
+  /** 0..100: runs down through the day, faster running; sleep fills it. */
+  energy: number;
+  /** Running this frame (Player), for energy. */
+  runningNow: boolean;
   thirst: number;
   deathStartedAt: number | null;
   lastImpactAt: number;
@@ -117,11 +127,11 @@ export type GameState = {
   /** The inventory slot whose thing is out in the right hand (the phone counts as out while it is open). */
   heldSlot: number | null;
   /** Trash in the right hand (an emptied bottle): it can't go in the inventory, only be put down (Q). */
-  heldTrash: "bottle" | null;
+  heldTrash: "bottle" | "can" | null;
   /** Doing something with a thing from the inventory: eating or drinking it, putting it down, picking one up. */
-  invAct: { kind: "eat" | "drink" | "drop" | "pickup"; at: number; item: ItemKind | "bottle" | "groceryBag"; target: THREE.Vector3 | null; done: boolean; ground?: number } | null;
+  invAct: { kind: "eat" | "drink" | "drop" | "pickup"; at: number; item: ItemKind | "bottle" | "can" | "groceryBag"; target: THREE.Vector3 | null; done: boolean; ground?: number } | null;
   /** Things from inventories lying on the ground (this player's world only); a grocery bag keeps what's in it. */
-  groundItems: { id: number; kind: ItemKind | "bottle" | "groceryBag"; x: number; z: number; y?: number; yaw: number; at: number; contents?: ItemKind[] }[];
+  groundItems: { id: number; kind: ItemKind | "bottle" | "can" | "groceryBag"; x: number; z: number; y?: number; yaw: number; at: number; contents?: ItemKind[] }[];
   /** A shopping basket in the right hand (what's in it), or null. */
   groceryBasket: ItemKind[] | null;
   /** A bag of groceries in the left hand (what's in it), or null: it can't go in the inventory, only be put down. */
@@ -129,7 +139,7 @@ export type GameState = {
   /** On an upper floor of an apartment building (its floor's height): the ground is that floor. */
   level: { building: string; floor: number; y: number } | null;
   /** Riding an apartment building's elevator: where, from which floor to which, and how far along. */
-  elevator: { building: string; floor: number; target: number | null; phase: "boarding" | "choose" | "closing" | "moving" | "opening" | "leaving"; t0: number; /** Leaving: when the rider was fully out (the doors close only then). */ outAt?: number } | null;
+  elevator: { building: string; floor: number; target: number | null; phase: "boarding" | "choose" | "closing" | "moving" | "opening" | "leaving" | "waiting" | "calling"; t0: number; /** Calling: the floor the car comes from. */ from?: number; /** Leaving: when the rider was fully out (the doors close only then). */ outAt?: number } | null;
   /** Seated somewhere that isn't a park bench or a restaurant chair (an apartment's couch, dining chair or desk):
    * where take-out food can be set down (world; the hands' spots are the point ± the sideways step). */
   seatSurface: { x: number; y: number; z: number; yaw: number; lx: number; lz: number } | null;
@@ -195,6 +205,8 @@ export type GameState = {
   trafficLink: TrafficLink | null;
   /** In a multiplayer room: who is using which restaurant door (null playing alone). */
   doorLink: DoorLink | null;
+  /** In a room: everyone's use of the apartment elevators. */
+  liftLink: LiftLink | null;
   /** Restaurant chairs other players are sitting on (or sitting down on), as `roomKey#index`. */
   takenChairs: Set<string>;
   /** Slow pushes this player's bike gave to other bikes this frame, by bike id: a world velocity (m/s). */
@@ -240,6 +252,7 @@ export function createState(save: SaveData): GameState {
   return {
     health: Math.max(0, Math.min(100, save.health ?? 100)),
     hunger: Math.max(0, Math.min(100, save.hunger ?? 100)),
+    energy: Math.max(0, Math.min(100, save.energy ?? 100)), runningNow: false,
     thirst: Math.max(0, Math.min(100, save.thirst ?? 100)),
     deathStartedAt: save.health === 0 ? performance.now() : null,
     lastImpactAt: -Infinity,
@@ -290,7 +303,7 @@ export function createState(save: SaveData): GameState {
     life: readLife(save.life, timeInfo(save.elapsed).day),
     toasts: [], waypoint: null, phone: { open: false, app: null, atm: false }, job: null, home: null, busking: null,
     npcs: [], npcLink: null,
-    trafficLink: null, doorLink: null, bikePushes: new Map(), takenChairs: new Set(),
+    trafficLink: null, doorLink: null, liftLink: null, bikePushes: new Map(), takenChairs: new Set(),
     foodLink: null, hands: { left: null, right: null }, grab: null, drop: null, dropQueued: false, staffBodies: [], put: null, eating: null, foodScript: null, foodSend: null, doorUsesNow: null, npcDoorUses: [], npcAdopt: [], foodHandle: null, foodTransfer: null, pedHolders: new Set(), foodView: null, foodUi: { open: false, key: null, kind: null, note: null }, foodOrder: null, remoteRigs: new Map(),
     seatOccupants: new Map(save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? [[save.benchSeat, "player"]] : []),
     bench: save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? { seat: save.benchSeat, phase: "seated", startedAt: 0, origin: new THREE.Vector3(...save.pos), originYaw: save.rotY } : null,
@@ -339,6 +352,7 @@ export function toSave(s: GameState): SaveData {
     cash: s.cash,
     life: s.life,
     hunger: Math.round(s.hunger * 100) / 100,
+    energy: Math.round(s.energy * 100) / 100,
     thirst: Math.round(s.thirst * 100) / 100,
     camYaw: s.camYaw,
     camPitch: s.camPitch,

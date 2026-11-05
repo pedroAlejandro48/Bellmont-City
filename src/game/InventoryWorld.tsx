@@ -8,7 +8,7 @@ import { ITEMS, type ItemKind } from "./inventory";
 import { INV_TIME, USE_SECONDS, dropHeld, heldKind, pickUpNear, stepInventory, consumeHeld } from "./invRuntime";
 import type { GameState } from "./state";
 
-type Thing = ItemKind | "bottle";
+type Thing = ItemKind | "bottle" | "can";
 
 /**
  * A white plastic bag of groceries: a soft pear-shaped body, rounder at the bottom where the shopping sits, gathered
@@ -35,6 +35,20 @@ export function useLooks() {
     screen: new THREE.MeshBasicMaterial({ color: "#3d6fd6", toneMapped: false }),
     bottle: new THREE.MeshPhysicalMaterial({ color: "#bfe3ff", roughness: 0.1, transmission: 0.6, transparent: true, opacity: 0.65, thickness: 0.02 }),
     water: new THREE.MeshStandardMaterial({ color: "#6fb6ff", transparent: true, opacity: 0.55, roughness: 0.1 }),
+    // Juices (a bottle, the juice showing through), sodas and the energy drink (cans), an empty can.
+    juiceOrange: new THREE.MeshStandardMaterial({ color: "#ff9a1f", roughness: 0.3, transparent: true, opacity: 0.92 }),
+    juiceApple: new THREE.MeshStandardMaterial({ color: "#e8b53c", roughness: 0.3, transparent: true, opacity: 0.9 }),
+    labelOrange: new THREE.MeshStandardMaterial({ color: "#ffd166", roughness: 0.6 }),
+    labelApple: new THREE.MeshStandardMaterial({ color: "#8ac34a", roughness: 0.6 }),
+    capOrange: new THREE.MeshStandardMaterial({ color: "#f07f12", roughness: 0.5 }),
+    capApple: new THREE.MeshStandardMaterial({ color: "#3f8f2f", roughness: 0.5 }),
+    cola: new THREE.MeshStandardMaterial({ color: "#c81d25", roughness: 0.3, metalness: 0.5 }),
+    sodaLemon: new THREE.MeshStandardMaterial({ color: "#f2e14b", roughness: 0.3, metalness: 0.5 }),
+    energyCan: new THREE.MeshStandardMaterial({ color: "#16181d", roughness: 0.3, metalness: 0.6 }),
+    bandWhite: new THREE.MeshStandardMaterial({ color: "#f6f6f4", roughness: 0.4, metalness: 0.3 }),
+    bandGreen: new THREE.MeshStandardMaterial({ color: "#3fa34d", roughness: 0.4, metalness: 0.3 }),
+    bandVolt: new THREE.MeshStandardMaterial({ color: "#7dff3a", roughness: 0.35, emissive: new THREE.Color("#2f7a10"), emissiveIntensity: 0.4 }),
+    canTop: new THREE.MeshStandardMaterial({ color: "#c9cdd2", roughness: 0.25, metalness: 0.85 }),
     cap: new THREE.MeshStandardMaterial({ color: "#1f5fbf", roughness: 0.5 }),
     label: new THREE.MeshStandardMaterial({ color: "#ffffff", roughness: 0.6 }),
     apple: new THREE.MeshStandardMaterial({ color: "#c8202a", roughness: 0.45 }),
@@ -67,6 +81,27 @@ export function ItemModel({ kind, looks, empty = false }: { kind: Thing; looks: 
       <mesh material={looks.label} position={[0, 0.06, 0]}><cylinderGeometry args={[0.0335, 0.0335, 0.06, 14, 1, true]} /></mesh>
       {!empty && kind === "water" && <mesh material={looks.water} position={[0, 0.045, 0]}><cylinderGeometry args={[0.029, 0.029, 0.13, 12]} /></mesh>}
     </group>;
+    case "orangeJuice": case "appleJuice": {
+      const o = kind === "orangeJuice";
+      return <group>
+        <mesh material={looks.bottle} position={[0, 0.06, 0]}><cylinderGeometry args={[0.032, 0.032, 0.17, 14]} /></mesh>
+        <mesh material={looks.bottle} position={[0, 0.165, 0]}><cylinderGeometry args={[0.015, 0.032, 0.04, 14]} /></mesh>
+        <mesh material={o ? looks.capOrange : looks.capApple} position={[0, 0.192, 0]}><cylinderGeometry args={[0.017, 0.017, 0.02, 10]} /></mesh>
+        <mesh material={o ? looks.juiceOrange : looks.juiceApple} position={[0, 0.055, 0]}><cylinderGeometry args={[0.029, 0.029, 0.15, 12]} /></mesh>
+        <mesh material={o ? looks.labelOrange : looks.labelApple} position={[0, 0.06, 0]}><cylinderGeometry args={[0.0335, 0.0335, 0.07, 14, 1, true]} /></mesh>
+        <mesh material={o ? looks.orange : looks.apple} position={[0, 0.06, 0.034]}><sphereGeometry args={[0.012, 8, 6]} /></mesh>
+      </group>;
+    }
+    case "cola": case "lemonSoda": case "energy": case "can": {
+      const body = kind === "cola" ? looks.cola : kind === "lemonSoda" ? looks.sodaLemon : kind === "energy" ? looks.energyCan : looks.canTop;
+      const band = kind === "cola" ? looks.bandWhite : kind === "lemonSoda" ? looks.bandGreen : kind === "energy" ? looks.bandVolt : looks.canTop;
+      return <group>
+        <mesh material={body} position={[0, 0.06, 0]}><cylinderGeometry args={[0.033, 0.033, 0.11, 16]} /></mesh>
+        <mesh material={band} position={[0, 0.055, 0]}><cylinderGeometry args={[0.0336, 0.0336, kind === "energy" ? 0.018 : 0.03, 16, 1, true]} /></mesh>
+        <mesh material={looks.canTop} position={[0, 0.12, 0]}><cylinderGeometry args={[0.027, 0.033, 0.012, 16]} /></mesh>
+        <mesh material={looks.canTop} position={[0, 0.0, 0]}><cylinderGeometry args={[0.033, 0.028, 0.01, 16]} /></mesh>
+      </group>;
+    }
     case "apple": return <group>
       <mesh material={looks.apple} position={[0, 0.04, 0]} scale={[1, 0.92, 1]}><sphereGeometry args={[0.042, 16, 12]} /></mesh>
       <mesh material={looks.stem} position={[0, 0.083, 0]} rotation-z={0.25}><cylinderGeometry args={[0.003, 0.003, 0.022, 5]} /></mesh>
@@ -112,7 +147,7 @@ export function InventoryWorld({ state }: { state: GameState }) {
   const looks = useLooks();
   const held = useRef<THREE.Group>(null);
   const shown = useRef<Thing | null>(null);
-  const kinds = useMemo(() => ["phone", "water", "bottle", "apple", "banana", "orange", "pear", "lemon", "lime", "grape", "peach", "key"] as Thing[], []);
+  const kinds = useMemo(() => ["phone", "water", "bottle", "can", "orangeJuice", "appleJuice", "cola", "lemonSoda", "energy", "apple", "banana", "orange", "pear", "lemon", "lime", "grape", "peach", "key"] as Thing[], []);
   const parts = useRef<Map<Thing, THREE.Group>>(new Map());
   const ground = useRef<THREE.Group>(null);
   const bagHeld = useRef<THREE.Group>(null), bagCount = useRef(-1);
@@ -164,7 +199,8 @@ export function InventoryWorld({ state }: { state: GameState }) {
         // The key's ring between the fingers, its blade out in front of the hand (not floating away from it).
         if (kind === "key") { g.position.x += Math.sin(state.rotY) * 0.035; g.position.z += Math.cos(state.rotY) * 0.035; g.position.y -= 0.01; }
         // A bottle is held round its middle; fruit and keys sit in the palm.
-        if (kind === "water" || kind === "bottle") g.position.y -= 0.07;
+        if (kind === "water" || kind === "bottle" || kind === "orangeJuice" || kind === "appleJuice") g.position.y -= 0.07;
+        if (kind === "cola" || kind === "lemonSoda" || kind === "energy" || kind === "can") g.position.y -= 0.05;
         if (kind === "phone") g.position.y += 0.05;
       }
     }
@@ -189,7 +225,7 @@ export function InventoryWorld({ state }: { state: GameState }) {
           c.visible = !!it;
           if (!it) return;
           c.position.set(it.x, (it.y ?? floorHeight(it.x, it.z)) + (it.kind === "groceryBag" ? 0.4 : 0), it.z);
-          c.rotation.set(it.kind === "bottle" || it.kind === "water" ? Math.PI / 2 : 0, it.yaw, 0, "YXZ");
+          c.rotation.set(["bottle", "water", "can", "orangeJuice", "appleJuice", "cola", "lemonSoda", "energy"].includes(it.kind) ? Math.PI / 2 : 0, it.yaw, 0, "YXZ");
           (c.children as THREE.Group[]).forEach((m) => { m.visible = m.userData["kind"] === it.kind; });
         });
       }
@@ -215,7 +251,7 @@ export function InventoryWorld({ state }: { state: GameState }) {
       let best: GameState["groundItems"][number] | null = null, bd = 1.0;
       for (const g of state.groundItems) { const d = Math.hypot(g.x - state.pos.x, g.z - state.pos.z); if (d < bd) { bd = d; best = g; } }
       if (!best) return { visible: false, x: 0, y: 0, z: 0, time: 0 };
-      return { visible: true, x: best.x, y: (best.y ?? floorHeight(best.x, best.z)) + 0.45, z: best.z, time: state.simulationTime, label: `E  ${best.kind === "bottle" ? "EMPTY BOTTLE" : best.kind === "groceryBag" ? "GROCERIES" : ITEMS[best.kind].name.toUpperCase()}` };
+      return { visible: true, x: best.x, y: (best.y ?? floorHeight(best.x, best.z)) + 0.45, z: best.z, time: state.simulationTime, label: `E  ${best.kind === "bottle" ? "EMPTY BOTTLE" : best.kind === "can" ? "EMPTY CAN" : best.kind === "groceryBag" ? "GROCERIES" : ITEMS[best.kind].name.toUpperCase()}` };
     }} />
   </>;
 }

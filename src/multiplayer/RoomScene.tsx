@@ -14,6 +14,7 @@ import { makeNpcLink } from "./npcLink";
 import { makeFoodLink } from "./foodLink";
 import { makeTrafficLink } from "./trafficLink";
 import { makeDoorLink } from "./doorLink";
+import { makeLiftLink } from "./liftLink";
 import { FurnitureSync } from "./FurnitureSync";
 import { bodyColor, playerOf, type Gender } from "@/platform/account";
 
@@ -59,7 +60,8 @@ export function RoomScene({ state, channel, remotes, joinedAt, creator }: { stat
     // So are the traffic and the restaurant doors.
     state.trafficLink = makeTrafficLink(channel);
     state.doorLink = makeDoorLink(channel);
-    return () => { state.npcLink = null; state.foodLink = null; state.trafficLink = null; state.doorLink = null; };
+    state.liftLink = makeLiftLink(channel);
+    return () => { state.npcLink = null; state.foodLink = null; state.trafficLink = null; state.doorLink = null; state.liftLink = null; };
   }, [state, channel]);
   const lastSent = useRef({ at: 0, body: "" });
   const lastHitAt = useRef(Date.now());

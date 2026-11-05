@@ -1,7 +1,7 @@
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { APT_FLOORS, STOREY, aptKey, floorKey, floorY } from "./apartments";
+import { APT_FLOORS, STOREY, aptKey, floorKey, floorY, freeFloors } from "./apartments";
 import { aptFloor, FLOOR_CLEAR, INNER_WALL, type AptFloor, type AptFurniture } from "./aptRoom";
 import { CharacterBody, useBodyRig } from "./CharacterBody";
 import { BUILDING_ENTRANCE, SIDEWALK_H, timeInfo, type Building, type City } from "./config";
@@ -12,6 +12,10 @@ import { FRIDGE_DRINKS, FRIDGE_FOOD, fridgeSplit } from "@/components/FridgePane
 import { CEILING, CHAIR, ENTER, LEAVE, TABLE, enterLead, enterPose, leaveLead, leavePose, planSit, toLocal, toWorld, worldYaw, type Reach } from "./restaurantRoom";
 import { toast, type GameState, type Script } from "./state";
 import { handWorld } from "./arms";
+import { BedSheet, MATTRESS_TOP, PILLOW_TOP, type SheetLink } from "./BedSheet";
+import { canSleepAt, wakeElapsed } from "./needs";
+import { ItemModel, useLooks } from "./InventoryWorld";
+import { ITEMS, type ItemKind } from "./inventory";
 import { isDrinkName } from "./food";
 import { canvas, tex } from "./textures";
 import { LIFT_DOOR, SHAFT, venueLayout, type VenueLayout } from "./venueRoom";
@@ -22,9 +26,9 @@ const UPPER = APT_FLOORS - 1;
 const smooth = (t: number) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
 
 // ---------- the outside: windows exactly where the apartments' are ----------
-/** One face of the upper floors (14 storeys): wall, slab lines, the windows given (u from-to across, sill height),
- * lit at random at night. */
-function faceTexture(widthM: number, windows: { u0: number; u1: number; y0: number; y1: number }[], seed: number) {
+/** One face of the upper floors (14 storeys): wall, slab lines, the windows given (u from-to across, sill height);
+ * at night the rented floors' windows are lit (most of them), the free ones dark. */
+function faceTexture(widthM: number, windows: { u0: number; u1: number; y0: number; y1: number }[], seed: number, lit: Set<number>) {
   const W = 512, R = 64, H = R * UPPER;
   const [c, g] = canvas(W, H);
   const [ce, ge] = canvas(W, H);
@@ -41,7 +45,8 @@ function faceTexture(widthM: number, windows: { u0: number; u1: number; y0: numb
       g.fillStyle = "#6f8796"; g.fillRect(x0, y0, x1 - x0, y1 - y0);
       g.fillStyle = "rgba(255,255,255,0.18)"; g.fillRect(x0, y0, (x1 - x0) * 0.35, y1 - y0);
       g.fillStyle = "#4a3c34"; g.fillRect(Math.round((x0 + x1) / 2) - 1, y0, 2, y1 - y0);
-      if (rnd() < 0.45) { ge.fillStyle = rnd() < 0.5 ? "#ffd9a0" : "#fff1d0"; ge.fillRect(x0, y0, x1 - x0, y1 - y0); }
+      const on = true, warm = rnd() < 0.5;
+      if (lit.has(f + 2) && on) { ge.fillStyle = warm ? "#ffd9a0" : "#fff1d0"; ge.fillRect(x0, y0, x1 - x0, y1 - y0); }
     }
   }
   void widthM;
@@ -49,16 +54,17 @@ function faceTexture(widthM: number, windows: { u0: number; u1: number; y0: numb
   return { map, emissive };
 }
 
-function useFaces(b: Building, layout: VenueLayout) {
+function useFaces(b: Building, layout: VenueLayout, litKey: string) {
   return useMemo(() => {
+    const lit = new Set(litKey ? litKey.split(",").map(Number) : []);
     const floor = aptFloor(b, 2), { width, depth, windowSide: ws } = layout;
-    const front = faceTexture(width, floor.front.map((w) => ({ u0: (w.a0 + width / 2) / width, u1: (w.a1 + width / 2) / width, y0: w.y0, y1: 2.35 })), Math.round(Math.abs(b.x * 7 + b.z * 3)) + 1);
+    const front = faceTexture(width, floor.front.map((w) => ({ u0: (w.a0 + width / 2) / width, u1: (w.a1 + width / 2) / width, y0: w.y0, y1: 2.35 })), Math.round(Math.abs(b.x * 7 + b.z * 3)) + 1, lit);
     const sideU = (z: number) => (ws === 1 ? -z / depth : (z + depth) / depth);
-    const side = faceTexture(depth, floor.side.map((w) => { const [p, q] = [sideU(w.a0), sideU(w.a1)].sort((m, n) => m - n) as [number, number]; return { u0: p, u1: q, y0: w.y0, y1: 2.35 }; }), Math.round(Math.abs(b.x * 3 + b.z * 11)) + 7);
-    const blank = faceTexture(width, [], 3);
+    const side = faceTexture(depth, floor.side.map((w) => { const [p, q] = [sideU(w.a0), sideU(w.a1)].sort((m, n) => m - n) as [number, number]; return { u0: p, u1: q, y0: w.y0, y1: 2.35 }; }), Math.round(Math.abs(b.x * 3 + b.z * 11)) + 7, lit);
+    const blank = faceTexture(width, [], 3, lit);
     const mat = (t: { map: THREE.Texture; emissive: THREE.Texture }) => new THREE.MeshStandardMaterial({ map: t.map, emissiveMap: t.emissive, emissive: new THREE.Color("#ffffff"), emissiveIntensity: 0, roughness: 0.85 });
     return { front: mat(front), side: mat(side), blank: mat(blank), roof: new THREE.MeshStandardMaterial({ color: "#6d6660", roughness: 0.9 }) };
-  }, [b, layout]);
+  }, [b, layout, litKey]);
 }
 
 /** A face's material showing only floors a..b (2..15) of its texture. */
@@ -78,8 +84,12 @@ function band(m: THREE.MeshStandardMaterial, a: number, bTop: number) {
  */
 function AptExterior({ b, state }: { b: Building; state: GameState }) {
   const layout = useMemo(() => venueLayout(b), [b]);
-  const faces = useFaces(b, layout);
   const key = aptKey(b);
+  // The rented floors (not free to rent today, or yours): their lights are on at night.
+  const litOf = () => { const free = freeFloors(state.worldSeed, key, timeInfo(state.elapsed).day), home = state.life.home; return Array.from({ length: APT_FLOORS - 1 }, (_, i) => i + 2).filter((f) => !free.includes(f) || (home?.building === key && home.floor === f)).join(","); };
+  const [litKey, setLitKey] = useState(litOf);
+  const faces = useFaces(b, layout, litKey);
+  useEffect(() => () => [faces.front, faces.side, faces.blank].forEach((mm) => { mm.map?.dispose(); mm.emissiveMap?.dispose(); mm.dispose(); }), [faces]);
   const [cuts, setCuts] = useState<number[]>([]);
   useFrame(() => {
     const want = new Set<number>();
@@ -88,6 +98,7 @@ function AptExterior({ b, state }: { b: Building; state: GameState }) {
     if (e?.building === key) { want.add(e.floor); if (e.target !== null) want.add(e.target); }
     const list = [...want].filter((f) => f > 1).sort((a, c) => a - c);
     if (list.join() !== cuts.join()) setCuts(list);
+    if (Math.floor(state.simulationTime * 2) % 6 === 0) { const k = litOf(); if (k !== litKey) setLitKey(k); }
     const lit = state.darkness * 0.9;
     faces.front.emissiveIntensity = lit; faces.side.emissiveIntensity = lit; faces.blank.emissiveIntensity = lit;
   });
@@ -100,6 +111,8 @@ function AptExterior({ b, state }: { b: Building; state: GameState }) {
     return ranges.map(([a, c]) => ({ a, c, front: band(faces.front, a, c), side: band(faces.side, a, c), blank: band(faces.blank, a, c) }));
   }, [cuts, faces]);
   useEffect(() => () => parts.forEach((p) => [p.front, p.side, p.blank].forEach((m) => { m.map?.dispose(); m.emissiveMap?.dispose(); m.dispose(); })), [parts]);
+  // The bands are copies of the faces: their lights come on at night too.
+  useFrame(() => { const lit = state.darkness * 0.9; for (const q of parts) { q.front.emissiveIntensity = lit; q.side.emissiveIntensity = lit; q.blank.emissiveIntensity = lit; } });
   const { frame, width, depth, windowSide: ws } = layout, H = (n: number) => n * STOREY;
   return <group position={[frame.ox, SIDEWALK_H + FH, frame.oz]} rotation-y={frame.rot}>
     {parts.map((p) => {
@@ -184,7 +197,7 @@ function Furniture({ f, m }: { f: AptFurniture; m: FMats }) {
     case "tvTable": return <group><mesh position={[0, 0.25, 0]} material={m.darkWood} castShadow>{B([w, 0.5, d])}</mesh></group>;
     case "tv": return <group position={[0, 0.85, 0]}><mesh material={m.black}>{B([w, 0.6, 0.05])}</mesh><mesh position={[0, 0, 0.03]} material={m.screen}><planeGeometry args={[w - 0.06, 0.54]} /></mesh><mesh position={[0, -0.33, 0]} material={m.black}>{B([0.2, 0.06, 0.18])}</mesh></group>;
     case "rug": return <mesh position={[0, 0.012, 0]} rotation-x={-Math.PI / 2} material={m.s("#a0543f", 0.95)} receiveShadow><planeGeometry args={[w, d]} /></mesh>;
-    case "bed": return <group><mesh position={[0, 0.2, 0]} material={m.darkWood} castShadow>{B([w, 0.3, d])}</mesh><mesh position={[0, 0.42, 0.02]} material={m.white}>{B([w - 0.06, 0.16, d - 0.08])}</mesh><mesh position={[0, 0.52, 0.25]} material={m.bed}>{B([w - 0.02, 0.06, d * 0.62])}</mesh><mesh position={[0, 0.55, -d / 2 + 0.28]} material={m.white}>{B([w - 0.25, 0.1, 0.32])}</mesh><mesh position={[0, 0.6, -d / 2 + 0.03]} material={m.darkWood}>{B([w, 0.9, 0.06])}</mesh></group>;
+    case "bed": return <group><mesh position={[0, 0.18, 0]} material={m.darkWood} castShadow>{B([w, 0.3, d])}</mesh><mesh position={[0, (0.33 + MATTRESS_TOP) / 2, 0.01]} material={m.white} castShadow receiveShadow>{B([w - 0.02, MATTRESS_TOP - 0.33, d - 0.06])}</mesh><mesh position={[0, (MATTRESS_TOP + PILLOW_TOP) / 2, -d / 2 + 0.28]} material={m.white} castShadow>{B([w - 0.25, PILLOW_TOP - MATTRESS_TOP, 0.32])}</mesh><mesh position={[0, 0.43, -d / 2 + 0.03]} material={m.darkWood} castShadow>{B([w, 0.86, 0.06])}</mesh></group>;
     case "desk": return <group><mesh position={[0, TABLE.top - 0.02, 0]} material={m.wood} castShadow>{B([w, 0.04, d])}</mesh>{[-1, 1].map((a) => <mesh key={a} position={[a * (w / 2 - 0.03), (TABLE.top - 0.04) / 2, 0]} material={m.wood}>{B([0.04, TABLE.top - 0.04, d])}</mesh>)}<mesh position={[0.3, TABLE.top + 0.1, -0.12]} material={m.brass}><cylinderGeometry args={[0.07, 0.09, 0.2, 12]} /></mesh></group>;
     case "closet": {
       // Hollow, with a rail for clothes (the hangers, only with clothes on them, and the doors are drawn by FloorInterior).
@@ -230,6 +243,23 @@ function ShaftInside({ m, h }: { m: FMats; h: number }) {
     <mesh position={[0, 0.006, 0]} rotation-x={-Math.PI / 2} material={m.shaft}><planeGeometry args={[s, s]} /></mesh>
     <mesh position={[0, h - 0.03, 0]} rotation-x={Math.PI / 2} material={m.shaft}><planeGeometry args={[s, s]} /></mesh>
   </group>;
+}
+
+/** The little screen above an elevator's doors: the floor the car is at (L for the lobby), ▲/▼ while it moves. */
+function LiftDisplay({ shown }: { shown: () => { floor: number; dir: number } }) {
+  const scr = useMemo(() => { const [c, g] = canvas(128, 64); const t = tex(c); return { g, t, mat: new THREE.MeshBasicMaterial({ map: t, toneMapped: false }), label: "" }; }, []);
+  useEffect(() => () => { scr.t.dispose(); scr.mat.dispose(); }, [scr]);
+  useFrame(() => {
+    const { floor, dir } = shown(), label = `${floor === 1 ? "L" : floor}${dir > 0 ? " ▲" : dir < 0 ? " ▼" : ""}`;
+    if (label === scr.label) return;
+    scr.label = label;
+    const g = scr.g;
+    g.fillStyle = "#0b0e12"; g.fillRect(0, 0, 128, 64);
+    g.fillStyle = "#ff7a3d"; g.font = "800 40px Courier New, monospace"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(label, 64, 34);
+    scr.t.needsUpdate = true;
+  });
+  return <mesh material={scr.mat}><planeGeometry args={[0.38, 0.16]} /></mesh>;
 }
 
 /** Which floor an elevator shows: where it is, counting a floor every 2 seconds while it moves. */
@@ -321,12 +351,16 @@ function DoorDrinks({ state, fridge }: { state: GameState; fridge: AptFurniture 
   const [list, setList] = useState<string[]>([]);
   useFrame(() => { const d = fridgeSplit(state.life.fridge).drinks.slice(0, FRIDGE_DRINKS); if (d.join("|") !== list.join("|")) setList(d); });
   const mats = useMemo(() => DRINK_COLORS.map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.25, transparent: true, opacity: 0.85 })), []);
+  const looks = useLooks();
   return <group>
     {list.map((name, i) => {
       const bin = FRIDGE_BINS[Math.floor(i / 3)]!, k = i % 3;
+      // The real thing when it's one of the shop's drinks (a bottle, a can); otherwise a plain bottle.
+      const kind = (Object.keys(ITEMS) as ItemKind[]).find((k2) => ITEMS[k2].name === name && ITEMS[k2].use === "drink");
       return <group key={i} position={[-fridge.w / 2 - 0.2 + k * 0.2, bin + 0.02, -0.05]}>
-        <mesh position-y={0.1} material={mats[hashOf(name) % mats.length]!}><cylinderGeometry args={[0.032, 0.032, 0.2, 10]} /></mesh>
-        <mesh position-y={0.22} material={mats[0]!}><cylinderGeometry args={[0.012, 0.028, 0.05, 8]} /></mesh>
+        {kind ? <group scale={1.15}><ItemModel kind={kind} looks={looks} /></group> : <>
+          <mesh position-y={0.1} material={mats[hashOf(name) % mats.length]!}><cylinderGeometry args={[0.032, 0.032, 0.2, 10]} /></mesh>
+          <mesh position-y={0.22} material={mats[0]!}><cylinderGeometry args={[0.012, 0.028, 0.05, 8]} /></mesh></>}
       </group>;
     })}
   </group>;
@@ -362,7 +396,7 @@ function DoorCasing({ at, rot, m, white = false }: { at: [number, number]; rot: 
 }
 
 /** The floor the player is on: hallway, apartment (two rooms), the walls with real windows, the doors, the furniture. */
-function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, elevatorOpen }: { fl: AptFloor; state: GameState; m: FMats; door: () => number; bedDoor: () => number; fridgeDoor: () => number; closetDoor: () => number; elevatorOpen: () => number }) {
+function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, elevatorOpen, sheet, lift }: { lift: () => { floor: number; dir: number }; sheet: SheetLink; fl: AptFloor; state: GameState; m: FMats; door: () => number; bedDoor: () => number; fridgeDoor: () => number; closetDoor: () => number; elevatorOpen: () => number }) {
   const { frame, bounds, windowSide: ws, hallZ, wallZ, divX, bedroomDoor } = fl;
   const { minX, maxX, minZ, maxZ } = bounds;
   const leaf = useRef<THREE.Group>(null), bedLeaf = useRef<THREE.Group>(null), fridgeLeaf = useRef<THREE.Group>(null), closetL = useRef<THREE.Group>(null), closetR = useRef<THREE.Group>(null);
@@ -441,6 +475,9 @@ function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, el
       <mesh position={[0, 0.006, -0.06]} material={m.steel}>{B([LIFT_DOOR, 0.012, 0.16])}</mesh>
       <ElevatorDoors open={elevatorOpen} m={m} />
       <mesh position={[LIFT_DOOR / 2 + 0.3, 1.15, 0.01]} material={m.steel}>{B([0.12, 0.2, 0.03])}</mesh>
+      {/* Where the car is: a little screen above the doors. */}
+      <mesh position={[0, 2.58, 0.012]} material={m.black}>{B([0.44, 0.2, 0.025])}</mesh>
+      <group position={[0, 2.58, 0.026]}><LiftDisplay shown={lift} /></group>
     </group>
     <ShaftAt state={state} fl={fl} m={m} />
     {/* The wall between the hallway and the apartment, with the apartment's door (opens into the apartment). */}
@@ -500,6 +537,8 @@ function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, el
     {[[(divX + maxX) / 2, (inside0 + maxZ) / 2], [(minX + divX) / 2, (inside0 + maxZ) / 2]].map(([x, z], i) => <mesh key={i} position={[x!, H - 0.02, z!]} rotation-x={Math.PI / 2} material={m.lamp}><circleGeometry args={[0.25, 20]} /></mesh>)}
     {fl.furniture.map((f, i) => <group key={i} position={[f.x, 0, f.z]} rotation-y={f.rot}><Furniture f={f} m={m} /></group>)}
     <RoomChairs fl={fl} m={m} />
+    {/* The bed's sheet (a cloth: it moves only on your own floor, near the bed). */}
+    <BedSheet fl={fl} state={state} mat={m.bed} link={sheet} live={() => state.level?.floor === fl.upper && state.level?.building === fl.key.split("#")[0]} />
   </group>;
 }
 
@@ -518,7 +557,38 @@ function RoomChairs({ fl, m }: { fl: AptFloor; m: FMats }) {
 
 // ---------- moving about: the elevator, the apartment door, bed and fridge ----------
 type Seat = { x: number; z: number; yaw: number; approach: [number, number]; surface: { x: number; z: number; y: number; lx: number; lz: number } };
-type Move = { kind: "board" | "alight" | "keyIn" | "push" | "pull" | "fridge" | "closet" | "sit"; plan: Plan | null; t0: number; which?: "apartment" | "bedroom"; from?: [number, number]; fromYaw?: number; keyT?: number; phase?: "open" | "held" | "close" | "down" | "seated" | "up"; seat?: Seat };
+type Move = { kind: "board" | "alight" | "keyIn" | "push" | "pull" | "fridge" | "closet" | "sit" | "bed"; plan: Plan | null; t0: number; which?: "apartment" | "bedroom"; from?: [number, number]; fromYaw?: number; keyT?: number; phase?: "open" | "held" | "close" | "down" | "seated" | "up" | "in" | "asleep" | "out"; seat?: Seat; grip?: [number, number, number] | null };
+/**
+ * Getting into bed (seconds from beside it): sit on the edge, the right hand takes the sheet's top corner and lifts
+ * it, the left leg swings up onto the bed, then lying back the right leg follows, the sheet over; let go.
+ */
+const BED = { sit: 0.9, grab: 0.55, lift: 0.5, legL: 1.1, lie: 1.4, release: 0.6, asleep: 2.6 };
+const BT = (() => { let a = 0; const at = (d: number) => (a += d); return { s1: at(BED.sit), s2: at(BED.grab), s3: at(BED.lift), s4: at(BED.legL), s5: at(BED.lie), s6: at(BED.release) }; })();
+type BedPose = { x: number; z: number; yaw: number; lean: number; bed: { sit: number; lie: number; legL: number; legR: number }; right: Reach | null; pin: [number, number, number] | null };
+/** The pose `u` seconds into getting in (or, `out`, the same moment getting out: the hand's ends differ). */
+function bedPose(fl: AptFloor, u: number, grip: [number, number, number], out: boolean): BedPose {
+  const b = fl.bed, k = (a: number, d: number) => smooth((u - a) / d);
+  const L1: [number, number, number] = [b.edgeX + 0.05, 0.9, b.sit[1] + 0.45], L2: [number, number, number] = [b.edgeX - 0.25, 1.0, b.lie[1] + 0.35], L3: [number, number, number] = [b.x - 0.05, 0.95, b.lie[1] + 0.55];
+  const D: [number, number, number] = [b.edgeX + 0.1, 0.52, b.sit[1] + 0.42];
+  const lerp3 = (a: [number, number, number], c: [number, number, number], t: number): [number, number, number] => [a[0] + (c[0] - a[0]) * t, a[1] + (c[1] - a[1]) * t, a[2] + (c[2] - a[2]) * t];
+  const sit = k(0, BED.sit), legL = k(BT.s3, BED.legL), legR = k(BT.s4, BED.lie * 0.6), lie = k(BT.s4 + 0.28, BED.lie - 0.28);
+  let x = b.stand[0] + (b.sit[0] - b.stand[0]) * sit, z = b.stand[1] + (b.sit[1] - b.stand[1]) * sit;
+  const toLie = k(BT.s4, BED.lie); x += (b.lie[0] - b.sit[0]) * toLie; z += (b.lie[1] - b.sit[1]) * toLie;
+  const yaw = Math.PI / 2 + Math.PI / 4 * k(BT.s3, BED.legL) + Math.PI / 4 * k(BT.s4, BED.lie);
+  let right: Reach | null = null, pin: [number, number, number] | null = null;
+  if (u > BT.s1 && u < BT.s6) {
+    const from = out ? D : grip;
+    let at: [number, number, number], blend = 1;
+    if (u < BT.s2) { at = from; blend = k(BT.s1, BED.grab); }
+    else if (u < BT.s3) at = lerp3(from, L1, k(BT.s2, BED.lift));
+    else if (u < BT.s4) at = lerp3(L1, L2, k(BT.s3, BED.legL));
+    else if (u < BT.s5) at = lerp3(L2, L3, k(BT.s4, BED.lie));
+    else { at = L3; blend = 1 - k(BT.s5, BED.release); }
+    right = { at, blend, pole: "out" };
+    if (u >= BT.s2 && u < BT.s5) pin = at;
+  }
+  return { x, z, yaw, lean: 0.12 * Math.sin(Math.PI * k(BT.s1, BED.grab + BED.lift)) * (1 - lie), bed: { sit, lie, legL, legR }, right, pin };
+}
 /** The closet: both hands take the handles in the middle and swing the two doors open (and shut again). */
 const CLOSET = { reach: 0.45, pull: 0.9, release: 0.35, open: 1.45 };
 /** The couch's two places to sit: each with the spot in front to sit down from, and where food goes while seated
@@ -557,6 +627,10 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   const prompt = useRef<{ visible: boolean; x: number; y: number; z: number; label?: string | undefined }>({ visible: false, x: 0, y: 0, z: 0 });
   const ownScript = useRef(false);
   const sleeping = useRef(0);
+  const lastLift = useRef<string | null>(null);
+  /** Each floor's bedsheet and the hand holding its corner. */
+  const sheets = useRef(new Map<string, SheetLink>());
+  const sheetLink = (key: string) => { let l = sheets.current.get(key); if (!l) { l = { corner: null, pin: null }; sheets.current.set(key, l); } return l; };
   /** Putting things in the fridge: the one in hand now, and how far the character has stepped in (0..1). */
   const load = useRef<{ name: string; t0: number; slot: [number, number, number]; drink: boolean; placed: boolean } | null>(null);
   const loadStep = useRef(0);
@@ -564,12 +638,23 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   const carryMats = useMemo(() => ({ food: new THREE.MeshStandardMaterial({ color: "#c8202a", roughness: 0.6 }), drink: new THREE.MeshStandardMaterial({ color: "#6fb6ff", roughness: 0.25, transparent: true, opacity: 0.85 }) }), []);
 
   const byKey = useMemo(() => new Map(buildings.map((b) => [aptKey(b), b])), [buildings]);
+  /** Each building's car: resting at `floor`, or going from `floor` to `to` since t0 (2 s a floor); `busy` someone else's. */
+  const cars = useRef(new Map<string, { floor: number; to: number | null; t0: number; busy: boolean }>());
+  const carOf = (bkey: string) => { let c = cars.current.get(bkey); if (!c) { c = { floor: 1, to: null, t0: 0, busy: false }; cars.current.set(bkey, c); } return c; };
+  /** The floor the car shows (counting a floor every 2 s while it moves), and which way it's going. */
+  const carShown = (bkey: string): { floor: number; dir: number } => {
+    const c = carOf(bkey), now = state.simulationTime;
+    if (c.to === null || c.to === c.floor) return { floor: c.floor, dir: 0 };
+    const dir = Math.sign(c.to - c.floor), passed = Math.floor((now - c.t0) / 2);
+    return { floor: c.floor + dir * Math.min(Math.abs(c.to - c.floor), passed), dir: now - c.t0 >= 2 * Math.abs(c.to - c.floor) ? 0 : dir };
+  };
   const lobbyOf = (key: string) => { const b = byKey.get(key); return b ? venueLayout(b) : null; };
   // Every apartment building's lobby has its elevator's doors (they open while the car is there).
   const elevatorOpen = (bkey: string, fl: number) => () => {
     const e = state.elevator;
     if (!e || e.building !== bkey || e.floor !== fl) return 0;
     const t = state.simulationTime - e.t0;
+    if (e.phase === "waiting" || e.phase === "calling") return 0;
     if (e.phase === "boarding") return smooth(t / 0.8);
     if (e.phase === "choose") return 1;
     if (e.phase === "closing") return 1 - smooth(t / 0.8);
@@ -605,17 +690,63 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     const yNow = lvl ? lvl.y : SIDEWALK_H;
     const toW = (x: number, z: number) => (frameNow ? toWorld(frameNow, x, z) : [x, z] as [number, number]);
     const reachW = (r: Reach | null) => { if (!r || !frameNow) return null; const [x, z] = toWorld(frameNow, r.at[0], r.at[2]); return { at: new THREE.Vector3(x, yNow + r.at[1], z), blend: r.blend, pole: r.pole }; };
-    const scriptFrom = (pose: GPose | { x: number; z: number; yaw: number; lean: number; left: Reach | null; right: Reach | null; crouch?: number; sit?: number }): Script => {
+    const scriptFrom = (pose: GPose | { x: number; z: number; yaw: number; lean: number; left: Reach | null; right: Reach | null; crouch?: number; sit?: number; bed?: BedPose["bed"] }): Script => {
+      const inBed = (pose as { bed?: BedPose["bed"] }).bed;
+      if (inBed) { const sc = scriptOf(pose); return { ...sc, walk: 0, bed: inBed }; }
+      return scriptOf(pose);
+    };
+    const scriptOf = (pose: GPose | { x: number; z: number; yaw: number; lean: number; left: Reach | null; right: Reach | null; crouch?: number; sit?: number }): Script => {
       const [x, z] = toW(pose.x, pose.z), prev = state.foodScript, wy = frameNow ? worldYaw(frameNow, pose.yaw) : pose.yaw;
       // Steps play backward when stepping back.
       const dx = prev ? x - prev.x : 0, dz = prev ? z - prev.z : 0, d = Math.hypot(dx, dz), back = dx * Math.sin(wy) + dz * Math.cos(wy) < -0.3 * d;
       return { x, z, yaw: wy, walk: (back ? -1 : 1) * d / Math.max(dt, 1e-3), sit: (pose as { sit?: number }).sit ?? 0, shuffle: 0, lean: pose.lean, left: reachW(pose.left), right: reachW(pose.right), crouch: pose.crouch ?? 0 };
     };
 
+    // ---------- the cars ----------
+    const others = state.liftLink?.others(now) ?? [];
+    for (const [bkey, c] of cars.current) c.busy = false;
+    for (const u of others) {
+      const c = carOf(u.b);
+      if (u.active) { c.floor = u.from; c.to = u.to; c.t0 = u.t0 ?? now; c.busy = true; }
+      else if (c.to === null || c.to === c.floor) c.floor = u.to;
+    }
+    {
+      const me = state.elevator;
+      if (me && me.phase !== "waiting") {
+        const c = carOf(me.building);
+        if (me.phase === "calling") { c.floor = me.from ?? me.floor; c.to = me.floor; c.t0 = me.t0; }
+        else if (me.phase === "moving" && me.target !== null) { c.floor = me.floor; c.to = me.target; c.t0 = me.t0; }
+        else { c.floor = me.floor; c.to = null; }
+        state.liftLink?.publish({ b: me.building, from: c.floor, to: c.to ?? c.floor, at: now - c.t0, active: true });
+      } else if (lastLift.current) {
+        const c = carOf(lastLift.current);
+        state.liftLink?.publish({ b: lastLift.current, from: c.floor, to: c.floor, at: 0, active: false });
+      }
+      lastLift.current = me ? me.building : lastLift.current;
+      // Arrived somewhere with nobody aboard: it rests there.
+      for (const c of cars.current.values()) if (!c.busy && c.to !== null && now - c.t0 >= 2 * Math.abs(c.to - c.floor) && !(me && carOf(me.building) === c)) { c.floor = c.to; c.to = null; }
+    }
+
     // ---------- the elevator ----------
     const e = state.elevator;
     let script: Script | null = null;
-    if (e && frameNow) {
+    // Waiting for it (someone else has it), then it comes: 2 s a floor, doors shut; then in as usual (if still here).
+    if (e && (e.phase === "waiting" || e.phase === "calling")) {
+      const c = carOf(e.building);
+      if (e.phase === "waiting" && !c.busy) {
+        const at = carShown(e.building).floor;
+        if (at === e.floor) { e.phase = "boarding"; e.t0 = now; } else { e.phase = "calling"; e.from = at; e.t0 = now; }
+      } else if (e.phase === "calling" && now - e.t0 >= 2 * Math.abs((e.from ?? e.floor) - e.floor)) {
+        // Here: in you go — if you're still at its doors (otherwise it just stays here).
+        const L = lobby?.layout ?? floor, here = L ? toLocal(L.frame, p.x, p.z) : null;
+        const atDoor = !!L && !!here && Math.abs(here[0] - (L.bounds.minX + SHAFT / 2)) < 1.4 && here[1] - (L.bounds.minZ + SHAFT) < 2.2 && (state.level?.floor ?? 1) === e.floor;
+        c.floor = e.floor; c.to = null;
+        if (atDoor) { e.phase = "boarding"; e.t0 = now; } else state.elevator = null;
+      }
+    }
+    const eRide = state.elevator && state.elevator.phase !== "waiting" && state.elevator.phase !== "calling" ? state.elevator : null;
+    if (eRide && frameNow) {
+      const e = eRide;
       const L = lobby?.layout ?? floor!, minX = L.bounds.minX, minZ = L.bounds.minZ;
       const car: [number, number] = [minX + SHAFT / 2, minZ + SHAFT / 2], out: [number, number] = [minX + SHAFT / 2, minZ + SHAFT + 0.75];
       const t = now - e.t0, mv = move.current;
@@ -655,7 +786,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
 
     // ---------- the hinged doors (the apartment's and the bedroom's) ----------
     const mv = move.current;
-    if (!e && mv && floor && (mv.kind === "keyIn" || mv.kind === "push" || mv.kind === "pull")) {
+    if (!eRide && mv && floor && (mv.kind === "keyIn" || mv.kind === "push" || mv.kind === "pull")) {
       const t = now - mv.t0, which = mv.which ?? "apartment", F = floor.hinged[which], c = Math.cos(F.theta), sn = Math.sin(F.theta);
       const setAngle = (a: number) => { if (which === "apartment") doorAngle.current = a; else bedAngle.current = a; };
       // The door's frame: origin at the doorway's edge, +z into the room the door opens into (the opening is local
@@ -702,7 +833,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       }
     }
     // ---------- the fridge ----------
-    if (!e && mv && floor && mv.kind === "fridge") {
+    if (!eRide && mv && floor && mv.kind === "fridge") {
       const fz = floor.furniture.find((f) => f.type === "fridge")!, yaw = fz.rot + Math.PI;
       const fc = Math.cos(fz.rot), fs = Math.sin(fz.rot);
       // Where the handle is with the door open `a` (radians), in the room (hinge on the right, handle on the left).
@@ -782,7 +913,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       }
     }
     // ---------- the closet ----------
-    if (!e && mv && floor && mv.kind === "closet") {
+    if (!eRide && mv && floor && mv.kind === "closet") {
       const c = floor.furniture.find((f) => f.type === "closet")!, cc = Math.cos(c.rot), cs = Math.sin(c.rot);
       // The two handles (by the middle) with the doors open `a`: the left door is hinged at the left edge, the right at the right.
       const handle = (side: 1 | -1, a: number): [number, number, number] => {
@@ -816,8 +947,54 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         if (t >= CLOSET.reach + CLOSET.pull * 0.85 + CLOSET.release) { closetAngle.current = 0; move.current = null; script = null; }
       }
     }
+    // ---------- the bed: getting in, asleep, getting out ----------
+    const link = floor ? sheetLink(floor.key) : null;
+    if (link) link.pin = null;
+    if (!eRide && mv && floor && mv.kind === "bed" && link) {
+      const t = now - mv.t0;
+      if (mv.phase === "in") {
+        const walk = mv.plan!.total;
+        if (t < walk) script = scriptFrom(planAt(mv.plan!, t).pose);
+        else {
+          const u = t - walk;
+          // The corner is taken where it is when the hand gets there.
+          if (u >= BT.s2 && !mv.grip) mv.grip = link.corner ? [...link.corner] : [floor.bed.edgeX + 0.1, 0.5, floor.bed.sit[1] + 0.42];
+          const bp = bedPose(floor, Math.min(u, BT.s6), mv.grip ?? link.corner ?? [floor.bed.edgeX, 0.5, floor.bed.sit[1]], false);
+          link.pin = bp.pin;
+          script = scriptFrom({ x: bp.x, z: bp.z, yaw: bp.yaw, lean: bp.lean, left: null, right: bp.right, bed: bp.bed });
+          if (u >= BT.s6) {
+            // Asleep: the night passes (in a shared room the clock is everyone's, so only rest), energy comes back.
+            mv.phase = "asleep"; mv.t0 = now; state.uiLock = "sleep"; state.keys.clear();
+            if (!state.npcLink) state.elapsed = wakeElapsed(state.elapsed);
+            state.energy = 100;
+          }
+        }
+      } else if (mv.phase === "asleep") {
+        const bp = bedPose(floor, BT.s6, [0, 0, 0], false);
+        script = scriptFrom({ x: bp.x, z: bp.z, yaw: bp.yaw, lean: 0, left: null, right: null, bed: bp.bed });
+        if (t >= BED.asleep) {
+          state.uiLock = null; mv.phase = "out"; mv.t0 = now; mv.grip = null;
+          toast(state, "Good morning!", "info", state.npcLink ? "Rested: your energy is full." : "It's 6 AM. Your energy is full.");
+        }
+      } else {
+        // Getting up: the hand finds the corner (wherever the sheet put it) and lifts it, then everything backward.
+        const REACH = 0.6, LIFT = 0.4, back = REACH + LIFT;
+        let bp: BedPose;
+        const lieEnd = bedPose(floor, BT.s5, [0, 0, 0], true), L3: [number, number, number] = lieEnd.right!.at;
+        if (t < REACH) {
+          bp = { ...bedPose(floor, BT.s6, [0, 0, 0], true), right: link.corner ? { at: link.corner, blend: smooth(t / REACH), pole: "out" } : null, pin: null };
+        } else if (t < back) {
+          if (!mv.grip) mv.grip = link.corner ? [...link.corner] : L3;
+          const g = mv.grip, k2 = smooth((t - REACH) / LIFT), at: [number, number, number] = [g[0] + (L3[0] - g[0]) * k2, g[1] + (L3[1] - g[1]) * k2, g[2] + (L3[2] - g[2]) * k2];
+          bp = { ...bedPose(floor, BT.s6, [0, 0, 0], true), right: { at, blend: 1, pole: "out" }, pin: at };
+        } else bp = bedPose(floor, Math.max(0, BT.s5 - (t - back)), [0, 0, 0], true);
+        link.pin = bp.pin;
+        script = scriptFrom({ x: bp.x, z: bp.z, yaw: bp.yaw, lean: bp.lean, left: null, right: bp.right, bed: bp.bed });
+        if (t >= back + BT.s5) { const [x, z] = toW(floor.bed.stand[0], floor.bed.stand[1]); state.pos.x = x; state.pos.z = z; state.rotY = worldYaw(floor.frame, Math.PI / 2); move.current = null; script = null; }
+      }
+    }
     // ---------- sitting on the couch (the chairs sit like a restaurant's: RestaurantInteraction runs them) ----------
-    if (!e && mv && floor && mv.kind === "sit") {
+    if (!eRide && mv && floor && mv.kind === "sit") {
       const st = mv.seat!, t = now - mv.t0, SIT = 0.9;
       // The hands come to rest on the knees as one sits (and leave them getting up).
       const knees = (k: number): { left: Reach | null; right: Reach | null } => {
@@ -857,7 +1034,19 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
 
     // ---------- E: what can be done here ----------
     const pr = prompt.current; pr.visible = false; pr.label = undefined;
-    if (state.elevator || move.current || state.accident || state.health <= 0 || sleeping.current) { if (state.elevator || move.current) state.interactQueued = false; return; }
+    if (eRide || move.current || state.accident || state.health <= 0 || sleeping.current) { if (eRide || move.current) state.interactQueued = false; return; }
+    // Calling the car: where it is now (it comes 2 s a floor); busy with someone else: wait for it.
+    const callLift = (bkey: string, here: number) => {
+      const c = carOf(bkey), at = carShown(bkey).floor;
+      if (c.busy) { state.elevator = { building: bkey, floor: here, target: null, phase: "waiting", t0: now }; return; }
+      state.elevator = at === here && (c.to === null || now - c.t0 >= 2 * Math.abs(c.to - c.floor)) ? { building: bkey, floor: here, target: null, phase: "boarding", t0: now } : { building: bkey, floor: here, target: null, phase: "calling", t0: now, from: at };
+      move.current = null;
+    };
+    const liftLabel = (bkey: string, here: number) => {
+      const w = state.elevator;
+      if (w && w.building === bkey && w.floor === here) return w.phase === "waiting" ? "ELEVATOR IN USE · WAITING" : `ELEVATOR COMING · ${carShown(bkey).floor === 1 ? "L" : carShown(bkey).floor}`;
+      return carOf(bkey).busy ? "E  CALL (IN USE)" : "E  ELEVATOR";
+    };
     // On a chair (sitting the restaurants' way): E gets up too, once anything set down is eaten and taken back.
     if (state.seat && floor) {
       if (state.interactQueued && state.seat.phase === "seated" && !state.eating && !state.put && !state.grab) state.standQueued = true;
@@ -869,16 +1058,16 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     if (lobby) {
       const L = lobby.layout, [lx, lz] = toLocal(L.frame, p.x, p.z), ex = L.bounds.minX + SHAFT / 2, ez = L.bounds.minZ + SHAFT;
       if (Math.abs(lx - ex) < 1.1 && lz - ez > 0 && lz - ez < 1.6) {
-        show(ex, ez + 0.3, 2.2, "E  ELEVATOR");
-        act = () => { state.elevator = { building: aptKey(lobby.b), floor: 1, target: null, phase: "boarding", t0: now }; move.current = null; };
+        show(ex, ez + 0.3, 2.2, liftLabel(aptKey(lobby.b), 1));
+        if (!state.elevator) act = () => callLift(aptKey(lobby.b), 1);
       }
     } else if (floor && lvl) {
       const [lx, lz] = toLocal(floor.frame, p.x, p.z), ex = floor.bounds.minX + SHAFT / 2, hz0 = floor.hallZ[0];
       const mine = state.life.home?.building === lvl.building && state.life.home.floor === lvl.floor;
       const dx = floor.door.x, wz = floor.wallZ;
       if (Math.abs(lx - ex) < 1.1 && lz - hz0 > 0 && lz - hz0 < 1.5) {
-        show(ex, hz0 + 0.3, 2.2, "E  ELEVATOR");
-        act = () => { state.elevator = { building: lvl.building, floor: lvl.floor, target: null, phase: "boarding", t0: now }; move.current = null; };
+        show(ex, hz0 + 0.3, 2.2, liftLabel(lvl.building, lvl.floor));
+        if (!state.elevator) act = () => callLift(lvl.building, lvl.floor);
       } else if (lx > dx - 1.7 && lx < dx + 0.3 && lz < wz && lz > wz - 1.4) {
         // At the apartment's door, in the hallway.
         const holding = heldKind(state) === "key";
@@ -908,8 +1097,13 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
           state.keys.clear();
         };
       } else if (mine && Math.hypot(lx - floor.spots.bed[0], lz - floor.spots.bed[1]) < 1.2) {
-        show(floor.spots.bed[0] - 0.6, floor.spots.bed[1], 1.3, "E  SLEEP");
-        act = () => sleep();
+        show(floor.bed.x, floor.bed.z, 1.2, "E  SLEEP");
+        act = () => {
+          // Only at night: from 9 PM to 5 AM.
+          if (!canSleepAt(timeInfo(state.elapsed).hours)) { toast(state, "Not tired enough yet", "info", "You can go to bed between 9 PM and 5 AM."); return; }
+          move.current = { kind: "bed", phase: "in", t0: now, grip: null, plan: makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, floor.bed.stand, Math.PI / 2, { basket: false, bag: !!state.groceryBag })]) };
+          state.keys.clear();
+        };
       } else if (mine && Math.hypot(lx - floor.spots.fridge[0], lz - floor.spots.fridge[1]) < 1.0) {
         show(floor.spots.fridge[0] + 0.5, floor.spots.fridge[1], 2.0, "E  FRIDGE");
         act = () => {
@@ -951,27 +1145,17 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     if (`#${mat.color.getHexString()}` !== col.toLowerCase()) mat.color.set(col);
   }, 2);
 
-  const sleep = () => {
-    sleeping.current = 1; state.uiLock = "sleep"; state.keys.clear();
-    window.setTimeout(() => {
-      state.health = 100;
-      const shared = !!state.npcLink;
-      if (!shared) { const t = timeInfo(state.elapsed), cycle = 2400, into = ((state.elapsed % cycle) + cycle) % cycle; if (!t.isDay) state.elapsed += cycle - into + 50; }
-      toast(state, "Good morning!", "info", shared ? "Rested: health is full." : "You slept through the night. Health is full.");
-      sleeping.current = 0; state.uiLock = null;
-    }, 2400);
-  };
 
   const lobbies = useMemo(() => buildings.map((b) => ({ b, layout: venueLayout(b) })), [buildings]);
   return <group>
     {buildings.map((b) => <AptExterior key={aptKey(b)} b={b} state={state} />)}
     {/* The lobby elevators' doors (and the car, while someone's in it at the lobby). */}
     {lobbies.map(({ b, layout }) => <group key={aptKey(b)} position={[layout.frame.ox, SIDEWALK_H, layout.frame.oz]} rotation-y={layout.frame.rot}>
-      <group position={[layout.bounds.minX + SHAFT / 2, 0, layout.bounds.minZ + SHAFT]}><ElevatorDoors open={elevatorOpen(aptKey(b), 1)} m={m} /></group>
+      <group position={[layout.bounds.minX + SHAFT / 2, 0, layout.bounds.minZ + SHAFT]}><ElevatorDoors open={elevatorOpen(aptKey(b), 1)} m={m} /><group position={[0, 2.55, 0.035]}><LiftDisplay shown={() => carShown(aptKey(b))} /></group></group>
       <LobbyCar state={state} bkey={aptKey(b)} at={[layout.bounds.minX + SHAFT / 2, layout.bounds.minZ + SHAFT / 2]} m={m} />
       <LobbyVisitor state={state} layout={layout} />
     </group>)}
-    {shown.map((fl) => <FloorInterior key={fl.key} fl={fl} state={state} m={m} door={() => doorAngle.current} bedDoor={() => bedAngle.current} fridgeDoor={() => fridgeAngle.current} closetDoor={() => closetAngle.current} elevatorOpen={elevatorOpen(fl.key.split("#")[0]!, fl.upper)} />)}
+    {shown.map((fl) => <FloorInterior key={fl.key} lift={() => carShown(fl.key.split("#")[0]!)} sheet={sheetLink(fl.key)} fl={fl} state={state} m={m} door={() => doorAngle.current} bedDoor={() => bedAngle.current} fridgeDoor={() => fridgeAngle.current} closetDoor={() => closetAngle.current} elevatorOpen={elevatorOpen(fl.key.split("#")[0]!, fl.upper)} />)}
     <CarAt state={state} buildings={byKey} m={m} />
     {/* The thing being put in the fridge, in the right hand. */}
     <group ref={carry} visible={false}>

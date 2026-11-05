@@ -392,7 +392,8 @@ export function Traffic({ state }: { state: GameState }) {
 
   useFrame((_, raw) => {
     const dt = Math.min(raw, 0.05);
-    state.simulationTime += raw;
+    // (Test builds can slow the scripted moves down to look at them: window.__timeScale.)
+    state.simulationTime += import.meta.env["VITE_TRAFFIC_AUDIT"] === "1" ? raw * ((window as unknown as { __timeScale?: number }).__timeScale ?? 1) : raw;
     const now = state.simulationTime;
     const d = state.darkness;
     mats.head.emissiveIntensity = 1.2 + d * 2;

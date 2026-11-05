@@ -32,7 +32,11 @@ export const GROCERIES: { name: string; price: number; value: number; item?: imp
   { name: "Salad Bowl", price: 4, value: 10 },
   { name: "Pasta Meal", price: 5, value: 15 },
   { name: "Bottled Water", price: 0.8, value: 1.5, item: "water" },
-  { name: "Orange Juice", price: 2, value: 3 },
+  { name: "Orange Juice", price: 1.6, value: 3, item: "orangeJuice" },
+  { name: "Apple Juice", price: 1.6, value: 3, item: "appleJuice" },
+  { name: "Cola", price: 1.2, value: 2, item: "cola" },
+  { name: "Lemon Soda", price: 1.2, value: 2, item: "lemonSoda" },
+  { name: "Volt Energy", price: 2.4, value: 2, item: "energy" },
 ];
 
 /** What a food fills like (its restaurant price, or a grocery's value), for nutrition. */
