@@ -1,6 +1,8 @@
 // Traffic law (pure): the speed limit and red lights for anyone riding, and what each ticket costs.
 import { MPH_TO_MPS, SIGNALLED, signalState, streetHalfWidth } from "./config";
 
+/** Tickets are written only when this is on (off for now: the rules are kept, ready). */
+export const LAW_ENABLED = false;
 export const SPEED_LIMIT_MPH = 30;
 /** A ticket only past this (a little grace over the limit), held for SPEEDING_HOLD seconds. */
 export const SPEEDING_MPH = 37;

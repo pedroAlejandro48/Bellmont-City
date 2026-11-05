@@ -13,7 +13,7 @@ import { Pedestrians } from "./Pedestrians";
 import { Player } from "./Player";
 import { SkyAndLights } from "./Sky";
 import { Traffic } from "./Traffic";
-import type { GameState } from "./state";
+import { uiCaptured, type GameState } from "./state";
 import { CameraRig } from "./CameraRig";
 import { WorldRoads } from "./WorldRoads";
 import { PITCH, MPH_TO_MPS } from "./config";
@@ -256,7 +256,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
       if (e.code === "KeyP" && !e.repeat) { state.phone = state.phone.open ? { open: false, app: null, atm: false } : { open: true, app: null, atm: false }; if (state.phone.open) { state.keys.clear(); guideDone(state, 0); } e.preventDefault(); return; }
       if (e.code === "Escape" && state.phone.open) { state.phone = { open: false, app: null, atm: false }; return; }
       if (e.code === "Escape" && state.shop) { state.shop = null; return; }
-      if (state.phone.open || state.home || state.shop) return;
+      if (uiCaptured(state) || state.home) return;
       if (BLOCKED.has(e.code)) e.preventDefault();
       if (state.health === 0 || state.accident) return;
       if (e.code === "KeyE" && !e.repeat) { state.interactQueued = true; e.preventDefault(); }

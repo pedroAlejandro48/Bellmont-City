@@ -169,8 +169,8 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       const useStick = stickPush > 0.12 && !fwdKey && !back && !left && !right;
       const direction = useStick ? stick!.y : Number(fwdKey) - Number(back);
       const sideways = useStick ? stick!.x : Number(right) - Number(left);
-      // Nobody runs holding a drink.
-      running = !holdingDrink && (useStick ? stickPush > 0.92 : shift && fwdKey && !back);
+      // Nobody runs holding a drink, nor anywhere indoors.
+      running = !holdingDrink && !state.interior && (useStick ? stickPush > 0.92 : shift && fwdKey && !back);
       // Fitness (from the gym and running) makes running faster: 2.5% a level.
       const run = RUN * (1 + 0.025 * skillLevel(state.life.skills.fitness));
       const pace = useStick && !running ? WALK * Math.min(1, 0.35 + stickPush * 0.75) : running ? run : WALK;

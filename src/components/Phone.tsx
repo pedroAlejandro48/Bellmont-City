@@ -19,6 +19,20 @@ const APPS = [
   { id: "profile", name: "Profile", icon: CircleUser, color: "#3a8fb7" },
 ] as const;
 
+/** The phone is drawn at 360 × 640 (9:16) and scaled: the whole screen's height on a phone held sideways, half the
+ * height on a computer or a phone held upright. */
+export const PHONE_SIZE = { w: 360, h: 640 };
+function usePhoneScale() {
+  const pick = () => {
+    const touch = window.matchMedia("(pointer: coarse)").matches, sideways = window.innerWidth > window.innerHeight;
+    const height = touch && sideways ? window.innerHeight - 16 : window.innerHeight * 0.5;
+    return Math.max(0.3, height / PHONE_SIZE.h);
+  };
+  const [s, setS] = useState(pick);
+  useEffect(() => { const on = () => setS(pick()); window.addEventListener("resize", on); return () => window.removeEventListener("resize", on); }, []);
+  return s;
+}
+
 /**
  * The in-game phone: opened with P (or the phone button), or by walking up to an ATM (the Bank app, with cash).
  * It slides up; each app slides in over the home screen. Everything reads and changes `state` directly, and the
@@ -32,7 +46,8 @@ export function Phone({ state }: { state: GameState }) {
   const go = (app: string | null) => { state.phone = { ...state.phone, app }; tick((n) => n + 1); };
   const { hours, day } = timeInfo(state.elapsed);
   const app = APPS.find((a) => a.id === ph.app);
-  return <div className={`phone ${open ? "open" : ""}`} aria-hidden={!open} role="dialog" aria-label="Phone">
+  const scale = usePhoneScale();
+  return <div className={`phone ${open ? "open" : ""}`} style={{ "--phone-scale": scale } as React.CSSProperties} aria-hidden={!open} role="dialog" aria-label="Phone">
     <div className="phone-status"><span>{formatClock(hours)}</span><span>Day {day} · {WEATHER_NAME[state.weather.kind]}</span><span>{money(state.cash)} cash</span></div>
     <div className="phone-screen">
       <div className={`phone-page phone-home ${ph.app ? "behind" : ""}`}>

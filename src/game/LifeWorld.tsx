@@ -1,6 +1,6 @@
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
-import { FINE, SPEED_LIMIT_MPH, newWatch, watchRider } from "./law";
+import { FINE, LAW_ENABLED, SPEED_LIMIT_MPH, newWatch, watchRider } from "./law";
 import { addFine } from "./life";
 import { SHOPS, SHOP_REACH, shopPlaces } from "./shops";
 import { Storefronts } from "./Storefronts";
@@ -56,7 +56,7 @@ export function LifeWorld({ state }: { state: GameState }) {
     if (w && !state.job && w.label !== "Busking spot" && Math.hypot(w.x - p.x, w.z - p.z) < 3) { state.waypoint = null; toast(state, `You've arrived: ${w.label}`, "info"); }
 
     // ---- traffic law: speeding and red lights on the bike ----
-    if (state.scooter.riding && prev && dt > 0 && !state.accident) {
+    if (LAW_ENABLED && state.scooter.riding && prev && dt > 0 && !state.accident) {
       const ticket = watchRider(law.current, state.simulationTime, dt, p.x, p.z, (p.x - prev.x) / dt, (p.z - prev.z) / dt, state.elapsed);
       if (ticket) {
         const day = timeInfo(state.elapsed).day, amount = FINE[ticket.kind];

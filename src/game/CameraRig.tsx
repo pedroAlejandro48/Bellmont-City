@@ -3,6 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useRapier } from "@react-three/rapier";
 import * as THREE from "three";
 import type { GameState } from "./state";
+import { uiCaptured } from "./state";
 import { floorHeight, recenterOrbit, cameraRecenterReady, SIDEWALK_H } from "./config";
 import { CEILING, toLocal } from "./restaurantRoom";
 
@@ -27,14 +28,14 @@ export function CameraRig({ state }: { state: GameState }) {
     const touches = new Map<number, { x: number; y: number }>();
     let pinch: { spread: number; out: number } | null = null;
     const unbind = bindMouseLook(element, (x, y) => {
-      if (pinch) return;
+      if (pinch || uiCaptured(state)) return;
       state.lastMouseLookAt = performance.now();
       state.camYaw -= x * 0.006;
       state.camOrbit = state.camYaw - state.rotY - Math.PI;
       state.camPitch += y * 0.006;
       // First person: looking down only as far as the chest down, and up to the sky.
       if (state.firstPerson) state.camPitch = Math.max(-1.25, Math.min(FP_DOWN, state.camPitch));
-    }, () => state.firstPerson, (count) => {
+    }, () => state.firstPerson && !uiCaptured(state), (count) => {
       // Fingers turning the view: while any is down the camera doesn't swing behind; it may two seconds after.
       if (count === 0 && state.touchLook.fingers > 0) state.touchLook.releasedAt = performance.now();
       state.touchLook.fingers = count;
@@ -144,7 +145,10 @@ export function CameraRig({ state }: { state: GameState }) {
   };
   useFrame((_, raw) => {
     const dt = Math.min(raw, 0.05);
-    gl.domElement.style.cursor = state.firstPerson ? "none" : "";
+    // A panel that needs the mouse is open: free the pointer (the view holds still until it closes).
+    const captured = uiCaptured(state);
+    if (captured && document.pointerLockElement === gl.domElement) document.exitPointerLock();
+    gl.domElement.style.cursor = state.firstPerson && !captured ? "none" : "";
     if (state.firstPerson && firstPerson(dt)) return;
     const riding = state.scooter.riding || state.scooter.action === "mount";
     const forward = state.movingForward || (riding && state.scooter.speed > 0 && (state.keys.has("KeyW") || state.keys.has("ArrowUp") || state.stick !== null));

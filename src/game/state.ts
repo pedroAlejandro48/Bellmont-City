@@ -110,6 +110,10 @@ export type GameState = {
   weather: Weather;
   /** The shop whose counter is open (its panel), or null. */
   shop: ShopKind | null;
+  /** The inventory grid is open. */
+  inventoryOpen: boolean;
+  /** Some other panel that needs the mouse (a reception desk, an elevator's buttons…), by name. */
+  uiLock: string | null;
   keys: Set<string>;
   jumpQueued: boolean;
   simulationTime: number;
@@ -229,6 +233,8 @@ export function createState(save: SaveData): GameState {
     darkness: 0,
     weather: { kind: "clear", clouds: 0, rain: 0, fog: 0 },
     shop: null,
+    inventoryOpen: false,
+    uiLock: null,
     keys: new Set(),
     jumpQueued: false,
     simulationTime: 0,
@@ -269,6 +275,12 @@ export type ActiveJob = { id: JobId; stage: "pickup" | "deliver"; from: [number,
 
 let toastId = 1;
 /** Pops a message in at the top of the screen. */
+/** A panel that needs the mouse is open (phone, shop counter, order menu, inventory…): the camera stays still and
+ * the pointer is free. */
+export function uiCaptured(s: GameState) {
+  return s.phone.open || !!s.shop || s.foodUi.open || s.inventoryOpen || !!s.uiLock;
+}
+
 export function toast(state: GameState, title: string, kind: GameState["toasts"][number]["kind"] = "info", body?: string) {
   state.toasts.push({ id: toastId++, title, kind, at: performance.now(), ...(body ? { body } : {}) });
   if (state.toasts.length > 4) state.toasts.shift();
