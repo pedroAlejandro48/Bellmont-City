@@ -234,9 +234,8 @@ export function LevelBadge({ state }: { state: GameState }) {
   const [, tick] = useState(0);
   useEffect(() => { const id = window.setInterval(() => tick((n) => n + 1), 500); return () => window.clearInterval(id); }, []);
   const lv = levelOf(state.life.xp);
-  return <div className="hud-panel level-badge" aria-label={`Level ${lv.level}`}>
+  return <div className="hud-panel hud-square level-badge" aria-label={`Level ${lv.level}`}>
     <div className="ring" style={{ background: `conic-gradient(#ffb547 ${lv.progress * 360}deg, rgba(255,255,255,0.14) 0)` }}><b>{lv.level}</b></div>
-    <span>LEVEL</span>
   </div>;
 }
 

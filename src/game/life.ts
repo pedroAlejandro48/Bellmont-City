@@ -54,7 +54,11 @@ export type Life = {
   workoutDay: number;
   /** Nine slots, the phone always first. */
   inventory: Inventory;
+  /** Clothes hung in the apartment's closet (up to CLOSET_MAX): tops and bottoms. */
+  closet: Clothing[];
 };
+export type Clothing = { name: string; part: "upper" | "lower"; color: string };
+export const CLOSET_MAX = 10;
 export type Fine = { day: number; reason: string; amount: number };
 
 export function newLife(day = 1): Life {
@@ -62,7 +66,7 @@ export function newLife(day = 1): Life {
     bank: 300, loan: 0, credit: 650, xp: 0,
     skills: { fitness: 0, riding: 0, work: 0, charm: 0 },
     quests: rollQuests(day), questDay: day, guide: 0, home: null, billedDay: day, fridge: [], ledger: [],
-    earned: 0, jobsDone: 0, fines: [], record: 0, insured: false, outfit: null, bikePaint: null, workoutDay: 0, inventory: newInventory(),
+    earned: 0, jobsDone: 0, fines: [], record: 0, insured: false, outfit: null, bikePaint: null, workoutDay: 0, inventory: newInventory(), closet: [],
   };
 }
 
@@ -91,6 +95,7 @@ export function readLife(value: unknown, day = 1): Life {
     bikePaint: typeof v["bikePaint"] === "string" && /^#[0-9a-f]{6}$/i.test(v["bikePaint"]) ? v["bikePaint"] : null,
     workoutDay: num("workoutDay", 0, 1e9, 0),
     inventory: readInventory(v["inventory"]),
+    closet: Array.isArray(v["closet"]) ? (v["closet"] as Clothing[]).filter((c) => c && typeof c.name === "string" && (c.part === "upper" || c.part === "lower") && typeof c.color === "string" && /^#[0-9a-f]{6}$/i.test(c.color)).slice(0, CLOSET_MAX) : [],
   };
 }
 

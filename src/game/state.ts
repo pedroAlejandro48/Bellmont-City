@@ -129,7 +129,7 @@ export type GameState = {
   /** On an upper floor of an apartment building (its floor's height): the ground is that floor. */
   level: { building: string; floor: number; y: number } | null;
   /** Riding an apartment building's elevator: where, from which floor to which, and how far along. */
-  elevator: { building: string; floor: number; target: number | null; phase: "boarding" | "choose" | "closing" | "moving" | "opening" | "leaving"; t0: number } | null;
+  elevator: { building: string; floor: number; target: number | null; phase: "boarding" | "choose" | "closing" | "moving" | "opening" | "leaving"; t0: number; /** Leaving: when the rider was fully out (the doors close only then). */ outAt?: number } | null;
   /** Seated somewhere that isn't a park bench or a restaurant chair (an apartment's couch, dining chair or desk):
    * where take-out food can be set down (world; the hands' spots are the point ± the sideways step). */
   seatSurface: { x: number; y: number; z: number; yaw: number; lx: number; lz: number } | null;
@@ -137,6 +137,8 @@ export type GameState = {
   extraDoorUses: import("./doors").DoorUse[];
   /** Some other panel that needs the mouse (a reception desk, an elevator's buttons…), by name. */
   uiLock: string | null;
+  /** Things on their way into the fridge (one at a time, by hand): the name, and the grocery bag's kind if from the bag. */
+  fridgeLoad: { name: string; bag: ItemKind | null }[];
   keys: Set<string>;
   jumpQueued: boolean;
   simulationTime: number;
@@ -268,7 +270,7 @@ export function createState(save: SaveData): GameState {
     level: save.apt ? { building: save.apt.building, floor: save.apt.floor, y: floorY(save.apt.floor) } : null,
     seatSurface: null,
     elevator: null,
-    uiLock: null,
+    uiLock: null, fridgeLoad: [],
     keys: new Set(),
     jumpQueued: false,
     simulationTime: 0,
@@ -319,7 +321,11 @@ export function uiCaptured(s: GameState) {
 export const groundAt = (s: GameState, x: number, z: number) => (s.level ? s.level.y : floorHeight(x, z));
 
 export function toast(state: GameState, title: string, kind: GameState["toasts"][number]["kind"] = "info", body?: string) {
-  state.toasts.push({ id: toastId++, title, kind, at: performance.now(), ...(body ? { body } : {}) });
+  // The same notice again replaces the one showing (its time starts over); different ones stack.
+  const same = state.toasts.findIndex((t) => t.title === title && t.kind === kind);
+  const next = { id: same >= 0 ? state.toasts[same]!.id : toastId++, title, kind, at: performance.now(), ...(body ? { body } : {}) };
+  if (same >= 0) { state.toasts[same] = next; return; }
+  state.toasts.push(next);
   if (state.toasts.length > 4) state.toasts.shift();
 }
 

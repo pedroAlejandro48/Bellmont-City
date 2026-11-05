@@ -3,6 +3,7 @@ import { APT_FLOORS } from "@/game/apartments";
 import type { GameState } from "@/game/state";
 import { FridgePanel } from "./FridgePanel";
 import { shownFloor } from "@/game/Apartments";
+import { CLOSET_MAX } from "@/game/life";
 
 /**
  * Panels for life in an apartment building: the elevator's buttons (close up, when inside the car), the fridge,
@@ -32,9 +33,10 @@ export function AptPanels({ state }: { state: GameState }) {
       <p className="elevator-note">{home && here && home.building === here ? `Your floor is ${home.floor} (lit gold).` : "Choose a floor."}</p>
     </div>
     {lock === "closet" && <div className="fridge-wrap"><div className="home-panel" role="dialog" aria-label="Closet">
-      <div className="home-panel-head"><b>Closet</b><button type="button" aria-label="Close" onClick={() => { state.uiLock = null; tick((n) => n + 1); }}>✕</button></div>
-      <p className="phone-note">Room for five outfits.</p>
-      <ul className="phone-list">{[1, 2, 3, 4, 5].map((k) => <li key={k}><span>Outfit {k}<small>Empty hanger</small></span></li>)}</ul>
+      <div className="home-panel-head"><b>Closet <small className="closet-count">{state.life.closet.length}/{CLOSET_MAX}</small></b><button type="button" aria-label="Close" onClick={() => { state.uiLock = null; tick((n) => n + 1); }}>✕</button></div>
+      {state.life.closet.length > 0
+        ? <ul className="phone-list">{state.life.closet.map((c, k) => <li key={k}><span><i className="closet-swatch" style={{ background: c.color }} />{c.name}<small>{c.part === "upper" ? "Top" : "Bottoms"}</small></span></li>)}</ul>
+        : <p className="phone-note">No clothes here yet.</p>}
     </div></div>}
     {lock === "fridge" && <div className="fridge-wrap"><FridgePanel state={state} onClose={() => { state.uiLock = null; tick((n) => n + 1); }} /></div>}
     <div className={`home-sleep ${lock === "sleep" ? "on" : ""}`}><span>Zzz…</span></div>

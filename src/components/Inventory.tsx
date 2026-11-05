@@ -14,7 +14,7 @@ export function InventoryButton({ state }: { state: GameState }) {
   const held = heldSlotOf(state), kind = held !== null ? state.life.inventory[held] : null;
   const toggle = () => { state.inventoryOpen = !state.inventoryOpen; if (state.inventoryOpen) state.keys.clear(); tick((n) => n + 1); };
   return <div className="inventory-anchor">
-    <button type="button" className={`hud-panel inventory-button pointer-events-auto ${state.inventoryOpen ? "on" : ""}`} aria-label="Inventory (I)" aria-expanded={state.inventoryOpen} onClick={toggle}>
+    <button type="button" className={`hud-panel hud-square inventory-button pointer-events-auto ${state.inventoryOpen ? "on" : ""}`} aria-label="Inventory (I)" aria-expanded={state.inventoryOpen} onClick={toggle}>
       <span className="inventory-button-icon" aria-hidden>{state.heldTrash ? "🧴" : kind ? ITEMS[kind].icon : <GridIcon />}</span>
       <span>I</span>
     </button>
@@ -22,7 +22,7 @@ export function InventoryButton({ state }: { state: GameState }) {
       <div className="inventory-head"><b>Inventory</b><small>Number keys take things out · E eat or drink · Q put down</small></div>
       <div className="inventory-slots">
         {state.life.inventory.map((k, i) => <button key={i} type="button" className={`inventory-slot ${held === i ? "held" : ""} ${k ? "" : "empty"}`} aria-label={k ? `${i + 1}: ${ITEMS[k].name}` : `${i + 1}: empty`}
-          onClick={() => { pressInventorySlot(state, i); tick((n) => n + 1); }}>
+          onClick={() => { pressInventorySlot(state, i); state.inventoryOpen = false; tick((n) => n + 1); }}>
           <span className="inventory-num">{i + 1}</span>
           {k && <span className="inventory-icon" aria-hidden>{ITEMS[k].icon}</span>}
           {k && <span className="inventory-name">{ITEMS[k].name}</span>}

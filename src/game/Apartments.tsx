@@ -11,6 +11,8 @@ import { heldKind } from "./invRuntime";
 import { FRIDGE_DRINKS, FRIDGE_FOOD, fridgeSplit } from "@/components/FridgePanel";
 import { CEILING, CHAIR, ENTER, LEAVE, TABLE, enterLead, enterPose, leaveLead, leavePose, planSit, toLocal, toWorld, worldYaw, type Reach } from "./restaurantRoom";
 import { toast, type GameState, type Script } from "./state";
+import { handWorld } from "./arms";
+import { isDrinkName } from "./food";
 import { canvas, tex } from "./textures";
 import { LIFT_DOOR, SHAFT, venueLayout, type VenueLayout } from "./venueRoom";
 import { bodyColor } from "@/platform/account";
@@ -183,9 +185,9 @@ function Furniture({ f, m }: { f: AptFurniture; m: FMats }) {
     case "tv": return <group position={[0, 0.85, 0]}><mesh material={m.black}>{B([w, 0.6, 0.05])}</mesh><mesh position={[0, 0, 0.03]} material={m.screen}><planeGeometry args={[w - 0.06, 0.54]} /></mesh><mesh position={[0, -0.33, 0]} material={m.black}>{B([0.2, 0.06, 0.18])}</mesh></group>;
     case "rug": return <mesh position={[0, 0.012, 0]} rotation-x={-Math.PI / 2} material={m.s("#a0543f", 0.95)} receiveShadow><planeGeometry args={[w, d]} /></mesh>;
     case "bed": return <group><mesh position={[0, 0.2, 0]} material={m.darkWood} castShadow>{B([w, 0.3, d])}</mesh><mesh position={[0, 0.42, 0.02]} material={m.white}>{B([w - 0.06, 0.16, d - 0.08])}</mesh><mesh position={[0, 0.52, 0.25]} material={m.bed}>{B([w - 0.02, 0.06, d * 0.62])}</mesh><mesh position={[0, 0.55, -d / 2 + 0.28]} material={m.white}>{B([w - 0.25, 0.1, 0.32])}</mesh><mesh position={[0, 0.6, -d / 2 + 0.03]} material={m.darkWood}>{B([w, 0.9, 0.06])}</mesh></group>;
-    case "desk": return <group><mesh position={[0, TABLE.top - 0.02, 0]} material={m.wood} castShadow>{B([w, 0.04, d])}</mesh>{[-1, 1].map((a) => <mesh key={a} position={[a * (w / 2 - 0.03), (TABLE.top - 0.04) / 2, 0]} material={m.wood}>{B([0.04, TABLE.top - 0.04, d])}</mesh>)}<mesh position={[-0.2, TABLE.top + 0.01, -0.05]} material={m.black}>{B([0.34, 0.02, 0.24])}</mesh><mesh position={[0.3, TABLE.top + 0.1, -0.12]} material={m.brass}><cylinderGeometry args={[0.07, 0.09, 0.2, 12]} /></mesh></group>;
+    case "desk": return <group><mesh position={[0, TABLE.top - 0.02, 0]} material={m.wood} castShadow>{B([w, 0.04, d])}</mesh>{[-1, 1].map((a) => <mesh key={a} position={[a * (w / 2 - 0.03), (TABLE.top - 0.04) / 2, 0]} material={m.wood}>{B([0.04, TABLE.top - 0.04, d])}</mesh>)}<mesh position={[0.3, TABLE.top + 0.1, -0.12]} material={m.brass}><cylinderGeometry args={[0.07, 0.09, 0.2, 12]} /></mesh></group>;
     case "closet": {
-      // Hollow, with room for five outfits on a rail (empty hangers for now); the two doors are drawn by FloorInterior.
+      // Hollow, with a rail for clothes (the hangers, only with clothes on them, and the doors are drawn by FloorInterior).
       const t = 0.03, front = d / 2 - 0.03;
       return <group>
         <mesh position={[0, 1.0, -d / 2 + t / 2]} material={m.wood} castShadow>{B([w, 2.0, t])}</mesh>
@@ -193,10 +195,6 @@ function Furniture({ f, m }: { f: AptFurniture; m: FMats }) {
         <mesh position={[0, 2.0 - t / 2, (front - d / 2) / 2]} material={m.wood}>{B([w, t, front + d / 2])}</mesh>
         <mesh position={[0, 0.06, (front - d / 2) / 2]} material={m.wood}>{B([w, 0.12, front + d / 2])}</mesh>
         <mesh position={[0, 1.78, -0.02]} rotation-z={Math.PI / 2} material={m.steel}><cylinderGeometry args={[0.012, 0.012, w - 0.08, 8]} /></mesh>
-        {Array.from({ length: 5 }, (_, k) => <group key={k} position={[-w / 2 + 0.2 + k * (w - 0.4) / 4, 1.7, -0.02]}>
-          <mesh position-y={0.06} material={m.steel}><torusGeometry args={[0.02, 0.004, 4, 10, Math.PI]} /></mesh>
-          <mesh rotation-z={Math.PI / 2} material={m.darkWood}><cylinderGeometry args={[0.006, 0.006, 0.36, 6]} /></mesh>
-        </group>)}
       </group>;
     }
     case "lamp": return <group><mesh position={[0, 0.7, 0]} material={m.brass}><cylinderGeometry args={[0.015, 0.015, 1.4, 6]} /></mesh><mesh position={[0, 1.45, 0]} material={m.fabric2}><cylinderGeometry args={[0.12, 0.18, 0.22, 14, 1, true]} /></mesh><mesh position={[0, 0.02, 0]} material={m.brass}><cylinderGeometry args={[0.12, 0.12, 0.03, 12]} /></mesh></group>;
@@ -302,6 +300,7 @@ function CarAt({ state, buildings, m }: { state: GameState; buildings: Map<strin
 const FRIDGE_SHELVES = [0.42, 0.78, 1.14, 1.5];
 const FRIDGE_BINS = [0.45, 0.95, 1.45];
 const FOOD_COLORS = ["#c8202a", "#f3d23b", "#f28a1a", "#b5c94a", "#e7d8b0", "#6b2d6b", "#f6a57a", "#8b5e3c", "#d0c0a0", "#5a8f3a"];
+const DRINK_COLORS = ["#6fb6ff", "#f28a1a", "#5a2d1a", "#ee3333", "#9fd17a"];
 const hashOf = (t: string) => { let h = 0; for (const ch of t) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; };
 /** What's in the fridge, on its shelves: up to 15 things to eat, five a shelf (a shape and colour for each). */
 function FridgeContents({ state, fridge, m }: { state: GameState; fridge: AptFurniture; m: FMats }) {
@@ -321,13 +320,33 @@ function FridgeContents({ state, fridge, m }: { state: GameState; fridge: AptFur
 function DoorDrinks({ state, fridge }: { state: GameState; fridge: AptFurniture }) {
   const [list, setList] = useState<string[]>([]);
   useFrame(() => { const d = fridgeSplit(state.life.fridge).drinks.slice(0, FRIDGE_DRINKS); if (d.join("|") !== list.join("|")) setList(d); });
-  const mats = useMemo(() => ["#6fb6ff", "#f28a1a", "#5a2d1a", "#e33", "#9fd17a"].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.25, transparent: true, opacity: 0.85 })), []);
+  const mats = useMemo(() => DRINK_COLORS.map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.25, transparent: true, opacity: 0.85 })), []);
   return <group>
     {list.map((name, i) => {
       const bin = FRIDGE_BINS[Math.floor(i / 3)]!, k = i % 3;
       return <group key={i} position={[-fridge.w / 2 - 0.2 + k * 0.2, bin + 0.02, -0.05]}>
         <mesh position-y={0.1} material={mats[hashOf(name) % mats.length]!}><cylinderGeometry args={[0.032, 0.032, 0.2, 10]} /></mesh>
         <mesh position-y={0.22} material={mats[0]!}><cylinderGeometry args={[0.012, 0.028, 0.05, 8]} /></mesh>
+      </group>;
+    })}
+  </group>;
+}
+
+/** The clothes in the closet, each on a hanger along the rail (a top, or a pair of trousers folded over the bar). */
+function ClosetClothes({ state, closet, m }: { state: GameState; closet: AptFurniture; m: FMats }) {
+  const [list, setList] = useState<string>("");
+  useFrame(() => { const k = JSON.stringify(state.life.closet); if (k !== list) setList(k); });
+  const clothes = (list ? JSON.parse(list) : []) as GameState["life"]["closet"];
+  const span = closet.w - 0.3, step = clothes.length > 1 ? Math.min(0.13, span / (clothes.length - 1)) : 0, x0 = -step * (clothes.length - 1) / 2;
+  return <group>
+    {clothes.map((c, k) => {
+      const mat = m.s(c.color, 0.85);
+      return <group key={k} position={[x0 + k * step, 1.7, -0.02]} rotation-y={Math.PI / 2}>
+        <mesh position-y={0.06} material={m.steel}><torusGeometry args={[0.02, 0.004, 4, 10, Math.PI]} /></mesh>
+        <mesh rotation-z={Math.PI / 2} material={m.darkWood}><cylinderGeometry args={[0.006, 0.006, 0.36, 6]} /></mesh>
+        {c.part === "upper"
+          ? <group><mesh position-y={-0.28} material={mat}>{B([0.4, 0.56, 0.05])}</mesh>{[-1, 1].map((s) => <mesh key={s} position={[s * 0.23, -0.12, 0]} rotation-z={s * 0.5} material={mat}>{B([0.1, 0.3, 0.045])}</mesh>)}</group>
+          : <group>{[-1, 1].map((s) => <mesh key={s} position={[s * 0.06, -0.3, 0]} material={mat}>{B([0.11, 0.6, 0.04])}</mesh>)}</group>}
       </group>;
     })}
   </group>;
@@ -450,8 +469,9 @@ function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, el
         {[-1, 1].map((s) => <mesh key={s} position={[0.88, 1.02, -0.024 + s * 0.045]} material={m.steel}><sphereGeometry args={[0.03, 10, 8]} /></mesh>)}
       </group>
     </group>
-    {/* The closet's two doors, hinged at its sides, handles by the middle. */}
+    {/* The closet's two doors, hinged at its sides, handles by the middle; inside, your clothes on their hangers. */}
     <group position={[closet.x, 0, closet.z]} rotation-y={closet.rot}>
+      {state.life.home?.building === fl.key.split("#")[0] && state.life.home?.floor === fl.upper && <ClosetClothes state={state} closet={closet} m={m} />}
       {([-1, 1] as const).map((sd) => <group key={sd} position={[sd * closet.w / 2, 0, closet.d / 2 - 0.015]} ref={sd < 0 ? closetL : closetR}>
         <mesh position={[-sd * closet.w / 4, 1.0, 0]} material={m.wood} castShadow>{B([closet.w / 2 - 0.004, 1.96, 0.025])}</mesh>
         <mesh position={[-sd * closet.w / 4, 1.0, 0.014]} material={m.darkWood}>{B([closet.w / 2 - 0.12, 1.7, 0.004])}</mesh>
@@ -537,6 +557,11 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   const prompt = useRef<{ visible: boolean; x: number; y: number; z: number; label?: string | undefined }>({ visible: false, x: 0, y: 0, z: 0 });
   const ownScript = useRef(false);
   const sleeping = useRef(0);
+  /** Putting things in the fridge: the one in hand now, and how far the character has stepped in (0..1). */
+  const load = useRef<{ name: string; t0: number; slot: [number, number, number]; drink: boolean; placed: boolean } | null>(null);
+  const loadStep = useRef(0);
+  const carry = useRef<THREE.Group>(null);
+  const carryMats = useMemo(() => ({ food: new THREE.MeshStandardMaterial({ color: "#c8202a", roughness: 0.6 }), drink: new THREE.MeshStandardMaterial({ color: "#6fb6ff", roughness: 0.25, transparent: true, opacity: 0.85 }) }), []);
 
   const byKey = useMemo(() => new Map(buildings.map((b) => [aptKey(b), b])), [buildings]);
   const lobbyOf = (key: string) => { const b = byKey.get(key); return b ? venueLayout(b) : null; };
@@ -550,7 +575,8 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     if (e.phase === "closing") return 1 - smooth(t / 0.8);
     if (e.phase === "moving") return 0;
     if (e.phase === "opening") return smooth(t / 0.8);
-    return 1 - smooth((t - 0.6) / 0.8);
+    // Leaving: open until the rider is all the way out, then they close.
+    return e.outAt === undefined ? 1 : 1 - smooth((state.simulationTime - e.outAt) / 0.8);
   };
 
   useFrame((_, raw) => {
@@ -612,12 +638,13 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
           e.floor = e.target; e.phase = "opening"; e.t0 = now;
         } else if (e.phase === "opening" && t >= 0.8) { e.phase = "leaving"; e.t0 = now; move.current = { kind: "alight", t0: now, plan: makePlan([walkSeg(car, 0, out, 0, { basket: false, bag: !!state.groceryBag })]) }; }
       } else if (e.phase === "leaving") {
-        if (!move.current) move.current = { kind: "alight", t0: now - 10, plan: makePlan([walkSeg(out, 0, out, 0, { basket: false, bag: false })]) };
-        const r = planAt(move.current.plan!, now - move.current.t0);
-        script = scriptFrom(r.pose);
-        if (r.done) { const [x, z] = toW(r.pose.x, r.pose.z); state.pos.x = x; state.pos.z = z; state.rotY = worldYaw(frameNow, r.pose.yaw); move.current = null; script = null; }
-        // Out of the car: the doors close behind (then the elevator is free again).
-        if (r.done && t > 1.5) state.elevator = null;
+        if (e.outAt === undefined) {
+          if (!move.current) move.current = { kind: "alight", t0: now - 10, plan: makePlan([walkSeg(out, 0, out, 0, { basket: false, bag: false })]) };
+          const r = planAt(move.current.plan!, now - move.current.t0);
+          script = scriptFrom(r.pose);
+          // All the way out of the car: free to go, and only now do the doors close behind.
+          if (r.done) { const [x, z] = toW(r.pose.x, r.pose.z); state.pos.x = x; state.pos.z = z; state.rotY = worldYaw(frameNow, r.pose.yaw); move.current = null; script = null; e.outAt = now; }
+        } else if (now - e.outAt >= 0.8) state.elevator = null;
       }
     }
     function here(): { x: number; z: number; yaw: number } { const [x, z] = frameNow ? toLocal(frameNow, p.x, p.z) : [p.x, p.z]; return { x, z, yaw: hereYaw() }; }
@@ -693,9 +720,49 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         script = scriptFrom({ ...sp, lean: 0.06 * blend, left: null, right: blend > 0 ? { at: handle(fridgeAngle.current), blend, pole: "out" } : null });
         if (a >= FRIDGE.reach + FRIDGE.pull + FRIDGE.release) { mv.phase = "held"; state.pos.x = script.x; state.pos.z = script.z; state.rotY = script.yaw; script = null; state.uiLock = "fridge"; state.keys.clear(); }
       } else if (mv.phase === "held") {
-        // The fridge's panel is up; closing it pushes the door shut.
+        // The fridge's panel is up; closing it pushes the door shut (once everything being stored is in).
         fridgeAngle.current = FRIDGE.open;
-        if (state.uiLock !== "fridge") { mv.phase = "close"; mv.t0 = now; }
+        const busy = state.fridgeLoad.length > 0 || load.current !== null;
+        loadStep.current = Math.max(0, Math.min(1, loadStep.current + (busy ? dt : -dt) / 0.4));
+        // Each thing: the right hand takes it (out of the bag in the left hand, or up from the hands), puts it in its
+        // place — food on the next free shelf spot, a drink in the door's next bin spot — and comes back.
+        const fwd: [number, number] = [Math.sin(yaw), Math.cos(yaw)], lft: [number, number] = [Math.cos(yaw), -Math.sin(yaw)];
+        const step = smooth(loadStep.current) * 0.28, at: [number, number] = [stand[0] + fwd[0] * step, stand[1] + fwd[1] * step];
+        if (!load.current && state.fridgeLoad.length && loadStep.current >= 1) {
+          const next = state.fridgeLoad.shift()!, drink = isDrinkName(next.name), split = fridgeSplit(state.life.fridge);
+          if (next.bag && state.groceryBag) { const i = state.groceryBag.indexOf(next.bag); if (i >= 0) state.groceryBag.splice(i, 1); if (!state.groceryBag.length) state.groceryBag = null; }
+          let slot: [number, number, number];
+          if (drink) {
+            const i = Math.min(split.drinks.length, FRIDGE_DRINKS - 1), bin = FRIDGE_BINS[Math.floor(i / 3)]!, k = i % 3;
+            const dx = -fz.w / 2 - 0.2 + k * 0.2, dz = -0.05, a = FRIDGE.open, ca = Math.cos(a), sa = Math.sin(a);
+            const lx = fz.w / 2 + dx * ca + dz * sa, lz = fz.d / 2 - 0.06 - dx * sa + dz * ca;
+            slot = [fz.x + lx * fc + lz * fs, bin + 0.12, fz.z - lx * fs + lz * fc];
+          } else {
+            const i = Math.min(split.food.length, FRIDGE_FOOD - 1), shelf = FRIDGE_SHELVES[Math.floor(i / 5)]!, k = i % 5;
+            const lx = -fz.w / 2 + 0.1 + k * (fz.w - 0.2) / 4, lz = -fz.d / 2 + 0.04 + 0.14 + (k % 2) * 0.12;
+            slot = [fz.x + lx * fc + lz * fs, shelf + 0.06, fz.z - lx * fs + lz * fc];
+          }
+          load.current = { name: next.name, t0: now, slot, drink, placed: false };
+        }
+        const L = load.current;
+        let right: Reach | null = null, crouch = 0, lean = 0.06 * loadStep.current;
+        if (L) {
+          const t = now - L.t0;
+          // Where the thing is picked from: the bag (beside the left leg) or held up in front.
+          const lh = state.avatar.body[9];
+          let from: [number, number, number] = [at[0] + fwd[0] * 0.3 - lft[0] * 0.05, 1.0, at[1] + fwd[1] * 0.3 - lft[1] * 0.05];
+          if (state.groceryBag && lh) { const v = handWorld(lh, new THREE.Vector3()); const [bx, bz] = toLocal(floor.frame, v.x, v.z); from = [bx + fwd[0] * 0.05, v.y - yNow - 0.18, bz + fwd[1] * 0.05]; }
+          const k1 = smooth(t / 0.35), k2 = smooth((t - 0.35) / 0.55), k3 = smooth((t - 0.95) / 0.35);
+          const p3 = [0, 1, 2].map((i) => from[i]! + (L.slot[i]! - from[i]!) * k2) as [number, number, number];
+          right = { at: p3, blend: k1 * (1 - k3), pole: "out" };
+          const low = L.drink ? 0 : L.slot[1] < 0.7 ? 0.6 : L.slot[1] < 1.0 ? 0.25 : 0;
+          crouch = low * smooth((t - 0.2) / 0.5) * (1 - k3);
+          lean += (L.drink ? 0.05 : 0.22) * k2 * (1 - k3);
+          if (!L.placed && t >= 0.9) { L.placed = true; state.life.fridge.push(L.name); }
+          if (t >= 1.3) load.current = null;
+        }
+        if (loadStep.current > 0) script = scriptFrom({ x: at[0], z: at[1], yaw, crouch, lean, left: null, right });
+        if (state.uiLock !== "fridge" && !busy && loadStep.current <= 0) { mv.phase = "close"; mv.t0 = now; }
       } else {
         const push = smooth((t - FRIDGE.reach) / (FRIDGE.pull * 0.8)), angle = FRIDGE.open * (1 - push);
         const blend = t < FRIDGE.reach ? smooth(t / FRIDGE.reach) : 1 - smooth((t - FRIDGE.reach - FRIDGE.pull * 0.8) / FRIDGE.release);
@@ -861,6 +928,19 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     if (floor && state.interactQueued) state.interactQueued = false;
   }, -0.66);
 
+  useFrame(() => {
+    const g = carry.current, L = load.current, fore = state.avatar.body[11];
+    if (!g) return;
+    const t = L ? state.simulationTime - L.t0 : 0, show = !!L && !!fore && t > 0.3 && !L.placed;
+    g.visible = show;
+    if (!show || !L || !fore) return;
+    fore.updateWorldMatrix(true, false); handWorld(fore, g.position);
+    g.rotation.set(0, state.rotY, 0);
+    g.children.forEach((c) => { c.visible = (c.name === "drink") === L.drink; });
+    const mat = L.drink ? carryMats.drink : carryMats.food, col = L.drink ? DRINK_COLORS[hashOf(L.name) % DRINK_COLORS.length]! : FOOD_COLORS[hashOf(L.name) % FOOD_COLORS.length]!;
+    if (`#${mat.color.getHexString()}` !== col.toLowerCase()) mat.color.set(col);
+  }, 2);
+
   const sleep = () => {
     sleeping.current = 1; state.uiLock = "sleep"; state.keys.clear();
     window.setTimeout(() => {
@@ -883,6 +963,11 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     </group>)}
     {shown.map((fl) => <FloorInterior key={fl.key} fl={fl} state={state} m={m} door={() => doorAngle.current} bedDoor={() => bedAngle.current} fridgeDoor={() => fridgeAngle.current} closetDoor={() => closetAngle.current} elevatorOpen={elevatorOpen(fl.key.split("#")[0]!, fl.upper)} />)}
     <CarAt state={state} buildings={byKey} m={m} />
+    {/* The thing being put in the fridge, in the right hand. */}
+    <group ref={carry} visible={false}>
+      <mesh name="food" material={carryMats.food}><sphereGeometry args={[0.05, 10, 8]} /></mesh>
+      <mesh name="drink" position-y={0.04} material={carryMats.drink}><cylinderGeometry args={[0.032, 0.032, 0.2, 10]} /></mesh>
+    </group>
     <InteractionPrompt sample={() => ({ ...prompt.current, time: state.simulationTime })} />
   </group>;
 }

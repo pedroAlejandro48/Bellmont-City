@@ -11,17 +11,20 @@ import type { GameState } from "./state";
 type Thing = ItemKind | "bottle";
 
 /**
- * A white plastic bag of groceries: a soft body that fills out with what's in it, round things pushing at its sides
- * (bulges), two loop handles at the top. Origin at the handles (where a hand holds it).
+ * A white plastic bag of groceries: a soft pear-shaped body, rounder at the bottom where the shopping sits, gathered
+ * up at the top into one looped handle (a flat band). It fills out with what's in it. Origin at the top of the loop
+ * (where a hand holds it).
  */
+const BAG_PROFILE: [number, number][] = [[0.001, -0.43], [0.06, -0.426], [0.105, -0.41], [0.137, -0.38], [0.152, -0.335], [0.15, -0.29], [0.136, -0.245], [0.114, -0.205], [0.092, -0.172], [0.074, -0.15], [0.058, -0.136], [0.03, -0.128], [0.001, -0.126]];
+const bagBody = new THREE.LatheGeometry(BAG_PROFILE.map(([x, y]) => new THREE.Vector2(x, y)), 24);
+const bagLoop = new THREE.TorusGeometry(0.072, 0.014, 8, 28);
 export function GroceryBagModel({ items, looks }: { items: number; looks: Looks }) {
-  const fill = Math.min(1, items / 8);
-  const bulges = useMemo(() => Array.from({ length: 10 }, (_, i) => ({ a: i * 2.39996, y: 0.06 + ((i * 0.37) % 1) * 0.18, r: 0.055 + ((i * 0.53) % 1) * 0.02 })), []);
+  const fill = Math.min(1, items / 8), wide = 0.86 + 0.16 * fill;
   return <group>
-    <mesh material={looks.bag} position={[0, -0.21 - 0.02 * (1 - fill), 0]} scale={[1 + 0.18 * fill, 1, 0.75 + 0.2 * fill]} castShadow><cylinderGeometry args={[0.12, 0.14, 0.3 - 0.06 * (1 - fill), 16, 1]} /></mesh>
-    <mesh material={looks.bag} position={[0, -0.36, 0]} scale={[1 + 0.18 * fill, 0.5, 0.75 + 0.2 * fill]}><sphereGeometry args={[0.14, 16, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2]} /></mesh>
-    {bulges.slice(0, items).map((b, i) => <mesh key={i} material={looks.bag} position={[Math.cos(b.a) * 0.12, -0.36 + b.y, Math.sin(b.a) * 0.09]} scale={[1, 0.9, 0.8]}><sphereGeometry args={[b.r, 10, 8]} /></mesh>)}
-    {[-1, 1].map((s) => <mesh key={s} material={looks.bag} position={[s * 0.035, -0.02, 0]} rotation-y={Math.PI / 2}><torusGeometry args={[0.05, 0.008, 6, 14, Math.PI]} /></mesh>)}
+    {/* The body (squashed front to back like a real bag), sagging a little lower when full. */}
+    <mesh material={looks.bag} geometry={bagBody} position={[0, -0.01 * fill, 0]} scale={[wide, 1 + 0.03 * fill, wide * 0.78]} castShadow />
+    {/* The handle: one loop rising from the gathered top, a flat band. */}
+    <mesh material={looks.bag} geometry={bagLoop} position={[0, -0.075, 0]} scale={[0.95, 1.05, 0.45]} castShadow />
   </group>;
 }
 

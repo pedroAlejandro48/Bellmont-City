@@ -469,3 +469,32 @@
 .elevator-note { margin-top: 0.7rem; font-size: 0.68rem; text-align: center; opacity: 0.8; }
 .fridge-wrap .home-panel { position: fixed; z-index: 40; }
 .home-sleep { position: fixed; inset: 0; z-index: 45; }
+
+/* ---------- The HUD on phones (upright, and on their side: the same sizes) ---------- */
+.hud-cash-icon { font-size: 1.35rem; }
+.hud-cash-amount { font-size: 0.9rem; }
+.hud-cash-amount.long { font-size: 0.72rem; }
+.level-badge .ring { width: 2.4rem; height: 2.4rem; }
+.level-badge .ring b { font-size: 0.95rem; }
+@media (max-width: 639px), (orientation: landscape) and (max-height: 560px) {
+  .hud-bottom { bottom: calc(0.75rem + env(safe-area-inset-bottom)); gap: 0.375rem; max-width: calc(100vw - 1rem); }
+  .hud-needs { flex: 0 1 15rem; width: 15rem; height: 3.75rem; padding: 0.4rem 0.6rem 0.45rem; display: flex; flex-direction: column; justify-content: space-between; }
+  .hud-needs > * { margin-block: 0 !important; }
+  .hud-needs > div > div:first-child { font-size: 8.5px; margin-bottom: 1px; }
+  .hud-needs .need-meter { height: 0.25rem; }
+  .hud-bottom .hud-square { width: 3.75rem; height: 3.75rem; flex: 0 0 3.75rem; aspect-ratio: 1; padding: 0.2rem; }
+  .hud-cash-icon { font-size: 1.15rem; }
+  .hud-cash-amount { font-size: 0.8rem; }
+  .hud-cash-amount.long { font-size: 0.62rem; }
+  .level-badge .ring { width: 2.3rem; height: 2.3rem; }
+}
+/* A phone on its side: the same as upright (the small day box, small buttons). */
+@media (orientation: landscape) and (max-height: 560px) {
+  .day-phone { display: flex !important; }
+  .day-wide { display: none !important; }
+  .hud-actions { gap: 0.5rem !important; }
+  .hud-actions button { height: 2rem !important; padding-inline: 0.75rem !important; font-size: 0.75rem !important; }
+  .toasts { top: 3.6rem; }
+}
+.closet-count { margin-left: 0.4rem; font-size: 0.75rem; font-weight: 700; opacity: 0.7; }
+.closet-swatch { display: inline-block; width: 0.8rem; height: 0.8rem; border-radius: 0.2rem; margin-right: 0.45rem; vertical-align: -0.1rem; border: 1px solid rgba(255,255,255,0.3); }

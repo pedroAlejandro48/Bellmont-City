@@ -16,24 +16,28 @@ export function FridgePanel({ state, onClose }: { state: GameState; onClose: () 
   const [, tick] = useState(0), life = state.life;
   const held = (["left", "right"] as const).map((h) => state.hands[h]).filter((h): h is NonNullable<typeof h> => !!h && (h.items?.length ?? 0) > 0);
   const { food, drinks } = fridgeSplit(life.fridge);
-  const room = (name: string) => (isDrinkName(name) ? fridgeSplit(life.fridge).drinks.length < FRIDGE_DRINKS : fridgeSplit(life.fridge).food.length < FRIDGE_FOOD);
+  // Room counts what's already on its way in.
+  const room = (name: string) => {
+    const all = [...life.fridge, ...state.fridgeLoad.map((l) => l.name)], split = fridgeSplit(all);
+    return isDrinkName(name) ? split.drinks.length < FRIDGE_DRINKS : split.food.length < FRIDGE_FOOD;
+  };
+  // Storing: the character puts each thing in by hand (Apartments), food on the shelves, drinks in the door.
   const store = () => {
     let left = 0;
     for (const h of held) {
-      const items = h.items ?? [], kept = items.filter((n) => room(n) && (life.fridge.push(n), true));
-      left += items.length - kept.length;
-      // The pack itself is used up (what fitted is in the fridge now).
+      const items = h.items ?? [];
+      for (const n of items) { if (room(n)) state.fridgeLoad.push({ name: n, bag: null }); else left++; }
+      // The pack itself is used up (what fitted goes in the fridge).
       state.foodSend?.({ type: "trash", pack: h.id, x: state.pos.x, y: -5, z: state.pos.z });
     }
     if (state.groceryBag) {
-      const rest: typeof state.groceryBag = [];
-      for (const k of state.groceryBag) { const name = ITEMS[k].name; if (room(name)) life.fridge.push(name); else rest.push(k); }
-      state.groceryBag = rest.length ? rest : null;
-      left += rest.length;
+      // Taken out of the bag one at a time as they go in (what doesn't fit stays in it).
+      for (const k of state.groceryBag) { const name = ITEMS[k].name; if (room(name)) state.fridgeLoad.push({ name, bag: k }); else left++; }
     }
     if (left) toast(state, "The fridge is full", "warn", `${left} thing${left > 1 ? "s" : ""} didn't fit.`);
     tick((n) => n + 1);
   };
+  const loading = state.fridgeLoad.length > 0;
   const eat = (name: string) => {
     if (!canConsume(state, name)) { toast(state, isDrinkName(name) ? "Not thirsty" : "You're full", "warn"); return; }
     const after = consume(state, name, foodValue(name));
@@ -50,6 +54,6 @@ export function FridgePanel({ state, onClose }: { state: GameState; onClose: () 
     {list(food, "Eat")}
     <p className="phone-label">Door · {drinks.length}/{FRIDGE_DRINKS}</p>
     {list(drinks, "Drink")}
-    <button type="button" className="phone-btn ghost" disabled={!held.length && !state.groceryBag} onClick={store}>Store the food you're carrying</button>
+    <button type="button" className="phone-btn ghost" disabled={loading || (!held.length && !state.groceryBag)} onClick={store}>{loading ? "Putting it away…" : "Store the food you're carrying"}</button>
   </div>;
 }

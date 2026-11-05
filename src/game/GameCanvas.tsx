@@ -262,7 +262,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
       if (e.code === "KeyP" && !e.repeat && !state.home) { pressInventorySlot(state, 0); e.preventDefault(); return; }
       // Number keys 1–9: the inventory's slots. I or Tab opens the grid.
       const digit = /^Digit([1-9])$/.exec(e.code);
-      if (digit && !e.repeat && !state.home && !state.shop && !state.foodUi.open && !state.uiLock) { pressInventorySlot(state, Number(digit[1]) - 1); e.preventDefault(); return; }
+      if (digit && !e.repeat && !state.home && !state.shop && !state.foodUi.open && !state.uiLock) { pressInventorySlot(state, Number(digit[1]) - 1); state.inventoryOpen = false; e.preventDefault(); return; }
       if ((e.code === "KeyI" || e.code === "Tab") && !e.repeat && !state.home) { state.inventoryOpen = !state.inventoryOpen; if (state.inventoryOpen) state.keys.clear(); e.preventDefault(); return; }
       if (e.code === "Escape" && state.inventoryOpen) { state.inventoryOpen = false; return; }
       if (e.code === "Escape" && state.phone.open) { state.phone = { open: false, app: null, atm: false }; return; }
@@ -299,12 +299,12 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
 
       <div className="pointer-events-none fixed inset-0 z-10">
         {/* Phones: a smaller day box, centred, the same height as the buttons beside it (placed by fitDayBox). */}
-        <div ref={dayBox} className="hud-panel absolute left-1/2 top-4 flex h-8 items-center gap-2 whitespace-nowrap px-2.5 sm:hidden">
+        <div ref={dayBox} className="day-phone hud-panel absolute left-1/2 top-4 flex h-8 items-center gap-2 whitespace-nowrap px-2.5 sm:hidden">
           <span className="font-display text-base leading-none tracking-wide">Day {hud.day}</span>
           <span className="text-[10px] leading-none text-muted-foreground">{hud.isDay ? "☀" : "☾"} {formatClock(hud.hours)}</span>
         </div>
         {/* Wide screens: the day and time centred at the top. */}
-        <div className="hidden justify-center pt-5 sm:flex">
+        <div className="day-wide hidden justify-center pt-5 sm:flex">
           <div className="hud-panel flex items-baseline gap-4 px-6 py-2.5">
             <span className="font-display text-3xl tracking-wide">Day {hud.day}</span>
             <span className="text-sm text-muted-foreground">
@@ -324,8 +324,8 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
         </div>
         {Overlay && <Overlay state={state} />}
         {riding && <div className="hud-panel absolute bottom-24 left-1/2 flex h-16 w-40 -translate-x-1/2 items-baseline justify-center gap-2 px-4 py-3" aria-label="Scooter speed"><span className="font-display text-3xl tabular-nums">{speed}</span><span className="text-xs text-muted-foreground">MPH</span></div>}
-        <div className="absolute bottom-6 left-1/2 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-stretch gap-2">
-          <div className="hud-panel w-64 min-w-0 space-y-1.5 px-4 py-2.5">
+        <div className="hud-bottom absolute bottom-6 left-1/2 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-stretch justify-center gap-2">
+          <div className="hud-needs hud-panel w-64 min-w-0 space-y-1.5 px-4 py-2.5">
             {([["HEALTH", health, "health"], ["HUNGER", needs.hunger, "hunger"], ["THIRST", needs.thirst, "thirst"]] as const).map(([label, value, kind]) => (
               <div key={kind}>
                 <div className="mb-0.5 flex justify-between text-[10px] font-bold leading-none tracking-wide">
@@ -335,12 +335,9 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
               </div>
             ))}
           </div>
-          <div className="hud-panel flex aspect-square shrink-0 flex-col items-center justify-center gap-1 px-1" aria-label={`Cash: $${cashText}`}>
-            <span className="text-[10px] font-bold leading-none tracking-wide">CASH</span>
-            <span className="flex items-center gap-1 text-xs font-bold leading-none tabular-nums">
-              <svg viewBox="0 0 24 14" className="h-3 w-5 shrink-0" aria-hidden><rect x="0.5" y="0.5" width="23" height="13" rx="1.5" fill="#2e7d32" stroke="#1b5e20" /><rect x="2.5" y="2.5" width="19" height="9" rx="1" fill="none" stroke="#a5d6a7" strokeWidth="0.8" /><circle cx="12" cy="7" r="3.2" fill="#a5d6a7" /><text x="12" y="9.3" textAnchor="middle" fontSize="6.5" fontWeight="700" fill="#1b5e20">$</text></svg>
-              ${cashText}
-            </span>
+          <div className="hud-square hud-cash hud-panel flex aspect-square shrink-0 flex-col items-center justify-center gap-1 px-1" aria-label={`Cash: $${cashText}`}>
+            <span className="hud-cash-icon leading-none" aria-hidden>💵</span>
+            <span className={`hud-cash-amount font-bold leading-none tabular-nums ${cashText.length > 6 ? "long" : ""}`}>${cashText}</span>
           </div>
           <LevelBadge state={state} />
           <InventoryButton state={state} />
