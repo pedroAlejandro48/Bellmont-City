@@ -536,7 +536,7 @@ function seatsOf(fl: AptFloor): Seat[] {
   return out;
 }
 /** The fridge: reach for the handle, pull the door open (it swings round with the hand), let go; the same back. */
-const FRIDGE = { reach: 0.4, pull: 0.85, release: 0.35, open: 1.75 };
+const FRIDGE = { reach: 0.4, pull: 1.0, release: 0.3, step: 0.55, back: 0.45, open: 1.75 };
 const KEY = { walk: 0.9, reach: 0.55, turn: 0.45, back: 0.4 };
 
 /**
@@ -606,8 +606,10 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     const toW = (x: number, z: number) => (frameNow ? toWorld(frameNow, x, z) : [x, z] as [number, number]);
     const reachW = (r: Reach | null) => { if (!r || !frameNow) return null; const [x, z] = toWorld(frameNow, r.at[0], r.at[2]); return { at: new THREE.Vector3(x, yNow + r.at[1], z), blend: r.blend, pole: r.pole }; };
     const scriptFrom = (pose: GPose | { x: number; z: number; yaw: number; lean: number; left: Reach | null; right: Reach | null; crouch?: number; sit?: number }): Script => {
-      const [x, z] = toW(pose.x, pose.z), prev = state.foodScript;
-      return { x, z, yaw: frameNow ? worldYaw(frameNow, pose.yaw) : pose.yaw, walk: prev ? Math.hypot(x - prev.x, z - prev.z) / Math.max(dt, 1e-3) : 0, sit: (pose as { sit?: number }).sit ?? 0, shuffle: 0, lean: pose.lean, left: reachW(pose.left), right: reachW(pose.right), crouch: pose.crouch ?? 0 };
+      const [x, z] = toW(pose.x, pose.z), prev = state.foodScript, wy = frameNow ? worldYaw(frameNow, pose.yaw) : pose.yaw;
+      // Steps play backward when stepping back.
+      const dx = prev ? x - prev.x : 0, dz = prev ? z - prev.z : 0, d = Math.hypot(dx, dz), back = dx * Math.sin(wy) + dz * Math.cos(wy) < -0.3 * d;
+      return { x, z, yaw: wy, walk: (back ? -1 : 1) * d / Math.max(dt, 1e-3), sit: (pose as { sit?: number }).sit ?? 0, shuffle: 0, lean: pose.lean, left: reachW(pose.left), right: reachW(pose.right), crouch: pose.crouch ?? 0 };
     };
 
     // ---------- the elevator ----------
@@ -711,14 +713,19 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       };
       const stand = [floor.spots.fridge[0], floor.spots.fridge[1] - 0.05] as [number, number];
       const t = now - mv.t0;
+      // One big step back (making room for the door) and, once it's open, one step in again.
+      const backAt = (k: number): [number, number] => [stand[0] - Math.sin(yaw) * FRIDGE.back * k, stand[1] - Math.cos(yaw) * FRIDGE.back * k];
       if (mv.phase === "open") {
         const walk = mv.plan!.total, a = t - walk;
         const sp = planAt(mv.plan!, Math.min(t, walk)).pose;
+        // Take the handle; pull the door open stepping back with it; let go; step in.
         const pull = smooth((a - FRIDGE.reach) / FRIDGE.pull), angle = FRIDGE.open * pull;
         const blend = a < 0 ? 0 : a < FRIDGE.reach ? smooth(a / FRIDGE.reach) : 1 - smooth((a - FRIDGE.reach - FRIDGE.pull) / FRIDGE.release);
+        const stepIn = smooth((a - FRIDGE.reach - FRIDGE.pull - FRIDGE.release) / FRIDGE.step);
         fridgeAngle.current = a > FRIDGE.reach ? angle : 0;
-        script = scriptFrom({ ...sp, lean: 0.06 * blend, left: null, right: blend > 0 ? { at: handle(fridgeAngle.current), blend, pole: "out" } : null });
-        if (a >= FRIDGE.reach + FRIDGE.pull + FRIDGE.release) { mv.phase = "held"; state.pos.x = script.x; state.pos.z = script.z; state.rotY = script.yaw; script = null; state.uiLock = "fridge"; state.keys.clear(); }
+        const [bx, bz] = a > 0 ? backAt(pull * (1 - stepIn)) : [sp.x, sp.z];
+        script = scriptFrom({ ...sp, x: bx, z: bz, lean: 0.06 * blend, left: null, right: blend > 0 ? { at: handle(fridgeAngle.current), blend, pole: "out" } : null });
+        if (a >= FRIDGE.reach + FRIDGE.pull + FRIDGE.release + FRIDGE.step) { mv.phase = "held"; state.pos.x = script.x; state.pos.z = script.z; state.rotY = script.yaw; script = null; state.uiLock = "fridge"; state.keys.clear(); }
       } else if (mv.phase === "held") {
         // The fridge's panel is up; closing it pushes the door shut (once everything being stored is in).
         fridgeAngle.current = FRIDGE.open;
@@ -764,11 +771,14 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         if (loadStep.current > 0) script = scriptFrom({ x: at[0], z: at[1], yaw, crouch, lean, left: null, right });
         if (state.uiLock !== "fridge" && !busy && loadStep.current <= 0) { mv.phase = "close"; mv.t0 = now; }
       } else {
-        const push = smooth((t - FRIDGE.reach) / (FRIDGE.pull * 0.8)), angle = FRIDGE.open * (1 - push);
-        const blend = t < FRIDGE.reach ? smooth(t / FRIDGE.reach) : 1 - smooth((t - FRIDGE.reach - FRIDGE.pull * 0.8) / FRIDGE.release);
-        fridgeAngle.current = t > FRIDGE.reach ? angle : FRIDGE.open;
-        script = scriptFrom({ x: stand[0], z: stand[1], yaw, crouch: 0, lean: 0.05 * blend, left: null, right: { at: handle(fridgeAngle.current), blend, pole: "out" } });
-        if (t >= FRIDGE.reach + FRIDGE.pull * 0.8 + FRIDGE.release) { fridgeAngle.current = 0; move.current = null; script = null; }
+        // The opening backward: step back, take the handle, push the door shut stepping in with it, let go.
+        const out = smooth(t / FRIDGE.step), u = t - FRIDGE.step;
+        const push = smooth((u - FRIDGE.reach) / FRIDGE.pull), angle = FRIDGE.open * (1 - push);
+        const blend = u < 0 ? 0 : u < FRIDGE.reach ? smooth(u / FRIDGE.reach) : 1 - smooth((u - FRIDGE.reach - FRIDGE.pull) / FRIDGE.release);
+        fridgeAngle.current = u > FRIDGE.reach ? angle : FRIDGE.open;
+        const [bx, bz] = backAt(u > FRIDGE.reach ? 1 - push : out);
+        script = scriptFrom({ x: bx, z: bz, yaw, crouch: 0, lean: 0.05 * blend, left: null, right: blend > 0 ? { at: handle(fridgeAngle.current), blend, pole: "out" } : null });
+        if (u >= FRIDGE.reach + FRIDGE.pull + FRIDGE.release) { fridgeAngle.current = 0; move.current = null; script = null; }
       }
     }
     // ---------- the closet ----------

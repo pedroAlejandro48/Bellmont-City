@@ -18,8 +18,8 @@ export function InventoryButton({ state }: { state: GameState }) {
       <span className="inventory-button-icon" aria-hidden>{state.heldTrash ? "🧴" : kind ? ITEMS[kind].icon : <GridIcon />}</span>
       <span>I</span>
     </button>
-    <div className={`hud-panel inventory-grid pointer-events-auto ${state.inventoryOpen ? "open" : ""}`} role="dialog" aria-label="Inventory" aria-hidden={!state.inventoryOpen}>
-      <div className="inventory-head"><b>Inventory</b><small>Number keys take things out · E eat or drink · Q put down</small></div>
+    {/* All nine slots in a row above the health bars (no panel behind them). */}
+    <div className={`inventory-grid pointer-events-auto ${state.inventoryOpen ? "open" : ""}`} role="dialog" aria-label="Inventory" aria-hidden={!state.inventoryOpen}>
       <div className="inventory-slots">
         {state.life.inventory.map((k, i) => <button key={i} type="button" className={`inventory-slot ${held === i ? "held" : ""} ${k ? "" : "empty"}`} aria-label={k ? `${i + 1}: ${ITEMS[k].name}` : `${i + 1}: empty`}
           onClick={() => { pressInventorySlot(state, i); state.inventoryOpen = false; tick((n) => n + 1); }}>

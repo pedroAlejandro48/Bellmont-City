@@ -154,8 +154,15 @@ export function InventoryWorld({ state }: { state: GameState }) {
         let tipX = 0;
         if (kind === "phone") tipX = -0.55;
         if (act && act.kind === "drink") { const t = (state.simulationTime - act.at) / USE_SECONDS; tipX = Math.sin(Math.min(1, Math.max(0, (t - 0.2) / 0.6)) * Math.PI) * 1.6; }
-        tmp.e.set(tipX, state.rotY, 0, "YXZ");
+        // The phone's screen faces the character (turned round); the key points forward, out of the hand.
+        let turn = 0;
+        if (kind === "phone") turn = Math.PI;
+        if (kind === "key") tipX = Math.PI / 2;
+        tmp.e.set(tipX, state.rotY + turn, 0, "YXZ");
         g.quaternion.setFromEuler(tmp.e);
+        g.scale.setScalar(kind === "key" ? 1.7 : 1);
+        // The key's ring between the fingers, its blade out in front of the hand (not floating away from it).
+        if (kind === "key") { g.position.x += Math.sin(state.rotY) * 0.035; g.position.z += Math.cos(state.rotY) * 0.035; g.position.y -= 0.01; }
         // A bottle is held round its middle; fruit and keys sit in the palm.
         if (kind === "water" || kind === "bottle") g.position.y -= 0.07;
         if (kind === "phone") g.position.y += 0.05;

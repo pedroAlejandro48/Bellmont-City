@@ -440,21 +440,22 @@
 .inventory-button:active { transform: scale(0.94); }
 .inventory-button.on { box-shadow: 0 0 0 2px #ffb547 inset; }
 .inventory-button-icon { font-size: 1.15rem; line-height: 1; display: grid; place-items: center; height: 1.3rem; }
-.inventory-grid { position: absolute; right: 0; bottom: calc(100% + 0.6rem); width: 15.5rem; padding: 0.7rem; display: flex; flex-direction: column; gap: 0.55rem; transform: translateY(0.8rem) scale(0.94); transform-origin: bottom right; opacity: 0; pointer-events: none !important; transition: transform 0.28s cubic-bezier(0.2, 1.2, 0.4, 1), opacity 0.2s ease; }
-.inventory-grid.open { transform: none; opacity: 1; pointer-events: auto !important; }
+.inventory-anchor { position: static; }
+.inventory-grid { position: absolute; left: 50%; bottom: calc(100% + 0.5rem); display: flex; flex-direction: column; align-items: center; gap: 0.35rem; transform: translate(-50%, 0.8rem) scale(0.94); transform-origin: bottom center; opacity: 0; pointer-events: none !important; transition: transform 0.28s cubic-bezier(0.2, 1.2, 0.4, 1), opacity 0.2s ease; }
+.inventory-grid.open { transform: translate(-50%, 0); opacity: 1; pointer-events: auto !important; }
 .inventory-head { display: flex; flex-direction: column; gap: 0.1rem; }
 .inventory-head b { font-size: 0.85rem; }
 .inventory-head small { font-size: 0.62rem; opacity: 0.65; line-height: 1.3; }
-.inventory-slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem; }
-.inventory-slot { position: relative; aspect-ratio: 1; border-radius: 0.7rem; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.15rem; transition: background 0.15s, transform 0.12s, box-shadow 0.2s; }
-.inventory-slot:hover { background: rgba(255,255,255,0.16); }
+.inventory-slots { display: grid; grid-template-columns: repeat(9, var(--slot, 3.4rem)); gap: 0.3rem; }
+.inventory-slot { position: relative; aspect-ratio: 1; border-radius: 0.6rem; background: rgba(18,20,30,0.72); backdrop-filter: blur(8px); color: #f2f3f7; border: 1px solid rgba(255,255,255,0.16); box-shadow: 0 4px 12px rgba(0,0,0,0.3); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.15rem; transition: background 0.15s, transform 0.12s, box-shadow 0.2s; }
+.inventory-slot:hover { background: rgba(40,44,60,0.85); }
 .inventory-slot:active { transform: scale(0.93); }
-.inventory-slot.empty { background: rgba(255,255,255,0.03); border-style: dashed; }
+.inventory-slot.empty { background: rgba(18,20,30,0.45); border-style: dashed; }
 .inventory-slot.held { box-shadow: 0 0 0 2px #ffb547, 0 0 14px rgba(255,181,71,0.45); background: rgba(255,181,71,0.14); }
 .inventory-num { position: absolute; top: 0.2rem; left: 0.35rem; font-size: 0.62rem; font-weight: 800; opacity: 0.7; }
 .inventory-icon { font-size: 1.55rem; line-height: 1; }
 .inventory-name { font-size: 0.55rem; opacity: 0.75; text-align: center; padding: 0 0.15rem; line-height: 1.1; }
-.inventory-note { font-size: 0.65rem; opacity: 0.75; }
+.inventory-note { font-size: 0.65rem; padding: 0.2rem 0.6rem; border-radius: 999px; background: rgba(18,20,30,0.72); color: #f2f3f7; }
 
 /* ---------- Apartment buildings ---------- */
 .elevator-panel { position: fixed; right: 1.5rem; top: 50%; z-index: 40; width: 11.5rem; padding: 1rem 0.9rem; border-radius: 1rem; background: linear-gradient(160deg, #b9bfc6, #868d96); box-shadow: 0 20px 50px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.6); color: #1b1d22; font-family: Manrope, Arial, sans-serif; transform: translate(2rem, -50%) scale(0.9); opacity: 0; pointer-events: none; transition: transform 0.35s cubic-bezier(0.2, 1.1, 0.4, 1), opacity 0.25s ease; }
@@ -498,3 +499,20 @@
 }
 .closet-count { margin-left: 0.4rem; font-size: 0.75rem; font-weight: 700; opacity: 0.7; }
 .closet-swatch { display: inline-block; width: 0.8rem; height: 0.8rem; border-radius: 0.2rem; margin-right: 0.45rem; vertical-align: -0.1rem; border: 1px solid rgba(255,255,255,0.3); }
+
+/* Inventory slots: nine across, fitted to the screen on phones. */
+@media (max-width: 639px), (orientation: landscape) and (max-height: 560px) {
+  .inventory-slots { --slot: min(2.6rem, calc((100vw - 1rem - 8 * 0.25rem) / 9)); gap: 0.25rem; }
+  .inventory-icon { font-size: 1.1rem; }
+  .inventory-name { display: none; }
+  .inventory-num { font-size: 0.5rem; top: 0.1rem; left: 0.2rem; }
+}
+/* The round route map: bottom right, or just above the touch buttons. */
+.minimap { position: fixed; z-index: 19; right: 1.5rem; bottom: 1.5rem; width: 10rem; height: 10rem; border-radius: 50%; pointer-events: none; opacity: 0; transform: scale(0.8); transition: opacity 0.3s ease, transform 0.35s cubic-bezier(0.2, 1.2, 0.4, 1); box-shadow: 0 8px 22px rgba(0,0,0,0.4); }
+.minimap.on { opacity: 1; transform: none; }
+.minimap.touch { width: 8rem; height: 8rem; right: calc(16px + env(safe-area-inset-right)); bottom: calc(164px + 64px + 14px + env(safe-area-inset-bottom)); }
+@media (orientation: landscape) {
+  .minimap.touch { width: 7rem; height: 7rem; right: calc(24px + env(safe-area-inset-right)); bottom: calc(46px + 64px + 10px + env(safe-area-inset-bottom)); }
+}
+/* Without the touch buttons on a narrow screen: above the health bars instead of over them. */
+@media (max-width: 639px) { .minimap:not(.touch) { width: 7.5rem; height: 7.5rem; right: 0.75rem; bottom: 8.5rem; } }

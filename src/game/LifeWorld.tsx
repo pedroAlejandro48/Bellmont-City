@@ -1,4 +1,5 @@
 import { useFrame } from "@react-three/fiber";
+import { routeTarget } from "./route";
 import { useMemo, useRef } from "react";
 import { FINE, LAW_ENABLED, SPEED_LIMIT_MPH, newWatch, watchRider } from "./law";
 import { addFine } from "./life";
@@ -70,7 +71,9 @@ export function LifeWorld({ state }: { state: GameState }) {
     } else served.current = false;
     // A marked place (not a job's stop, which the job clears) is done with once you're there.
     const w = state.waypoint;
-    if (w && !state.job && w.label !== "Busking spot" && Math.hypot(w.x - p.x, w.z - p.z) < 3) { state.waypoint = null; toast(state, `You've arrived: ${w.label}`, "info"); }
+    // (Its spot: on the sidewalk on foot, at the kerb on a vehicle.)
+    const wt = w ? routeTarget(w.x, w.z, state.scooter.riding) : null;
+    if (w && wt && !state.job && w.label !== "Busking spot" && (Math.hypot(w.x - p.x, w.z - p.z) < 3 || Math.hypot(wt[0] - p.x, wt[1] - p.z) < 3.5)) { state.waypoint = null; toast(state, `You've arrived: ${w.label}`, "info"); }
 
     // ---- traffic law: speeding and red lights on the bike ----
     if (LAW_ENABLED && state.scooter.riding && prev && dt > 0 && !state.accident) {
@@ -231,7 +234,9 @@ function Beacon({ state }: { state: GameState }) {
     if (!el) return;
     el.visible = !!w && !state.home;
     if (!w) return;
-    el.position.set(w.x, floorHeight(w.x, w.z) + 0.03, w.z);
+    // Marked places stand on the sidewalk (on foot) or by the kerb (on a vehicle); a job's stop where it is.
+    const [tx, tz] = state.job || w.label === "Busking spot" ? [w.x, w.z] : routeTarget(w.x, w.z, state.scooter.riding);
+    el.position.set(tx, floorHeight(tx, tz) + 0.03, tz);
     const k = (state.simulationTime * 0.7) % 1;
     ring.current?.scale.setScalar(0.6 + k * 1.2);
     m.ring.opacity = 0.8 * (1 - k);

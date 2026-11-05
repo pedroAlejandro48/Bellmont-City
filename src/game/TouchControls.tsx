@@ -19,6 +19,13 @@ export function TouchControls({ state }: { state: GameState }) {
   return <>
     <Joystick state={state} />
     <div className="touch-buttons pointer-events-none fixed z-20 flex items-center gap-3" aria-label="Actions">
+      <ActionButton label="⤒" title="Jump (Space)" onPress={() => {
+        if (state.health === 0 || state.accident) return;
+        // Like Space: up from a seat, otherwise a jump (not on the bike).
+        if (state.seat || state.script) { state.standQueued = true; return; }
+        if (state.bench || state.scooter.riding || state.scooter.action) return;
+        state.jumpQueued = true;
+      }} />
       <ActionButton label="Q" title="Put down (Q)" onPress={() => { if (state.health > 0 && !state.accident) state.dropQueued = true; }} />
       <ActionButton label="E" title="Interact (E)" primary onPress={() => {
         if (state.health === 0 || state.accident) return;

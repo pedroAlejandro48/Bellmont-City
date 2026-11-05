@@ -36,6 +36,7 @@ import { Apartments } from "./Apartments";
 import { AptPanels } from "@/components/AptPanels";
 import { pressInventorySlot } from "./invRuntime";
 import { LevelBadge, Phone, RouteHint, Toasts } from "@/components/Phone";
+import { MiniMap } from "@/components/MiniMap";
 import { guideDone } from "./lifeRuntime";
 import { autoLowerQuality, qualityChosen, quality, readQuality, softwareRendering, startQuality } from "./quality";
 import { useFrame } from "@react-three/fiber";
@@ -353,6 +354,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
       {!dead && <TouchControls state={state} />}
       <OrderMenu state={state} />
       <RouteHint state={state} />
+      <MiniMap state={state} />
       <Toasts state={state} />
       <Phone state={state} /><ShopPanel state={state} /><AptPanels state={state} />
       
