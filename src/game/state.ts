@@ -129,6 +129,9 @@ export type GameState = {
   level: { building: string; floor: number; y: number } | null;
   /** Riding an apartment building's elevator: where, from which floor to which, and how far along. */
   elevator: { building: string; floor: number; target: number | null; phase: "boarding" | "choose" | "closing" | "moving" | "opening" | "leaving"; t0: number } | null;
+  /** Seated somewhere that isn't a park bench or a restaurant chair (an apartment's couch, dining chair or desk):
+   * where take-out food can be set down (world; the hands' spots are the point ± the sideways step). */
+  seatSurface: { x: number; y: number; z: number; yaw: number; lx: number; lz: number } | null;
   /** Door uses by the grocery's shoppers (their doors swing like everyone's). */
   extraDoorUses: import("./doors").DoorUse[];
   /** Some other panel that needs the mouse (a reception desk, an elevator's buttons…), by name. */
@@ -261,6 +264,7 @@ export function createState(save: SaveData): GameState {
     groceryBag: null,
     extraDoorUses: [],
     level: null,
+    seatSurface: null,
     elevator: null,
     uiLock: null,
     keys: new Set(),

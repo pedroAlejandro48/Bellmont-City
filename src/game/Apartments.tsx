@@ -8,10 +8,11 @@ import { BUILDING_ENTRANCE, SIDEWALK_H, timeInfo, type Building, type City } fro
 import { plan as makePlan, planAt, walkSeg, type GPose, type Plan } from "./groceryRun";
 import { InteractionPrompt } from "./InteractionPrompt";
 import { heldKind } from "./invRuntime";
+import { FRIDGE_DRINKS, FRIDGE_FOOD, fridgeSplit } from "@/components/FridgePanel";
 import { CEILING, ENTER, LEAVE, enterLead, enterPose, leaveLead, leavePose, toLocal, toWorld, worldYaw, type Reach } from "./restaurantRoom";
 import { toast, type GameState, type Script } from "./state";
 import { canvas, tex } from "./textures";
-import { SHAFT, venueLayout, type VenueLayout } from "./venueRoom";
+import { LIFT_DOOR, SHAFT, venueLayout, type VenueLayout } from "./venueRoom";
 import { bodyColor } from "@/platform/account";
 
 const FH = BUILDING_ENTRANCE.floorHeight;
@@ -77,18 +78,25 @@ function AptExterior({ b, state }: { b: Building; state: GameState }) {
   const layout = useMemo(() => venueLayout(b), [b]);
   const faces = useFaces(b, layout);
   const key = aptKey(b);
-  const [cut, setCut] = useState<number | null>(null);
+  const [cuts, setCuts] = useState<number[]>([]);
   useFrame(() => {
-    const k = state.level?.building === key ? state.level.floor : null;
-    if (k !== cut) setCut(k);
+    const want = new Set<number>();
+    if (state.level?.building === key) want.add(state.level.floor);
+    const e = state.elevator;
+    if (e?.building === key) { want.add(e.floor); if (e.target !== null) want.add(e.target); }
+    const list = [...want].filter((f) => f > 1).sort((a, c) => a - c);
+    if (list.join() !== cuts.join()) setCuts(list);
     const lit = state.darkness * 0.9;
     faces.front.emissiveIntensity = lit; faces.side.emissiveIntensity = lit; faces.blank.emissiveIntensity = lit;
   });
   const parts = useMemo(() => {
-    // Floor bands to draw: all, or below and above the open one.
-    const ranges: [number, number][] = cut === null ? [[2, APT_FLOORS]] : ([[2, cut - 1], [cut + 1, APT_FLOORS]] as [number, number][]).filter(([a, c]) => c >= a);
+    // Floor bands to draw: everything but the open floors.
+    const ranges: [number, number][] = [];
+    let from = 2;
+    for (const c of cuts) { if (c - 1 >= from) ranges.push([from, c - 1]); from = c + 1; }
+    if (from <= APT_FLOORS) ranges.push([from, APT_FLOORS]);
     return ranges.map(([a, c]) => ({ a, c, front: band(faces.front, a, c), side: band(faces.side, a, c), blank: band(faces.blank, a, c) }));
-  }, [cut, faces]);
+  }, [cuts, faces]);
   useEffect(() => () => parts.forEach((p) => [p.front, p.side, p.blank].forEach((m) => { m.map?.dispose(); m.emissiveMap?.dispose(); m.dispose(); })), [parts]);
   const { frame, width, depth, windowSide: ws } = layout, H = (n: number) => n * STOREY;
   return <group position={[frame.ox, SIDEWALK_H + FH, frame.oz]} rotation-y={frame.rot}>
@@ -135,6 +143,9 @@ function useFloorMats() {
       lamp: new THREE.MeshStandardMaterial({ color: "#fffaf0", emissive: new THREE.Color("#fff3d8"), emissiveIntensity: 1.2 }),
       plant: s("#3f7d3a", 0.9), pot: s("#d9cbb5", 0.7), brass: s("#c9a54a", 0.3, 0.8),
       shaft: s("#2b2d32", 0.9, 0.2, THREE.DoubleSide),
+      slab: s("#8f8a83", 0.95),
+      // Satin steel (not a mirror: without reflections to show, full metal reads as dark patches).
+      liftDoor: s("#b7bdc4", 0.38, 0.3),
       fridgeLight: new THREE.MeshStandardMaterial({ color: "#f2f7fa", roughness: 0.4, emissive: new THREE.Color("#e8f4ff"), emissiveIntensity: 0.45 }),
       outside: s("#b8a593", 0.85),
     };
@@ -150,12 +161,19 @@ function Furniture({ f, m }: { f: AptFurniture; m: FMats }) {
     case "sink": return <group><mesh position={[0, 0.44, 0]} material={m.white} castShadow>{B([w, 0.88, d])}</mesh><mesh position={[0, 0.9, 0]} material={m.darkWood}>{B([w + 0.02, 0.04, d + 0.02])}</mesh><mesh position={[0, 0.87, 0.02]} material={m.steel}>{B([0.5, 0.08, 0.38])}</mesh><mesh position={[0, 1.02, -d / 2 + 0.1]} rotation-x={-0.6} material={m.steel}><cylinderGeometry args={[0.015, 0.015, 0.28, 8]} /></mesh></group>;
     case "oven": return <group><mesh position={[0, 0.45, 0]} material={m.black} castShadow>{B([w, 0.9, d])}</mesh><mesh position={[0, 0.42, d / 2 + 0.005]} material={m.screen}>{B([w - 0.14, 0.42, 0.01])}</mesh><mesh position={[0, 0.74, d / 2 + 0.02]} material={m.steel}>{B([w - 0.2, 0.025, 0.03])}</mesh>{[-0.17, 0.17].flatMap((x) => [-0.13, 0.13].map((z) => <mesh key={`${x}${z}`} position={[x, 0.905, z]} rotation-x={-Math.PI / 2} material={m.steel}><ringGeometry args={[0.05, 0.08, 18]} /></mesh>))}</group>;
     case "microwave": return <group position={[0, 1.55, 0]}><mesh material={m.white} castShadow>{B([w, 0.3, d])}</mesh><mesh position={[-0.05, 0, d / 2 + 0.005]} material={m.screen}>{B([w * 0.6, 0.22, 0.01])}</mesh></group>;
-    case "fridge": return <group>
-      {/* The cabinet (open at the front: white inside with shelves); the door is drawn hinged on its left. */}
-      <mesh position={[0, 0.9, -0.03]} material={m.white} castShadow>{B([w, 1.8, d - 0.06])}</mesh>
-      <mesh position={[0, 0.95, d / 2 - 0.059]} material={m.fridgeLight}><planeGeometry args={[w - 0.08, 1.7]} /></mesh>
-      {[0.55, 0.95, 1.35].map((y) => <mesh key={y} position={[0, y, d / 2 - 0.2]} material={m.glass}>{B([w - 0.1, 0.01, 0.25])}</mesh>)}
-    </group>;
+    case "fridge": {
+      // The cabinet: hollow, lit white inside, with four glass shelves (the door, hinged on the right, is drawn by
+      // FloorInterior). Walls 4 cm thick; the opening is at the front, 6 cm behind the closed door's face.
+      const t = 0.04, front = d / 2 - 0.06, back = -d / 2, inner = front - back - t;
+      return <group>
+        <mesh position={[0, 0.03, (front + back) / 2]} material={m.white}>{B([w, 0.06, front - back])}</mesh>
+        <mesh position={[0, 1.86 - 0.03, (front + back) / 2]} material={m.white} castShadow>{B([w, 0.06, front - back])}</mesh>
+        <mesh position={[0, 0.93, back + t / 2]} material={m.fridgeLight}>{B([w, 1.86, t])}</mesh>
+        {[-1, 1].map((sd) => <mesh key={sd} position={[sd * (w / 2 - t / 2), 0.93, (front + back) / 2]} material={[m.white, m.white, m.white, m.white, m.white, m.white].map((x, i) => (i === (sd > 0 ? 1 : 0) ? m.fridgeLight : x))} castShadow>{B([t, 1.86, front - back])}</mesh>)}
+        {FRIDGE_SHELVES.map((y) => <mesh key={y} position={[0, y, back + t + inner / 2]} material={m.glass}>{B([w - 2 * t, 0.012, inner])}</mesh>)}
+        <mesh position={[0, 0.2, back + t + inner / 2]} material={m.s("#dfe7ea", 0.4)}>{B([w - 2 * t - 0.02, 0.26, inner - 0.04])}</mesh>
+      </group>;
+    }
     case "table": return <group><mesh position={[0, 0.75, 0]} material={m.wood} castShadow>{B([w, 0.04, d])}</mesh>{[-1, 1].flatMap((a) => [-1, 1].map((c) => <mesh key={`${a}${c}`} position={[a * (w / 2 - 0.05), 0.37, c * (d / 2 - 0.05)]} material={m.darkWood}>{B([0.04, 0.74, 0.04])}</mesh>))}</group>;
     case "chair": case "deskChair": return <group><mesh position={[0, 0.45, 0]} material={m.wood}>{B([0.42, 0.04, 0.42])}</mesh>{[-1, 1].flatMap((a) => [-1, 1].map((c) => <mesh key={`${a}${c}`} position={[a * 0.18, 0.22, c * 0.18]} material={m.darkWood}>{B([0.03, 0.44, 0.03])}</mesh>))}<mesh position={[0, 0.75, -0.19]} material={m.wood}>{B([0.42, 0.5, 0.03])}</mesh></group>;
     case "couch": return <group><mesh position={[0, 0.22, 0.05]} material={m.fabric} castShadow>{B([w, 0.28, d - 0.1])}</mesh><mesh position={[0, 0.42, 0.08]} material={m.fabric}>{B([w - 0.3, 0.13, d - 0.25])}</mesh><mesh position={[0, 0.62, -d / 2 + 0.12]} material={m.fabric} castShadow>{B([w, 0.6, 0.22])}</mesh>{[-1, 1].map((s) => <mesh key={s} position={[s * (w / 2 - 0.1), 0.45, 0.02]} material={m.fabric}>{B([0.2, 0.36, d - 0.1])}</mesh>)}<mesh position={[0.5, 0.62, -d / 2 + 0.3]} rotation-x={-0.3} material={m.fabric2}>{B([0.4, 0.36, 0.1])}</mesh></group>;
@@ -164,20 +182,42 @@ function Furniture({ f, m }: { f: AptFurniture; m: FMats }) {
     case "rug": return <mesh position={[0, 0.012, 0]} rotation-x={-Math.PI / 2} material={m.s("#a0543f", 0.95)} receiveShadow><planeGeometry args={[w, d]} /></mesh>;
     case "bed": return <group><mesh position={[0, 0.2, 0]} material={m.darkWood} castShadow>{B([w, 0.3, d])}</mesh><mesh position={[0, 0.42, 0.02]} material={m.white}>{B([w - 0.06, 0.16, d - 0.08])}</mesh><mesh position={[0, 0.52, 0.25]} material={m.bed}>{B([w - 0.02, 0.06, d * 0.62])}</mesh><mesh position={[0, 0.55, -d / 2 + 0.28]} material={m.white}>{B([w - 0.25, 0.1, 0.32])}</mesh><mesh position={[0, 0.6, -d / 2 + 0.03]} material={m.darkWood}>{B([w, 0.9, 0.06])}</mesh></group>;
     case "desk": return <group><mesh position={[0, 0.74, 0]} material={m.wood} castShadow>{B([w, 0.04, d])}</mesh>{[-1, 1].map((a) => <mesh key={a} position={[a * (w / 2 - 0.03), 0.37, 0]} material={m.wood}>{B([0.04, 0.74, d])}</mesh>)}<mesh position={[-0.2, 0.78, -0.05]} material={m.black}>{B([0.34, 0.02, 0.24])}</mesh><mesh position={[0.3, 0.86, -0.12]} material={m.brass}><cylinderGeometry args={[0.07, 0.09, 0.2, 12]} /></mesh></group>;
-    case "closet": return <group><mesh position={[0, 1.0, 0]} material={m.wood} castShadow>{B([w, 2.0, d])}</mesh><mesh position={[0, 1.0, d / 2 + 0.005]} material={m.darkWood}>{B([0.01, 1.9, 0.01])}</mesh>{[-0.08, 0.08].map((x) => <mesh key={x} position={[x, 1.0, d / 2 + 0.02]} material={m.brass}>{B([0.02, 0.2, 0.02])}</mesh>)}</group>;
+    case "closet": {
+      // Hollow, with room for five outfits on a rail (empty hangers for now); the two doors are drawn by FloorInterior.
+      const t = 0.03, front = d / 2 - 0.03;
+      return <group>
+        <mesh position={[0, 1.0, -d / 2 + t / 2]} material={m.wood} castShadow>{B([w, 2.0, t])}</mesh>
+        {[-1, 1].map((sd) => <mesh key={sd} position={[sd * (w / 2 - t / 2), 1.0, (front - d / 2) / 2]} material={m.wood} castShadow>{B([t, 2.0, front + d / 2])}</mesh>)}
+        <mesh position={[0, 2.0 - t / 2, (front - d / 2) / 2]} material={m.wood}>{B([w, t, front + d / 2])}</mesh>
+        <mesh position={[0, 0.06, (front - d / 2) / 2]} material={m.wood}>{B([w, 0.12, front + d / 2])}</mesh>
+        <mesh position={[0, 1.78, -0.02]} rotation-z={Math.PI / 2} material={m.steel}><cylinderGeometry args={[0.012, 0.012, w - 0.08, 8]} /></mesh>
+        {Array.from({ length: 5 }, (_, k) => <group key={k} position={[-w / 2 + 0.2 + k * (w - 0.4) / 4, 1.7, -0.02]}>
+          <mesh position-y={0.06} material={m.steel}><torusGeometry args={[0.02, 0.004, 4, 10, Math.PI]} /></mesh>
+          <mesh rotation-z={Math.PI / 2} material={m.darkWood}><cylinderGeometry args={[0.006, 0.006, 0.36, 6]} /></mesh>
+        </group>)}
+      </group>;
+    }
     case "lamp": return <group><mesh position={[0, 0.7, 0]} material={m.brass}><cylinderGeometry args={[0.015, 0.015, 1.4, 6]} /></mesh><mesh position={[0, 1.45, 0]} material={m.fabric2}><cylinderGeometry args={[0.12, 0.18, 0.22, 14, 1, true]} /></mesh><mesh position={[0, 0.02, 0]} material={m.brass}><cylinderGeometry args={[0.12, 0.12, 0.03, 12]} /></mesh></group>;
   }
 }
 
-/** The elevator's two sliding doors (on a shaft's front, at x = the shaft's middle), opened `k` (0..1). */
+/**
+ * The elevator's two doors, filling the LIFT_DOOR opening (they meet in the middle, a little overlapped, and tuck
+ * into the steel frame at the sides). Opening, each folds away into its side of the frame, getting narrower until
+ * it's gone; closing is the same, reversed. `open` (0..1) eases both ways.
+ */
 function ElevatorDoors({ open, m }: { open: () => number; m: FMats }) {
-  // Each panel is a little wider than half the 1.1 m opening: shut, they overlap each other in the middle and the
-  // frame at the sides (no gap anywhere); open, they slide behind the wall either side.
-  const l = useRef<THREE.Mesh>(null), r = useRef<THREE.Mesh>(null);
-  useFrame(() => { const k = open(); if (l.current) l.current.position.x = -0.28 - 0.54 * k; if (r.current) r.current.position.x = 0.28 + 0.54 * k; });
+  const l = useRef<THREE.Group>(null), r = useRef<THREE.Group>(null);
+  const half = LIFT_DOOR / 2 + 0.03;
+  useFrame(() => {
+    const k = open(), w = Math.max(0.0001, 1 - k);
+    if (l.current) { l.current.scale.x = w; l.current.visible = k < 0.999; }
+    if (r.current) { r.current.scale.x = w; r.current.visible = k < 0.999; }
+  });
   return <group>
-    <mesh ref={l} position={[-0.28, 1.105, -0.03]} material={m.steel}>{B([0.58, 2.21, 0.04])}</mesh>
-    <mesh ref={r} position={[0.28, 1.105, -0.03]} material={m.steel}>{B([0.58, 2.21, 0.04])}</mesh>
+    {/* Each door hangs from its outer edge (in the frame), and narrows toward it. */}
+    <group ref={l} position={[-half, 0, -0.06]}><mesh position={[half / 2 + 0.005, 1.15, 0]} material={m.liftDoor}>{B([half + 0.01, 2.3, 0.04])}</mesh><mesh position={[half - 0.01, 1.15, 0.021]} material={m.black}>{B([0.012, 2.3, 0.004])}</mesh></group>
+    <group ref={r} position={[half, 0, -0.06]}><mesh position={[-half / 2 - 0.005, 1.15, 0]} material={m.liftDoor}>{B([half + 0.01, 2.3, 0.04])}</mesh></group>
   </group>;
 }
 
@@ -191,17 +231,101 @@ function ShaftInside({ m, h }: { m: FMats; h: number }) {
   </group>;
 }
 
-/** The car: steel walls, a lit ceiling, the button panel beside the door; at the floor it's on. */
-function ElevatorCar({ m }: { m: FMats }) {
-  const s = SHAFT - 0.26;
+/** Which floor an elevator shows: where it is, counting a floor every 2 seconds while it moves. */
+export function shownFloor(e: NonNullable<GameState["elevator"]>, now: number) {
+  if (e.phase !== "moving" || e.target === null) return e.floor;
+  const dir = Math.sign(e.target - e.floor), passed = Math.floor((now - e.t0) / 2);
+  return e.floor + dir * Math.min(Math.abs(e.target - e.floor), passed);
+}
+
+/** The car (filling the shaft): steel walls, a lit ceiling, the buttons beside the door with the floor's number on a
+ * little screen above them, a handrail. Its own floor reaches the doorway. */
+function ElevatorCar({ m, state }: { m: FMats; state: GameState }) {
+  const s = SHAFT - 0.24;
+  const screen = useMemo(() => { const [c, g] = canvas(128, 64); const t = tex(c); return { c, g, t, mat: new THREE.MeshBasicMaterial({ map: t, toneMapped: false }), shown: "" }; }, []);
+  useEffect(() => () => { screen.t.dispose(); screen.mat.dispose(); }, [screen]);
+  useFrame(() => {
+    const e = state.elevator;
+    if (!e) return;
+    const f = shownFloor(e, state.simulationTime), dir = e.phase === "moving" && e.target !== null ? Math.sign(e.target - e.floor) : 0;
+    const label = `${f === 1 ? "L" : f}${dir > 0 ? " ▲" : dir < 0 ? " ▼" : ""}`;
+    if (label === screen.shown) return;
+    screen.shown = label;
+    const g = screen.g;
+    g.fillStyle = "#0b0e12"; g.fillRect(0, 0, 128, 64);
+    g.fillStyle = "#ff7a3d"; g.font = "800 40px Courier New, monospace"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(label, 64, 34);
+    screen.t.needsUpdate = true;
+  });
   return <group>
-    <mesh position={[0, 0.005, 0]} rotation-x={-Math.PI / 2} material={m.s("#3a3d44", 0.8)}><planeGeometry args={[s, s]} /></mesh>
+    <mesh position={[0, 0.01, 0.06]} rotation-x={-Math.PI / 2} material={m.s("#3a3d44", 0.8)}><planeGeometry args={[s, s + 0.12]} /></mesh>
     <mesh position={[0, 2.38, 0]} rotation-x={Math.PI / 2} material={m.lamp}><planeGeometry args={[s * 0.7, s * 0.7]} /></mesh>
-    {[[0, -s / 2, 0], [-s / 2, 0, Math.PI / 2], [s / 2, 0, -Math.PI / 2]].map(([x, z, ry], i) => <mesh key={i} position={[x!, 1.2, z!]} rotation-y={ry!} material={m.steel}><planeGeometry args={[s, 2.4]} /></mesh>)}
-    {/* The panel of buttons on the right of the door (as you face it from inside). */}
-    <mesh position={[-s / 2 + 0.02, 1.25, s / 2 - 0.25]} rotation-y={Math.PI / 2} material={m.black}>{B([0.22, 0.6, 0.02])}</mesh>
-    {Array.from({ length: 15 }, (_, k) => <mesh key={k} position={[-s / 2 + 0.035, 1.02 + Math.floor(k / 2) * 0.065, s / 2 - 0.29 + (k % 2) * 0.08]} rotation-y={Math.PI / 2} material={m.lamp}><circleGeometry args={[0.016, 10]} /></mesh>)}
+    <mesh position={[0, 2.42, 0]} rotation-x={Math.PI / 2} material={m.steel}><planeGeometry args={[s, s]} /></mesh>
+    {[[0, -s / 2, 0], [-s / 2, 0, Math.PI / 2], [s / 2, 0, -Math.PI / 2]].map(([x, z, ry], i) => <mesh key={i} position={[x!, 1.21, z!]} rotation-y={ry!} material={m.steel}><planeGeometry args={[s, 2.42]} /></mesh>)}
+    {/* The panel of buttons on the wall beside the door, the floor screen above it. */}
+    <group position={[-s / 2 + 0.012, 0, s / 2 - 0.35]} rotation-y={Math.PI / 2}>
+      <mesh position={[0, 1.25, 0]} material={m.black}>{B([0.24, 0.62, 0.02])}</mesh>
+      {Array.from({ length: 15 }, (_, k) => <mesh key={k} position={[-0.05 + (k % 2) * 0.1, 1.0 + Math.floor(k / 2) * 0.065, 0.012]} material={m.lamp}><circleGeometry args={[0.017, 10]} /></mesh>)}
+      <mesh position={[0, 1.67, 0]} material={m.black}>{B([0.26, 0.15, 0.025])}</mesh>
+      <mesh position={[0, 1.67, 0.0135]} material={screen.mat}><planeGeometry args={[0.22, 0.11]} /></mesh>
+    </group>
     <mesh position={[0, 1.0, -s / 2 + 0.03]} material={m.steel}>{B([s - 0.1, 0.04, 0.05])}</mesh>
+  </group>;
+}
+
+/** A floor's shaft inside (dark), hidden while the elevator's car is at that floor. */
+function ShaftAt({ state, fl, m }: { state: GameState; fl: AptFloor; m: FMats }) {
+  const g = useRef<THREE.Group>(null);
+  useFrame(() => { const e = state.elevator; if (g.current) g.current.visible = !(e && e.building === fl.key.split("#")[0] && e.floor === fl.upper); });
+  return <group ref={g} position={[fl.bounds.minX + SHAFT / 2, 0, fl.bounds.minZ + SHAFT / 2 - 0.06]}><ShaftInside m={m} h={FLOOR_CLEAR} /></group>;
+}
+
+/** The elevator's car, wherever it is: at its building's shaft, at the height of the floor it's at. */
+function CarAt({ state, buildings, m }: { state: GameState; buildings: Map<string, Building>; m: FMats }) {
+  const g = useRef<THREE.Group>(null);
+  useFrame(() => {
+    const e = state.elevator, b = e ? buildings.get(e.building) : undefined, el = g.current;
+    if (!el) return;
+    el.visible = !!b;
+    if (!b || !e) return;
+    const L = venueLayout(b), [x, z] = toWorld(L.frame, L.bounds.minX + SHAFT / 2, L.bounds.minZ + SHAFT / 2);
+    el.position.set(x, floorY(e.floor), z); el.rotation.y = L.frame.rot;
+  });
+  return <group ref={g} visible={false}><ElevatorCar m={m} state={state} /></group>;
+}
+
+/** The fridge's glass shelves (heights) and its door's bins. */
+const FRIDGE_SHELVES = [0.42, 0.78, 1.14, 1.5];
+const FRIDGE_BINS = [0.45, 0.95, 1.45];
+const FOOD_COLORS = ["#c8202a", "#f3d23b", "#f28a1a", "#b5c94a", "#e7d8b0", "#6b2d6b", "#f6a57a", "#8b5e3c", "#d0c0a0", "#5a8f3a"];
+const hashOf = (t: string) => { let h = 0; for (const ch of t) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; };
+/** What's in the fridge, on its shelves: up to 15 things to eat, five a shelf (a shape and colour for each). */
+function FridgeContents({ state, fridge, m }: { state: GameState; fridge: AptFurniture; m: FMats }) {
+  const [list, setList] = useState<string[]>([]);
+  useFrame(() => { const food = fridgeSplit(state.life.fridge).food.slice(0, FRIDGE_FOOD); if (food.join("|") !== list.join("|")) setList(food); });
+  const back = -fridge.d / 2 + 0.04;
+  return <group>
+    {list.map((name, i) => {
+      const shelf = FRIDGE_SHELVES[Math.floor(i / 5)]!, k = i % 5, h = hashOf(name), mat = m.s(FOOD_COLORS[h % FOOD_COLORS.length]!, 0.6);
+      const x = -fridge.w / 2 + 0.1 + k * (fridge.w - 0.2) / 4, z = back + 0.14 + (k % 2) * 0.12;
+      return h % 3 === 0 ? <mesh key={i} position={[x, shelf + 0.06, z]} material={mat}><sphereGeometry args={[0.05, 10, 8]} /></mesh>
+        : <mesh key={i} position={[x, shelf + 0.05, z]} material={mat}>{B([0.11, 0.09, 0.13])}</mesh>;
+    })}
+  </group>;
+}
+/** The drinks in the fridge's door bins: up to 9, three a bin. */
+function DoorDrinks({ state, fridge }: { state: GameState; fridge: AptFurniture }) {
+  const [list, setList] = useState<string[]>([]);
+  useFrame(() => { const d = fridgeSplit(state.life.fridge).drinks.slice(0, FRIDGE_DRINKS); if (d.join("|") !== list.join("|")) setList(d); });
+  const mats = useMemo(() => ["#6fb6ff", "#f28a1a", "#5a2d1a", "#e33", "#9fd17a"].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.25, transparent: true, opacity: 0.85 })), []);
+  return <group>
+    {list.map((name, i) => {
+      const bin = FRIDGE_BINS[Math.floor(i / 3)]!, k = i % 3;
+      return <group key={i} position={[-fridge.w / 2 - 0.2 + k * 0.2, bin + 0.02, -0.05]}>
+        <mesh position-y={0.1} material={mats[hashOf(name) % mats.length]!}><cylinderGeometry args={[0.032, 0.032, 0.2, 10]} /></mesh>
+        <mesh position-y={0.22} material={mats[0]!}><cylinderGeometry args={[0.012, 0.028, 0.05, 8]} /></mesh>
+      </group>;
+    })}
   </group>;
 }
 
@@ -215,14 +339,21 @@ function DoorCasing({ at, rot, m, white = false }: { at: [number, number]; rot: 
 }
 
 /** The floor the player is on: hallway, apartment (two rooms), the walls with real windows, the doors, the furniture. */
-function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, elevatorOpen }: { fl: AptFloor; state: GameState; m: FMats; door: () => number; bedDoor: () => number; fridgeDoor: () => number; elevatorOpen: () => number }) {
+function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, elevatorOpen }: { fl: AptFloor; state: GameState; m: FMats; door: () => number; bedDoor: () => number; fridgeDoor: () => number; closetDoor: () => number; elevatorOpen: () => number }) {
   const { frame, bounds, windowSide: ws, hallZ, wallZ, divX, bedroomDoor } = fl;
   const { minX, maxX, minZ, maxZ } = bounds;
-  const leaf = useRef<THREE.Group>(null), bedLeaf = useRef<THREE.Group>(null), fridgeLeaf = useRef<THREE.Group>(null);
+  const leaf = useRef<THREE.Group>(null), bedLeaf = useRef<THREE.Group>(null), fridgeLeaf = useRef<THREE.Group>(null), closetL = useRef<THREE.Group>(null), closetR = useRef<THREE.Group>(null);
+  const closet = fl.furniture.find((f) => f.type === "closet")!;
+  // Only your own apartment's doors move (and only its fridge shows your food).
+  const mineHere = () => { const h = state.life.home; return !!h && h.building === fl.key.split("#")[0] && h.floor === fl.upper && state.level?.floor === fl.upper; };
   useFrame(() => {
     if (leaf.current) leaf.current.rotation.y = -door();
     if (bedLeaf.current) bedLeaf.current.rotation.y = -bedDoor();
-    if (fridgeLeaf.current) fridgeLeaf.current.rotation.y = -fridgeDoor();
+    const own = mineHere();
+    if (fridgeLeaf.current) fridgeLeaf.current.rotation.y = own ? fridgeDoor() : 0;
+    const c = own ? closetDoor() : 0;
+    if (closetL.current) closetL.current.rotation.y = -c;
+    if (closetR.current) closetR.current.rotation.y = c;
   });
   const fridge = fl.furniture.find((f) => f.type === "fridge")!;
   const H = FLOOR_CLEAR;
@@ -248,6 +379,11 @@ function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, elevatorOpen }
   });
   const plainX = -ws * (maxX + T / 2), windowX = ws * (maxX + T / 2);
   return <group position={[frame.ox, fl.y, frame.oz]} rotation-y={frame.rot}>
+    {/* The floor's slab (whole, under everything, walls included) and the next floor's above the ceiling: no gap
+        anywhere, at doorways or round the shaft. */}
+    <mesh position={[(minX + maxX) / 2, -0.15, (minZ + maxZ) / 2]} material={m.slab} receiveShadow>{B([maxX - minX + 0.4, 0.3, maxZ - minZ + 0.4])}</mesh>
+    <mesh position={[(minX + maxX) / 2, (H + STOREY) / 2, (minZ + maxZ) / 2]} material={m.slab}>{B([maxX - minX + 0.4, STOREY - H, maxZ - minZ + 0.4])}</mesh>
+    <mesh position={[(minX + maxX) / 2, 0.002, (hallZ[1] + wallZ + INNER_WALL) / 2]} rotation-x={-Math.PI / 2} material={m.carpet}><planeGeometry args={[maxX - minX, INNER_WALL + 0.02]} /></mesh>
     {/* Floors: carpet in the hallway, wood in the apartment; the ceiling over everything. */}
     <mesh position={[(minX + maxX) / 2, 0.004, (hallZ[0] + hallZ[1]) / 2]} rotation-x={-Math.PI / 2} material={m.carpet} receiveShadow><planeGeometry args={[maxX - minX, hallZ[1] - hallZ[0]]} /></mesh>
     <mesh position={[(minX + maxX) / 2, 0.004, (inside0 + maxZ) / 2]} rotation-x={-Math.PI / 2} material={m.wood} receiveShadow><planeGeometry args={[maxX - minX, maxZ - inside0]} /></mesh>
@@ -270,16 +406,17 @@ function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, elevatorOpen }
     </group>)}
     {/* The shaft and the storage behind the hallway: their walls to the hallway. */}
     <mesh position={[(minX + SHAFT + maxX) / 2, H / 2, hallZ[0] - 0.06]} material={m.hallWall}>{B([maxX - minX - SHAFT + 0.12, H, 0.12])}</mesh>
-    {[-1, 1].map((s) => <mesh key={s} position={[minX + SHAFT / 2 + s * (0.55 + (SHAFT / 2 - 0.55) / 2), H / 2, hallZ[0] - 0.06]} material={m.hallWall}>{B([SHAFT / 2 - 0.55, H, 0.12])}</mesh>)}
-    <mesh position={[minX + SHAFT / 2, (H + 2.2) / 2, hallZ[0] - 0.06]} material={m.hallWall}>{B([1.1, H - 2.2, 0.12])}</mesh>
+    {[-1, 1].map((s) => <mesh key={s} position={[minX + SHAFT / 2 + s * (LIFT_DOOR / 2 + (SHAFT / 2 - LIFT_DOOR / 2) / 2), H / 2, hallZ[0] - 0.06]} material={m.hallWall}>{B([SHAFT / 2 - LIFT_DOOR / 2, H, 0.12])}</mesh>)}
+    <mesh position={[minX + SHAFT / 2, (H + 2.3) / 2, hallZ[0] - 0.06]} material={m.hallWall}>{B([LIFT_DOOR + 0.02, H - 2.3, 0.12])}</mesh>
     <group position={[minX + SHAFT / 2, 0, hallZ[0]]}>
-      {/* The steel frame lines the doorway right through the wall, overlapping it. */}
-      {[-0.59, 0.59].map((x) => <mesh key={x} position={[x, 1.12, -0.05]} material={m.steel}>{B([0.1, 2.24, 0.16])}</mesh>)}
-      <mesh position={[0, 2.25, -0.05]} material={m.steel}>{B([1.28, 0.1, 0.16])}</mesh>
+      {/* The steel frame lines the doorway right through the wall, overlapping it; a steel sill on the floor. */}
+      {[-1, 1].map((sd) => <mesh key={sd} position={[sd * (LIFT_DOOR / 2 + 0.04), 1.16, -0.06]} material={m.steel}>{B([0.1, 2.32, 0.18])}</mesh>)}
+      <mesh position={[0, 2.33, -0.06]} material={m.steel}>{B([LIFT_DOOR + 0.18, 0.1, 0.18])}</mesh>
+      <mesh position={[0, 0.006, -0.06]} material={m.steel}>{B([LIFT_DOOR, 0.012, 0.16])}</mesh>
       <ElevatorDoors open={elevatorOpen} m={m} />
-      <mesh position={[0.8, 1.15, 0.01]} material={m.steel}>{B([0.12, 0.2, 0.03])}</mesh>
+      <mesh position={[LIFT_DOOR / 2 + 0.3, 1.15, 0.01]} material={m.steel}>{B([0.12, 0.2, 0.03])}</mesh>
     </group>
-    {!state.elevator && <group position={[minX + SHAFT / 2, 0, minZ + SHAFT / 2 - 0.06]}><ShaftInside m={m} h={H} /></group>}
+    <ShaftAt state={state} fl={fl} m={m} />
     {/* The wall between the hallway and the apartment, with the apartment's door (opens into the apartment). */}
     {[[minX, fl.door.x - 1], [fl.door.x, maxX]].map(([a, c], i) => <mesh key={i} position={[(a! + c!) / 2, H / 2, wallZ + INNER_WALL / 2]} material={m.hallWall} castShadow>{B([c! - a!, H, INNER_WALL])}</mesh>)}
     <mesh position={[fl.door.x - 0.5, (H + 2.1) / 2, wallZ + INNER_WALL / 2]} material={m.hallWall}>{B([1, H - 2.1, INNER_WALL])}</mesh>
@@ -306,15 +443,26 @@ function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, elevatorOpen }
         {[-1, 1].map((s) => <mesh key={s} position={[0.88, 1.02, -0.024 + s * 0.045]} material={m.steel}><sphereGeometry args={[0.03, 10, 8]} /></mesh>)}
       </group>
     </group>
-    {/* The fridge's door, hinged on its left; the hand pulls it open by the handle and pushes it shut. */}
+    {/* The closet's two doors, hinged at its sides, handles by the middle. */}
+    <group position={[closet.x, 0, closet.z]} rotation-y={closet.rot}>
+      {([-1, 1] as const).map((sd) => <group key={sd} position={[sd * closet.w / 2, 0, closet.d / 2 - 0.015]} ref={sd < 0 ? closetL : closetR}>
+        <mesh position={[-sd * closet.w / 4, 1.0, 0]} material={m.wood} castShadow>{B([closet.w / 2 - 0.004, 1.96, 0.025])}</mesh>
+        <mesh position={[-sd * closet.w / 4, 1.0, 0.014]} material={m.darkWood}>{B([closet.w / 2 - 0.12, 1.7, 0.004])}</mesh>
+        <mesh position={[-sd * (closet.w / 2 - 0.07), 1.1, 0.03]} material={m.brass}>{B([0.02, 0.22, 0.02])}</mesh>
+      </group>)}
+    </group>
+    {/* The fridge's door, hinged on its right: the left hand pulls it open by the handle and pushes it shut. */}
     <group position={[fridge.x, 0, fridge.z]} rotation-y={fridge.rot}>
-      <group position={[-fridge.w / 2, 0, fridge.d / 2 - 0.06]}>
+      {state.life.home?.building === fl.key.split("#")[0] && state.life.home?.floor === fl.upper && <FridgeContents state={state} fridge={fridge} m={m} />}
+      <group position={[fridge.w / 2, 0, fridge.d / 2 - 0.06]}>
         <group ref={fridgeLeaf}>
-          {/* The door: white outside, its inside liner lit by the fridge's light. */}
-          <mesh position={[fridge.w / 2, 0.9, 0.03]} material={[m.white, m.white, m.white, m.white, m.white, m.fridgeLight]} castShadow>{B([fridge.w, 1.8, 0.06])}</mesh>
-          <mesh position={[fridge.w / 2, 1.18, 0.061]} material={m.s("#e8e8e6", 0.4)}>{B([fridge.w - 0.02, 0.01, 0.01])}</mesh>
-          {[0.7, 1.45].map((y) => <mesh key={y} position={[fridge.w - 0.08, y, 0.09]} material={m.steel}>{B([0.03, 0.3, 0.03])}</mesh>)}
-          {[0.6, 1.0, 1.4].map((y) => <mesh key={y} position={[fridge.w / 2, y, -0.03]} material={m.s("#eef3f5", 0.4)}>{B([fridge.w - 0.12, 0.04, 0.05])}</mesh>)}
+          {/* The door: white outside, its inside liner lit by the fridge's light; its handle by the left edge. */}
+          <mesh position={[-fridge.w / 2, 0.93, 0.03]} material={[m.white, m.white, m.white, m.white, m.white, m.fridgeLight]} castShadow>{B([fridge.w, 1.86, 0.06])}</mesh>
+          <mesh position={[-fridge.w / 2, 1.2, 0.061]} material={m.s("#e8e8e6", 0.4)}>{B([fridge.w - 0.02, 0.01, 0.01])}</mesh>
+          {[0.7, 1.45].map((y) => <mesh key={y} position={[-(fridge.w - 0.08), y, 0.09]} material={m.steel}>{B([0.03, 0.3, 0.03])}</mesh>)}
+          {FRIDGE_BINS.map((y) => <mesh key={y} position={[-fridge.w / 2, y, -0.05]} material={m.s("#eef3f5", 0.4)}>{B([fridge.w - 0.14, 0.04, 0.08])}</mesh>)}
+          {FRIDGE_BINS.map((y) => <mesh key={`f${y}`} position={[-fridge.w / 2, y + 0.06, -0.088]} material={m.glass}>{B([fridge.w - 0.14, 0.1, 0.006])}</mesh>)}
+          {state.life.home?.building === fl.key.split("#")[0] && state.life.home?.floor === fl.upper && <DoorDrinks state={state} fridge={fridge} />}
         </group>
       </group>
     </group>
@@ -324,13 +472,34 @@ function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, elevatorOpen }
     {/* The apartment's ceiling lights. */}
     {[[(divX + maxX) / 2, (inside0 + maxZ) / 2], [(minX + divX) / 2, (inside0 + maxZ) / 2]].map(([x, z], i) => <mesh key={i} position={[x!, H - 0.02, z!]} rotation-x={Math.PI / 2} material={m.lamp}><circleGeometry args={[0.25, 20]} /></mesh>)}
     {fl.furniture.map((f, i) => <group key={i} position={[f.x, 0, f.z]} rotation-y={f.rot}><Furniture f={f} m={m} /></group>)}
-    {/* The elevator car at this floor. */}
-    {state.elevator && <group position={[minX + SHAFT / 2, 0, minZ + SHAFT / 2]}><ElevatorCar m={m} /></group>}
   </group>;
 }
 
 // ---------- moving about: the elevator, the apartment door, bed and fridge ----------
-type Move = { kind: "board" | "alight" | "keyIn" | "push" | "pull" | "fridge"; plan: Plan | null; t0: number; which?: "apartment" | "bedroom"; from?: [number, number]; fromYaw?: number; keyT?: number; phase?: "open" | "held" | "close" };
+type Seat = { x: number; z: number; yaw: number; approach: [number, number]; surface: { x: number; z: number; y: number; lx: number; lz: number } };
+type Move = { kind: "board" | "alight" | "keyIn" | "push" | "pull" | "fridge" | "closet" | "sit"; plan: Plan | null; t0: number; which?: "apartment" | "bedroom"; from?: [number, number]; fromYaw?: number; keyT?: number; phase?: "open" | "held" | "close" | "down" | "seated" | "up"; seat?: Seat };
+/** The closet: both hands take the handles in the middle and swing the two doors open (and shut again). */
+const CLOSET = { reach: 0.45, pull: 0.9, release: 0.35, open: 1.45 };
+/** Where one sits in a floor's apartment: the dining chairs, the desk chair, the couch's two places — each with the
+ * spot in front to sit down from, and where food goes while seated (the table, the desk, the couch beside). */
+function seatsOf(fl: AptFloor): Seat[] {
+  const F = fl.furniture, table = F.find((f) => f.type === "table"), desk = F.find((f) => f.type === "desk"), out: Seat[] = [];
+  const front = (r: number): [number, number] => [Math.sin(r), Math.cos(r)];
+  for (const f of F) {
+    const [fx, fz] = front(f.rot);
+    if ((f.type === "chair" || f.type === "deskChair") && (f.type === "chair" ? table : desk)) {
+      const top = f.type === "chair" ? table! : desk!, dx = f.x - top.x, dz = f.z - top.z, d = Math.hypot(dx, dz) || 1, k = f.type === "chair" ? 0.17 : 0.14;
+      out.push({ x: f.x - fx * 0.04, z: f.z - fz * 0.04, yaw: f.rot, approach: [f.x + fx * 0.55, f.z + fz * 0.55],
+        surface: { x: top.x + dx / d * k, z: top.z + dz / d * k, y: f.type === "chair" ? 0.79 : 0.78, lx: -dz / d * 0.18, lz: dx / d * 0.18 } });
+    }
+    if (f.type === "couch") for (const side of [-0.5, 0.5]) {
+      const ax = Math.cos(f.rot), az = -Math.sin(f.rot);
+      const x = f.x + ax * side + fx * 0.08, z = f.z + az * side + fz * 0.08;
+      out.push({ x, z, yaw: f.rot, approach: [x + fx * 0.6, z + fz * 0.6], surface: { x: f.x - ax * side * 0.6 + fx * 0.1, z: f.z - az * side * 0.6 + fz * 0.1, y: 0.5, lx: ax * 0.15, lz: az * 0.15 } });
+    }
+  }
+  return out;
+}
 /** The fridge: reach for the handle, pull the door open (it swings round with the hand), let go; the same back. */
 const FRIDGE = { reach: 0.4, pull: 0.85, release: 0.35, open: 1.75 };
 const KEY = { walk: 0.9, reach: 0.55, turn: 0.45, back: 0.4 };
@@ -346,8 +515,10 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   const buildings = useMemo(() => city.buildings.filter((b) => b.venue === "apartments"), [city]);
   const m = useFloorMats();
   const move = useRef<Move | null>(null);
-  const doorAngle = useRef(0), bedAngle = useRef(0), fridgeAngle = useRef(0);
-  const [floor, setFloor] = useState<AptFloor | null>(null);
+  const doorAngle = useRef(0), bedAngle = useRef(0), fridgeAngle = useRef(0), closetAngle = useRef(0);
+  const [shown, setShown] = useState<AptFloor[]>([]);
+  const shownKeys = useRef("");
+  const cache = useRef(new Map<string, AptFloor>());
   const prompt = useRef<{ visible: boolean; x: number; y: number; z: number; label?: string | undefined }>({ visible: false, x: 0, y: 0, z: 0 });
   const ownScript = useRef(false);
   const sleeping = useRef(0);
@@ -372,21 +543,30 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     const inter = state.interior;
     const lobby = inter?.phase === "inside" && !state.level ? (() => { const b = byKey.get(inter.key); return b ? { b, layout: venueLayout(b) } : null; })() : null;
     const lvl = state.level, fb = lvl ? byKey.get(lvl.building) : undefined;
-    // The floor's room (made once per floor, kept with the others).
-    if (lvl && fb && (!floor || floor.key !== floorKey(fb, lvl.floor))) {
-      const f = aptFloor(fb, lvl.floor);
-      state.rooms.set(f.key, f);
-      setFloor(f);
-    }
-    if (!lvl && floor) setFloor(null);
+    // Each floor's room is made once and kept (with the others in state.rooms).
+    const floorOf = (b: Building, n: number) => {
+      const k = floorKey(b, n);
+      let f = cache.current.get(k);
+      if (!f) { f = aptFloor(b, n); cache.current.set(k, f); }
+      if (!state.rooms.has(k)) state.rooms.set(k, f);
+      return f;
+    };
+    const floor = lvl && fb ? floorOf(fb, lvl.floor) : null;
+    // The floors drawn: the player's, and while the elevator runs the floor it's at and the one it goes to — so the
+    // floor it arrives at is already there (nothing pops in, nothing outside shows).
+    const want: AptFloor[] = floor ? [floor] : [];
+    const e0 = state.elevator, eb = e0 ? byKey.get(e0.building) : undefined;
+    if (e0 && eb) for (const n of [e0.floor, e0.target]) if (n !== null && n > 1) { const f = floorOf(eb, n); if (!want.includes(f)) want.push(f); }
+    const keys = want.map((f) => f.key).sort().join();
+    if (keys !== shownKeys.current) { shownKeys.current = keys; setShown(want); }
 
     const frameNow = lobby ? lobby.layout.frame : floor?.frame;
     const yNow = lvl ? lvl.y : SIDEWALK_H;
     const toW = (x: number, z: number) => (frameNow ? toWorld(frameNow, x, z) : [x, z] as [number, number]);
     const reachW = (r: Reach | null) => { if (!r || !frameNow) return null; const [x, z] = toWorld(frameNow, r.at[0], r.at[2]); return { at: new THREE.Vector3(x, yNow + r.at[1], z), blend: r.blend, pole: r.pole }; };
-    const scriptFrom = (pose: GPose | { x: number; z: number; yaw: number; lean: number; left: Reach | null; right: Reach | null; crouch?: number }): Script => {
+    const scriptFrom = (pose: GPose | { x: number; z: number; yaw: number; lean: number; left: Reach | null; right: Reach | null; crouch?: number; sit?: number }): Script => {
       const [x, z] = toW(pose.x, pose.z), prev = state.foodScript;
-      return { x, z, yaw: frameNow ? worldYaw(frameNow, pose.yaw) : pose.yaw, walk: prev ? Math.hypot(x - prev.x, z - prev.z) / Math.max(dt, 1e-3) : 0, sit: 0, shuffle: 0, lean: pose.lean, left: reachW(pose.left), right: reachW(pose.right), crouch: pose.crouch ?? 0 };
+      return { x, z, yaw: frameNow ? worldYaw(frameNow, pose.yaw) : pose.yaw, walk: prev ? Math.hypot(x - prev.x, z - prev.z) / Math.max(dt, 1e-3) : 0, sit: (pose as { sit?: number }).sit ?? 0, shuffle: 0, lean: pose.lean, left: reachW(pose.left), right: reachW(pose.right), crouch: pose.crouch ?? 0 };
     };
 
     // ---------- the elevator ----------
@@ -440,7 +620,10 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       const toRoom = (pose: { x: number; z: number; yaw: number; lean: number; left: Reach | null; right: Reach | null }, mirror: boolean) => {
         const sx = mirror ? -1 : 1;
         const r = (h: Reach | null): Reach | null => { if (!h) return null; const [x, z] = fr(sx * h.at[0], h.at[2]); return { at: [x, h.at[1], z], blend: h.blend, pole: h.pole }; };
-        const [x, z] = fr(sx * pose.x, pose.z);
+        // Rooms here are small: past the doorway the walk is shortened (about a metre in, not the restaurants' 2.6 m),
+        // so nobody walks on into the couch or the closet. (The steps shorten with it: legs follow the distance.)
+        const squeeze = (v: number) => (!mirror && v > 0.35 ? 0.35 + (v - 0.35) * 0.35 : mirror && v < -0.35 ? -0.35 + (v + 0.35) * 0.35 : v);
+        const [x, z] = fr(sx * pose.x, squeeze(pose.z));
         return { x, z, yaw: (mirror ? -pose.yaw : pose.yaw) + F.theta, lean: pose.lean, left: mirror ? r(pose.right) : r(pose.left), right: mirror ? r(pose.left) : r(pose.right), crouch: 0 };
       };
       const finish = () => { state.pos.x = script!.x; state.pos.z = script!.z; state.rotY = script!.yaw; move.current = null; script = null; setAngle(0); };
@@ -478,10 +661,10 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     if (!e && mv && floor && mv.kind === "fridge") {
       const fz = floor.furniture.find((f) => f.type === "fridge")!, yaw = fz.rot + Math.PI;
       const fc = Math.cos(fz.rot), fs = Math.sin(fz.rot);
-      // Where the handle is with the door open `a` (radians), in the room.
+      // Where the handle is with the door open `a` (radians), in the room (hinge on the right, handle on the left).
       const handle = (a: number): [number, number, number] => {
-        const hx = fz.w - 0.08, hz = 0.09, ca = Math.cos(-a), sa = Math.sin(-a);
-        const lx = -fz.w / 2 + hx * ca + hz * sa, lz = fz.d / 2 - 0.06 - hx * sa + hz * ca;
+        const hx = -(fz.w - 0.08), hz = 0.09, ca = Math.cos(a), sa = Math.sin(a);
+        const lx = fz.w / 2 + hx * ca + hz * sa, lz = fz.d / 2 - 0.06 - hx * sa + hz * ca;
         return [fz.x + lx * fc + lz * fs, 1.12, fz.z - lx * fs + lz * fc];
       };
       const stand = [floor.spots.fridge[0], floor.spots.fridge[1] - 0.12] as [number, number];
@@ -492,7 +675,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         const pull = smooth((a - FRIDGE.reach) / FRIDGE.pull), angle = FRIDGE.open * pull;
         const blend = a < 0 ? 0 : a < FRIDGE.reach ? smooth(a / FRIDGE.reach) : 1 - smooth((a - FRIDGE.reach - FRIDGE.pull) / FRIDGE.release);
         fridgeAngle.current = a > FRIDGE.reach ? angle : 0;
-        script = scriptFrom({ ...sp, lean: 0.06 * blend, left: null, right: blend > 0 ? { at: handle(fridgeAngle.current), blend, pole: "out" } : null });
+        script = scriptFrom({ ...sp, lean: 0.06 * blend, right: null, left: blend > 0 ? { at: handle(fridgeAngle.current), blend, pole: "out" } : null });
         if (a >= FRIDGE.reach + FRIDGE.pull + FRIDGE.release) { mv.phase = "held"; state.pos.x = script.x; state.pos.z = script.z; state.rotY = script.yaw; script = null; state.uiLock = "fridge"; state.keys.clear(); }
       } else if (mv.phase === "held") {
         // The fridge's panel is up; closing it pushes the door shut.
@@ -502,10 +685,72 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         const push = smooth((t - FRIDGE.reach) / (FRIDGE.pull * 0.8)), angle = FRIDGE.open * (1 - push);
         const blend = t < FRIDGE.reach ? smooth(t / FRIDGE.reach) : 1 - smooth((t - FRIDGE.reach - FRIDGE.pull * 0.8) / FRIDGE.release);
         fridgeAngle.current = t > FRIDGE.reach ? angle : FRIDGE.open;
-        script = scriptFrom({ x: stand[0], z: stand[1], yaw, crouch: 0, lean: 0.05 * blend, left: null, right: { at: handle(fridgeAngle.current), blend, pole: "out" } });
+        script = scriptFrom({ x: stand[0], z: stand[1], yaw, crouch: 0, lean: 0.05 * blend, right: null, left: { at: handle(fridgeAngle.current), blend, pole: "out" } });
         if (t >= FRIDGE.reach + FRIDGE.pull * 0.8 + FRIDGE.release) { fridgeAngle.current = 0; move.current = null; script = null; }
       }
     }
+    // ---------- the closet ----------
+    if (!e && mv && floor && mv.kind === "closet") {
+      const c = floor.furniture.find((f) => f.type === "closet")!, cc = Math.cos(c.rot), cs = Math.sin(c.rot);
+      // The two handles (by the middle) with the doors open `a`: the left door is hinged at the left edge, the right at the right.
+      const handle = (side: 1 | -1, a: number): [number, number, number] => {
+        const hx = -side * (c.w / 2 - 0.06), hz = 0.04, r = side * a, ca = Math.cos(-r), sa = Math.sin(-r);
+        const lx = side * c.w / 2 + hx * ca + hz * sa, lz = c.d / 2 - hx * sa + hz * ca;
+        return [c.x + lx * cc + lz * cs, 1.1, c.z - lx * cs + lz * cc];
+      };
+      void handle;
+      const hand = (a: number, blend: number) => ({ left: blend > 0 ? { at: handleAt(-1, a), blend, pole: "out" as const } : null, right: blend > 0 ? { at: handleAt(1, a), blend, pole: "out" as const } : null });
+      function handleAt(side: 1 | -1, a: number): [number, number, number] {
+        // side −1 the left door (hinge at −w/2, opens with −a), +1 the right (hinge at +w/2, opens with +a).
+        const hx = -side * (c.w / 2 - 0.07), hz = 0.05, rot = side === -1 ? -a : a, ca = Math.cos(rot), sa = Math.sin(rot);
+        const lx = side * c.w / 2 + hx * ca + hz * sa, lz = c.d / 2 - hx * sa + hz * ca;
+        return [c.x + lx * cc + lz * cs, 1.1, c.z - lx * cs + lz * cc];
+      }
+      const t = now - mv.t0, yaw = c.rot + Math.PI;
+      if (mv.phase === "open") {
+        const walk = mv.plan!.total, a = t - walk, sp = planAt(mv.plan!, Math.min(t, walk)).pose;
+        const pull = smooth((a - CLOSET.reach) / CLOSET.pull), blend = a < 0 ? 0 : a < CLOSET.reach ? smooth(a / CLOSET.reach) : 1 - smooth((a - CLOSET.reach - CLOSET.pull) / CLOSET.release);
+        closetAngle.current = a > CLOSET.reach ? CLOSET.open * pull : 0;
+        script = scriptFrom({ ...sp, lean: 0.05 * blend, ...hand(closetAngle.current, blend) });
+        if (a >= CLOSET.reach + CLOSET.pull + CLOSET.release) { mv.phase = "held"; state.pos.x = script.x; state.pos.z = script.z; state.rotY = script.yaw; script = null; state.uiLock = "closet"; state.keys.clear(); }
+      } else if (mv.phase === "held") {
+        closetAngle.current = CLOSET.open;
+        if (state.uiLock !== "closet") { mv.phase = "close"; mv.t0 = now; }
+      } else {
+        const stand = mv.plan!.segs[mv.plan!.segs.length - 1]!.pose(1);
+        const push = smooth((t - CLOSET.reach) / (CLOSET.pull * 0.85)), blend = t < CLOSET.reach ? smooth(t / CLOSET.reach) : 1 - smooth((t - CLOSET.reach - CLOSET.pull * 0.85) / CLOSET.release);
+        closetAngle.current = t > CLOSET.reach ? CLOSET.open * (1 - push) : CLOSET.open;
+        script = scriptFrom({ x: stand.x, z: stand.z, yaw, crouch: 0, lean: 0.05 * blend, ...hand(closetAngle.current, blend) });
+        if (t >= CLOSET.reach + CLOSET.pull * 0.85 + CLOSET.release) { closetAngle.current = 0; move.current = null; script = null; }
+      }
+    }
+    // ---------- sitting (the couch, the dining chairs, the desk chair) ----------
+    if (!e && mv && floor && mv.kind === "sit") {
+      const st = mv.seat!, t = now - mv.t0, SIT = 0.9;
+      const at = (k: number) => ({ x: st.approach[0] + (st.x - st.approach[0]) * k, z: st.approach[1] + (st.z - st.approach[1]) * k });
+      if (mv.phase === "down") {
+        const walk = mv.plan!.total;
+        if (t < walk) script = scriptFrom(planAt(mv.plan!, t).pose);
+        else {
+          // Back to the seat, lowering down onto it (leaning forward a little on the way).
+          const k = smooth((t - walk) / SIT), p2 = at(k);
+          script = scriptFrom({ ...p2, yaw: st.yaw, lean: 0.25 * Math.sin(Math.PI * k), left: null, right: null, sit: k });
+          if (t - walk >= SIT) { mv.phase = "seated"; mv.t0 = now; }
+        }
+      } else if (mv.phase === "seated") {
+        script = scriptFrom({ x: st.x, z: st.z, yaw: st.yaw, lean: 0, left: null, right: null, sit: 1 });
+        const [sx, sz] = toW(st.surface.x, st.surface.z), [ax, az] = toW(st.surface.x + st.surface.lx, st.surface.z + st.surface.lz);
+        state.seatSurface = { x: sx, z: sz, y: yNow + st.surface.y, yaw: worldYaw(floor.frame, st.yaw + Math.PI), lx: ax - sx, lz: az - sz };
+        // E or Space: up again (once anything set down has been eaten and taken back up, or right away).
+        if ((state.interactQueued || state.standQueued) && !state.eating && !state.put && !state.grab) { state.interactQueued = false; state.standQueued = false; mv.phase = "up"; mv.t0 = now; state.seatSurface = null; }
+        state.interactQueued = false; state.standQueued = false;
+      } else {
+        const k = 1 - smooth(t / SIT), p2 = at(k);
+        script = scriptFrom({ ...p2, yaw: st.yaw, lean: 0.25 * Math.sin(Math.PI * k), left: null, right: null, sit: k });
+        if (t >= SIT) { state.pos.x = script.x; state.pos.z = script.z; state.rotY = script.yaw; move.current = null; script = null; }
+      }
+    }
+    if (!(mv?.kind === "sit" && mv.phase === "seated")) state.seatSurface = null;
     // This building's moves drive the body; when they end it's the player's again.
     if (script) { state.foodScript = script; ownScript.current = true; }
     else if (ownScript.current) { state.foodScript = null; ownScript.current = false; }
@@ -566,6 +811,14 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
           move.current = { kind: "fridge", phase: "open", t0: now, plan: makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, stand, fz.rot + Math.PI, { basket: false, bag: !!state.groceryBag })]) };
           state.keys.clear();
         };
+      } else if (mine && closetNear(floor, lx, lz)) {
+        const c = closetNear(floor, lx, lz)!, stand: [number, number] = [c.x + Math.sin(c.rot) * (c.d / 2 + 0.62), c.z + Math.cos(c.rot) * (c.d / 2 + 0.62)];
+        show(c.x, c.z + 0.4, 2.2, "E  CLOSET");
+        act = () => { move.current = { kind: "closet", phase: "open", t0: now, plan: makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, stand, c.rot + Math.PI, { basket: false, bag: !!state.groceryBag })]) }; state.keys.clear(); };
+      } else if (mine && seatNear(floor, lx, lz)) {
+        const st = seatNear(floor, lx, lz)!;
+        show(st.x, st.z, 1.3, "E  SIT");
+        act = () => { move.current = { kind: "sit", phase: "down", t0: now, seat: st, plan: makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, st.approach, st.yaw, { basket: false, bag: !!state.groceryBag })]) }; state.keys.clear(); };
       }
     }
     if (act && state.interactQueued) { state.interactQueued = false; act(); }
@@ -588,13 +841,31 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     {buildings.map((b) => <AptExterior key={aptKey(b)} b={b} state={state} />)}
     {/* The lobby elevators' doors (and the car, while someone's in it at the lobby). */}
     {lobbies.map(({ b, layout }) => <group key={aptKey(b)} position={[layout.frame.ox, SIDEWALK_H, layout.frame.oz]} rotation-y={layout.frame.rot}>
-      <group position={[layout.bounds.minX + SHAFT / 2, 0, layout.bounds.minZ + SHAFT + 0.005]}><ElevatorDoors open={elevatorOpen(aptKey(b), 1)} m={m} /></group>
+      <group position={[layout.bounds.minX + SHAFT / 2, 0, layout.bounds.minZ + SHAFT]}><ElevatorDoors open={elevatorOpen(aptKey(b), 1)} m={m} /></group>
       <LobbyCar state={state} bkey={aptKey(b)} at={[layout.bounds.minX + SHAFT / 2, layout.bounds.minZ + SHAFT / 2]} m={m} />
       <LobbyVisitor state={state} layout={layout} />
     </group>)}
-    {floor && <FloorInterior fl={floor} state={state} m={m} door={() => doorAngle.current} bedDoor={() => bedAngle.current} fridgeDoor={() => fridgeAngle.current} elevatorOpen={elevatorOpen(state.level?.building ?? "", state.level?.floor ?? 0)} />}
+    {shown.map((fl) => <FloorInterior key={fl.key} fl={fl} state={state} m={m} door={() => doorAngle.current} bedDoor={() => bedAngle.current} fridgeDoor={() => fridgeAngle.current} closetDoor={() => closetAngle.current} elevatorOpen={elevatorOpen(fl.key.split("#")[0]!, fl.upper)} />)}
+    <CarAt state={state} buildings={byKey} m={m} />
     <InteractionPrompt sample={() => ({ ...prompt.current, time: state.simulationTime })} />
   </group>;
+}
+
+const seatCache = new WeakMap<AptFloor, Seat[]>();
+/** The seat nearest (within 1.1 m), if any. */
+function seatNear(fl: AptFloor, lx: number, lz: number): Seat | null {
+  let list = seatCache.get(fl);
+  if (!list) { list = seatsOf(fl); seatCache.set(fl, list); }
+  let best: Seat | null = null, bd = 1.1;
+  for (const st of list) { const d = Math.hypot(st.x - lx, st.z - lz); if (d < bd) { bd = d; best = st; } }
+  return best;
+}
+/** Standing in front of the closet. */
+function closetNear(fl: AptFloor, lx: number, lz: number) {
+  const c = fl.furniture.find((f) => f.type === "closet");
+  if (!c) return null;
+  const fx = c.x + Math.sin(c.rot) * (c.d / 2 + 0.6), fz = c.z + Math.cos(c.rot) * (c.d / 2 + 0.6);
+  return Math.hypot(lx - fx, lz - fz) < 0.9 ? c : null;
 }
 
 /** Near the bedroom door, on either side: the spot in the door's frame (v < 0 the main room's side), or null. */
@@ -603,22 +874,18 @@ function bedroomSide(fl: AptFloor, lx: number, lz: number): [number, number] | n
   const u = dx * c - dz * s, v = dx * s + dz * c;
   if (u < -1.6 || u > 0.3) return null;
   if (v < -INNER_WALL - 0.05 && v > -1.5) return [u, v];
-  if (v > 0.05 && v < 2.8) return [u, v];
+  if (v > 0.05 && v < 1.6) return [u, v];
   return null;
 }
 
 function LobbyCar({ state, bkey, at, m }: { state: GameState; bkey: string; at: [number, number]; m: FMats }) {
-  const g = useRef<THREE.Group>(null), empty = useRef<THREE.Group>(null);
+  const empty = useRef<THREE.Group>(null);
   useFrame(() => {
     const here = state.elevator?.building === bkey && state.elevator.floor === 1;
-    if (g.current) g.current.visible = here;
     // Without the car, the shaft's dark inside shows behind its doors (never the lobby's floor and ceiling).
     if (empty.current) empty.current.visible = !here;
   });
-  return <>
-    <group ref={g} position={[at[0], 0, at[1]]} visible={false}><ElevatorCar m={m} /></group>
-    <group ref={empty} position={[at[0], 0, at[1] - 0.06]}><ShaftInside m={m} h={CEILING - 0.02} /></group>
-  </>;
+  return <group ref={empty} position={[at[0], 0, at[1] - 0.06]}><ShaftInside m={m} h={CEILING - 0.02} /></group>;
 }
 
 /** Now and then someone waits in the lobby's armchair (reading their phone). */

@@ -71,7 +71,7 @@ export function aptFloor(b: Building, floor: number): AptFloor {
   add("sink", maxX - 1.22, maxZ - 0.32, Math.PI, 0.8, 0.62);
   add("oven", maxX - 2.02, maxZ - 0.32, Math.PI, 0.76, 0.62);
   add("microwave", maxX - 2.02, maxZ - 0.2, Math.PI, 0.5, 0.36, false);
-  add("fridge", maxX - 0.36, maxZ - 1.25, -Math.PI / 2, 0.7, 0.68);
+  add("fridge", maxX - 0.37, maxZ - 1.3, -Math.PI / 2, 0.78, 0.7);
   // The table for two to the right of the kitchen.
   const tx = Math.max(divX + 1.0, maxX - 3.4), tz = maxZ - 1.15;
   add("table", tx, tz, 0, 0.8, 0.8);
@@ -105,6 +105,6 @@ export function aptFloor(b: Building, floor: number): AptFloor {
     solids, walls, plants: [], hallZ: [hall0, hall1], wallZ, divX, door: { x: doorX, z: wallZ }, bedroomDoor: [bd0, bd1], furniture: F, front, side,
     // (The bedroom door opens into the bedroom, toward −x: its frame's +z is the room's −x.)
     hinged: { apartment: { ox: doorX, oz: inside0, theta: 0 }, bedroom: { ox: divX - INNER_WALL / 2, oz: bd1, theta: -Math.PI / 2 } },
-    spots: { elevator: [minX + SHAFT / 2, hall0 + 0.65], bed: [minX + 1.08 + 0.75, maxZ - 1.6], fridge: [maxX - 0.36 - 0.75, maxZ - 1.25] },
+    spots: { elevator: [minX + SHAFT / 2, hall0 + 0.65], bed: [minX + 1.08 + 0.75, maxZ - 1.6], fridge: [maxX - 0.37 - 0.8, maxZ - 1.3] },
   };
 }

@@ -9,7 +9,7 @@ import { ARM_Y, CLOSER_ARM, INTERIOR_REACH, Leaf, Panel, Plant, SKIN, Wall, Wind
 import { ScooterModel, type ScooterLook } from "./Scooter";
 import type { GameState } from "./state";
 import { canvas, groundY, makeBlankWall, tex } from "./textures";
-import { venueLayout, type Fixture, type VenueLayout } from "./venueRoom";
+import { LIFT_DOOR, venueLayout, type Fixture, type VenueLayout } from "./venueRoom";
 
 const FH = BUILDING_ENTRANCE.floorHeight;
 
@@ -235,20 +235,24 @@ function FixtureModel({ f, m, kind }: { f: Fixture; m: VMats; kind: VenueKind })
       </group>)}
     </group>;
     case "crate": return <Crate f={f} m={m} />;
-    case "shaft": return <group>
-      {/* The elevator's shaft: walls on all sides, its front with the doorway (the doors are drawn by Apartments). */}
-      <mesh position={[0, CEILING / 2, -d / 2 + 0.06]} material={m.solid("#cfc6bb", 0.8)}>{box([w, CEILING, 0.12])}</mesh>
-      {[-1, 1].map((s) => <mesh key={s} position={[s * (w / 2 - 0.06), CEILING / 2, 0]} material={m.solid("#cfc6bb", 0.8)}>{box([0.12, CEILING, d])}</mesh>)}
-      {[-1, 1].map((s) => <mesh key={s} position={[s * (w / 2 - (w / 2 - 0.55) / 2), CEILING / 2, d / 2 - 0.06]} material={m.solid("#cfc6bb", 0.8)}>{box([w / 2 - 0.55, CEILING, 0.12])}</mesh>)}
-      <mesh position={[0, (CEILING + 2.2) / 2, d / 2 - 0.06]} material={m.solid("#cfc6bb", 0.8)}>{box([1.1, CEILING - 2.2, 0.12])}</mesh>
-      {/* Steel frame round the doorway, the floor indicator above, the call button beside. */}
-      {[-0.58, 0.58].map((x) => <mesh key={x} position={[x, 1.1, d / 2 + 0.01]} material={m.steel}>{box([0.08, 2.2, 0.06])}</mesh>)}
-      <mesh position={[0, 2.24, d / 2 + 0.01]} material={m.steel}>{box([1.24, 0.08, 0.06])}</mesh>
-      <mesh position={[0, 2.45, d / 2 + 0.01]} material={m.black}>{box([0.42, 0.18, 0.03])}</mesh>
-      <mesh position={[0, 2.45, d / 2 + 0.027]} material={m.screen}><planeGeometry args={[0.36, 0.13]} /></mesh>
-      <mesh position={[0.8, 1.15, d / 2 + 0.01]} material={m.steel}>{box([0.12, 0.2, 0.03])}</mesh>
-      <mesh position={[0.8, 1.15, d / 2 + 0.03]} material={m.lamp}><circleGeometry args={[0.025, 12]} /></mesh>
-    </group>;
+    case "shaft": {
+      // The elevator's shaft: solid walls all round; the front's doorway (LIFT_DOOR wide) lined by a steel frame
+      // that overlaps the walls; the doors are drawn by Apartments. Its floor runs right through the doorway.
+      const half = LIFT_DOOR / 2, side = w / 2 - half, wall = m.solid("#cfc6bb", 0.8);
+      return <group>
+        <mesh position={[0, CEILING / 2, -d / 2 + 0.06]} material={wall}>{box([w, CEILING, 0.12])}</mesh>
+        {[-1, 1].map((s) => <mesh key={s} position={[s * (w / 2 - 0.06), CEILING / 2, 0]} material={wall}>{box([0.12, CEILING, d])}</mesh>)}
+        {[-1, 1].map((s) => <mesh key={s} position={[s * (half + side / 2), CEILING / 2, d / 2 - 0.06]} material={wall}>{box([side, CEILING, 0.12])}</mesh>)}
+        <mesh position={[0, (CEILING + 2.3) / 2, d / 2 - 0.06]} material={wall}>{box([LIFT_DOOR + 0.02, CEILING - 2.3, 0.12])}</mesh>
+        {[-1, 1].map((s) => <mesh key={s} position={[s * (half + 0.04), 1.16, d / 2 - 0.06]} material={m.steel}>{box([0.1, 2.32, 0.18])}</mesh>)}
+        <mesh position={[0, 2.33, d / 2 - 0.06]} material={m.steel}>{box([LIFT_DOOR + 0.18, 0.1, 0.18])}</mesh>
+        <mesh position={[0, 0.006, d / 2 - 0.06]} material={m.steel}>{box([LIFT_DOOR, 0.012, 0.16])}</mesh>
+        <mesh position={[0, 2.55, d / 2 + 0.01]} material={m.black}>{box([0.42, 0.18, 0.03])}</mesh>
+        <mesh position={[0, 2.55, d / 2 + 0.027]} material={m.screen}><planeGeometry args={[0.36, 0.13]} /></mesh>
+        <mesh position={[half + 0.3, 1.15, d / 2 + 0.01]} material={m.steel}>{box([0.12, 0.2, 0.03])}</mesh>
+        <mesh position={[half + 0.3, 1.15, d / 2 + 0.03]} material={m.lamp}><circleGeometry args={[0.025, 12]} /></mesh>
+      </group>;
+    }
     case "sofa": return <group>
       <mesh position={[0, 0.22, 0.05]} material={m.solid("#5a4a6e", 0.85)} castShadow>{box([w, 0.28, d - 0.1])}</mesh>
       <mesh position={[0, 0.42, 0.08]} material={m.solid("#6d5a85", 0.9)}>{box([w - 0.3, 0.14, d - 0.25])}</mesh>

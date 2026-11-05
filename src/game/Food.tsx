@@ -326,15 +326,32 @@ export function Food({ state }: { state: GameState }) {
     }
     // Got up from the table with food left on the tray: it is cleared away (and eating stops).
     if (myTray && !seat && mm.leftTray !== myTray.id) { mm.leftTray = myTray.id; state.eating = null; link.send({ type: "leave", pack: myTray.id }); }
-    // On a park bench with food to go: set it down alongside, eat it all, then take the (empty) packs back up.
-    if (state.bench?.phase === "seated" && !state.put && !state.grab) {
-      const seatAt = BENCH_SEATS[state.bench.seat];
+    // Seated with food to go — on a park bench, at a restaurant table, on a couch or a chair at home: the packs go
+    // down (alongside on a bench or couch, on the table in front at a table), everything is taken out of them and
+    // eaten (food, then drinks), then the empty packs are taken back up.
+    const surface = ((): { x: number; y: number; z: number; yaw: number; lx: number; lz: number } | null => {
+      if (state.bench?.phase === "seated") {
+        const seatAt = BENCH_SEATS[state.bench.seat];
+        if (!seatAt) return null;
+        return { x: seatAt.x, y: floorHeight(seatAt.x, seatAt.z) + BENCH_SEAT_TOP, z: seatAt.z, yaw: seatAt.yaw, lx: Math.cos(seatAt.yaw) * 0.42, lz: -Math.sin(seatAt.yaw) * 0.42 };
+      }
+      if (seat?.phase === "seated" && seatRoom && !myTray && !(["left", "right"] as const).some((h) => hands[h]?.kind === "sign")) {
+        const table = seat.plan.table !== null ? seatRoom.items[seat.plan.table] : undefined, chair = seatRoom.items[seat.plan.chair];
+        if (!table || !chair) return null;
+        const dx = chair.x - table.x, dz = chair.z - table.z, d = Math.hypot(dx, dz) || 1;
+        const [x, z] = toWorld(seatRoom.frame, table.x + dx / d * (TABLE.half - 0.2), table.z + dz / d * (TABLE.half - 0.2));
+        const [ax, az] = toWorld(seatRoom.frame, table.x + dx / d * (TABLE.half - 0.2) - dz / d * 0.2, table.z + dz / d * (TABLE.half - 0.2) + dx / d * 0.2);
+        return { x, y: SIDEWALK_H + TABLE.top, z, yaw: state.rotY + Math.PI, lx: ax - x, lz: az - z };
+      }
+      return state.seatSurface;
+    })();
+    if (surface && !state.put && !state.grab) {
       const full = (h: GameState["hands"]["left"]) => !!h && h.kind !== "sign" && h.kind !== "tray" && (h.items?.length ?? 0) > 0;
       const hand = (["right", "left"] as const).find((h) => full(hands[h]));
-      if (seatAt && hand && !mm.benchDone) {
-        const side = hand === "left" ? 1 : -1, lx = Math.cos(seatAt.yaw), lz = -Math.sin(seatAt.yaw), y = floorHeight(seatAt.x, seatAt.z) + BENCH_SEAT_TOP;
-        const x = seatAt.x + lx * side * 0.42, z = seatAt.z + lz * side * 0.42;
-        state.put = { pack: hands[hand]!.id, hand, at: st, target: new THREE.Vector3(x, y + PACK_SIZE[hands[hand]!.kind].grip, z), where: "aside", yaw: seatAt.yaw, sent: false };
+      if (hand && !mm.benchDone) {
+        const side = hand === "left" ? 1 : -1;
+        const x = surface.x + surface.lx * side, z = surface.z + surface.lz * side;
+        state.put = { pack: hands[hand]!.id, hand, at: st, target: new THREE.Vector3(x, surface.y + PACK_SIZE[hands[hand]!.kind].grip, z), where: "aside", yaw: surface.yaw, sent: false };
       } else if (!state.eating) {
         const aside = view.packs.filter((p) => p.where === "aside" && p.holder === me && !dropped.has(p.id));
         const food = aside.find((p) => p.items.some((n) => !isDrinkName(n))) ?? aside.find((p) => p.items.length);
@@ -347,7 +364,7 @@ export function Food({ state }: { state: GameState }) {
         }
       }
     }
-    if (!state.bench) mm.benchDone = false;
+    if (!surface) mm.benchDone = false;
     // E by a bin with empties: walk up to it and drop them in, one at a time.
     const empties = (["left", "right"] as const).filter((h) => { const x = hands[h]; return !!x && x.kind !== "sign" && x.kind !== "tray" && (x.items?.length ?? 0) === 0; });
     if (state.interactQueued && empties.length && !mm.toss && onFoot && !state.grab && !state.drop && !state.interior) {

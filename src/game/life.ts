@@ -82,7 +82,7 @@ export function readLife(value: unknown, day = 1): Life {
     // (Older saves' studios and lofts are gone: those players are between homes.)
     home: home && home.kind === "apartment" && typeof home.building === "string" && typeof home.floor === "number" && typeof home.nextRent === "number" && typeof home.weekly === "number" ? home : null,
     billedDay: num("billedDay", 0, 1e9, day),
-    fridge: Array.isArray(v["fridge"]) ? (v["fridge"] as unknown[]).filter((x): x is string => typeof x === "string").slice(0, 12) : [],
+    fridge: Array.isArray(v["fridge"]) ? (v["fridge"] as unknown[]).filter((x): x is string => typeof x === "string").slice(0, 24) : [],
     ledger: Array.isArray(v["ledger"]) ? (v["ledger"] as Txn[]).filter((t) => t && typeof t.amount === "number").slice(0, 30) : [],
     earned: num("earned", 0, 1e12, 0), jobsDone: num("jobsDone", 0, 1e9, 0),
     fines: Array.isArray(v["fines"]) ? (v["fines"] as Fine[]).filter((f) => f && typeof f.amount === "number" && typeof f.day === "number").slice(0, 20) : [],

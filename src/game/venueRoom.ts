@@ -34,7 +34,9 @@ export function fixtureBox(f: Fixture): Box {
 }
 
 /** The elevator's shaft (a square of walls in the back-left corner, the same on every floor). */
-export const SHAFT = 2.0;
+export const SHAFT = 2.6;
+/** The elevator doorway's width (two doors, each folding into its side of the frame). */
+export const LIFT_DOOR = 1.2;
 const FRUITS = ["apple", "banana", "orange", "pear", "lemon", "lime", "grape", "peach"];
 const PAINTS = ["#c9281f", "#1f5fbf", "#ffb547", "#2b2d33", "#27877b"];
 
