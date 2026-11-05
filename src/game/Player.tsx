@@ -1,4 +1,5 @@
 import { skillLevel } from "./life";
+import { USE_SECONDS } from "./invRuntime";
 import { useCharacterColor } from "./characterColor";
 import { ATMS } from "./places";
 import { useFrame } from "@react-three/fiber";
@@ -146,7 +147,10 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     // Putting food down (Q), or picking something up off the ground: a squat.
     const dropT = state.drop ? state.simulationTime - state.drop.at : Infinity, dropping = dropT < DROP_TIME;
     const lowGrab = grabbing && grab !== null && grab.target.y - floorHeight(grab.target.x, grab.target.z) < 0.8;
-    const crouch = dropping ? dropReach(dropT) : lowGrab ? grabReach(grabT) : 0;
+    // Putting a thing from the inventory down, or picking one up: the same squat.
+    const inv = state.invAct, invT = inv ? state.simulationTime - inv.at : Infinity;
+    const invLow = !!inv && (inv.kind === "drop" || inv.kind === "pickup") && invT < DROP_TIME;
+    const crouch = dropping ? dropReach(dropT) : lowGrab ? grabReach(grabT) : invLow ? dropReach(invT) : 0;
     if (script) {
       s.vel.set(0, 0, 0); s.vy = 0; s.grounded = true;
       p.x = script.x; p.z = script.z; p.y = floorHeight(p.x, p.z);
@@ -156,7 +160,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       s.vy = 0;
       s.grounded = true;
       p.y = floorHeight(p.x, p.z);
-    } else if (dropping && s.grounded) {
+    } else if ((dropping || invLow) && s.grounded) {
       s.vel.set(damp(s.vel.x, 0, ACCEL * 2, dt), 0, damp(s.vel.z, 0, ACCEL * 2, dt));
     } else if (grabbing && s.grounded && grab) {
       s.vel.set(damp(s.vel.x, 0, ACCEL * 2, dt), 0, damp(s.vel.z, 0, ACCEL * 2, dt));
@@ -473,7 +477,20 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       // Full packs ride at the waist; an empty one (or a number sign) just hangs from a relaxed arm.
       const heavy = (h: typeof state.hands.left) => !!h && h.kind !== "sign" && (h.items?.length ?? 1) > 0;
       if (heavy(state.hands.left) || grab?.hand === "left") { armL.current?.rotation.set(shL, 0, 0.2); foreL.current?.rotation.set(carryElbow(shL), 0, 0); }
-      if (heavy(state.hands.right) || grab?.hand === "right") { armR.current?.rotation.set(shR, 0, -0.2); foreR.current?.rotation.set(carryElbow(shR), 0, 0); }
+      // A thing from the inventory (or an emptied bottle) is carried the same way in the right hand.
+      if (heavy(state.hands.right) || grab?.hand === "right" || state.heldSlot !== null || state.heldTrash) { armR.current?.rotation.set(shR, 0, -0.2); foreR.current?.rotation.set(carryElbow(shR), 0, 0); }
+      // The phone out: held up in front of the chest, the screen toward the face.
+      if (state.phone.open && !state.hands.right && root.current) {
+        root.current.updateMatrixWorld(true);
+        const at = root.current.localToWorld(new THREE.Vector3(-0.08, 1.22, 0.34));
+        reachArm(armR.current, foreR.current, at, POLES.low(-1), 1);
+      }
+      // Setting a thing down on the ground, or picking one up: the right hand goes down to it.
+      if (invLow && inv?.target) {
+        root.current?.updateMatrixWorld(true);
+        const at = new THREE.Vector3(inv.target.x, floorHeight(inv.target.x, inv.target.z) + 0.2, inv.target.z);
+        reachArm(armR.current, foreR.current, at, POLES.low(-1), dropReach(invT));
+      }
       if (dropping && root.current) {
         // Each hand sets its food down on the ground beside the feet.
         root.current.updateMatrixWorld(true);
@@ -545,9 +562,11 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     }
     // Eating and drinking (at a table or on a bench): the right hand brings the food up to the mouth for each bite;
     // a drink is lifted once and sipped with the head tipped back.
-    const eat = state.eating;
+    // (Eating or drinking a thing from the inventory works the same way, over its own time.)
+    const invUse = inv && (inv.kind === "eat" || inv.kind === "drink") ? { at: inv.at, drink: inv.kind === "drink", T: USE_SECONDS } : null;
+    const eat = state.eating ? { at: state.eating.at, drink: state.eating.drink, T: EAT_SECONDS } : invUse;
     if (eat && !dead && !incapacitated && root.current && head.current) {
-      const t = state.simulationTime - eat.at, T = EAT_SECONDS;
+      const t = state.simulationTime - eat.at, T = eat.T;
       let up = 0, tip = 0;
       if (eat.drink) { up = Math.min(smoothstep(t / 0.6), 1 - smoothstep((t - (T - 0.6)) / 0.6)); tip = up * Math.min(1, Math.max(0, (t - 0.5) / 0.5)); }
       else { const bite = T / 3, u = (t % bite) / bite; up = u < 0.35 ? smoothstep(u / 0.35) : u < 0.6 ? 1 : 1 - smoothstep((u - 0.6) / 0.4); }

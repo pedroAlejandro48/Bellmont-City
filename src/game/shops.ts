@@ -26,12 +26,14 @@ export function shopPlaces(seed: number): { kind: ShopKind; building: Building; 
 }
 
 /** Groceries: cheaper than restaurant food for the same filling (`value` is the restaurant price it fills like). */
-export const GROCERIES: { name: string; price: number; value: number }[] = [
-  { name: "Apple", price: 1.2, value: 3 },
+export const GROCERIES: { name: string; price: number; value: number; item?: import("./inventory").ItemKind }[] = [
+  { name: "Apple", price: 1.2, value: 3, item: "apple" },
+  { name: "Banana", price: 1, value: 3.5, item: "banana" },
+  { name: "Orange", price: 1.2, value: 3, item: "orange" },
   { name: "Sandwich", price: 3.5, value: 9 },
   { name: "Salad Bowl", price: 4, value: 10 },
   { name: "Pasta Meal", price: 5, value: 15 },
-  { name: "Bottled Water", price: 0.8, value: 1.5 },
+  { name: "Bottled Water", price: 0.8, value: 1.5, item: "water" },
   { name: "Orange Juice", price: 2, value: 3 },
 ];
 

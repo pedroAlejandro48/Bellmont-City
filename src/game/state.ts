@@ -1,5 +1,6 @@
 import type { Weather } from "./weather";
 import type { ShopKind } from "./shops";
+import type { ItemKind } from "./inventory";
 import * as THREE from "three";
 import type { Room, SitPlan } from "./restaurantRoom";
 import type { NpcLink } from "./pedestrians";
@@ -112,6 +113,14 @@ export type GameState = {
   shop: ShopKind | null;
   /** The inventory grid is open. */
   inventoryOpen: boolean;
+  /** The inventory slot whose thing is out in the right hand (the phone counts as out while it is open). */
+  heldSlot: number | null;
+  /** Trash in the right hand (an emptied bottle): it can't go in the inventory, only be put down (Q). */
+  heldTrash: "bottle" | null;
+  /** Doing something with a thing from the inventory: eating or drinking it, putting it down, picking one up. */
+  invAct: { kind: "eat" | "drink" | "drop" | "pickup"; at: number; item: ItemKind | "bottle"; target: THREE.Vector3 | null; done: boolean; ground?: number } | null;
+  /** Things from inventories lying on the ground (this player's world only). */
+  groundItems: { id: number; kind: ItemKind | "bottle"; x: number; z: number; yaw: number; at: number }[];
   /** Some other panel that needs the mouse (a reception desk, an elevator's buttons…), by name. */
   uiLock: string | null;
   keys: Set<string>;
@@ -234,6 +243,10 @@ export function createState(save: SaveData): GameState {
     weather: { kind: "clear", clouds: 0, rain: 0, fog: 0 },
     shop: null,
     inventoryOpen: false,
+    heldSlot: null,
+    heldTrash: null,
+    invAct: null,
+    groundItems: [],
     uiLock: null,
     keys: new Set(),
     jumpQueued: false,

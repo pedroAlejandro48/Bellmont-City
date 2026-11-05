@@ -29,6 +29,9 @@ import { TouchControls } from "./TouchControls";
 import { LifeWorld } from "./LifeWorld";
 import { Billboards } from "./Billboards";
 import { ShopPanel } from "@/components/ShopPanel";
+import { InventoryButton } from "@/components/Inventory";
+import { InventoryWorld } from "./InventoryWorld";
+import { pressInventorySlot } from "./invRuntime";
 import { LevelBadge, Phone, RouteHint, Toasts } from "@/components/Phone";
 import { HomeView } from "./HomeView";
 import { guideDone } from "./lifeRuntime";
@@ -150,7 +153,7 @@ const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameS
         <CameraRig state={state} />
         {Extra && <group name="perf:room"><Extra state={state} /></group>}
         <group name="perf:food"><Food state={state} /></group>
-        <group name="perf:life"><LifeWorld state={state} /></group>
+        <group name="perf:life"><LifeWorld state={state} /><InventoryWorld state={state} /></group>
       </Physics>
     </Suspense>
   </Canvas>;
@@ -253,7 +256,13 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       // The phone: P opens and closes it, Escape closes it; while it's open the character stays put.
-      if (e.code === "KeyP" && !e.repeat) { state.phone = state.phone.open ? { open: false, app: null, atm: false } : { open: true, app: null, atm: false }; if (state.phone.open) { state.keys.clear(); guideDone(state, 0); } e.preventDefault(); return; }
+      // The phone is slot 1 of the inventory: P (or 1) takes it out and puts it away.
+      if (e.code === "KeyP" && !e.repeat && !state.home) { pressInventorySlot(state, 0); e.preventDefault(); return; }
+      // Number keys 1–9: the inventory's slots. I or Tab opens the grid.
+      const digit = /^Digit([1-9])$/.exec(e.code);
+      if (digit && !e.repeat && !state.home && !state.shop && !state.foodUi.open && !state.uiLock) { pressInventorySlot(state, Number(digit[1]) - 1); e.preventDefault(); return; }
+      if ((e.code === "KeyI" || e.code === "Tab") && !e.repeat && !state.home) { state.inventoryOpen = !state.inventoryOpen; if (state.inventoryOpen) state.keys.clear(); e.preventDefault(); return; }
+      if (e.code === "Escape" && state.inventoryOpen) { state.inventoryOpen = false; return; }
       if (e.code === "Escape" && state.phone.open) { state.phone = { open: false, app: null, atm: false }; return; }
       if (e.code === "Escape" && state.shop) { state.shop = null; return; }
       if (uiCaptured(state) || state.home) return;
@@ -332,10 +341,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
             </span>
           </div>
           <LevelBadge state={state} />
-          <button type="button" className="hud-panel phone-button pointer-events-auto" aria-label="Open phone (P)" onClick={() => { state.phone = state.phone.open ? { open: false, app: null, atm: false } : { open: true, app: null, atm: false }; if (state.phone.open) { state.keys.clear(); guideDone(state, 0); } }}>
-            <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden><rect x="6" y="2" width="12" height="20" rx="2.5" fill="none" stroke="currentColor" strokeWidth="2" /><circle cx="12" cy="18" r="1.2" fill="currentColor" /></svg>
-            <span>P</span>
-          </button>
+          <InventoryButton state={state} />
         </div>
       </div>
       {notice && <div role="status" className="hud-panel pointer-events-auto fixed left-1/2 top-16 z-30 flex max-w-[min(30rem,calc(100vw-2rem))] -translate-x-1/2 items-start gap-3 px-4 py-3 text-sm text-foreground sm:top-24">

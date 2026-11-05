@@ -432,3 +432,26 @@
 .toast.ticket { border-left-color: #ff3b3b; animation: toast-in 0.4s cubic-bezier(0.2, 1.3, 0.4, 1), siren 0.5s linear 0.4s 4; }
 .toast.ticket b { color: #ff8a8a; }
 @keyframes siren { 0%, 49% { box-shadow: -6px 0 18px rgba(255,59,59,0.7); } 50%, 100% { box-shadow: 6px 0 18px rgba(61,123,255,0.8); } }
+
+/* ---------- Inventory ---------- */
+.inventory-anchor { position: relative; display: flex; }
+.inventory-button { aspect-ratio: 1; flex-shrink: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.2rem; padding: 0.25rem; font-size: 10px; font-weight: 700; line-height: 1; cursor: pointer; transition: transform 0.15s, filter 0.2s, box-shadow 0.2s; }
+.inventory-button:hover { filter: brightness(1.2); }
+.inventory-button:active { transform: scale(0.94); }
+.inventory-button.on { box-shadow: 0 0 0 2px #ffb547 inset; }
+.inventory-button-icon { font-size: 1.15rem; line-height: 1; display: grid; place-items: center; height: 1.3rem; }
+.inventory-grid { position: absolute; right: 0; bottom: calc(100% + 0.6rem); width: 15.5rem; padding: 0.7rem; display: flex; flex-direction: column; gap: 0.55rem; transform: translateY(0.8rem) scale(0.94); transform-origin: bottom right; opacity: 0; pointer-events: none !important; transition: transform 0.28s cubic-bezier(0.2, 1.2, 0.4, 1), opacity 0.2s ease; }
+.inventory-grid.open { transform: none; opacity: 1; pointer-events: auto !important; }
+.inventory-head { display: flex; flex-direction: column; gap: 0.1rem; }
+.inventory-head b { font-size: 0.85rem; }
+.inventory-head small { font-size: 0.62rem; opacity: 0.65; line-height: 1.3; }
+.inventory-slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem; }
+.inventory-slot { position: relative; aspect-ratio: 1; border-radius: 0.7rem; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.15rem; transition: background 0.15s, transform 0.12s, box-shadow 0.2s; }
+.inventory-slot:hover { background: rgba(255,255,255,0.16); }
+.inventory-slot:active { transform: scale(0.93); }
+.inventory-slot.empty { background: rgba(255,255,255,0.03); border-style: dashed; }
+.inventory-slot.held { box-shadow: 0 0 0 2px #ffb547, 0 0 14px rgba(255,181,71,0.45); background: rgba(255,181,71,0.14); }
+.inventory-num { position: absolute; top: 0.2rem; left: 0.35rem; font-size: 0.62rem; font-weight: 800; opacity: 0.7; }
+.inventory-icon { font-size: 1.55rem; line-height: 1; }
+.inventory-name { font-size: 0.55rem; opacity: 0.75; text-align: center; padding: 0 0.15rem; line-height: 1.1; }
+.inventory-note { font-size: 0.65rem; opacity: 0.75; }

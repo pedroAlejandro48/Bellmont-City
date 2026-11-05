@@ -1,3 +1,5 @@
+import { newInventory, readInventory, type Inventory } from "./inventory";
+
 // Life in the city (pure, testable): money in the bank, loans and credit, taxes and bills, experience and
 // levels, skills, daily goals and the first-day guide, jobs' pay, and a home. The game state keeps one `Life`;
 // the save keeps it whole.
@@ -49,6 +51,8 @@ export type Life = {
   bikePaint: string | null;
   /** The last game day of a gym workout (one a day). */
   workoutDay: number;
+  /** Nine slots, the phone always first. */
+  inventory: Inventory;
 };
 export type Fine = { day: number; reason: string; amount: number };
 
@@ -57,7 +61,7 @@ export function newLife(day = 1): Life {
     bank: 300, loan: 0, credit: 650, xp: 0,
     skills: { fitness: 0, riding: 0, work: 0, charm: 0 },
     quests: rollQuests(day), questDay: day, guide: 0, home: null, billedDay: day, fridge: [], ledger: [],
-    earned: 0, jobsDone: 0, fines: [], record: 0, insured: false, outfit: null, bikePaint: null, workoutDay: 0,
+    earned: 0, jobsDone: 0, fines: [], record: 0, insured: false, outfit: null, bikePaint: null, workoutDay: 0, inventory: newInventory(),
   };
 }
 
@@ -84,6 +88,7 @@ export function readLife(value: unknown, day = 1): Life {
     outfit: typeof v["outfit"] === "string" && /^#[0-9a-f]{6}$/i.test(v["outfit"]) ? v["outfit"] : null,
     bikePaint: typeof v["bikePaint"] === "string" && /^#[0-9a-f]{6}$/i.test(v["bikePaint"]) ? v["bikePaint"] : null,
     workoutDay: num("workoutDay", 0, 1e9, 0),
+    inventory: readInventory(v["inventory"]),
   };
 }
 
@@ -278,7 +283,7 @@ export function progressQuest(life: Life, id: QuestId, amount: number): Quest[] 
 
 // ---------- the first-day guide ----------
 export const GUIDE = [
-  { text: "Open your phone (P, or the phone button)", hint: "Everything you own and can do is in it." },
+  { text: "Take out your phone (P or 1, or from the inventory)", hint: "Everything you own and can do is in it." },
   { text: "Take cash out at an ATM (marked on the map)", hint: "Walk up to one and press E." },
   { text: "Buy something to eat at a restaurant", hint: "Restaurants face the park." },
   { text: "Do a job from the Jobs app", hint: "Courier gigs are the easiest start." },

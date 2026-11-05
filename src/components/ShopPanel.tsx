@@ -7,6 +7,7 @@ import { guideDone, lifeEvent, payJob } from "@/game/lifeRuntime";
 import { canConsume, consume } from "@/game/needs";
 import { GROCERIES, OUTFITS, OUTFIT_PRICE, PAINTS, PAINT_PRICE, SHOPS, TREATMENT_PRICE, WORKOUT_PRICE, clerkPay, foodValue, shopPlaces } from "@/game/shops";
 import { toast, type GameState } from "@/game/state";
+import { giveItem } from "@/game/invRuntime";
 
 const money = (n: number) => `$${n.toFixed(2)}`;
 
@@ -76,10 +77,13 @@ function Grocery({ state, refresh }: Props) {
           const after = consume(state, g.name, foodValue(g.name)); state.hunger = after.hunger; state.thirst = after.thirst;
           lifeEvent(state, "eat", 1); guideDone(state, 2); refresh();
         }}>{isDrinkName(g.name) ? "Drink" : "Eat"}</button>
-        <button type="button" className="phone-btn" disabled={!home || full} title={!home ? "Rent a home to have a fridge" : full ? "Your fridge is full" : ""} onClick={() => {
+        {g.item ? <button type="button" className="phone-btn" disabled={!state.life.inventory.some((x, i) => i > 0 && x === null)} title="Keep it in your inventory" onClick={() => {
+          if (!pay(state, g.price, g.name)) return;
+          giveItem(state, g.item!); refresh();
+        }}>Take</button> : <button type="button" className="phone-btn" disabled={!home || full} title={!home ? "Rent a home to have a fridge" : full ? "Your fridge is full" : ""} onClick={() => {
           if (!pay(state, g.price, g.name)) return;
           life.fridge.push(g.name); toast(state, `${g.name} → fridge`, "money"); refresh();
-        }}>To fridge</button>
+        }}>To fridge</button>}
       </span>
     </li>)}</ul>
     <p className="phone-note">{home ? `Fridge: ${life.fridge.length}/12.` : "Rent a home (Phone › Home) to keep groceries in a fridge."}</p>
