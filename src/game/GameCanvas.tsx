@@ -32,9 +32,10 @@ import { ShopPanel } from "@/components/ShopPanel";
 import { InventoryButton } from "@/components/Inventory";
 import { InventoryWorld } from "./InventoryWorld";
 import { Grocery } from "./Grocery";
+import { Apartments } from "./Apartments";
+import { AptPanels } from "@/components/AptPanels";
 import { pressInventorySlot } from "./invRuntime";
 import { LevelBadge, Phone, RouteHint, Toasts } from "@/components/Phone";
-import { HomeView } from "./HomeView";
 import { guideDone } from "./lifeRuntime";
 import { autoLowerQuality, qualityChosen, quality, readQuality, softwareRendering, startQuality } from "./quality";
 import { useFrame } from "@react-three/fiber";
@@ -154,7 +155,7 @@ const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameS
         <CameraRig state={state} />
         {Extra && <group name="perf:room"><Extra state={state} /></group>}
         <group name="perf:food"><Food state={state} /></group>
-        <group name="perf:life"><LifeWorld state={state} /><InventoryWorld state={state} /><Grocery state={state} city={city} /></group>
+        <group name="perf:life"><LifeWorld state={state} /><InventoryWorld state={state} /><Grocery state={state} city={city} /><Apartments state={state} city={city} /></group>
       </Physics>
     </Suspense>
   </Canvas>;
@@ -356,8 +357,8 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
       <OrderMenu state={state} />
       <RouteHint state={state} />
       <Toasts state={state} />
-      <Phone state={state} /><ShopPanel state={state} />
-      {!dead && <HomeView state={state} />}
+      <Phone state={state} /><ShopPanel state={state} /><AptPanels state={state} />
+      
       <div ref={fade} className="pointer-events-none fixed inset-0 z-30 bg-black" style={{ opacity: 0 }} aria-hidden />
       {dead && (
         <div role="alert" className="death-screen pointer-events-auto fixed inset-0 z-20 flex items-center justify-center">

@@ -120,11 +120,15 @@ export type GameState = {
   /** Doing something with a thing from the inventory: eating or drinking it, putting it down, picking one up. */
   invAct: { kind: "eat" | "drink" | "drop" | "pickup"; at: number; item: ItemKind | "bottle" | "groceryBag"; target: THREE.Vector3 | null; done: boolean; ground?: number } | null;
   /** Things from inventories lying on the ground (this player's world only); a grocery bag keeps what's in it. */
-  groundItems: { id: number; kind: ItemKind | "bottle" | "groceryBag"; x: number; z: number; yaw: number; at: number; contents?: ItemKind[] }[];
+  groundItems: { id: number; kind: ItemKind | "bottle" | "groceryBag"; x: number; z: number; y?: number; yaw: number; at: number; contents?: ItemKind[] }[];
   /** A shopping basket in the right hand (what's in it), or null. */
   groceryBasket: ItemKind[] | null;
   /** A bag of groceries in the left hand (what's in it), or null: it can't go in the inventory, only be put down. */
   groceryBag: ItemKind[] | null;
+  /** On an upper floor of an apartment building (its floor's height): the ground is that floor. */
+  level: { building: string; floor: number; y: number } | null;
+  /** Riding an apartment building's elevator: where, from which floor to which, and how far along. */
+  elevator: { building: string; floor: number; target: number | null; phase: "boarding" | "choose" | "closing" | "moving" | "opening" | "leaving"; t0: number } | null;
   /** Door uses by the grocery's shoppers (their doors swing like everyone's). */
   extraDoorUses: import("./doors").DoorUse[];
   /** Some other panel that needs the mouse (a reception desk, an elevator's buttons…), by name. */
@@ -256,6 +260,8 @@ export function createState(save: SaveData): GameState {
     groceryBasket: null,
     groceryBag: null,
     extraDoorUses: [],
+    level: null,
+    elevator: null,
     uiLock: null,
     keys: new Set(),
     jumpQueued: false,
@@ -302,6 +308,9 @@ let toastId = 1;
 export function uiCaptured(s: GameState) {
   return s.phone.open || !!s.shop || s.foodUi.open || s.inventoryOpen || !!s.uiLock;
 }
+
+/** The height of the ground under (x, z): an apartment building's floor while up there, else the street's. */
+export const groundAt = (s: GameState, x: number, z: number) => (s.level ? s.level.y : floorHeight(x, z));
 
 export function toast(state: GameState, title: string, kind: GameState["toasts"][number]["kind"] = "info", body?: string) {
   state.toasts.push({ id: toastId++, title, kind, at: performance.now(), ...(body ? { body } : {}) });

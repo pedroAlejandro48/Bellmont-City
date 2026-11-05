@@ -11,6 +11,7 @@ export const SHOPS: Record<ShopKind, { name: string; code: string; blurb: string
   gym: { name: "Iron Bell Gym", code: "B7", blurb: "Train to run faster", color: "#33363f", ink: "#ffb547", block: [0, 1] },
   hospital: { name: "Bellmont General", code: "B8", blurb: "Treatment and health plans", color: "#ffffff", ink: "#d62f3a", block: [1, 1] },
   police: { name: "Police Station", code: "P7", blurb: "Pay fines, check your record", color: "#1d3b8a", ink: "#ffffff", block: [-1, -1] },
+  apartments: { name: "Bellmont Residences", code: "H1", blurb: "Small apartments to rent, first week free", color: "#6c3fc0", ink: "#ffffff", block: [2, -2] },
 };
 export const SHOP_KINDS = Object.keys(SHOPS) as ShopKind[];
 export const SHOP_REACH = 2.2;
@@ -18,10 +19,8 @@ export const SHOP_REACH = 2.2;
 /** Each shop's building (the one in its block nearest the park that isn't a restaurant) and its door. */
 export function shopPlaces(seed: number): { kind: ShopKind; building: Building; door: { x: number; z: number; yaw: number } }[] {
   const city = generateCity(seed, 0, 0);
-  return SHOP_KINDS.flatMap((kind) => {
-    const b = city.buildings.find((c) => c.venue === kind);
-    return b ? [{ kind, building: b, door: doorOf(b) }] : [];
-  });
+  // Every venue building (the six apartment buildings each count).
+  return city.buildings.filter((c) => c.venue).map((b) => ({ kind: b.venue!, building: b, door: doorOf(b) }));
 }
 
 /** Groceries: cheaper than restaurant food for the same filling (`value` is the restaurant price it fills like). */

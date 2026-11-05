@@ -21,6 +21,7 @@ const LOOK: Record<VenueKind, { front: string; frame: string; wall: string; trim
   gym: { front: "#1f2128", frame: "#ffb547", wall: "#d9dbe0", trim: "#33363f", floor: ["#3a3d44", "#2f3238"], ceiling: "#e9eaee", accent: "#ffb547", staff: "#2b2d33" },
   hospital: { front: "#f4f6f8", frame: "#3a8fb7", wall: "#f4f8fa", trim: "#9fd3e0", floor: ["#e8eef1", "#d4dde2"], ceiling: "#ffffff", accent: "#d62f3a", staff: "#4fb3a9" },
   police: { front: "#d9d6cf", frame: "#1d3b8a", wall: "#e3e6ea", trim: "#1d3b8a", floor: ["#b9bec6", "#a3a9b2"], ceiling: "#f5f6f8", accent: "#1d3b8a", staff: "#1d3b8a" },
+  apartments: { front: "#c9b8a6", frame: "#3b2f4a", wall: "#efe9e1", trim: "#8a6f5a", floor: ["#d8cfc2", "#c4b9aa"], ceiling: "#fbf8f4", accent: "#6c3fc0", staff: "#3b2f4a" },
 };
 
 /** The outside wall of a venue: its colour, frames round the windows and the door, the openings cut through. */
@@ -234,6 +235,48 @@ function FixtureModel({ f, m, kind }: { f: Fixture; m: VMats; kind: VenueKind })
       </group>)}
     </group>;
     case "crate": return <Crate f={f} m={m} />;
+    case "shaft": return <group>
+      {/* The elevator's shaft: walls on all sides, its front with the doorway (the doors are drawn by Apartments). */}
+      <mesh position={[0, CEILING / 2, -d / 2 + 0.06]} material={m.solid("#cfc6bb", 0.8)}>{box([w, CEILING, 0.12])}</mesh>
+      {[-1, 1].map((s) => <mesh key={s} position={[s * (w / 2 - 0.06), CEILING / 2, 0]} material={m.solid("#cfc6bb", 0.8)}>{box([0.12, CEILING, d])}</mesh>)}
+      {[-1, 1].map((s) => <mesh key={s} position={[s * (w / 2 - (w / 2 - 0.55) / 2), CEILING / 2, d / 2 - 0.06]} material={m.solid("#cfc6bb", 0.8)}>{box([w / 2 - 0.55, CEILING, 0.12])}</mesh>)}
+      <mesh position={[0, (CEILING + 2.2) / 2, d / 2 - 0.06]} material={m.solid("#cfc6bb", 0.8)}>{box([1.1, CEILING - 2.2, 0.12])}</mesh>
+      {/* Steel frame round the doorway, the floor indicator above, the call button beside. */}
+      {[-0.58, 0.58].map((x) => <mesh key={x} position={[x, 1.1, d / 2 + 0.01]} material={m.steel}>{box([0.08, 2.2, 0.06])}</mesh>)}
+      <mesh position={[0, 2.24, d / 2 + 0.01]} material={m.steel}>{box([1.24, 0.08, 0.06])}</mesh>
+      <mesh position={[0, 2.45, d / 2 + 0.01]} material={m.black}>{box([0.42, 0.18, 0.03])}</mesh>
+      <mesh position={[0, 2.45, d / 2 + 0.027]} material={m.screen}><planeGeometry args={[0.36, 0.13]} /></mesh>
+      <mesh position={[0.8, 1.15, d / 2 + 0.01]} material={m.steel}>{box([0.12, 0.2, 0.03])}</mesh>
+      <mesh position={[0.8, 1.15, d / 2 + 0.03]} material={m.lamp}><circleGeometry args={[0.025, 12]} /></mesh>
+    </group>;
+    case "sofa": return <group>
+      <mesh position={[0, 0.22, 0.05]} material={m.solid("#5a4a6e", 0.85)} castShadow>{box([w, 0.28, d - 0.1])}</mesh>
+      <mesh position={[0, 0.42, 0.08]} material={m.solid("#6d5a85", 0.9)}>{box([w - 0.3, 0.14, d - 0.25])}</mesh>
+      <mesh position={[0, 0.62, -d / 2 + 0.12]} material={m.solid("#5a4a6e", 0.85)} castShadow>{box([w, 0.6, 0.22])}</mesh>
+      {[-1, 1].map((s) => <mesh key={s} position={[s * (w / 2 - 0.1), 0.45, 0.02]} material={m.solid("#5a4a6e", 0.85)}>{box([0.2, 0.36, d - 0.1])}</mesh>)}
+      {[-0.5, 0.5].map((x) => <mesh key={x} position={[x, 0.62, -d / 2 + 0.3]} rotation-x={-0.3} material={m.solid("#e0c36a", 0.9)}>{box([0.4, 0.36, 0.1])}</mesh>)}
+    </group>;
+    case "armchair": return <group>
+      <mesh position={[0, 0.22, 0.03]} material={m.solid("#8a6f5a", 0.85)} castShadow>{box([w, 0.3, d - 0.06])}</mesh>
+      <mesh position={[0, 0.42, 0.06]} material={m.solid("#a3876f", 0.9)}>{box([w - 0.25, 0.12, d - 0.25])}</mesh>
+      <mesh position={[0, 0.66, -d / 2 + 0.1]} material={m.solid("#8a6f5a", 0.85)}>{box([w, 0.62, 0.18])}</mesh>
+      {[-1, 1].map((s) => <mesh key={s} position={[s * (w / 2 - 0.08), 0.46, 0.02]} material={m.solid("#8a6f5a", 0.85)}>{box([0.16, 0.34, d - 0.1])}</mesh>)}
+    </group>;
+    case "coffeeTable": return <group>
+      <mesh position={[0, 0.42, 0]} material={m.darkWood} castShadow>{box([w, 0.05, d])}</mesh>
+      {[-1, 1].flatMap((a) => [-1, 1].map((b) => <mesh key={`${a}${b}`} position={[a * (w / 2 - 0.05), 0.2, b * (d / 2 - 0.05)]} material={m.darkWood}>{box([0.05, 0.4, 0.05])}</mesh>))}
+      <mesh position={[0.1, 0.46, -0.2]} material={m.cloth[3]!}>{box([0.22, 0.03, 0.3])}</mesh>
+      <mesh position={[-0.05, 0.5, 0.25]} material={m.white}><cylinderGeometry args={[0.05, 0.04, 0.1, 12]} /></mesh>
+    </group>;
+    case "rug": return <mesh position={[0, 0.01, 0]} rotation-x={-Math.PI / 2} material={m.solid("#7a3f4f", 0.95)} receiveShadow><planeGeometry args={[w, d]} /></mesh>;
+    case "mailboxes": return <group position={[0, 1.2, 0.08]}>
+      <mesh material={m.solid("#8f8a80", 0.4, 0.6)}>{box([w, 0.9, 0.16])}</mesh>
+      {Array.from({ length: 15 }, (_, k) => <mesh key={k} position={[-w / 2 + 0.18 + (k % 5) * (w - 0.36) / 4, 0.28 - Math.floor(k / 5) * 0.28, 0.085]} material={m.solid("#b9b3a8", 0.35, 0.7)}>{box([0.24, 0.2, 0.01])}</mesh>)}
+    </group>;
+    case "painting": return <group position={[0, 2.3, 0.03]}>
+      <mesh material={m.darkWood}>{box([w + 0.1, 1.1, 0.04])}</mesh>
+      <mesh position-z={0.025} material={m.board}><planeGeometry args={[w - 0.1, 0.95]} /></mesh>
+    </group>;
     case "baskets": return <group>
       {[0, 1, 2, 3, 4, 5].map((k) => <group key={k} position={[0, k * 0.07, 0]}>
         <mesh position={[0, 0.06, 0]} material={m.basket}>{box([0.46, 0.04, 0.32])}</mesh>

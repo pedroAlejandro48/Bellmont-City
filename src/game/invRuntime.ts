@@ -83,7 +83,7 @@ export function dropHeld(state: GameState) {
 export function pickUpNear(state: GameState) {
   if (busy(state)) return false;
   let best: GameState["groundItems"][number] | null = null, bd = 1.0;
-  for (const g of state.groundItems) { const d = Math.hypot(g.x - state.pos.x, g.z - state.pos.z); if (d < bd) { bd = d; best = g; } }
+  for (const g of state.groundItems) { const d = Math.hypot(g.x - state.pos.x, g.z - state.pos.z) + Math.abs((g.y ?? 0) - (state.level?.y ?? 0)) * 10; if (d < bd) { bd = d; best = g; } }
   if (!best) return false;
   // Can't take it (hand or inventory full): the press is left for something else (eating what's in the hand).
   const blocked = best.kind === "groceryBag" ? !!(state.groceryBag || state.hands.left) : best.kind === "bottle" ? !!(state.heldTrash || state.heldSlot !== null || state.hands.right) : !state.life.inventory.some((x, i) => i > 0 && x === null);
@@ -119,7 +119,7 @@ export function stepInventory(state: GameState) {
     if (!a.done && t >= DROP_CONTACT && a.target) {
       a.done = true;
       const contents = a.item === "groceryBag" ? state.groceryBag ?? [] : undefined;
-      state.groundItems.push({ id: nextGround++, kind: a.item, x: a.target.x, z: a.target.z, yaw: state.rotY, at: state.simulationTime, ...(contents ? { contents } : {}) });
+      state.groundItems.push({ id: nextGround++, kind: a.item, x: a.target.x, z: a.target.z, ...(state.level ? { y: state.level.y } : {}), yaw: state.rotY, at: state.simulationTime, ...(contents ? { contents } : {}) });
       if (a.item === "bottle") state.heldTrash = null;
       else if (a.item === "groceryBag") state.groceryBag = null;
       else if (state.heldSlot !== null) { removeItem(state.life.inventory, state.heldSlot); state.heldSlot = null; }

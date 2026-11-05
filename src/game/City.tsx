@@ -118,7 +118,7 @@ export function City({ city, far: allFar, state }: { city: CityT; far: FarScener
     [glowTex],
   );
 
-  const buildings = useMemo(() => facadeMats.map((_, i) => [...city.buildings, ...farBuildings].filter((b) => b.variant === i % 4 && buildingLayout(b).style === Math.floor(i / 4)).map((b) => {
+  const buildings = useMemo(() => facadeMats.map((_, i) => [...city.buildings, ...farBuildings].filter((b) => b.venue !== "apartments" && b.variant === i % 4 && buildingLayout(b).style === Math.floor(i / 4)).map((b) => {
     const L = buildingLayout(b);
     // Above a restaurant the building starts at its first floor: the restaurant itself is open inside.
     const base = openGroundFloor(b) ? BUILDING_ENTRANCE.floorHeight : 0, h = b.h - base;

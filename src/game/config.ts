@@ -318,13 +318,18 @@ export type Building = { x: number; z: number; w: number; d: number; h: number; 
 
 /** Places with a room you walk into on the ground floor besides the restaurants: the shops, the police and the
  * hospital. Each is in a fixed block by the park, in its building nearest the park. */
-export type VenueKind = "grocery" | "clothing" | "bikes" | "gym" | "hospital" | "police";
-export const VENUE_BLOCKS: Record<VenueKind, [number, number]> = {
+export type VenueKind = "grocery" | "clothing" | "bikes" | "gym" | "hospital" | "police" | "apartments";
+export const VENUE_BLOCKS: Record<Exclude<VenueKind, "apartments">, [number, number]> = {
   grocery: [0, -1], clothing: [1, 0], bikes: [-1, 0], gym: [0, 1], hospital: [1, 1], police: [-1, -1],
 };
 const VENUE_AT = new Map(Object.entries(VENUE_BLOCKS).map(([k, [i, j]]) => [`${i},${j}`, k as VenueKind]));
+/** The six apartment buildings' blocks (one building in each: 15 floors, the lobby on the ground floor). */
+export const APARTMENT_BLOCKS: [number, number][] = [[2, -2], [-2, 2], [3, 1], [-3, -1], [1, 3], [-1, -3]];
+const APARTMENT_AT = new Set(APARTMENT_BLOCKS.map(([i, j]) => `${i},${j}`));
+/** An apartment building is 15 floors: the 5 m lobby, then fourteen 3 m floors. */
+export const APT_HEIGHT = BUILDING_ENTRANCE.floorHeight + 14 * 3;
 /** Blocks that are never parks (they hold places people go into, now or soon). */
-const BUILT_BLOCKS = new Set([...VENUE_AT.keys(), "1,-1", "-1,1"]);
+const BUILT_BLOCKS = new Set([...VENUE_AT.keys(), ...APARTMENT_AT, "1,-1", "-1,1"]);
 /** A ground floor that is a room people walk into (drawn and made solid as such). */
 export const openGroundFloor = (b: Building) => !!(b.restaurant || b.venue);
 
@@ -435,6 +440,11 @@ export function generateCity(seed = 1337, focusX = 0, focusZ = 0, radius = 3): C
         if (venue) {
           const own = city.buildings.slice(first).filter((b) => !b.restaurant).sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z))[0];
           if (own) { own.venue = venue; own.door = i !== 0 ? "x" : "z"; }
+        }
+        // An apartment building: the block's building nearest the park, 15 floors tall.
+        if (APARTMENT_AT.has(`${i},${j}`)) {
+          const own = city.buildings.slice(first).sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z))[0];
+          if (own) { own.venue = "apartments"; own.h = APT_HEIGHT; }
         }
       } else if (!center) {
         const reach = (size: number) => Math.floor((size / 2 - 8) / 6);

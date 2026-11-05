@@ -3,7 +3,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useRapier } from "@react-three/rapier";
 import * as THREE from "three";
 import type { GameState } from "./state";
-import { uiCaptured } from "./state";
+import { groundAt, uiCaptured } from "./state";
 import { floorHeight, recenterOrbit, cameraRecenterReady, SIDEWALK_H } from "./config";
 import { CEILING, toLocal } from "./restaurantRoom";
 
@@ -223,15 +223,33 @@ export function CameraRig({ state }: { state: GameState }) {
         const wall = (from: number, d: number, lo: number, hi: number) => { if (d > 1e-6) reach = Math.min(reach, (hi - from) / d); else if (d < -1e-6) reach = Math.min(reach, (lo - from) / d); };
         if (keepIn) {
           wall(tx, dx, b.minX + m, b.maxX - m); wall(tz, dz, b.minZ + m, b.maxZ - m);
-          wall(target.y, dy, SIDEWALK_H + 0.2, SIDEWALK_H + CEILING - m);
+          // (Up in an apartment building: that floor's own floor and ceiling.)
+          const base = state.level ? state.level.y : SIDEWALK_H, top = state.level ? 2.8 : CEILING;
+          wall(target.y, dy, base + 0.2, base + top - m);
         } else if (dz < -1e-6) reach = Math.min(reach, (0.3 - tz) / dz);
+        // Walls inside the room (an apartment floor's): the camera stops in front of the first one in the way.
+        const walls = (room as { walls?: { x: number; z: number; hx: number; hz: number }[] }).walls;
+        if (keepIn && walls) for (const w of walls) {
+          let t0 = 0, t1 = Infinity;
+          const slab = (o: number, d: number, lo: number, hi: number) => {
+            if (Math.abs(d) < 1e-6) { if (o < lo || o > hi) t1 = -1; return; }
+            let a = (lo - o) / d, c = (hi - o) / d; if (a > c) [a, c] = [c, a];
+            t0 = Math.max(t0, a); t1 = Math.min(t1, c);
+          };
+          slab(tx, dx, w.x - w.hx - 0.12, w.x + w.hx + 0.12); slab(tz, dz, w.z - w.hz - 0.12, w.z + w.hz + 0.12);
+          if (t1 >= t0 && t0 > 0) reach = Math.min(reach, t0);
+        }
         allowed = Math.min(allowed, Math.max(0.08, reach));
       }
     }
+    // Riding an elevator: close behind, inside the car.
+    if (state.elevator && state.elevator.phase !== "leaving") allowed = Math.min(allowed, 0.55);
     distance.current = allowed < distance.current ? allowed : distance.current + (allowed - distance.current) * (1 - Math.exp(-5 * dt));
     camera.position.copy(target).addScaledVector(direction, distance.current);
     // Analytic floor safety also covers freshly streamed colliders before their first physics step.
-    camera.position.y = Math.max(camera.position.y, floorHeight(camera.position.x, camera.position.z) + 0.23);
+    camera.position.y = Math.max(camera.position.y, groundAt(state, camera.position.x, camera.position.z) + 0.23);
+    // Up in an apartment building, the camera stays under the floor's ceiling.
+    if (state.level) camera.position.y = Math.min(camera.position.y, state.level.y + 2.6);
     // Continuous up vector permits full vertical loops without a pole flip.
     up.set(-Math.sin(yaw) * Math.sin(pitch), Math.cos(pitch), -Math.cos(yaw) * Math.sin(pitch));
     camera.up.copy(up); camera.lookAt(target);

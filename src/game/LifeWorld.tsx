@@ -7,12 +7,13 @@ import { toLocal, worldYaw } from "./restaurantRoom";
 import { venueService } from "./venueRoom";
 import { Storefronts } from "./Storefronts";
 import * as THREE from "three";
-import { SIDEWALK_H, floorHeight, timeInfo } from "./config";
+import { SIDEWALK_H, floorHeight, timeInfo, generateCity } from "./config";
 import { InteractionPrompt } from "./InteractionPrompt";
 import { STOP_REACH, jobInteract, nearBuskSpot, startBusking, stopBusking } from "./jobs";
 import { skillLevel } from "./life";
 import { guideDone, lifeEvent, stepLife } from "./lifeRuntime";
-import { ATMS, ATM_REACH, ATM_SIZE, BUSK_SPOT, doorOf, homeBuilding } from "./places";
+import { ATMS, ATM_REACH, ATM_SIZE, BUSK_SPOT, doorOf } from "./places";
+import { aptKey } from "./apartments";
 import { toast, type GameState } from "./state";
 
 const near = (state: GameState, x: number, z: number, r: number) => Math.hypot(state.pos.x - x, state.pos.z - z) < r;
@@ -21,7 +22,7 @@ const near = (state: GameState, x: number, z: number, r: number) => Math.hypot(s
 export function homeDoor(state: GameState) {
   const home = state.life.home;
   if (!home) return null;
-  const b = homeBuilding(state.worldSeed, home.kind);
+  const b = generateCity(state.worldSeed, 0, 0, 4).buildings.find((c) => aptKey(c) === home.building);
   return b ? doorOf(b) : null;
 }
 
@@ -43,7 +44,7 @@ export function LifeWorld({ state }: { state: GameState }) {
   useFrame((_, raw) => {
     const dt = Math.min(raw, 0.1), p = state.pos;
     // The home's door is looked up only when the home changes.
-    const key = state.life.home ? `${state.life.home.kind}` : "";
+    const key = state.life.home ? state.life.home.building : "";
     if (key !== doorKey.current) { doorKey.current = key; door.current = homeDoor(state); }
 
     // ---- distances walked and ridden (for goals and skills) ----
@@ -133,13 +134,6 @@ export function LifeWorld({ state }: { state: GameState }) {
         return;
       }
       if (nearBuskSpot(state) && !state.job && !state.bench) { state.interactQueued = false; startBusking(state); return; }
-      const d = door.current;
-      if (d && near(state, d.x, d.z, 1.8) && !state.job) {
-        state.interactQueued = false;
-        state.home = { returnTo: [d.x, d.z], returnYaw: d.yaw };
-        state.keys.clear();
-        return;
-      }
     }
   }, -0.6);
 
@@ -159,8 +153,6 @@ export function LifeWorld({ state }: { state: GameState }) {
       const atm = ATMS.find((a) => near(state, a.x, a.z, ATM_REACH));
       if (atm) return { visible: true, x: atm.x, y: 2.2, z: atm.z, time: state.simulationTime, label: "E  ATM" };
       if (nearBuskSpot(state) && !state.job) return { visible: true, x: BUSK_SPOT.x, y: 2.1, z: BUSK_SPOT.z, time: state.simulationTime, label: state.busking ? "E  STOP" : "E  PLAY" };
-      const d = door.current;
-      if (d && near(state, d.x, d.z, 1.8)) return { visible: true, x: d.x, y: 2.4, z: d.z, time: state.simulationTime, label: "E  HOME" };
       return { visible: false, x: 0, y: 0, z: 0, time: 0 };
     }} />
   </>;

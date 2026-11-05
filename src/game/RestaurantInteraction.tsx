@@ -73,7 +73,7 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
         const [x, z] = toWorld(door.room.frame, 0, 0.45);
         Object.assign(p, { visible: true, x, y: SIDEWALK_H + 2.05, z, label: door.open ? undefined : "CLOSED" });
       }
-    } else if (inter?.phase === "inside" && room && !state.seat && !state.accident) {
+    } else if (inter?.phase === "inside" && room && !(room as { upper?: number }).upper && !state.seat && !state.accident) {
       const [lx, lz] = toLocal(room.frame, state.pos.x, state.pos.z), yaw = localYaw(room.frame, state.rotY);
       if (nearDoorInside(lx, lz)) {
         inDoor = room;
@@ -115,7 +115,7 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
             state.keys.clear(); state.jumpQueued = false;
           }
         }
-      } else if (inter) {
+      } else if (inter && !(room as { upper?: number } | null)?.upper) {
         state.interactQueued = false;
         const found = chair as { room: Room; index: number } | null;
         if (inDoor) {

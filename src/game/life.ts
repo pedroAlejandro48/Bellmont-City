@@ -1,4 +1,5 @@
-import { newInventory, readInventory, type Inventory } from "./inventory";
+import { newInventory, readInventory, addItem, type Inventory } from "./inventory";
+import { FREE_DAYS, type ApartmentHome } from "./apartments";
 
 // Life in the city (pure, testable): money in the bank, loans and credit, taxes and bills, experience and
 // levels, skills, daily goals and the first-day guide, jobs' pay, and a home. The game state keeps one `Life`;
@@ -13,8 +14,8 @@ export type Txn = { day: number; label: string; amount: number };
 export type Quest = { id: QuestId; goal: number; progress: number; done: boolean; reward: number };
 export type QuestId = "eat" | "ride" | "earn" | "work" | "walk" | "atm" | "park";
 
-export type Home = { kind: HomeKind; building: [number, number]; since: number } | null;
-export type HomeKind = "studio" | "loft";
+/** Where the player lives: a small apartment on one floor of an apartment building, or nowhere. */
+export type Home = ApartmentHome | null;
 
 export type Life = {
   /** Money in the bank (cash is kept on the character, separately). */
@@ -78,7 +79,8 @@ export function readLife(value: unknown, day = 1): Life {
   return {
     bank: num("bank", 0, 1e9, base.bank), loan: num("loan", 0, 1e9, 0), credit: num("credit", 300, 850, base.credit), xp: num("xp", 0, 1e9, 0),
     skills, quests, questDay: num("questDay", 0, 1e9, day), guide: num("guide", 0, GUIDE.length, 0),
-    home: home && (home.kind === "studio" || home.kind === "loft") && Array.isArray(home.building) ? home : null,
+    // (Older saves' studios and lofts are gone: those players are between homes.)
+    home: home && home.kind === "apartment" && typeof home.building === "string" && typeof home.floor === "number" && typeof home.nextRent === "number" && typeof home.weekly === "number" ? home : null,
     billedDay: num("billedDay", 0, 1e9, day),
     fridge: Array.isArray(v["fridge"]) ? (v["fridge"] as unknown[]).filter((x): x is string => typeof x === "string").slice(0, 12) : [],
     ledger: Array.isArray(v["ledger"]) ? (v["ledger"] as Txn[]).filter((t) => t && typeof t.amount === "number").slice(0, 30) : [],
@@ -168,10 +170,8 @@ export function repay(life: Life, amount: number, day: number) {
 }
 
 // ---------- homes and bills ----------
-export const HOMES: Record<HomeKind, { name: string; rent: number; deposit: number; utilities: number; minLevel: number }> = {
-  studio: { name: "Studio apartment", rent: 40, deposit: 80, utilities: 6, minLevel: 1 },
-  loft: { name: "City loft", rent: 110, deposit: 220, utilities: 12, minLevel: 4 },
-};
+/** What renting is called (one kind of home for now). */
+export const HOME_NAME = "Small apartment";
 /** Phone bill and the like, for everyone. */
 export const BASE_BILL = 3;
 
@@ -183,7 +183,8 @@ export function dailyBills(life: Life, day: number) {
     if (interest > 0) { life.bank = round(life.bank + interest); lines.push({ day: d, label: "Savings interest", amount: interest }); }
     const charges: [string, number][] = [["Phone plan", BASE_BILL]];
     if (life.insured) charges.push(["Health plan", HEALTH_PLAN]);
-    if (life.home) { const h = HOMES[life.home.kind]; charges.push(["Rent", h.rent], ["Utilities", h.utilities]); }
+    // The week's rent, every seventh day (the first week was free).
+    if (life.home && d >= life.home.nextRent) { charges.push([`Rent (week, floor ${life.home.floor})`, life.home.weekly]); life.home.nextRent += 7; }
     if (life.loan > 0) charges.push(["Loan interest", round(life.loan * LOAN_RATE)]);
     for (const [label, amount] of charges) {
       if (life.bank >= amount) { life.bank = round(life.bank - amount); lines.push({ day: d, label, amount: -amount }); life.credit = Math.min(850, life.credit + 1); }
@@ -233,19 +234,25 @@ export function spend(life: Life, cash: number, amount: number, day: number, lab
   return { ok: true, cash: round(cash - fromCash) };
 }
 
-export function rentHome(life: Life, kind: HomeKind, building: [number, number], day: number) {
-  const h = HOMES[kind];
-  if (levelOf(life.xp).level < h.minLevel) return "level" as const;
-  if (life.bank < h.deposit) return "money" as const;
-  life.bank = round(life.bank - h.deposit); record(life, day, `${h.name}: deposit`, -h.deposit);
-  life.home = { kind, building, since: day };
-  return "ok" as const;
+/**
+ * Renting a small apartment on `floor` of a building: nothing to pay now (the first week is free), the key goes in
+ * the inventory, and the week's rent comes out of the bank every seventh day from then. Moving here moves out of
+ * any other place. "full" when there's no room for the key.
+ */
+export function rentApartment(life: Life, building: string, floor: number, weekly: number, day: number): "ok" | "full" {
+  const hadKey = life.inventory.includes("key");
+  if (!hadKey && addItem(life.inventory, "key") < 0) return "full";
+  life.home = { kind: "apartment", building, floor, since: day, nextRent: day + FREE_DAYS, weekly };
+  record(life, day, `${HOME_NAME}, floor ${floor}: first week free`, 0);
+  return "ok";
 }
-export function leaveHome(life: Life, day: number) {
+/** Moving out: the key is handed back and the fridge is cleared. */
+export function moveOut(life: Life, day: number) {
   if (!life.home) return;
-  const h = HOMES[life.home.kind];
-  life.bank = round(life.bank + h.deposit / 2); record(life, day, "Deposit returned (half)", h.deposit / 2);
+  record(life, day, `Moved out of floor ${life.home.floor}`, 0);
   life.home = null; life.fridge = [];
+  const k = life.inventory.indexOf("key");
+  if (k > 0) life.inventory[k] = null;
 }
 
 // ---------- daily goals ----------
@@ -287,7 +294,7 @@ export const GUIDE = [
   { text: "Take cash out at an ATM (marked on the map)", hint: "Walk up to one and press E." },
   { text: "Buy something to eat at a restaurant", hint: "Restaurants face the park." },
   { text: "Do a job from the Jobs app", hint: "Courier gigs are the easiest start." },
-  { text: "Rent a home from the Home app", hint: "Sleep there and keep food in the fridge." },
+  { text: "Rent an apartment at an apartment building's reception", hint: "Choose a floor; the first week is free. Find them on the Map." },
 ] as const;
 
 // ---------- jobs ----------

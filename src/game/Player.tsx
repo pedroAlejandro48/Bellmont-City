@@ -8,6 +8,7 @@ import { DROP_TIME, EAT_SECONDS, GRAB_TIME, PACK_SIZE, dropReach, grabReach } fr
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { SIGNAL_POLES, benchJoints, benchPose, floorHeight, cameraRelativeVelocity, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, type City, PARK_SOLIDS, circleBoxPush, bikePushShare, scooterFootprint, scooterSide, SCOOTER_TIP, BENCH_SEATS, BENCH_SIT_SECONDS, BENCH_STAND_SECONDS, benchStandHeight, BENCH_SEAT_TOP, BENCH_BACK_TOP, BENCH_BACKRESTS, FALLEN_BIKE_TOP, fallenBikeStandHeight, PARK_BINS, BIN } from "./config";
+import { groundAt } from "./state";
 import type { GameState } from "./state";
 import { BODY_PARTS, CharacterBody, useBodyRig } from "./CharacterBody";
 import { bumpOthers } from "@/multiplayer/bump";
@@ -146,20 +147,20 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     const grabbing = grab !== null && grabT < GRAB_TIME;
     // Putting food down (Q), or picking something up off the ground: a squat.
     const dropT = state.drop ? state.simulationTime - state.drop.at : Infinity, dropping = dropT < DROP_TIME;
-    const lowGrab = grabbing && grab !== null && grab.target.y - floorHeight(grab.target.x, grab.target.z) < 0.8;
+    const lowGrab = grabbing && grab !== null && grab.target.y - groundAt(state, grab.target.x, grab.target.z) < 0.8;
     // Putting a thing from the inventory down, or picking one up: the same squat.
     const inv = state.invAct, invT = inv ? state.simulationTime - inv.at : Infinity;
     const invLow = !!inv && (inv.kind === "drop" || inv.kind === "pickup") && invT < DROP_TIME;
     const crouch = dropping ? dropReach(dropT) : lowGrab ? grabReach(grabT) : invLow ? dropReach(invT) : 0;
     if (script) {
       s.vel.set(0, 0, 0); s.vy = 0; s.grounded = true;
-      p.x = script.x; p.z = script.z; p.y = floorHeight(p.x, p.z);
+      p.x = script.x; p.z = script.z; p.y = groundAt(state, p.x, p.z);
       state.rotY = script.yaw;
     } else if (dead || incapacitated || usingBike || sitting) {
       s.vel.set(0, 0, 0);
       s.vy = 0;
       s.grounded = true;
-      p.y = floorHeight(p.x, p.z);
+      p.y = groundAt(state, p.x, p.z);
     } else if ((dropping || invLow) && s.grounded) {
       s.vel.set(damp(s.vel.x, 0, ACCEL * 2, dt), 0, damp(s.vel.z, 0, ACCEL * 2, dt));
     } else if (grabbing && s.grounded && grab) {
@@ -223,10 +224,10 @@ export function Player({ state, city }: { state: GameState; city: City }) {
         const dx = p.x - n.x, dz = p.z - n.z, d = Math.hypot(dx, dz), min = RADIUS + 0.35;
         if (d < min && d > 1e-5) { p.x = n.x + dx / d * min; p.z = n.z + dz / d * min; }
       }
-      const ground0 = floorHeight(p.x, p.z);
+      const ground0 = groundAt(state, p.x, p.z);
       for (const [i, box] of PARK_SOLIDS.entries()) { if (i < 4 && p.y - ground0 >= BENCH_SEAT_TOP - 0.1) { const back = BENCH_BACKRESTS[i]; if (back && p.y - ground0 < BENCH_BACK_TOP - 0.05) { const [bx, bz] = circleBoxPush(p.x, p.z, RADIUS, back); p.x += bx; p.z += bz; } continue; } const [dx, dz] = circleBoxPush(p.x, p.z, RADIUS, box); p.x += dx; p.z += dz; }
       // Up on a fallen bike, it is underfoot rather than in the way.
-      const onTop = (p.y - floorHeight(p.x, p.z)) >= FALLEN_BIKE_TOP - 0.12;
+      const onTop = (p.y - groundAt(state, p.x, p.z)) >= FALLEN_BIKE_TOP - 0.12;
       const [dx, dz] = bike.fallen && onTop ? [0, 0] : circleBoxPush(p.x, p.z, RADIUS, scooterFootprint(bike.pos.x, bike.pos.z, bike.yaw, bike.fallen, bike.fallSide));
       if (dx || dz) {
         if (!bike.fallen) {
@@ -254,7 +255,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       }
     }
 
-    const ground = floorHeight(p.x, p.z);
+    const ground = groundAt(state, p.x, p.z);
     // Benches and fallen bikes can be stood on (jumped up onto, walked along).
     let standOn = benchStandHeight(p.x, p.z, p.y - ground);
     if (!sitting && !usingBike && !incapacitated) {
@@ -364,7 +365,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
         const walkK = Math.min(1, progress / 0.22);
         p.lerpVectors(bike.actionOrigin, stance, ease(walkK));
         if (progress > 0.22) p.copy(stance);
-        p.y = floorHeight(p.x, p.z);
+        p.y = groundAt(state, p.x, p.z);
         // Squat once there (not while still walking up).
         const bend = progress < 0.3 ? ease((progress - 0.1) / 0.2) : 1 - liftT;
         hipL = hipR = -1.3 * bend; kneeL = kneeR = 1.9 * bend;
@@ -425,7 +426,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
         const t = Math.min(1, age / (state.bench.phase === "stand" ? BENCH_STAND_SECONDS : BENCH_SIT_SECONDS));
         const pose = benchPose(seat, state.bench.phase, t, state.bench.origin, state.bench.originYaw);
         p.x = pose.x; p.z = pose.z; state.rotY = pose.yaw;
-        p.y = floorHeight(p.x, p.z);
+        p.y = groundAt(state, p.x, p.z);
         const j = benchJoints(pose.seated);
         hipL = hipR = j.hip; kneeL = kneeR = j.knee;
         lean = j.lean; riderOffset = j.riderOffset;
@@ -493,14 +494,14 @@ export function Player({ state, city }: { state: GameState; city: City }) {
         root.current?.updateMatrixWorld(true);
         // A bag of groceries is set down (and picked up) with the left hand; everything else with the right.
         const bag = inv.item === "groceryBag";
-        const at = new THREE.Vector3(inv.target.x, floorHeight(inv.target.x, inv.target.z) + (bag ? 0.38 : 0.2), inv.target.z);
+        const at = new THREE.Vector3(inv.target.x, groundAt(state, inv.target.x, inv.target.z) + (bag ? 0.38 : 0.2), inv.target.z);
         if (bag) reachArm(armL.current, foreL.current, at, POLES.low(1), dropReach(invT));
         else reachArm(armR.current, foreR.current, at, POLES.low(-1), dropReach(invT));
       }
       if (dropping && root.current) {
         // Each hand sets its food down on the ground beside the feet.
         root.current.updateMatrixWorld(true);
-        const fx = Math.sin(state.rotY), fz = Math.cos(state.rotY), lx = Math.cos(state.rotY), lz = -Math.sin(state.rotY), floor = floorHeight(p.x, p.z);
+        const fx = Math.sin(state.rotY), fz = Math.cos(state.rotY), lx = Math.cos(state.rotY), lz = -Math.sin(state.rotY), floor = groundAt(state, p.x, p.z);
         for (const side of [1, -1] as const) {
           const held = side === 1 ? state.hands.left : state.hands.right;
           if (!held) continue;

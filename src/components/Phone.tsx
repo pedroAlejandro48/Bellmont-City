@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Banknote, Briefcase, CircleUser, Home as HomeIcon, ListChecks, Map as MapIcon, X } from "lucide-react";
+import { ArrowLeft, Banknote, Briefcase, CircleUser, ListChecks, Map as MapIcon, X } from "lucide-react";
 import { HALF, blockCenter, formatClock, generateCity, timeInfo, BLOCK } from "@/game/config";
-import { FINE_DAYS, finesOwed, payFines, GUIDE, HOMES, JOBS, QUEST_TEXT, SKILLS, SKILL_NAMES, borrow, deposit, leaveHome, levelOf, loanLimit, rentHome, repay, skillLevel, withdraw, type HomeKind, type JobId } from "@/game/life";
+import { FINE_DAYS, finesOwed, payFines, GUIDE, JOBS, QUEST_TEXT, SKILLS, SKILL_NAMES, borrow, deposit, levelOf, loanLimit, repay, skillLevel, withdraw, type JobId } from "@/game/life";
 import { canStart, quitJob, startJob } from "@/game/jobs";
-import { ATMS, BUSK_SPOT, doorOf, homeBuilding } from "@/game/places";
+import { ATMS, BUSK_SPOT, doorOf } from "@/game/places";
 import { guideDone, lifeEvent } from "@/game/lifeRuntime";
 import { toast, type GameState } from "@/game/state";
 import { WEATHER_NAME } from "@/game/weather";
@@ -14,7 +14,6 @@ const APPS = [
   { id: "bank", name: "Bank", icon: Banknote, color: "#1f5fbf" },
   { id: "jobs", name: "Jobs", icon: Briefcase, color: "#e07a1f" },
   { id: "map", name: "Map", icon: MapIcon, color: "#2e9d5b" },
-  { id: "home", name: "Home", icon: HomeIcon, color: "#8a5cd6" },
   { id: "goals", name: "Goals", icon: ListChecks, color: "#d6455d" },
   { id: "profile", name: "Profile", icon: CircleUser, color: "#3a8fb7" },
 ] as const;
@@ -69,7 +68,6 @@ export function Phone({ state }: { state: GameState }) {
             {ph.app === "bank" && <BankApp state={state} atm={ph.atm} />}
             {ph.app === "jobs" && <JobsApp state={state} onDone={close} />}
             {ph.app === "map" && <MapApp state={state} onPick={close} />}
-            {ph.app === "home" && <HomeApp state={state} onGps={close} />}
             {ph.app === "goals" && <GoalsApp state={state} />}
             {ph.app === "profile" && <ProfileApp state={state} />}
           </div>
@@ -151,8 +149,8 @@ function MapApp({ state, onPick }: { state: GameState; onPick: () => void }) {
       ATMS.forEach((a) => dot(a.x, a.z, "#4fb3ff", 3.5));
       dot(BUSK_SPOT.x, BUSK_SPOT.z, "#ffd166", 3.5);
       shops.forEach((s) => { dot(s.door.x, s.door.z, "#ffffff", 5); dot(s.door.x, s.door.z, SHOPS[s.kind].color === "#ffffff" ? "#d62f3a" : SHOPS[s.kind].color, 3.6); });
-      const home = state.life.home ? homeBuilding(state.worldSeed, state.life.home.kind) : null;
-      if (home) { const d = doorOf(home); dot(d.x, d.z, "#b388ff", 5.5); }
+      // The apartment buildings (purple), and the one with your home ringed.
+      city.buildings.filter((b) => b.venue === "apartments").forEach((b) => { const d = doorOf(b); dot(d.x, d.z, "#b388ff", 4.5); if (state.life.home?.building === `${b.x}:${b.z}`) { g.strokeStyle = "#ffffff"; g.lineWidth = 2; g.beginPath(); g.arc(X(d.x), Y(d.z), 8, 0, Math.PI * 2); g.stroke(); } });
       const w = state.waypoint;
       if (w) { g.strokeStyle = "#5ec8ff"; g.lineWidth = 2; g.setLineDash([5, 4]); g.beginPath(); g.moveTo(X(state.pos.x), Y(state.pos.z)); g.lineTo(X(w.x), Y(w.z)); g.stroke(); g.setLineDash([]); dot(w.x, w.z, "#5ec8ff", 6); }
       // You: an arrow the way you face.
@@ -172,41 +170,9 @@ function MapApp({ state, onPick }: { state: GameState; onPick: () => void }) {
   };
   return <>
     <canvas ref={canvas} className="phone-map" width={600} height={600} onPointerDown={pick} />
-    <div className="phone-legend"><span><i style={{ background: "#ff9f43" }} />Restaurants</span><span><i style={{ background: "#4fb3ff" }} />ATMs</span><span><i style={{ background: "#b388ff" }} />Home</span><span><i style={{ background: "#ffd166" }} />Busking</span><span><i style={{ background: "#fff", boxShadow: "inset 0 0 0 3px #2e9d5b" }} />Shops</span></div>
+    <div className="phone-legend"><span><i style={{ background: "#ff9f43" }} />Restaurants</span><span><i style={{ background: "#4fb3ff" }} />ATMs</span><span><i style={{ background: "#b388ff" }} />Apartments</span><span><i style={{ background: "#ffd166" }} />Busking</span><span><i style={{ background: "#fff", boxShadow: "inset 0 0 0 3px #2e9d5b" }} />Shops</span></div>
     <p className="phone-note">Tap the map to set a route. </p>
     {state.waypoint && <button type="button" className="phone-btn ghost" onClick={() => { state.waypoint = null; }}>Clear route</button>}
-  </>;
-}
-
-function HomeApp({ state, onGps }: { state: GameState; onGps: () => void }) {
-  const [msg, setMsg] = useState<string | null>(null), [, tick] = useState(0);
-  const life = state.life, day = timeInfo(state.elapsed).day, { level } = levelOf(life.xp);
-  if (life.home) {
-    const h = HOMES[life.home.kind];
-    return <>
-      <div className="bank-card home"><span>Your home</span><b>{h.name}</b><span>Rent {money(h.rent)} + utilities {money(h.utilities)} a day</span></div>
-      <div className="phone-row">
-        <button type="button" className="phone-btn" onClick={() => { const b = homeBuilding(state.worldSeed, life.home!.kind); if (b) { const d = doorOf(b); state.waypoint = { x: d.x, z: d.z, label: "Home" }; onGps(); } }}>Route home</button>
-        <button type="button" className="phone-btn ghost" onClick={() => { leaveHome(life, day); tick((n) => n + 1); }}>Move out</button>
-      </div>
-      <p className="phone-note">At home: sleep in your bed to get your health back and skip the night (alone), and keep food in the fridge.</p>
-    </>;
-  }
-  return <>
-    {(Object.keys(HOMES) as HomeKind[]).map((k) => {
-      const h = HOMES[k];
-      return <div key={k} className="phone-job">
-        <div><b>{h.name}</b><p>Rent {money(h.rent)} + {money(h.utilities)} utilities a day · deposit {money(h.deposit)}</p>{h.minLevel > level && <small className="bad">From level {h.minLevel}</small>}</div>
-        <button type="button" className="phone-btn" disabled={h.minLevel > level} onClick={() => {
-          const b = homeBuilding(state.worldSeed, k); if (!b) return;
-          const r = rentHome(life, k, [b.x, b.z], day);
-          if (r === "money") setMsg(`You need ${money(h.deposit)} in the bank for the deposit.`);
-          else if (r === "level") setMsg(`You need level ${h.minLevel}.`);
-          else { toast(state, "Home rented!", "money", `${h.name}. Your route home is on the map.`); guideDone(state, 4); const d = doorOf(b); state.waypoint = { x: d.x, z: d.z, label: "Your new home" }; onGps(); }
-        }}>Rent</button>
-      </div>;
-    })}
-    {msg && <p className="phone-note bad">{msg}</p>}
   </>;
 }
 

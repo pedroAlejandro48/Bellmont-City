@@ -760,7 +760,8 @@ export function Restaurants({ city, state }: { city: City; state: GameState }) {
     lights.current.forEach((light, i) => {
       if (!light) return;
       const spot = spots[i];
-      if (spot) light.position.set(spot[0], SIDEWALK_H + CEILING - 0.4, spot[1]);
+      // (Up in an apartment building the lights hang from that floor's ceiling, over its rooms.)
+      if (spot) light.position.set(spot[0], state.level ? state.level.y + 2.45 : SIDEWALK_H + CEILING - 0.4, spot[1]);
       light.intensity = spot ? (on ? (i === 0 ? 22 : 9) : 1.2) : 0;
       // At night always on (so the number of lights never changes then); by day only near a restaurant.
       light.visible = !!spot || d > 0.03;

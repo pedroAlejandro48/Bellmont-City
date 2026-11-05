@@ -1,7 +1,6 @@
 // Fixed places for life in the city (pure): ATMs, the busking spot, where homes are, and street addresses for
 // deliveries (in front of a building's door).
 import { SIDEWALK_H, blockIndex, buildingLayout, generateCity, type Building } from "./config";
-import type { HomeKind } from "./life";
 
 /** ATMs on the park's sidewalk, one on each side (opposite the bins), facing the street. */
 export const ATMS: { x: number; z: number; yaw: number }[] = [
@@ -21,12 +20,6 @@ export function doorOf(b: Building): { x: number; z: number; yaw: number } {
   return { x: b.x, z: b.z + L.sz * (b.d / 2 + 1.2), yaw: L.sz > 0 ? 0 : Math.PI };
 }
 
-/** The buildings where homes can be rented: a studio block and a loft block, near the park. */
-export function homeBuilding(seed: number, kind: HomeKind): Building | null {
-  const want: [number, number] = kind === "studio" ? [1, -1] : [-1, 1];
-  const city = generateCity(seed, 0, 0);
-  return city.buildings.find((b) => !b.restaurant && blockIndex(b.x) === want[0] && blockIndex(b.z) === want[1]) ?? null;
-}
 
 /** A delivery address between `min` and `max` metres (straight line) from (x, z): a building's front door. */
 export function pickAddress(seed: number, x: number, z: number, min: number, max: number, random: () => number) {

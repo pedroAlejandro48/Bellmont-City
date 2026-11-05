@@ -178,7 +178,7 @@ export function InventoryWorld({ state }: { state: GameState }) {
           const it = items[i];
           c.visible = !!it;
           if (!it) return;
-          c.position.set(it.x, floorHeight(it.x, it.z) + (it.kind === "groceryBag" ? 0.4 : 0), it.z);
+          c.position.set(it.x, (it.y ?? floorHeight(it.x, it.z)) + (it.kind === "groceryBag" ? 0.4 : 0), it.z);
           c.rotation.set(it.kind === "bottle" || it.kind === "water" ? Math.PI / 2 : 0, it.yaw, 0, "YXZ");
           (c.children as THREE.Group[]).forEach((m) => { m.visible = m.userData["kind"] === it.kind; });
         });
@@ -205,7 +205,7 @@ export function InventoryWorld({ state }: { state: GameState }) {
       let best: GameState["groundItems"][number] | null = null, bd = 1.0;
       for (const g of state.groundItems) { const d = Math.hypot(g.x - state.pos.x, g.z - state.pos.z); if (d < bd) { bd = d; best = g; } }
       if (!best) return { visible: false, x: 0, y: 0, z: 0, time: 0 };
-      return { visible: true, x: best.x, y: floorHeight(best.x, best.z) + 0.45, z: best.z, time: state.simulationTime, label: `E  ${best.kind === "bottle" ? "EMPTY BOTTLE" : best.kind === "groceryBag" ? "GROCERIES" : ITEMS[best.kind].name.toUpperCase()}` };
+      return { visible: true, x: best.x, y: (best.y ?? floorHeight(best.x, best.z)) + 0.45, z: best.z, time: state.simulationTime, label: `E  ${best.kind === "bottle" ? "EMPTY BOTTLE" : best.kind === "groceryBag" ? "GROCERIES" : ITEMS[best.kind].name.toUpperCase()}` };
     }} />
   </>;
 }

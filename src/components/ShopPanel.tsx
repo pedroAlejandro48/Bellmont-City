@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { timeInfo } from "@/game/config";
 import { isDrinkName } from "@/game/food";
-import { FINE_DAYS, HEALTH_PLAN, finesOwed, gainSkill, gainXp, payFines, record, spend } from "@/game/life";
+import { FINE_DAYS, HEALTH_PLAN, HOME_NAME, finesOwed, gainSkill, gainXp, moveOut, payFines, record, rentApartment, spend } from "@/game/life";
+import { APT_FLOORS, freeFloors, rentFor } from "@/game/apartments";
 import { guideDone, lifeEvent, payJob } from "@/game/lifeRuntime";
 import { canConsume, consume } from "@/game/needs";
 import { GROCERIES, OUTFITS, OUTFIT_PRICE, PAINTS, PAINT_PRICE, SHOPS, TREATMENT_PRICE, WORKOUT_PRICE, clerkPay, foodValue, shopPlaces } from "@/game/shops";
@@ -46,6 +47,7 @@ export function ShopPanel({ state }: { state: GameState }) {
       {kind === "gym" && <Gym state={state} refresh={refresh} />}
       {kind === "hospital" && <Hospital state={state} refresh={refresh} />}
       {kind === "police" && <Police state={state} refresh={refresh} />}
+      {kind === "apartments" && <Reception state={state} refresh={refresh} />}
     </div>
   </div>;
 }
@@ -65,28 +67,6 @@ function Grocery({ state, refresh }: Props) {
   if (shift) return <ClerkShift state={state} onDone={() => { setShift(false); refresh(); }} />;
   return <>
     <p className="phone-note">Take what you want from the crates and shelves with your basket (E), then bring it here and press E to pay. Fruit and water go in your inventory from the bag (number keys).</p>
-    {false && <>
-    <p className="phone-label">Groceries</p>
-    <ul className="phone-list">{GROCERIES.map((g) => <li key={g.name}>
-      <span>{g.name}<small>{money(g.price)}{isDrinkName(g.name) ? "" : ` · as filling as a ${money(g.value)} restaurant meal`}</small></span>
-      <span className="shop-buttons">
-        <button type="button" className="phone-btn ghost" onClick={() => {
-          if (!canConsume(state, g.name)) { toast(state, isDrinkName(g.name) ? "Not thirsty" : "You're full", "warn"); return; }
-          if (!pay(state, g.price, g.name)) return;
-          const after = consume(state, g.name, foodValue(g.name)); state.hunger = after.hunger; state.thirst = after.thirst;
-          lifeEvent(state, "eat", 1); guideDone(state, 2); refresh();
-        }}>{isDrinkName(g.name) ? "Drink" : "Eat"}</button>
-        {g.item ? <button type="button" className="phone-btn" disabled={!state.life.inventory.some((x, i) => i > 0 && x === null)} title="Keep it in your inventory" onClick={() => {
-          if (!pay(state, g.price, g.name)) return;
-          giveItem(state, g.item!); refresh();
-        }}>Take</button> : <button type="button" className="phone-btn" disabled={!home || full} title={!home ? "Rent a home to have a fridge" : full ? "Your fridge is full" : ""} onClick={() => {
-          if (!pay(state, g.price, g.name)) return;
-          life.fridge.push(g.name); toast(state, `${g.name} → fridge`, "money"); refresh();
-        }}>To fridge</button>}
-      </span>
-    </li>)}</ul>
-    <p className="phone-note">{home ? `Fridge: ${life.fridge.length}/12.` : "Rent a home (Phone › Home) to keep groceries in a fridge."}</p>
-    </>}
     <p className="phone-label">Work here</p>
     <div className="phone-job"><div><b>Shop clerk</b> <small>J10</small><p>Restock the shelves for 40 seconds. Paid per shelf filled.</p></div>
       <button type="button" className="phone-btn" disabled={!!state.job} title={state.job ? "Finish your current job first" : ""} onClick={() => setShift(true)}>Work a shift</button></div>
@@ -186,6 +166,34 @@ function Hospital({ state, refresh }: Props) {
     <p className="phone-label">Health plan (B9)</p>
     <div className="phone-job"><div><b>{life.insured ? "You're covered" : "Bellmont Care"}</b><p>{money(HEALTH_PLAN)} a day from your bank. Treatment is free while it's on.</p></div>
       <button type="button" className={`phone-btn ${life.insured ? "ghost" : ""}`} onClick={() => { life.insured = !life.insured; toast(state, life.insured ? "Health plan started" : "Health plan cancelled", "info"); refresh(); }}>{life.insured ? "Cancel" : "Sign up"}</button></div>
+  </>;
+}
+
+/** The apartment building's reception: which floors are free today (higher ones cost less), renting one. */
+function Reception({ state, refresh }: Props) {
+  const life = state.life, day = today(state), building = state.interior?.key ?? "";
+  const free = freeFloors(state.worldSeed, building, day), home = life.home;
+  const mineHere = home?.building === building;
+  return <>
+    {mineHere && home && <div className="bank-card home"><span>You live here</span><b>Floor {home.floor}</b><span>{money(home.weekly)} a week · next payment on day {home.nextRent}</span></div>}
+    {mineHere && <p className="phone-note">Take the elevator (in the corner) to your floor; hold your key (its number) at your door.</p>}
+    <p className="phone-label">{HOME_NAME}s · free floors today</p>
+    <p className="phone-note">The first week is free; then the week's rent comes out of your bank every seven days. Higher floors cost less. Which floors are free changes every two days.</p>
+    <ul className="phone-list">{Array.from({ length: APT_FLOORS - 1 }, (_, k) => APT_FLOORS - k).map((f) => {
+      const open = free.includes(f) && !(mineHere && home?.floor === f);
+      return <li key={f} className={open ? "" : "taken"}>
+        <span>Floor {f}<small>{money(rentFor(f))} a week{mineHere && home?.floor === f ? " · yours" : open ? "" : " · taken"}</small></span>
+        <button type="button" className="phone-btn" disabled={!open} onClick={() => {
+          if (home && !mineHere && !window.confirm(`Move out of your apartment on floor ${home.floor} elsewhere?`)) return;
+          if (home) moveOut(life, day);
+          const r = rentApartment(life, building, f, rentFor(f), day);
+          if (r === "full") { toast(state, "No room for the key", "warn", "Make space in your inventory first."); return; }
+          toast(state, "Welcome home!", "money", `Floor ${f}. Your key is in your inventory. The first week is free.`);
+          guideDone(state, 4); refresh();
+        }}>Rent</button>
+      </li>;
+    })}</ul>
+    {mineHere && <button type="button" className="phone-btn ghost" onClick={() => { if (window.confirm("Move out and hand back your key?")) { moveOut(life, day); toast(state, "You moved out", "info"); refresh(); } }}>Move out</button>}
   </>;
 }
 

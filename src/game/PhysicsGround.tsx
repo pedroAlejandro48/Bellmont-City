@@ -17,6 +17,16 @@ export function PhysicsGround({ city, x, z, state }: { city: City; x: number; z:
     {city.buildings.filter((b) => near(b.x, b.z)).map((b) => {
       // A restaurant's ground floor is a room (its walls are below); the building is solid above it.
       const base = openGroundFloor(b) ? BUILDING_ENTRANCE.floorHeight : 0, h = b.h - base;
+      if (b.venue === "apartments") {
+        // Hollow above the lobby too (its floors are rooms): only its outside walls.
+        const y = base + h / 2 + SIDEWALK_H, t = 0.1;
+        return <group key={`b${b.x}:${b.z}`}>
+          <CuboidCollider args={[b.w / 2, h / 2, t]} position={[b.x, y, b.z - b.d / 2 + t]} />
+          <CuboidCollider args={[b.w / 2, h / 2, t]} position={[b.x, y, b.z + b.d / 2 - t]} />
+          <CuboidCollider args={[t, h / 2, b.d / 2]} position={[b.x - b.w / 2 + t, y, b.z]} />
+          <CuboidCollider args={[t, h / 2, b.d / 2]} position={[b.x + b.w / 2 - t, y, b.z]} />
+        </group>;
+      }
       return <CuboidCollider key={`b${b.x}:${b.z}`} args={[b.w / 2, h / 2, b.d / 2]} position={[b.x, base + h / 2 + SIDEWALK_H, b.z]} />;
     })}
     {city.trees.filter((t) => near(t.x, t.z)).map((t) => <CuboidCollider key={`t${t.x}:${t.z}`} args={[0.25, 2, 0.25]} position={[t.x, 2, t.z]} />)}
