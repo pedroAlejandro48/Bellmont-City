@@ -70,7 +70,7 @@ function Joystick({ state }: { state: GameState }) {
     if (knob.current) knob.current.style.transform = "translate(0px, 0px)";
   };
   return <div role="application" aria-label="Movement joystick"
-    className="touch-zone pointer-events-auto fixed bottom-0 left-0 z-20"
+    className="touch-zone pointer-events-auto fixed bottom-0 left-0 z-[5]"
     style={{ touchAction: "none", WebkitUserSelect: "none" }}
     onPointerDown={(e) => {
       if (finger.current !== null || e.pointerType === "mouse") return;

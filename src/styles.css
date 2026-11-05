@@ -516,3 +516,10 @@
 }
 /* Without the touch buttons on a narrow screen: above the health bars instead of over them. */
 @media (max-width: 639px) { .minimap:not(.touch) { width: 7.5rem; height: 7.5rem; right: 0.75rem; bottom: 8.5rem; } }
+/* A phone on its side: the three action buttons shrink to fit between the HUD row and the screen's right edge. */
+@media (orientation: landscape) and (max-height: 560px) {
+  .hud-needs { flex-basis: 12rem; width: 12rem; }
+  .touch-buttons { --btn: clamp(2rem, calc(((100vw - 24.5rem) / 2 - 1.5rem - 0.8rem) / 3), 2.75rem); gap: 0.4rem !important; right: calc(12px + env(safe-area-inset-right)); bottom: calc(0.75rem + env(safe-area-inset-bottom)); }
+  .touch-buttons button { width: var(--btn) !important; height: var(--btn) !important; font-size: 1.05rem !important; border-width: 2px; }
+  .minimap.touch { width: 6.5rem; height: 6.5rem; right: calc(12px + env(safe-area-inset-right)); bottom: calc(0.75rem + 2.75rem + 0.6rem + env(safe-area-inset-bottom)); }
+}
