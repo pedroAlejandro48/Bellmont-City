@@ -1,9 +1,9 @@
 // The shops around the park (pure): what each one is, where it is, and what it sells.
-import { RESTAURANTS, blockIndex, generateCity, type Building, type RestaurantKind } from "./config";
+import { RESTAURANTS, generateCity, type Building, type RestaurantKind, type VenueKind } from "./config";
 import { menuOf } from "./food";
 import { doorOf } from "./places";
 
-export type ShopKind = "grocery" | "clothing" | "bikes" | "gym" | "hospital" | "police";
+export type ShopKind = VenueKind;
 export const SHOPS: Record<ShopKind, { name: string; code: string; blurb: string; color: string; ink: string; block: [number, number] }> = {
   grocery: { name: "Fresh Market", code: "B2", blurb: "Groceries for your fridge: cheaper than eating out", color: "#2e9d5b", ink: "#ffffff", block: [0, -1] },
   clothing: { name: "Threads", code: "B3", blurb: "New outfit colours", color: "#d6455d", ink: "#ffffff", block: [1, 0] },
@@ -19,8 +19,7 @@ export const SHOP_REACH = 2.2;
 export function shopPlaces(seed: number): { kind: ShopKind; building: Building; door: { x: number; z: number; yaw: number } }[] {
   const city = generateCity(seed, 0, 0);
   return SHOP_KINDS.flatMap((kind) => {
-    const [i, j] = SHOPS[kind].block;
-    const b = city.buildings.filter((c) => !c.restaurant && blockIndex(c.x) === i && blockIndex(c.z) === j).sort((a, c) => Math.hypot(a.x, a.z) - Math.hypot(c.x, c.z))[0];
+    const b = city.buildings.find((c) => c.venue === kind);
     return b ? [{ kind, building: b, door: doorOf(b) }] : [];
   });
 }

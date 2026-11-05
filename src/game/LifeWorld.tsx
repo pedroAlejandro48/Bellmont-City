@@ -2,7 +2,9 @@ import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import { FINE, LAW_ENABLED, SPEED_LIMIT_MPH, newWatch, watchRider } from "./law";
 import { addFine } from "./life";
-import { SHOPS, SHOP_REACH, shopPlaces } from "./shops";
+import { shopPlaces } from "./shops";
+import { toLocal, worldYaw } from "./restaurantRoom";
+import { venueService } from "./venueRoom";
 import { Storefronts } from "./Storefronts";
 import * as THREE from "three";
 import { SIDEWALK_H, floorHeight, timeInfo } from "./config";
@@ -35,6 +37,7 @@ export function LifeWorld({ state }: { state: GameState }) {
   const sky = useRef<string | null>(null);
   const law = useRef(newWatch());
   const shops = useMemo(() => shopPlaces(state.worldSeed), [state.worldSeed]);
+  const served = useRef(false);
   const t = useMemo(() => ({ v: new THREE.Vector3(), f: new THREE.Vector3(), r: new THREE.Vector3() }), []);
 
   useFrame((_, raw) => {
@@ -51,6 +54,18 @@ export function LifeWorld({ state }: { state: GameState }) {
       if (d < 5) { if (state.scooter.riding) ridden = d; else if (!state.script && !state.accident) walked = d; }
     }
     last.current = { x: p.x, z: p.z };
+    // Inside a venue, stepping up to its counter (or the police desk) brings up what it offers; it comes up again
+    // only after stepping away.
+    const inter = state.interior, room = inter?.phase === "inside" ? state.rooms.get(inter.key) : undefined;
+    if (room?.venue && !state.script) {
+      const s = venueService(room), [lx, lz] = toLocal(room.frame, p.x, p.z), d = Math.hypot(lx - s.x, lz - s.z);
+      if (d < 0.7 && !served.current && !state.shop) {
+        served.current = true; state.shop = room.venue; state.keys.clear();
+        // Square up to the counter.
+        state.rotY = worldYaw(room.frame, s.yaw);
+      }
+      if (d > 1.3) served.current = false;
+    } else served.current = false;
     // A marked place (not a job's stop, which the job clears) is done with once you're there.
     const w = state.waypoint;
     if (w && !state.job && w.label !== "Busking spot" && Math.hypot(w.x - p.x, w.z - p.z) < 3) { state.waypoint = null; toast(state, `You've arrived: ${w.label}`, "info"); }
@@ -117,8 +132,6 @@ export function LifeWorld({ state }: { state: GameState }) {
         return;
       }
       if (nearBuskSpot(state) && !state.job && !state.bench) { state.interactQueued = false; startBusking(state); return; }
-      const shop = shops.find((sh) => near(state, sh.door.x, sh.door.z, SHOP_REACH));
-      if (shop) { state.interactQueued = false; state.shop = shop.kind; state.keys.clear(); return; }
       const d = door.current;
       if (d && near(state, d.x, d.z, 1.8) && !state.job) {
         state.interactQueued = false;
@@ -145,8 +158,6 @@ export function LifeWorld({ state }: { state: GameState }) {
       const atm = ATMS.find((a) => near(state, a.x, a.z, ATM_REACH));
       if (atm) return { visible: true, x: atm.x, y: 2.2, z: atm.z, time: state.simulationTime, label: "E  ATM" };
       if (nearBuskSpot(state) && !state.job) return { visible: true, x: BUSK_SPOT.x, y: 2.1, z: BUSK_SPOT.z, time: state.simulationTime, label: state.busking ? "E  STOP" : "E  PLAY" };
-      const shop = !hide && !state.scooter.riding ? shops.find((sh) => near(state, sh.door.x, sh.door.z, SHOP_REACH)) : undefined;
-      if (shop && !state.shop) return { visible: true, x: shop.door.x, y: 2.4, z: shop.door.z, time: state.simulationTime, label: `E  ${SHOPS[shop.kind].name.toUpperCase()}` };
       const d = door.current;
       if (d && near(state, d.x, d.z, 1.8)) return { visible: true, x: d.x, y: 2.4, z: d.z, time: state.simulationTime, label: "E  HOME" };
       return { visible: false, x: 0, y: 0, z: 0, time: 0 };

@@ -1,7 +1,7 @@
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
-import { SIDEWALK_H, restaurantOpen, timeInfo, type City } from "./config";
+import { SIDEWALK_H, openGroundFloor, restaurantOpen, timeInfo, type City } from "./config";
 import type { GameState, Script, WorldReach } from "./state";
 import { InteractionPrompt } from "./InteractionPrompt";
 import { OPENER_PASS, doorState, type DoorUse, type Leaf } from "./doors";
@@ -15,7 +15,8 @@ import {
  * plays those movements (Player follows `state.script`).
  */
 export function RestaurantInteraction({ state, city }: { state: GameState; city: City }) {
-  const here = useMemo(() => city.buildings.filter((b) => b.restaurant), [city]);
+  // Every room with a door: the restaurants and the venues (shops, hospital, police).
+  const here = useMemo(() => city.buildings.filter((b) => openGroundFloor(b)), [city]);
   const prompt = useRef({ visible: false, x: 0, y: 0, z: 0, label: undefined as string | undefined });
   const last = useRef<{ x: number; z: number; walk: number } | null>(null);
   /** This player's door uses (shared in a room), and a door it is waiting on to finish closing. */
@@ -66,7 +67,7 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
         const r = state.rooms.get(roomKey(b));
         if (!r) continue;
         const [lx, lz] = toLocal(r.frame, state.pos.x, state.pos.z);
-        if (nearDoorOutside(lx, lz)) { door = { room: r, open: restaurantOpen(r.kind, hours) }; break; }
+        if (nearDoorOutside(lx, lz)) { door = { room: r, open: r.venue ? true : restaurantOpen(r.kind, hours) }; break; }
       }
       if (door) {
         const [x, z] = toWorld(door.room.frame, 0, 0.45);

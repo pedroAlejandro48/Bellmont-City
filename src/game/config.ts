@@ -314,7 +314,19 @@ export const SIGNAL_POLES = SIGNALLED.flatMap(([cx, cz]) => (["x", "z"] as const
   return { axis, dir, fx, fz, rx, rz, x: cx + fx * out + rx * side, z: cz + fz * out + rz * side, tipX: cx + fx * out + rx * tip, tipZ: cz + fz * out + rz * tip, reach: side - tip };
 })));
 
-export type Building = { x: number; z: number; w: number; d: number; h: number; variant: number; restaurant?: RestaurantKind; door?: "x" | "z" };
+export type Building = { x: number; z: number; w: number; d: number; h: number; variant: number; restaurant?: RestaurantKind; venue?: VenueKind; door?: "x" | "z" };
+
+/** Places with a room you walk into on the ground floor besides the restaurants: the shops, the police and the
+ * hospital. Each is in a fixed block by the park, in its building nearest the park. */
+export type VenueKind = "grocery" | "clothing" | "bikes" | "gym" | "hospital" | "police";
+export const VENUE_BLOCKS: Record<VenueKind, [number, number]> = {
+  grocery: [0, -1], clothing: [1, 0], bikes: [-1, 0], gym: [0, 1], hospital: [1, 1], police: [-1, -1],
+};
+const VENUE_AT = new Map(Object.entries(VENUE_BLOCKS).map(([k, [i, j]]) => [`${i},${j}`, k as VenueKind]));
+/** Blocks that are never parks (they hold places people go into, now or soon). */
+const BUILT_BLOCKS = new Set([...VENUE_AT.keys(), "1,-1", "-1,1"]);
+/** A ground floor that is a room people walk into (drawn and made solid as such). */
+export const openGroundFloor = (b: Building) => !!(b.restaurant || b.venue);
 
 export type RestaurantKind = "cafe" | "pizza" | "fine" | "burger";
 /** The city's four restaurants, with their opening hours on the 24 h clock (`closes` 24 = open all day). */
@@ -403,7 +415,7 @@ export function generateCity(seed = 1337, focusX = 0, focusZ = 0, radius = 3): C
       const center = i === 0 && j === 0;
       // The blocks holding the restaurants are never parks.
       const green = r() < GREEN_BLOCK_CHANCE;
-      const park = center || (green && !restaurant);
+      const park = center || (green && !restaurant && !BUILT_BLOCKS.has(`${i},${j}`));
       city.blocks.push({ x: cx, z: cz, w: bw, d: bd, park });
       const dist = Math.hypot(i, j);
       const first = city.buildings.length;
@@ -418,6 +430,12 @@ export function generateCity(seed = 1337, focusX = 0, focusZ = 0, radius = 3): C
             if (restaurant && restaurant.index === city.buildings.length - first) { building.restaurant = restaurant.kind; building.door = restaurant.door; }
             city.buildings.push(building);
           }
+        // A venue in this block: its building nearest the park (never the restaurant), the door toward the park.
+        const venue = VENUE_AT.get(`${i},${j}`);
+        if (venue) {
+          const own = city.buildings.slice(first).filter((b) => !b.restaurant).sort((a, b) => Math.hypot(a.x, a.z) - Math.hypot(b.x, b.z))[0];
+          if (own) { own.venue = venue; own.door = i !== 0 ? "x" : "z"; }
+        }
       } else if (!center) {
         const reach = (size: number) => Math.floor((size / 2 - 8) / 6);
         for (let a = -reach(bw); a <= reach(bw); a++)
@@ -460,9 +478,9 @@ export function generateCity(seed = 1337, focusX = 0, focusZ = 0, radius = 3): C
       city.trees.push({ x, z, rot: r() * Math.PI * 2, s: 0.98 + r() * 0.04 });
     }
   }
-  // No sidewalk tree hides a restaurant's sign.
+  // No sidewalk tree hides a restaurant's (or a venue's) sign.
   for (const b of city.buildings) {
-    if (!b.restaurant) continue;
+    if (!openGroundFloor(b)) continue;
     const L = buildingLayout(b);
     const ex = L.door === "x" ? b.x + L.sx * b.w / 2 : b.x, ez = L.door === "z" ? b.z + L.sz * b.d / 2 : b.z;
     city.trees = city.trees.filter((t) => !t.sidewalk || Math.hypot(t.x - ex, t.z - ez) > 7);

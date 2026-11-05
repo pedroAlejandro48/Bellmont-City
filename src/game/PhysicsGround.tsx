@@ -2,7 +2,7 @@ import { BallCollider, CuboidCollider, RigidBody } from "@react-three/rapier";
 import { roomShell } from "./restaurantRoom";
 import { isSolidNear, useSolidBlock } from "./nearPhysics";
 import type { GameState } from "./state";
-import { BUILDING_ENTRANCE, PARK_LAMPS, PARK_LAMP_HEIGHT, SIDEWALK_H, PARK_OBELISK_HEIGHT, PARK_BENCHES, PARK_ARCH, type City } from "./config";
+import { BUILDING_ENTRANCE, PARK_LAMPS, PARK_LAMP_HEIGHT, SIDEWALK_H, PARK_OBELISK_HEIGHT, PARK_BENCHES, PARK_ARCH, type City, openGroundFloor } from "./config";
 
 /**
  * What the character can bump into: the ground everywhere, and the blocks, buildings, trees, lamps and the park's
@@ -16,7 +16,7 @@ export function PhysicsGround({ city, x, z, state }: { city: City; x: number; z:
     {city.blocks.filter((b) => near(b.x, b.z)).map((b) => <CuboidCollider key={`p${b.x}:${b.z}`} args={[b.w / 2, SIDEWALK_H / 2, b.d / 2]} position={[b.x, SIDEWALK_H / 2, b.z]} />)}
     {city.buildings.filter((b) => near(b.x, b.z)).map((b) => {
       // A restaurant's ground floor is a room (its walls are below); the building is solid above it.
-      const base = b.restaurant ? BUILDING_ENTRANCE.floorHeight : 0, h = b.h - base;
+      const base = openGroundFloor(b) ? BUILDING_ENTRANCE.floorHeight : 0, h = b.h - base;
       return <CuboidCollider key={`b${b.x}:${b.z}`} args={[b.w / 2, h / 2, b.d / 2]} position={[b.x, base + h / 2 + SIDEWALK_H, b.z]} />;
     })}
     {city.trees.filter((t) => near(t.x, t.z)).map((t) => <CuboidCollider key={`t${t.x}:${t.z}`} args={[0.25, 2, 0.25]} position={[t.x, 2, t.z]} />)}
@@ -36,6 +36,6 @@ export function PhysicsGround({ city, x, z, state }: { city: City; x: number; z:
 export function RestaurantWalls({ city, state }: { city: City; state: GameState }) {
   const block = useSolidBlock(state);
   return <RigidBody type="fixed" colliders={false} ref={(body) => { if (body) body.userData = "restaurant"; }}>
-    {city.buildings.filter((b) => b.restaurant && isSolidNear(block, b.x, b.z)).flatMap((b) => roomShell(b).map((w, i) => <CuboidCollider key={`${b.x}:${b.z}:${i}`} args={[w.hx, w.hy, w.hz]} position={[w.x, w.y, w.z]} />))}
+    {city.buildings.filter((b) => openGroundFloor(b) && isSolidNear(block, b.x, b.z)).flatMap((b) => roomShell(b).map((w, i) => <CuboidCollider key={`${b.x}:${b.z}:${i}`} args={[w.hx, w.hy, w.hz]} position={[w.x, w.y, w.z]} />))}
   </RigidBody>;
 }

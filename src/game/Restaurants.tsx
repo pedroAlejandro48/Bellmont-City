@@ -2,8 +2,9 @@ import { useFrame } from "@react-three/fiber";
 import { quality } from "./quality";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { BUILDING_ENTRANCE, RESTAURANTS, SIDEWALK_H, restaurantOpen, timeInfo, type Building, type City, type RestaurantKind } from "./config";
+import { BUILDING_ENTRANCE, RESTAURANTS, SIDEWALK_H, restaurantOpen, timeInfo, type Building, type City, type RestaurantKind, openGroundFloor } from "./config";
 import { canvas, groundY, makeBlankWall, tex } from "./textures";
+import { Venue } from "./Venues";
 import { CEILING, COUNTER, DINING, DOOR_H, HANDLE, KITCHEN_DOOR, KITCHEN_DOOR_H, LEAF, WALL, WINDOW, furnish, onLeaf, roomLayout, toWorld, type Item, type RoomLayout } from "./restaurantRoom";
 import { MENU_BOARDS } from "./food";
 import type { GameState } from "./state";
@@ -11,7 +12,7 @@ import type { GameState } from "./state";
 /** Each brand's own fonts (loaded in index.html); signs are painted once they are ready. */
 const FONTS = ["400 80px Pacifico", "400 80px Lobster", "700 80px Cinzel", "400 80px Bungee", "700 30px Manrope"];
 
-function useFontsReady() {
+export function useFontsReady() {
   const [ready, setReady] = useState(false);
   useEffect(() => {
     let live = true;
@@ -233,7 +234,7 @@ function makeGlowSpill(colour: string) {
 }
 
 /** Small square wall tiles, or a plain grey floor tile, for the kitchen. One repeat is a metre square. */
-function makeTiles(base: string, grout: string, count: number) {
+export function makeTiles(base: string, grout: string, count: number) {
   const [c, g] = canvas(256, 256);
   g.fillStyle = grout; g.fillRect(0, 0, 256, 256);
   const cell = 256 / count;
@@ -419,7 +420,7 @@ function useRestaurantMaterials(ready: boolean) {
   useEffect(() => () => disposeAll(Object.values(mats).flatMap((v) => (v instanceof THREE.Material ? [v] : [v.edge, v.glass, v.menu, v.spill, ...v.paintings, ...v.sign]))), [mats]);
   return mats;
 }
-type Materials = ReturnType<typeof useRestaurantMaterials>;
+export type Materials = ReturnType<typeof useRestaurantMaterials>;
 
 function disposeAll(materials: THREE.Material[]) {
   for (const m of new Set(materials)) {
@@ -431,21 +432,21 @@ function disposeAll(materials: THREE.Material[]) {
 const FH = BUILDING_ENTRANCE.floorHeight;
 const SIGN = { w: 6.6, h: 1.34, y: 3.98, depth: 0.18 };
 /** Exterior wall panels sit this far out from the building's face, and overlap at the corners by as much. */
-const SKIN = 0.03;
+export const SKIN = 0.03;
 /** How near (m) a restaurant's whole interior is drawn; further, a plain box shows behind its windows. */
-const INTERIOR_REACH = 40;
+export const INTERIOR_REACH = 40;
 
 /** A flat panel `w` × `h` centred at (x, y, z), turned `ry` about the vertical. */
-function Panel({ x, y, z, w, h, ry = 0, material }: { x: number; y: number; z: number; w: number; h: number; ry?: number; material: THREE.Material }) {
+export function Panel({ x, y, z, w, h, ry = 0, material }: { x: number; y: number; z: number; w: number; h: number; ry?: number; material: THREE.Material }) {
   return <mesh position={[x, y, z]} rotation-y={ry} material={material} receiveShadow><planeGeometry args={[w, h]} /></mesh>;
 }
 
-type Hole = { a0: number; a1: number; y0: number; y1: number };
+export type Hole = { a0: number; a1: number; y0: number; y1: number };
 /**
  * An inside wall from `a0` to `a1` along it, with openings cut out (windows, doorways), painted in `low` up to
  * a metre and `high` above.
  */
-function Wall({ a0, a1, place, ry, low, high, holes = [] }: { a0: number; a1: number; place: (a: number) => [number, number]; ry: number; low: THREE.Material; high: THREE.Material; holes?: Hole[] }) {
+export function Wall({ a0, a1, place, ry, low, high, holes = [] }: { a0: number; a1: number; place: (a: number) => [number, number]; ry: number; low: THREE.Material; high: THREE.Material; holes?: Hole[] }) {
   const rects: { a0: number; a1: number; y0: number; y1: number }[] = [];
   let at = a0;
   for (const h of [...holes].filter((h) => h.a1 > a0 && h.a0 < a1).sort((p, q) => p.a0 - q.a0)) {
@@ -470,7 +471,7 @@ function Wall({ a0, a1, place, ry, low, high, holes = [] }: { a0: number; a1: nu
  * A real window in the wall: frame lining the opening through the wall's thickness, glass in the middle, and
  * (café and Hanami) glazing bars. In the wall's own frame: x along it, +z outward.
  */
-function WindowOpening({ a0, a1, kind, frame, glass }: { a0: number; a1: number; kind: RestaurantKind; frame: THREE.Material; glass: THREE.Material }) {
+export function WindowOpening({ a0, a1, kind, frame, glass }: { a0: number; a1: number; kind: RestaurantKind; frame: THREE.Material; glass: THREE.Material }) {
   const w = a1 - a0, mid = (a0 + a1) / 2, h = WINDOW.y1 - WINDOW.y0, ym = (WINDOW.y0 + WINDOW.y1) / 2;
   const depth = WALL + SKIN + 0.02, zc = (SKIN - WALL) / 2;
   const bars: [number, number, number, number][] = [];
@@ -502,7 +503,7 @@ function Chair({ frame, seat, at }: { frame: THREE.Material; seat: THREE.Materia
 }
 
 /** One glass door leaf, hinged at its outer edge (`side` 1 = right, seen from the street). */
-function Leaf({ side, frame, mats, at }: { side: 1 | -1; frame: THREE.Material; mats: Materials; at: (g: THREE.Group | null) => void }) {
+export function Leaf({ side, frame, mats, at }: { side: 1 | -1; frame: THREE.Material; mats: Materials; at: (g: THREE.Group | null) => void }) {
   const mid = -side * LEAF / 2;
   return <group ref={at} position={[side * LEAF, 0, 0]}>
     {[0.03, LEAF - 0.03].map((x) => <mesh key={x} position={[-side * x, DOOR_H / 2, 0]} material={frame} castShadow><boxGeometry args={[0.06, DOOR_H, 0.05]} /></mesh>)}
@@ -518,9 +519,9 @@ function Leaf({ side, frame, mats, at }: { side: 1 | -1; frame: THREE.Material; 
   </group>;
 }
 
-const CLOSER_ARM = 0.3, ARM_Y = DOOR_H - 0.02;
+export const CLOSER_ARM = 0.3, ARM_Y = DOOR_H - 0.02;
 /** The closer's two arms: from its body on the door to a bracket on the frame, folded into a V when shut. */
-function closerArms(side: 1 | -1, angle: number) {
+export function closerArms(side: 1 | -1, angle: number) {
   const [ax, az] = onLeaf(side === 1 ? "right" : "left", angle, 0.22, 0.07);
   const bx = side * (LEAF - 0.48), bz = 0.07;
   const d = Math.hypot(bx - ax, bz - az), mx = (ax + bx) / 2, mz = (az + bz) / 2;
@@ -532,7 +533,7 @@ function closerArms(side: 1 | -1, angle: number) {
 }
 
 /** A potted plant (each place its own: leafy, olive, bonsai, or a tall palm). */
-function Plant({ x, z, kind, mats, pot }: { x: number; z: number; kind: RestaurantKind; mats: Materials; pot: THREE.Material }) {
+export function Plant({ x, z, kind, mats, pot }: { x: number; z: number; kind: RestaurantKind; mats: Materials; pot: THREE.Material }) {
   const bonsai = kind === "fine";
   return <group position={[x, 0, z]}>
     <mesh position-y={bonsai ? 0.2 : 0.3} material={pot} castShadow><cylinderGeometry args={[0.26, 0.2, bonsai ? 0.4 : 0.6, 16]} /></mesh>
@@ -734,7 +735,9 @@ export function Restaurants({ city, state }: { city: City; state: GameState }) {
   const ready = useFontsReady();
   const mats = useRestaurantMaterials(ready);
   const here = useMemo(() => city.buildings.filter((b) => b.restaurant), [city]);
-  const layouts = useMemo(() => here.map((b) => roomLayout(b)), [here]);
+  const venues = useMemo(() => city.buildings.filter((b) => b.venue), [city]);
+  // The lights follow the nearest room: a restaurant's, or a venue's (lit all the time).
+  const layouts = useMemo(() => city.buildings.filter((b) => openGroundFloor(b)).map((b) => roomLayout(b)), [city]);
   const lights = useRef<(THREE.PointLight | null)[]>([]);
   useFrame(() => {
     const { hours } = timeInfo(state.elapsed), d = state.darkness;
@@ -753,7 +756,7 @@ export function Restaurants({ city, state }: { city: City; state: GameState }) {
       if (distance < bestDistance) { best = layout; bestDistance = distance; }
     }
     const spots = best ? lightSpots(best) : [];
-    const on = best ? restaurantOpen(best.kind, hours) : false;
+    const on = best ? (best.venue ? true : restaurantOpen(best.kind, hours)) : false;
     lights.current.forEach((light, i) => {
       if (!light) return;
       const spot = spots[i];
@@ -761,11 +764,12 @@ export function Restaurants({ city, state }: { city: City; state: GameState }) {
       light.intensity = spot ? (on ? (i === 0 ? 22 : 9) : 1.2) : 0;
       // At night always on (so the number of lights never changes then); by day only near a restaurant.
       light.visible = !!spot || d > 0.03;
-      if (best) light.color.set(i === 0 ? INSIDE[best.kind].light : "#ffffff");
+      if (best) light.color.set(i === 0 && !best.venue ? INSIDE[best.kind].light : "#fff6e8");
     });
   });
   return <>
     {here.map((b) => <Restaurant key={`${b.x}:${b.z}`} b={b} mats={mats} state={state} ready={ready} />)}
+    {venues.map((b) => <Venue key={`${b.x}:${b.z}`} b={b} mats={mats} state={state} />)}
     {[0, 1].map((i) => <pointLight key={i} ref={(el) => { lights.current[i] = el; }} distance={11} decay={1.3} intensity={0} />)}
   </>;
 }

@@ -2,7 +2,7 @@ import { useFrame } from "@react-three/fiber";
 import { quality } from "./quality";
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSolidBlock } from "./nearPhysics";
-import { blockCenter } from "./config";
+import { blockCenter, openGroundFloor } from "./config";
 import * as THREE from "three";
 import { BLOCK, CITY_GROUND_SIZE, SIGNAL_POLE, SIGNAL_POLES, PARK_LAMPS, PARK_LAMP_HEIGHT, SIDEWALK_H, type Building, type Prop, WORLD_HALF, cityRoadDashes, BUILDING_ENTRANCE, FACADE_STYLES, buildingLayout, type City as CityT } from "./config";
 import { buildingGeo, cityAsphalt, makeFacade, makeGlow, makeNoise, makeGroundFloor, makeBlankWall, makeBackDoor } from "./textures";
@@ -47,7 +47,7 @@ export function City({ city, far: allFar, state }: { city: CityT; far: FarScener
     return { buildings: allFar.buildings.filter((b) => inReach(b.x, b.z)), lamps: allFar.lamps.filter((l) => inReach(l.x, l.z)) };
   }, [allFar, block, reach]);
   // Far away, a restaurant is just a building with a lit ground floor (its own storefront is only drawn nearby).
-  const farBuildings = useMemo(() => far.buildings.map(({ restaurant: _r, ...b }): Building => b), [far]);
+  const farBuildings = useMemo(() => far.buildings.map(({ restaurant: _r, venue: _v, ...b }): Building => b), [far]);
   const facadeMats = useMemo(
     () =>
       Array.from({ length: 4 * FACADE_STYLES }, (_, i) => {
@@ -78,7 +78,7 @@ export function City({ city, far: allFar, state }: { city: CityT; far: FarScener
     [...city.buildings, ...farBuildings].forEach((b, index) => {
       const L = buildingLayout(b);
       // Restaurants draw their own ground floor, inside and out.
-      if (b.restaurant) return;
+      if (openGroundFloor(b)) return;
       // Back doors are only drawn nearby (too small to see from afar).
       const near = index < nearCount;
       if (near && L.backDoor === "x") backDoors.push(mat4(b.x - L.sx * (b.w / 2 + 0.025), SIDEWALK_H + 1.05, b.z + L.sz * b.d * 0.25, -L.sx * Math.PI / 2, 1.1, 2.1, 1));
@@ -121,7 +121,7 @@ export function City({ city, far: allFar, state }: { city: CityT; far: FarScener
   const buildings = useMemo(() => facadeMats.map((_, i) => [...city.buildings, ...farBuildings].filter((b) => b.variant === i % 4 && buildingLayout(b).style === Math.floor(i / 4)).map((b) => {
     const L = buildingLayout(b);
     // Above a restaurant the building starts at its first floor: the restaurant itself is open inside.
-    const base = b.restaurant ? BUILDING_ENTRANCE.floorHeight : 0, h = b.h - base;
+    const base = openGroundFloor(b) ? BUILDING_ENTRANCE.floorHeight : 0, h = b.h - base;
     return mat4(b.x, SIDEWALK_H + base + h / 2, b.z, L.rot, (L.swap ? b.d : b.w) / 13, h / 24, (L.swap ? b.w : b.d) / 13);
   })), [city, farBuildings, facadeMats]);
   const facadeGeo = useMemo(() => buildingGeo(13, 24, 13), []);

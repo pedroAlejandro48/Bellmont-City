@@ -3,7 +3,8 @@
 // Everything here is in the entrance's own frame: origin at the middle of the entrance wall on the floor, +z
 // out to the street, +x to the right of someone standing outside looking at the door. Turns are multiples of
 // 90°, so boxes in this frame stay boxes in the world.
-import { BUILDING_ENTRANCE, buildingLayout, SIDEWALK_H, type Building, type RestaurantKind } from "./config";
+import { BUILDING_ENTRANCE, buildingLayout, SIDEWALK_H, type Building, type RestaurantKind, type VenueKind } from "./config";
+import { venueLayout } from "./venueRoom";
 
 export const WALL = 0.2;
 export const CEILING = 4.3;
@@ -42,12 +43,15 @@ export type RoomLayout = {
   /** Everything fixed that people and furniture bump into: the counter, the divider, the plants. */
   solids: Box[];
   plants: [number, number][];
+  /** Set for a venue (a shop, the hospital, the police): a room without a kitchen, always open. */
+  venue?: VenueKind;
 };
 export type Room = RoomLayout & { items: Item[]; doors: { left: number; right: number } };
 
 export const roomKey = (b: { x: number; z: number }) => `${b.x}:${b.z}`;
 
 export function roomLayout(b: Building): RoomLayout {
+  if (b.venue) return venueLayout(b);
   const L = buildingLayout(b);
   const alongX = L.door === "x";
   const ox = alongX ? b.x + L.sx * b.w / 2 : b.x, oz = alongX ? b.z : b.z + L.sz * b.d / 2;
@@ -99,7 +103,7 @@ export function furnish(layout: RoomLayout): Item[] {
 
 export function makeRoom(b: Building): Room {
   const layout = roomLayout(b);
-  return { ...layout, items: furnish(layout), doors: { left: 0, right: 0 } };
+  return { ...layout, items: layout.venue ? [] : furnish(layout), doors: { left: 0, right: 0 } };
 }
 
 export function toWorld(f: Frame, x: number, z: number): [number, number] {
@@ -502,9 +506,11 @@ export function roomShell(b: Building) {
     piece(-width / 2 + WALL / 2, -depth / 2, WALL / 2, depth / 2, fh / 2, fh / 2),
     piece(width / 2 - WALL / 2, -depth / 2, WALL / 2, depth / 2, fh / 2, fh / 2),
     piece(0, -depth / 2, width / 2, depth / 2, (CEILING + fh) / 2, (fh - CEILING) / 2),
-    // The divider either side of the kitchen doorway, and above it.
-    ...layout.solids.slice(1, 3).map((w) => piece(w.x, w.z, w.hx, w.hz, CEILING / 2, CEILING / 2)),
-    piece(layout.divider.doorX, layout.divider.z - WALL / 2, KITCHEN_DOOR / 2, WALL / 2, (KITCHEN_DOOR_H + CEILING) / 2, (CEILING - KITCHEN_DOOR_H) / 2),
+    // The divider either side of the kitchen doorway, and above it (a restaurant's; venues have none).
+    ...(layout.venue ? [] : [
+      ...layout.solids.slice(1, 3).map((w) => piece(w.x, w.z, w.hx, w.hz, CEILING / 2, CEILING / 2)),
+      piece(layout.divider.doorX, layout.divider.z - WALL / 2, KITCHEN_DOOR / 2, WALL / 2, (KITCHEN_DOOR_H + CEILING) / 2, (CEILING - KITCHEN_DOOR_H) / 2),
+    ]),
   ];
 }
 

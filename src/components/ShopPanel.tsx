@@ -22,11 +22,8 @@ export function ShopPanel({ state }: { state: GameState }) {
   const places = useMemo(() => shopPlaces(state.worldSeed), [state.worldSeed]);
   useEffect(() => {
     const id = window.setInterval(() => {
-      // Walking away closes it.
-      if (state.shop) {
-        const place = places.find((s) => s.kind === state.shop);
-        if (!place || Math.hypot(place.door.x - state.pos.x, place.door.z - state.pos.z) > 4.5) state.shop = null;
-      }
+      // Leaving the building closes it.
+      if (state.shop && state.interior?.phase !== "inside") state.shop = null;
       if (state.shop) shown.current = state.shop;
       refresh();
     }, 200);
