@@ -630,7 +630,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   const lastLift = useRef<string | null>(null);
   /** Each floor's bedsheet and the hand holding its corner. */
   const sheets = useRef(new Map<string, SheetLink>());
-  const sheetLink = (key: string) => { let l = sheets.current.get(key); if (!l) { l = { corner: null, pin: null }; sheets.current.set(key, l); } return l; };
+  const sheetLink = (key: string) => { let l = sheets.current.get(key); if (!l) { l = { corner: null, pin: null, active: false }; sheets.current.set(key, l); } return l; };
   /** Putting things in the fridge: the one in hand now, and how far the character has stepped in (0..1). */
   const load = useRef<{ name: string; t0: number; slot: [number, number, number]; drink: boolean; placed: boolean } | null>(null);
   const loadStep = useRef(0);
@@ -949,7 +949,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     }
     // ---------- the bed: getting in, asleep, getting out ----------
     const link = floor ? sheetLink(floor.key) : null;
-    if (link) link.pin = null;
+    if (link) { link.pin = null; link.active = mv?.kind === "bed" && mv.phase !== "asleep" && !!mv.plan && now - mv.t0 >= (mv.phase === "in" ? mv.plan.total : 0); }
     if (!eRide && mv && floor && mv.kind === "bed" && link) {
       const t = now - mv.t0;
       if (mv.phase === "in") {

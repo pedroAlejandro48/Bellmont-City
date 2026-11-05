@@ -8,18 +8,23 @@ import type { GameState } from "./state";
 
 /** The mattress's top and the pillow (floor-local heights). */
 export const MATTRESS_TOP = 0.555, PILLOW_TOP = 0.65;
-const NX = 16, NZ = 22, OVER = 0.3, THICK = 0.014, ITER = 8;
+const NX = 16, NZ = 22, OVER = 0.3, THICK = 0.014, ITER = 12;
+/** After moving (the hand let go, the body got out), how long the sheet settles before it's still again (s). */
+const SETTLE = 2.5;
 
 /** What the apartment's moves and the sheet share: where its held corner is now, and where a hand holds it (or null). */
-export type SheetLink = { corner: [number, number, number] | null; pin: [number, number, number] | null };
+export type SheetLink = { corner: [number, number, number] | null; pin: [number, number, number] | null; /** Someone is getting in or out of the bed: the sheet moves. */ active: boolean };
 
-type Cloth = { p: Float32Array; q: Float32Array; links: [number, number, number][]; pos0: Float32Array };
+/** Links: [a, b, rest length, stiff] — stiff ones (two apart) also resist folding, so it's fabric, not liquid. */
+type Cloth = { p: Float32Array; q: Float32Array; links: [number, number, number, boolean][]; pos0: Float32Array };
 
 /**
  * A bedsheet: a cloth (Verlet particles in a grid, kept their distance apart, pulled down by gravity) lying on the
  * mattress and hanging over its sides and foot. It never goes into the mattress, the pillow or the floor, nor into
  * the character (round the body's limbs, torso and head as capsules), so lying under it the sheet takes the body's
  * shape. One top corner (at the bed's open side, by the pillow) can be held: it then follows the hand.
+ * It starts made (flat on top, hanging straight at the sides) and stays perfectly still: it only moves while someone
+ * gets into or out of the bed, and settles for a moment after.
  */
 export function BedSheet({ fl, state, mat, live, link }: { fl: AptFloor; state: GameState; mat: THREE.Material; live: () => boolean; link: SheetLink }) {
   const b = fl.bed;
@@ -34,16 +39,27 @@ export function BedSheet({ fl, state, mat, live, link }: { fl: AptFloor; state: 
       const k = (j * NX + i) * 3;
       p[k] = xa + (xb - xa) * i / (NX - 1); p[k + 1] = MATTRESS_TOP + 0.05; p[k + 2] = za + (zb - za) * j / (NZ - 1);
     }
-    const links: [number, number, number][] = [];
+    const links: [number, number, number, boolean][] = [];
     const d = (a: number, c: number) => Math.hypot(p[a * 3]! - p[c * 3]!, p[a * 3 + 1]! - p[c * 3 + 1]!, p[a * 3 + 2]! - p[c * 3 + 2]!);
     for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) {
       const a = j * NX + i;
-      if (i < NX - 1) links.push([a, a + 1, d(a, a + 1)]);
-      if (j < NZ - 1) links.push([a, a + NX, d(a, a + NX)]);
-      if (i < NX - 1 && j < NZ - 1) { links.push([a, a + NX + 1, d(a, a + NX + 1)]); links.push([a + 1, a + NX, d(a + 1, a + NX)]); }
-      // Bending (two apart) keeps it from crumpling like paper.
-      if (i < NX - 2) links.push([a, a + 2, d(a, a + 2)]);
-      if (j < NZ - 2) links.push([a, a + 2 * NX, d(a, a + 2 * NX)]);
+      if (i < NX - 1) links.push([a, a + 1, d(a, a + 1), false]);
+      if (j < NZ - 1) links.push([a, a + NX, d(a, a + NX), false]);
+      if (i < NX - 1 && j < NZ - 1) { links.push([a, a + NX + 1, d(a, a + NX + 1), false]); links.push([a + 1, a + NX, d(a + 1, a + NX), false]); }
+      // Bending (two apart) keeps it from crumpling: it holds its shape a little, like a real sheet.
+      if (i < NX - 2) links.push([a, a + 2, d(a, a + 2), true]);
+      if (j < NZ - 2) links.push([a, a + 2 * NX, d(a, a + 2 * NX), true]);
+    }
+    // Made: flat on the mattress (over the pillow's edge), hanging straight down the sides and the foot.
+    const top = MATTRESS_TOP + THICK;
+    for (let n = 0; n < NX * NZ; n++) {
+      const k = n * 3;
+      let x = p[k]!, z = p[k + 2]!;
+      const dx = Math.max(0, x - (box.x1 + THICK), box.x0 - THICK - x), dz = Math.max(0, box.z0 - THICK - z);
+      if (x > box.x1 + THICK) x = box.x1 + THICK; else if (x < box.x0 - THICK) x = box.x0 - THICK;
+      if (z < box.z0 - THICK) z = box.z0 - THICK;
+      const onPillow = x > pillow.x0 && x < pillow.x1 && z > pillow.z0 && z < pillow.z1;
+      p[k] = x; p[k + 1] = Math.max(0.02, (onPillow ? PILLOW_TOP + THICK : top) - dx - dz); p[k + 2] = z;
     }
     return { p, q: p.slice(), links, pos0: p.slice() };
   }, [box, pillow]);
@@ -101,7 +117,7 @@ export function BedSheet({ fl, state, mat, live, link }: { fl: AptFloor; state: 
     // Pushed out of something: moved, not thrown (no speed added); resting on it: friction (no sliding off).
     const Q = cloth.q, mx = x - P[k]!, my = y - P[k + 1]!, mz = z - P[k + 2]!;
     if (mx || my || mz) { Q[k] = Q[k]! + mx; Q[k + 1] = Q[k + 1]! + my; Q[k + 2] = Q[k + 2]! + mz; }
-    if (touching) { Q[k] = Q[k]! + (x - Q[k]!) * 0.85; Q[k + 2] = Q[k + 2]! + (z - Q[k + 2]!) * 0.85; if (Q[k + 1]! < y) Q[k + 1] = y; }
+    if (touching) { Q[k] = Q[k]! + (x - Q[k]!) * 0.93; Q[k + 2] = Q[k + 2]! + (z - Q[k + 2]!) * 0.93; if (Q[k + 1]! < y) Q[k + 1] = y; }
     P[k] = x; P[k + 1] = y; P[k + 2] = z;
   };
   const step = (dt: number) => {
@@ -109,18 +125,18 @@ export function BedSheet({ fl, state, mat, live, link }: { fl: AptFloor; state: 
     for (let i = 0; i < n; i++) {
       const k = i * 3;
       for (let a = 0; a < 3; a++) {
-        const v = Math.max(-0.05, Math.min(0.05, (P[k + a]! - Q[k + a]!) * 0.985));
+        const v = Math.max(-0.04, Math.min(0.04, (P[k + a]! - Q[k + a]!) * 0.95));
         Q[k + a] = P[k + a]!;
         P[k + a] = P[k + a]! + v + (a === 1 ? g : 0);
       }
     }
     const pin = link.pin;
     for (let it = 0; it < ITER; it++) {
-      for (const [a, c, rest] of cloth.links) {
+      for (const [a, c, rest, stiff] of cloth.links) {
         const ka = a * 3, kc = c * 3, dx = P[kc]! - P[ka]!, dy = P[kc + 1]! - P[ka + 1]!, dz = P[kc + 2]! - P[ka + 2]!;
-        const d = Math.hypot(dx, dy, dz) || 1e-6, diff = (d - rest) / d * 0.5;
-        // Only pull taut (cloth bunches up instead of pushing back).
-        if (d < rest && rest > 0) continue;
+        const d = Math.hypot(dx, dy, dz) || 1e-6, diff = (d - rest) / d * (d < rest ? 0.15 : 0.5);
+        // Pulled taut; pushed together only resisted (a little) by the stiff links — cloth bunches, it doesn't flow.
+        if (d < rest && !stiff) continue;
         P[ka] = P[ka]! + dx * diff; P[ka + 1] = P[ka + 1]! + dy * diff; P[ka + 2] = P[ka + 2]! + dz * diff;
         P[kc] = P[kc]! - dx * diff; P[kc + 1] = P[kc + 1]! - dy * diff; P[kc + 2] = P[kc + 2]! - dz * diff;
       }
@@ -129,8 +145,8 @@ export function BedSheet({ fl, state, mat, live, link }: { fl: AptFloor; state: 
     }
     if (pin) { const k = CORNER * 3; Q[k] = P[k] = pin[0]; Q[k + 1] = P[k + 1] = pin[1]; Q[k + 2] = P[k + 2] = pin[2]; }
   };
-  // Settled on the bed from the start.
-  useMemo(() => { for (let i = 0; i < 160; i++) step(1 / 60); cloth.pos0.set(cloth.p); }, [cloth]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** Until when the sheet still moves (it settles a moment after someone gets in or out, then is still). */
+  const movingUntil = useRef(-1);
 
   const mesh = useRef<THREE.Mesh>(null);
   // Seen from both sides (it folds and hangs).
@@ -141,6 +157,10 @@ export function BedSheet({ fl, state, mat, live, link }: { fl: AptFloor; state: 
     const P = cloth.p;
     { const k = CORNER * 3; link.corner = [P[k]!, P[k + 1]!, P[k + 2]!]; }
     if (!on) return;
+    // Still unless someone is getting into or out of the bed (and a moment after, while it settles).
+    const now = state.simulationTime;
+    if (link.active || link.pin) movingUntil.current = now + SETTLE;
+    if (now > movingUntil.current) return;
     // The body as capsules, in the floor's frame.
     const B = state.avatar.body, f = fl.frame;
     const at = (o: THREE.Object3D | undefined, v: THREE.Vector3, lx = 0, ly = 0, lz = 0) => {
@@ -167,7 +187,6 @@ export function BedSheet({ fl, state, mat, live, link }: { fl: AptFloor; state: 
       if (sl && el) caps.current.push({ a: sl, b: el, r: 0.065 });
       if (el && hdl) caps.current.push({ a: el, b: hdl, r: 0.06 });
     }
-    if (!near && !link.pin) return;
     const dt = Math.min(raw, 1 / 30);
     step(dt / 2); step(dt / 2);
     const attr = geo.getAttribute("position") as THREE.BufferAttribute;
