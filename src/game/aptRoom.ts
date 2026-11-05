@@ -6,7 +6,7 @@
 //   with its door in the back corner). The windows here are also what the building shows from outside.
 import type { Building } from "./config";
 import { floorKey, floorY } from "./apartments";
-import type { Box, Room } from "./restaurantRoom";
+import { TABLE, type Box, type Item, type Room } from "./restaurantRoom";
 import { SHAFT, venueLayout } from "./venueRoom";
 
 export const HALL = 1.6;
@@ -72,11 +72,13 @@ export function aptFloor(b: Building, floor: number): AptFloor {
   add("oven", maxX - 2.02, maxZ - 0.32, Math.PI, 0.76, 0.62);
   add("microwave", maxX - 2.02, maxZ - 0.2, Math.PI, 0.5, 0.36, false);
   add("fridge", maxX - 0.37, maxZ - 1.3, -Math.PI / 2, 0.78, 0.7);
-  // The table for two to the right of the kitchen.
+  // The table for two to the right of the kitchen. It and its chairs are the room's furniture (`items`), like a
+  // restaurant's: solid, and sat at the same way (the chair pulled out, round it, down, shuffled in).
+  const items: Item[] = [];
   const tx = Math.max(divX + 1.0, maxX - 3.4), tz = maxZ - 1.15;
-  add("table", tx, tz, 0, 0.8, 0.8);
-  add("chair", tx - 0.62, tz, Math.PI / 2, 0.44, 0.44);
-  add("chair", tx + 0.62, tz, -Math.PI / 2, 0.44, 0.44);
+  add("table", tx, tz, 0, TABLE.half * 2, TABLE.half * 2, false);
+  items.push({ kind: "table", x: tx, z: tz, f: [0, 1] });
+  items.push({ kind: "chair", x: tx - 0.72, z: tz, f: [1, 0] }, { kind: "chair", x: tx + 0.72, z: tz, f: [-1, 0] });
   // The couch on the left wall facing the TV on the right wall (the bedroom's wall), on its little table.
   const living0 = inside0 + 1.25, living1 = maxZ - 1.9, lz = (living0 + living1) / 2;
   add("rug", (divX + maxX) / 2, lz, 0, Math.min(2.4, maxX - divX - 1.2), 1.8, false);
@@ -86,7 +88,9 @@ export function aptFloor(b: Building, floor: number): AptFloor {
   // The bedroom: a single bed, a desk under the window, a closet by the door.
   add("bed", minX + 1.08, maxZ - 1.6, Math.PI / 2, 0.98, 2.05);
   add("desk", divX - INNER_WALL / 2 - 0.75, maxZ - 0.35, Math.PI, 1.1, 0.55);
-  add("deskChair", divX - INNER_WALL / 2 - 0.75, maxZ - 0.95, 0, 0.45, 0.45, false);
+  // The desk chair sits like a dining chair: the desk counts as a table (its near edge where the desk's is).
+  items.push({ kind: "table", x: divX - INNER_WALL / 2 - 0.75, z: maxZ - 0.625 + TABLE.half, f: [0, 1] });
+  items.push({ kind: "chair", x: divX - INNER_WALL / 2 - 0.75, z: maxZ - 0.95, f: [0, 1] });
   add("closet", minX + 0.95, inside0 + 0.33, 0, 1.4, 0.6);
   add("lamp", minX + 0.3, maxZ - 2.85, 0, 0.3, 0.3);
 
@@ -100,7 +104,7 @@ export function aptFloor(b: Building, floor: number): AptFloor {
   const side = ws === 1 ? [{ a0: living0 + 0.1, a1: living1 - 0.1, y0: WIN.y0 }] : [{ a0: inside0 + 0.45, a1: maxZ - 2.85, y0: WIN.y0 }];
 
   return {
-    ...base, items: [], doors: { left: 0, right: 0 },
+    ...base, items, doors: { left: 0, right: 0 },
     key: floorKey(b, floor), upper: floor, y: floorY(floor),
     solids, walls, plants: [], hallZ: [hall0, hall1], wallZ, divX, door: { x: doorX, z: wallZ }, bedroomDoor: [bd0, bd1], furniture: F, front, side,
     // (The bedroom door opens into the bedroom, toward −x: its frame's +z is the room's −x.)

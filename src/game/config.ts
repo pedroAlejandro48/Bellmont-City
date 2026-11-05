@@ -546,7 +546,11 @@ export type SaveData = {
   thirst?: number;
   /** Bank, loans, levels, skills, goals, home and jobs (life.ts `Life`; read with readLife). */
   life?: unknown;
+  /** Saved up in an apartment building (floor 2 or higher: the hallway, an apartment, the elevator): the game comes
+   * back there (`pos` is then the building's door outside, for anything that can't use this). */
+  apt?: SavedApt | null;
 };
+export type SavedApt = { building: string; floor: number; x: number; z: number; yaw: number; outside: [number, number]; outsideYaw: number };
 /** Every character starts with this much money. */
 export const STARTING_CASH = 200;
 

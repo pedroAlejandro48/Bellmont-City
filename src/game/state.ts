@@ -3,6 +3,7 @@ import type { ShopKind } from "./shops";
 import type { ItemKind } from "./inventory";
 import * as THREE from "three";
 import type { Room, SitPlan } from "./restaurantRoom";
+import { floorY } from "./apartments";
 import type { NpcLink } from "./pedestrians";
 import type { FoodLink, Mode, PackKind } from "./food";
 import type { TrafficLink } from "./trafficShare";
@@ -241,8 +242,9 @@ export function createState(save: SaveData): GameState {
     deathStartedAt: save.health === 0 ? performance.now() : null,
     lastImpactAt: -Infinity,
     elapsed: save.elapsed,
-    pos: new THREE.Vector3(...save.pos),
-    rotY: save.rotY,
+    // Saved up in an apartment building: back on that floor (in the building, its room made by Apartments).
+    pos: save.apt ? new THREE.Vector3(save.apt.x, floorY(save.apt.floor), save.apt.z) : new THREE.Vector3(...save.pos),
+    rotY: save.apt ? save.apt.yaw : save.rotY,
     camYaw: save.camYaw,
     camOrbit: save.camYaw - save.rotY - Math.PI,
     camPitch: save.camPitch ?? 0.22,
@@ -263,7 +265,7 @@ export function createState(save: SaveData): GameState {
     groceryBasket: null,
     groceryBag: null,
     extraDoorUses: [],
-    level: null,
+    level: save.apt ? { building: save.apt.building, floor: save.apt.floor, y: floorY(save.apt.floor) } : null,
     seatSurface: null,
     elevator: null,
     uiLock: null,
@@ -281,7 +283,7 @@ export function createState(save: SaveData): GameState {
     impacts: [],
     vehicles: [],
     vehiclePushes: new Map(),
-    rooms: new Map(), interior: null, seat: null, script: null, standQueued: false, fade: 0, fadeInAt: null, doorPrompt: false,
+    rooms: new Map(), interior: save.apt ? { key: `${save.apt.building}#${save.apt.floor}`, phase: "inside", startedAt: 0, from: [0, 0], fromYaw: 0, outside: save.apt.outside, outsideYaw: save.apt.outsideYaw, cameraSet: true } : null, seat: null, script: null, standQueued: false, fade: 0, fadeInAt: null, doorPrompt: false,
     cash: Math.max(0, save.cash ?? STARTING_CASH),
     life: readLife(save.life, timeInfo(save.elapsed).day),
     toasts: [], waypoint: null, phone: { open: false, app: null, atm: false }, job: null, home: null, busking: null,
@@ -336,9 +338,30 @@ export function toSave(s: GameState): SaveData {
     camPitch: s.camPitch,
     worldSeed: s.worldSeed,
     benchSeat: s.bench?.phase === "stand" ? null : s.bench?.seat ?? null,
+    apt: aptSave(s),
     scooter: { pos: [s.scooter.pos.x, s.scooter.pos.y, s.scooter.pos.z], yaw: s.scooter.yaw, fallen: s.scooter.fallen, riding: s.scooter.riding },
     ...(s.accident ? { accident: { phase: s.accident.phase, remaining: Math.max(0, s.accident.phase === "rising" ? GET_UP_SECONDS - (s.simulationTime - (s.accident.riseStartedAt ?? 0)) : KNOCKDOWN_SECONDS - (s.simulationTime - s.accident.startedAt)), direction: s.accident.direction, seed: s.accident.seed } } : { accident: null }),
   };
+}
+
+/** Where to come back in an apartment building (floor 2 and up), or null: on the floor (in the elevator, the floor it
+ * is at or going to, out in the hallway in front of it). */
+function aptSave(s: GameState): import("./config").SavedApt | null {
+  if (!s.interior || s.interior.phase !== "inside") return null;
+  const e = s.elevator, lvl = s.level;
+  const building = e?.building ?? lvl?.building;
+  const floor = e ? (e.phase === "moving" && e.target !== null ? e.target : e.floor) : lvl?.floor;
+  if (!building || !floor || floor < 2) return null;
+  let x = s.pos.x, z = s.pos.z, yaw = s.rotY;
+  if (e || s.seat) {
+    // In the elevator (or sat on a chair): on the floor's hallway in front of the elevator, or where one sat down from.
+    const room = s.rooms.get(`${building}#${floor}`) as (Room & { spots?: { elevator: [number, number] } }) | undefined;
+    if (!room) return null;
+    const at: [number, number] = e ? room.spots!.elevator : s.seat!.plan.start, f = room.frame;
+    x = f.ox + at[0] * f.c + at[1] * f.s; z = f.oz - at[0] * f.s + at[1] * f.c;
+    yaw = e ? f.rot + Math.PI : f.rot + s.seat!.plan.startYaw;
+  }
+  return { building, floor, x, z, yaw, outside: s.interior.outside, outsideYaw: s.interior.outsideYaw };
 }
 
 export function knockDown(state: GameState, vehicleId: number, path: RoadPath, position: [number, number], direction: [number, number], launchSpeed: number, seed: number) {

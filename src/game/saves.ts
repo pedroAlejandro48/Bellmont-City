@@ -1,4 +1,4 @@
-import { BENCH_SEATS, DEFAULT_SAVE, type SaveData } from "./config";
+import { BENCH_SEATS, DEFAULT_SAVE, type SaveData, type SavedApt } from "./config";
 
 export function saveRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -21,7 +21,16 @@ export function readSave(value: unknown): SaveData {
     ...(data['life'] && typeof data['life'] === 'object' ? { life: data['life'] } : {}),
     pos: [...pos], rotY: number("rotY", DEFAULT_SAVE.rotY), camYaw: number("camYaw", DEFAULT_SAVE.camYaw),
     ...(data['accident'] ? { accident: readAccident(data['accident']) } : {}),
+    ...(data['apt'] ? { apt: readApt(data['apt']) } : {}),
   };
+}
+
+function readApt(value: unknown): SavedApt | null {
+  const a = saveRecord(value);
+  const num = (v: unknown) => typeof v === "number" && Number.isFinite(v);
+  const pair = (v: unknown) => Array.isArray(v) && v.length === 2 && v.every(num);
+  if (typeof a['building'] !== "string" || !num(a['floor']) || (a['floor'] as number) < 2 || !num(a['x']) || !num(a['z']) || !pair(a['outside'])) return null;
+  return { building: a['building'], floor: Math.round(a['floor'] as number), x: a['x'] as number, z: a['z'] as number, yaw: num(a['yaw']) ? a['yaw'] as number : 0, outside: a['outside'] as [number, number], outsideYaw: num(a['outsideYaw']) ? a['outsideYaw'] as number : 0 };
 }
 
 function readScooter(value: unknown): Exclude<SaveData['scooter'], undefined> {

@@ -202,7 +202,7 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
       const reach = (r: Reach | null): WorldReach | null => {
         if (!r || !frame) return null;
         const [wx, wz] = toWorld(frame, r.at[0], r.at[2]);
-        return { at: new THREE.Vector3(wx, SIDEWALK_H + r.at[1], wz), blend: r.blend, pole: r.pole };
+        return { at: new THREE.Vector3(wx, (state.level?.y ?? SIDEWALK_H) + r.at[1], wz), blend: r.blend, pole: r.pole };
       };
       const script: Script = { x, z, yaw, walk, sit: pose.sit, shuffle: pose.shuffle, lean: pose.lean, left: reach(pose.left), right: reach(pose.right) };
       state.script = script;

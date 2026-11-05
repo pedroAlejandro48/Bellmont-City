@@ -279,7 +279,7 @@ export function Food({ state }: { state: GameState }) {
         const dx = chair.x - table.x, dz = chair.z - table.z, d = Math.hypot(dx, dz) || 1;
         const lx = table.x + dx / d * (TABLE.half - 0.16), lz = table.z + dz / d * (TABLE.half - 0.16);
         const [wx, wz] = toWorld(seatRoom.frame, lx, lz);
-        state.put = { pack: hands[hand]!.id, hand, at: st, target: new THREE.Vector3(wx, SIDEWALK_H + TABLE.top + PACK_SIZE.sign.grip, wz), where: "table", yaw: state.rotY + Math.PI, sent: false };
+        state.put = { pack: hands[hand]!.id, hand, at: st, target: new THREE.Vector3(wx, (state.level?.y ?? SIDEWALK_H) + TABLE.top + PACK_SIZE.sign.grip, wz), where: "table", yaw: state.rotY + Math.PI, sent: false };
       }
     }
     // Setting something down (on a table, or beside oneself on a bench): let go when the hand gets there.
@@ -341,7 +341,7 @@ export function Food({ state }: { state: GameState }) {
         const dx = chair.x - table.x, dz = chair.z - table.z, d = Math.hypot(dx, dz) || 1;
         const [x, z] = toWorld(seatRoom.frame, table.x + dx / d * (TABLE.half - 0.2), table.z + dz / d * (TABLE.half - 0.2));
         const [ax, az] = toWorld(seatRoom.frame, table.x + dx / d * (TABLE.half - 0.2) - dz / d * 0.2, table.z + dz / d * (TABLE.half - 0.2) + dx / d * 0.2);
-        return { x, y: SIDEWALK_H + TABLE.top, z, yaw: state.rotY + Math.PI, lx: ax - x, lz: az - z };
+        return { x, y: (state.level?.y ?? SIDEWALK_H) + TABLE.top, z, yaw: state.rotY + Math.PI, lx: ax - x, lz: az - z };
       }
       return state.seatSurface;
     })();
