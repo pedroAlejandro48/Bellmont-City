@@ -4,7 +4,7 @@ import { useRef } from "react";
 import * as THREE from "three";
 import { SCOOTER_PROMPT_FADE_SECONDS } from "./config";
 
-/** A floating key hint ("E" by default; `label` shows a word instead, such as "CLOSED"). */
+/** A floating key hint ("E" by default; `label` shows a word instead, such as "CLOSED"), always the same size on screen however near or far (first person too). */
 export function InteractionPrompt({ sample }: { sample: () => { visible: boolean; x: number; y: number; z: number; time: number; label?: string | undefined } }) {
   const group = useRef<THREE.Group>(null), label = useRef<HTMLDivElement>(null), alpha = useRef(0);
   useFrame((_, dt) => {
@@ -20,5 +20,5 @@ export function InteractionPrompt({ sample }: { sample: () => { visible: boolean
       }
     }
   });
-  return <group ref={group}><Billboard><Html center distanceFactor={7} zIndexRange={[9, 0]}><div ref={label} className="scooter-key" aria-label="Press E to interact">E</div></Html></Billboard></group>;
+  return <group ref={group}><Billboard><Html center zIndexRange={[9, 0]}><div ref={label} className="scooter-key" aria-label="Press E to interact">E</div></Html></Billboard></group>;
 }
