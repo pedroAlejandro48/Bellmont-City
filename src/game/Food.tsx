@@ -620,7 +620,7 @@ const Staffed = memo(function Staffed({ place, state, live, hands, staffAt }: { 
     <Worker rigRef={setRunner} color={colors[1]} kind={kind} />
     <Worker rigRef={setWaiter} color={colors[2]} kind={kind} />
     <group ref={bubble}>
-      <Html center distanceFactor={5.5} zIndexRange={[8, 0]} pointerEvents="none">
+      <Html center zIndexRange={[8, 0]} pointerEvents="none">
         <div className={`speech-bubble ${said.shown ? "shown" : ""}`} role="status" aria-live="polite">{said.text}</div>
       </Html>
     </group>
