@@ -104,3 +104,8 @@
 - Grocery: big crates heaped with fruit (instanced), one drinks shelf at the back with a section per drink (groceryRun DRINK_SHELF/drinkSection; Venues DrinkShelf instanced models), a pantry shelf ("jars") in the middle. The fridge door shows the real drink models.
 - Apartment buildings at night: rented floors (not free to rent today, or yours) have their windows lit, free floors dark (AptExterior `litKey`; band materials get the night intensity too).
 - Test builds: `window.__timeScale` slows state.simulationTime (scripted moves) to look at animations.
+- Bedsheet over the feet: the feet are capsules the sheet always goes over (`over`), and the sheet hangs 0.4 m past the foot so pulling it up to the chest still covers them.
+- Resting: sitting (a bench, a chair, the couch — Sky: bench seated or a seated script, not the bed) gives back 1% energy an in-game minute (needs.stepEnergy `sitting`).
+- Hinged doors (apartment, bedroom): control returns at LEAVE.free / ENTER.free (through the doorway); the door finishes closing by itself (Apartments `closing`).
+- While a panel holds you still (state.uiLock: fridge, closet, elevator buttons, sleep) the joystick does nothing (Player ignores state.stick; TouchControls won't start one).
+- The fridge's cabinet pieces meet edge to edge (back full width; sides, top and bottom in front of it) so no faces share a plane.

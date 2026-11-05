@@ -131,7 +131,8 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     const right = k.has("KeyD") || k.has("ArrowRight");
     const shift = k.has("ShiftLeft") || k.has("ShiftRight");
     // The on-screen joystick: how far it is pushed sets the pace; right to the edge, running.
-    const stick = state.stick, stickPush = stick ? Math.min(1, Math.hypot(stick.x, stick.y)) : 0;
+    // (Not while a panel holds you still: the fridge open, the closet, the elevator's buttons…)
+    const stick = state.uiLock ? null : state.stick, stickPush = stick ? Math.min(1, Math.hypot(stick.x, stick.y)) : 0;
 
     let running = false;
     const dead = state.health === 0;

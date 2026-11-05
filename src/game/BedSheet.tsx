@@ -8,7 +8,7 @@ import type { GameState } from "./state";
 
 /** The mattress's top and the pillow (floor-local heights). */
 export const MATTRESS_TOP = 0.555, PILLOW_TOP = 0.65;
-const NX = 16, NZ = 22, OVER = 0.3, THICK = 0.014, ITER = 12;
+const NX = 16, NZ = 25, OVER = 0.3, THICK = 0.014, ITER = 12;
 /** After moving (the hand let go, the body got out), how long the sheet settles before it's still again (s). */
 const SETTLE = 2.5;
 
@@ -34,7 +34,7 @@ export function BedSheet({ fl, state, mat, live, link }: { fl: AptFloor; state: 
   const pillow = useMemo(() => ({ x0: b.x - (b.w - 0.25) / 2, x1: b.x + (b.w - 0.25) / 2, z0: b.z + b.l / 2 - 0.44, z1: b.z + b.l / 2 - 0.12 }), [b]);
   const cloth = useMemo<Cloth>(() => {
     // From under the pillow down past the foot; wider than the mattress by OVER each side.
-    const xa = box.x0 - OVER, xb = box.x1 + OVER, za = pillow.z0 + 0.04, zb = box.z0 - 0.14;
+    const xa = box.x0 - OVER, xb = box.x1 + OVER, za = pillow.z0 + 0.04, zb = box.z0 - 0.4;
     const p = new Float32Array(NX * NZ * 3);
     for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) {
       const k = (j * NX + i) * 3;
@@ -78,10 +78,10 @@ export function BedSheet({ fl, state, mat, live, link }: { fl: AptFloor; state: 
     return g;
   }, [cloth]);
   useEffect(() => () => geo.dispose(), [geo]);
-  const caps = useRef<{ a: THREE.Vector3; b: THREE.Vector3; r: number }[]>([]);
+  const caps = useRef<{ a: THREE.Vector3; b: THREE.Vector3; r: number; over?: boolean }[]>([]);
   /** Below this (sat on, under the hips), the sheet is under the person: upright limbs leave it be. */
   const seatY = useRef(-1);
-  const tmp = useMemo(() => Array.from({ length: 14 }, () => new THREE.Vector3()), []);
+  const tmp = useMemo(() => Array.from({ length: 18 }, () => new THREE.Vector3()), []);
 
   const collide = (k: number) => {
     const P = cloth.p;
@@ -102,7 +102,7 @@ export function BedSheet({ fl, state, mat, live, link }: { fl: AptFloor; state: 
       const ab = tmp[12]!.subVectors(c.b, c.a), ap = tmp[13]!.set(x - c.a.x, y - c.a.y, z - c.a.z);
       const t = Math.max(0, Math.min(1, ap.dot(ab) / Math.max(1e-6, ab.lengthSq())));
       const cx = c.a.x + ab.x * t, cy = c.a.y + ab.y * t, cz = c.a.z + ab.z * t;
-      const r = c.r + THICK, len = ab.length(), steep = len > 1e-4 && Math.abs(ab.y) / len > 0.55;
+      const r = c.r + THICK, len = ab.length(), steep = !c.over && len > 1e-4 && Math.abs(ab.y) / len > 0.55;
       if (steep && y < seatY.current) continue;
       if (steep) {
         // An upright limb (standing, sitting up): out sideways (never down), so the sheet can't climb it.
@@ -208,6 +208,11 @@ export function BedSheet({ fl, state, mat, live, link }: { fl: AptFloor; state: 
       if (kl && fl2) caps.current.push({ a: kl, b: fl2, r: 0.075 });
       if (hr && kr) caps.current.push({ a: hr, b: kr, r: 0.085 });
       if (kr && fr) caps.current.push({ a: kr, b: fr, r: 0.075 });
+      // The feet (toes up when lying): the sheet always goes over them, in their shape.
+      const heelL = at(B[5], tmp[14]!, 0, -0.46, -0.04), toeL = at(B[5], tmp[15]!, 0, -0.46, 0.2);
+      const heelR = at(B[7], tmp[16]!, 0, -0.46, -0.04), toeR = at(B[7], tmp[17]!, 0, -0.46, 0.2);
+      if (heelL && toeL) caps.current.push({ a: heelL, b: toeL, r: 0.085, over: true });
+      if (heelR && toeR) caps.current.push({ a: heelR, b: toeR, r: 0.085, over: true });
       if (sl && el) caps.current.push({ a: sl, b: el, r: 0.065 });
       if (el && hdl) caps.current.push({ a: el, b: hdl, r: 0.06 });
     }

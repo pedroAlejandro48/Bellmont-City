@@ -66,3 +66,11 @@ describe("sleep energy and the energy drink's cost", () => {
     expect(consume({ health: 80, hunger: 50, thirst: 50, energy: 30 }, "Cola", 1).health).toBe(80);
   });
 });
+
+describe("resting", () => {
+  it("sitting gives back 1% energy an in-game minute (instead of using it)", () => {
+    expect(stepEnergy(50, 10, false, true)).toBe(60);
+    expect(stepEnergy(95, 10, true, true)).toBe(100);
+    expect(stepEnergy(50, 60, false, false)).toBeLessThan(50);
+  });
+});

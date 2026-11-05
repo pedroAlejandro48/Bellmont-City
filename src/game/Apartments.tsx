@@ -183,10 +183,12 @@ function Furniture({ f, m }: { f: AptFurniture; m: FMats }) {
       // FloorInterior). Walls 4 cm thick; the opening is at the front, 6 cm behind the closed door's face.
       const t = 0.04, front = d / 2 - 0.06, back = -d / 2, inner = front - back - t;
       return <group>
-        <mesh position={[0, 0.03, (front + back) / 2]} material={m.white}>{B([w, 0.06, front - back])}</mesh>
-        <mesh position={[0, 1.86 - 0.03, (front + back) / 2]} material={m.white} castShadow>{B([w, 0.06, front - back])}</mesh>
-        <mesh position={[0, 0.93, back + t / 2]} material={m.fridgeLight}>{B([w, 1.86, t])}</mesh>
-        {[-1, 1].map((sd) => <mesh key={sd} position={[sd * (w / 2 - t / 2), 0.93, (front + back) / 2]} material={[m.white, m.white, m.white, m.white, m.white, m.white].map((x, i) => (i === (sd > 0 ? 1 : 0) ? m.fridgeLight : x))} castShadow>{B([t, 1.86, front - back])}</mesh>)}
+        {/* (The pieces meet edge to edge, never overlapping: no two faces in one plane, so nothing flickers.) The back:
+            white outside, lit inside. */}
+        <mesh position={[0, 0.93, back + t / 2]} material={[m.white, m.white, m.white, m.white, m.fridgeLight, m.white]} castShadow>{B([w, 1.86, t])}</mesh>
+        {[-1, 1].map((sd) => <mesh key={sd} position={[sd * (w / 2 - t / 2), 0.93, (front + back + t) / 2]} material={[m.white, m.white, m.white, m.white, m.white, m.white].map((x, i) => (i === (sd > 0 ? 1 : 0) ? m.fridgeLight : x))} castShadow>{B([t, 1.86, front - back - t])}</mesh>)}
+        <mesh position={[0, 0.03, (front + back + t) / 2]} material={m.white}>{B([w - 2 * t, 0.06, front - back - t])}</mesh>
+        <mesh position={[0, 1.86 - 0.03, (front + back + t) / 2]} material={m.white} castShadow>{B([w - 2 * t, 0.06, front - back - t])}</mesh>
         {FRIDGE_SHELVES.map((y) => <mesh key={y} position={[0, y, back + t + inner / 2]} material={m.glass}>{B([w - 2 * t, 0.012, inner])}</mesh>)}
         <mesh position={[0, 0.2, back + t + inner / 2]} material={m.s("#dfe7ea", 0.4)}>{B([w - 2 * t - 0.02, 0.26, inner - 0.04])}</mesh>
       </group>;
@@ -632,6 +634,8 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   const ownScript = useRef(false);
   const sleeping = useRef(0);
   const lastLift = useRef<string | null>(null);
+  /** Doors closing behind someone who has walked on: which, how it was used (pushed open: leave; pulled: enter), when. */
+  const closing = useRef<{ which: "apartment" | "bedroom"; kind: "leave" | "enter"; from: [number, number]; fromYaw: number; start: number }[]>([]);
   /** Each floor's bedsheet and the hand holding its corner. */
   const sheets = useRef(new Map<string, SheetLink>());
   const sheetLink = (key: string) => { let l = sheets.current.get(key); if (!l) { l = { corner: null, pin: null, active: false, make: null }; sheets.current.set(key, l); } return l; };
@@ -788,6 +792,13 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     function here2(): [number, number] { const h = here(); return [h.x, h.z]; }
     function hereYaw() { return frameNow ? state.rotY - frameNow.rot : state.rotY; }
 
+    // ---------- doors swinging shut by themselves (whoever went through has walked on) ----------
+    closing.current = closing.current.filter((c) => {
+      const tt = now - c.start, done = c.kind === "leave" ? LEAVE.done + leaveLead(c.from) : ENTER.done + enterLead(c.from);
+      const a = tt >= done ? 0 : c.kind === "leave" ? leavePose(tt, c.from, c.fromYaw).door.left : enterPose(tt, c.from, c.fromYaw).door.right;
+      if (c.which === "apartment") doorAngle.current = a; else bedAngle.current = a;
+      return tt < done;
+    });
     // ---------- the hinged doors (the apartment's and the bedroom's) ----------
     const mv = move.current;
     if (!eRide && mv && floor && (mv.kind === "keyIn" || mv.kind === "push" || mv.kind === "pull")) {
@@ -805,7 +816,9 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         const [x, z] = fr(sx * pose.x, squeeze(pose.z));
         return { x, z, yaw: (mirror ? -pose.yaw : pose.yaw) + F.theta, lean: pose.lean, left: mirror ? r(pose.right) : r(pose.left), right: mirror ? r(pose.left) : r(pose.right), crouch: 0 };
       };
-      const finish = () => { state.pos.x = script!.x; state.pos.z = script!.z; state.rotY = script!.yaw; move.current = null; script = null; setAngle(0); };
+      const finish = () => { state.pos.x = script!.x; state.pos.z = script!.z; state.rotY = script!.yaw; move.current = null; script = null; };
+      // Through the doorway and clear of the door: free to walk on; the door swings shut behind on its own.
+      const release = (kind: "leave" | "enter", from: [number, number], fromYaw: number, start: number) => { closing.current.push({ which, kind, from, fromYaw, start }); finish(); };
       if (mv.kind === "keyIn" && t < mv.keyT!) {
         // Walk up, the key goes into the lock, turns, comes back out (into the pocket).
         const [lx, lz] = fr(-0.13, -INNER_WALL - 0.05), lock: [number, number, number] = [lx, 1.05, lz];
@@ -823,17 +836,17 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         // The door pushed open into the room and walked through (the restaurants' way out).
         const tt = mv.kind === "keyIn" ? t - mv.keyT! : t;
         const from: [number, number] = mv.kind === "keyIn" ? [-0.45, -0.72] : mv.from!, fromYaw = mv.kind === "keyIn" ? 0 : mv.fromYaw!;
-        const total = LEAVE.done + leaveLead(from), pose = leavePose(Math.min(tt, total), from, fromYaw);
+        const total = LEAVE.done + leaveLead(from), free = LEAVE.free + leaveLead(from), pose = leavePose(Math.min(tt, total), from, fromYaw);
         script = scriptFrom(toRoom(pose, false));
         setAngle(pose.door.left);
-        if (tt >= total) finish();
+        if (tt >= free) release("leave", from, fromYaw, now - tt);
       } else {
         // Coming back out: the door pulled open (the restaurants' way in, mirrored) and through.
-        const from = mv.from!, total = ENTER.done + enterLead(from);
-        const pose = enterPose(Math.min(t, total), from, mv.fromYaw!);
+        const from = mv.from!, free = ENTER.free + enterLead(from);
+        const pose = enterPose(Math.min(t, free), from, mv.fromYaw!);
         script = scriptFrom(toRoom(pose, true));
         setAngle(pose.door.right);
-        if (t >= total) finish();
+        if (t >= free) release("enter", from, mv.fromYaw!, mv.t0);
       }
     }
     // ---------- the fridge ----------

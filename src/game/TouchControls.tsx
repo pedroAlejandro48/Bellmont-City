@@ -73,7 +73,7 @@ function Joystick({ state }: { state: GameState }) {
     className="touch-zone pointer-events-auto fixed bottom-0 left-0 z-[5]"
     style={{ touchAction: "none", WebkitUserSelect: "none" }}
     onPointerDown={(e) => {
-      if (finger.current !== null || e.pointerType === "mouse") return;
+      if (finger.current !== null || e.pointerType === "mouse" || state.uiLock) return;
       e.preventDefault(); e.stopPropagation();
       finger.current = e.pointerId;
       try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* fine */ }

@@ -117,7 +117,9 @@ export function SkyAndLights({ state }: { state: GameState }) {
       // Hunger and thirst run down; either at zero hurts, otherwise health slowly comes back.
       const next = stepNeeds(state, step / GAME_MINUTE);
       state.hunger = next.hunger; state.thirst = next.thirst; state.health = next.health;
-      state.energy = stepEnergy(state.energy, step / GAME_MINUTE, state.runningNow);
+      // Sat down (a bench, a chair, the couch): resting.
+      const sitting = state.bench?.phase === "seated" || (!!state.script && state.script.sit >= 0.99 && !state.script.bed);
+      state.energy = stepEnergy(state.energy, step / GAME_MINUTE, state.runningNow, sitting);
       if (state.health <= 0) { state.health = 0; state.deathStartedAt = performance.now(); state.keys.clear(); state.jumpQueued = false; }
     }
     const ti = timeInfo(state.elapsed);

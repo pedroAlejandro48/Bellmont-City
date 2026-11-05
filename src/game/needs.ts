@@ -33,8 +33,11 @@ export function sleepEnergy(energy: number, hours: number) {
 }
 /** In-game hours from `hours` (time of day) to 6 AM. */
 export const hoursTo6 = (hours: number) => ((6 - hours) % 24 + 24) % 24;
-/** Energy after `minutes` in-game minutes (running uses it faster). */
-export function stepEnergy(energy: number, minutes: number, running: boolean) {
+/** Sitting down rests: energy comes back 1% an in-game minute. */
+export const SIT_ENERGY_PER_MINUTE = 1;
+/** Energy after `minutes` in-game minutes (running uses it faster; sitting gives it back). */
+export function stepEnergy(energy: number, minutes: number, running: boolean, sitting = false) {
+  if (sitting) return clamp(energy + SIT_ENERGY_PER_MINUTE * minutes);
   return clamp(energy - ENERGY_PER_MINUTE * minutes * (running ? RUN_ENERGY_FACTOR : 1));
 }
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
