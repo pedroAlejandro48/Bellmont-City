@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { BLOCK, HALF, blockCenter, blockIndex } from "@/game/config";
-import { routeTarget, routeTo } from "@/game/route";
+import { nextTurn, routeLength, routeTarget, routeTo, type Turn } from "@/game/route";
 import type { GameState } from "@/game/state";
 import { watchTouchMode } from "@/game/touchMode";
 
@@ -12,8 +12,20 @@ const REACH = 95;
  * you as a white arrow in the middle, and the fastest way there as a blue line — straight on foot (through anything),
  * along the streets on a vehicle. It goes away once you're there (the waypoint is cleared on arrival).
  */
+/** The next-move icons (white on the badge): straight on, turn right or left, turn round, arrived. */
+const TURN_ICON: Record<Turn, string> = {
+  straight: '<path d="M12 21V5" /><path d="M6 11l6-6 6 6" />',
+  right: '<path d="M7 21V13a4 4 0 0 1 4-4h8" /><path d="M15 5l4 4-4 4" />',
+  left: '<path d="M17 21V13a4 4 0 0 0-4-4H5" /><path d="M9 5L5 9l4 4" />',
+  uturn: '<path d="M8 21V9a4 4 0 0 1 8 0v8" /><path d="M12 13l4 4 4-4" />',
+  arrive: '<path d="M5 13l4 4 10-10" />',
+};
+const TURN_LABEL: Record<Turn, string> = { straight: "Straight on", right: "Turn right", left: "Turn left", uturn: "Turn round", arrive: "You're in the block" };
+
 export function MiniMap({ state }: { state: GameState }) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const distance = useRef<HTMLSpanElement>(null), icon = useRef<SVGSVGElement>(null), badge = useRef<HTMLDivElement>(null);
+  const shownTurn = useRef<Turn | null>(null);
   const [touch, setTouch] = useState(false);
   const [shown, setShown] = useState(false);
   useEffect(() => watchTouchMode(setTouch), []);
@@ -33,6 +45,10 @@ export function MiniMap({ state }: { state: GameState }) {
       const key = `${w.x},${w.z},${vehicle}`;
       if (!route || route.key !== key || now % 500 < 70) route = { key, pts: routeTo([p.x, p.z], [w.x, w.z], vehicle) };
       const pts = route.pts.slice(); pts[0] = [p.x, p.z];
+      // The badge: how far along the route (not as the crow flies), and what to do at the next corner.
+      const metres = routeLength(pts), turnNext = nextTurn(pts, vehicle ? state.scooter.yaw : state.rotY, vehicle, routeTarget(w.x, w.z, vehicle));
+      if (distance.current) distance.current.textContent = metres < 1000 ? `${Math.round(metres)} m` : `${(metres / 1000).toFixed(1)} km`;
+      if (icon.current && shownTurn.current !== turnNext) { shownTurn.current = turnNext; icon.current.innerHTML = TURN_ICON[turnNext]; badge.current?.setAttribute("aria-label", `${TURN_LABEL[turnNext]}, ${distance.current?.textContent ?? ""}`); badge.current?.classList.toggle("arrive", turnNext === "arrive"); }
       const S = c.width, R = S / 2, k = R / REACH;
       // Turned so the camera's forward is up.
       const fx = -Math.sin(state.camYaw), fz = -Math.cos(state.camYaw), turn = -Math.PI / 2 - Math.atan2(fz, fx);
@@ -69,5 +85,11 @@ export function MiniMap({ state }: { state: GameState }) {
     id = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(id);
   }, [state]);
-  return <canvas ref={canvas} width={256} height={256} className={`minimap ${touch ? "touch" : ""} ${shown ? "on" : ""}`} aria-label="Route map" />;
+  return <div className={`minimap ${touch ? "touch" : ""} ${shown ? "on" : ""}`}>
+    <div ref={badge} className="minimap-badge" role="status">
+      <svg ref={icon} viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden />
+      <span ref={distance} />
+    </div>
+    <canvas ref={canvas} width={256} height={256} aria-label="Route map" />
+  </div>;
 }

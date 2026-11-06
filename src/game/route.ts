@@ -85,3 +85,34 @@ export function routeTo(from: [number, number], to: [number, number], vehicle: b
 
 /** How long a route is (metres). */
 export const routeLength = (pts: [number, number][]) => pts.reduce((s, p, i) => (i ? s + Math.hypot(p[0] - pts[i - 1]![0], p[1] - pts[i - 1]![1]) : 0), 0);
+
+export type Turn = "straight" | "right" | "left" | "uturn" | "arrive";
+/** Which block a point is in (both axes). */
+const blockOf2 = (x: number, z: number) => `${blockIndex(x)},${blockIndex(z)}`;
+/**
+ * What to do next on the way: once in the destination's block (the last street crossed), arrived (✓). On a vehicle,
+ * what to do at the next corner of the route (a U-turn first if it runs back the way you're heading); on foot (the
+ * route is straight), which way the destination lies from the way you face.
+ */
+export function nextTurn(pts: [number, number][], heading: number, vehicle: boolean, target: [number, number]): Turn {
+  const here = pts[0]!;
+  if (blockOf2(here[0], here[1]) === blockOf2(target[0], target[1])) return "arrive";
+  const fx = Math.sin(heading), fz = Math.cos(heading);
+  const side = (dx: number, dz: number): Turn => {
+    const l = Math.hypot(dx, dz) || 1, ahead = (dx * fx + dz * fz) / l, cross = (fx * dz - fz * dx) / l;
+    if (ahead < -0.7) return "uturn";
+    if (Math.abs(cross) < 0.5 && ahead > 0) return "straight";
+    return cross > 0 ? "right" : "left";
+  };
+  if (!vehicle || pts.length < 5) return side(target[0] - here[0], target[1] - here[1]);
+  // pts: here, on the street, the corners…, the end on the street, the target.
+  const a = pts[1]!, c = pts[2]!, d = pts[3]!;
+  const d1x = c[0] - a[0], d1z = c[1] - a[1], l1 = Math.hypot(d1x, d1z);
+  if (l1 > 0.5 && (d1x * fx + d1z * fz) / l1 < -0.5) return "uturn";
+  const d2x = d[0] - c[0], d2z = d[1] - c[1], l2 = Math.hypot(d2x, d2z);
+  if (l1 < 0.5 || l2 < 0.5) return "straight";
+  const turn = (d1x * d2z - d1z * d2x) / (l1 * l2), along = (d1x * d2x + d1z * d2z) / (l1 * l2);
+  if (along < -0.7) return "uturn";
+  if (Math.abs(turn) < 0.5) return "straight";
+  return turn > 0 ? "right" : "left";
+}

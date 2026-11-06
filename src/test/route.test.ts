@@ -27,3 +27,28 @@ describe("GPS routes", () => {
     expect(routeLength(pts)).toBeLessThan(manhattan + 60);
   });
 });
+
+import { nextTurn } from "@/game/route";
+describe("the next move", () => {
+  const S = (k: number) => streetCenter(k);
+  it("on the bike: straight on, right, left or a U-turn at the next corner", () => {
+    // Heading +z along the street x = S(2), next corner at z = S(3), then turning toward -x (right, facing +z).
+    const pts: [number, number][] = [[S(2), S(1) + 5], [S(2), S(1) + 5], [S(2), S(3)], [S(1), S(3)], [S(1), S(3) + 20], [S(1) + 3, S(3) + 20]];
+    expect(nextTurn(pts, 0, true, [blockCenter(1), blockCenter(4)])).toBe("right");
+    const leftPts: [number, number][] = pts.map(([x, z]) => [2 * S(2) - x, z]);
+    expect(nextTurn(leftPts, 0, true, [blockCenter(4), blockCenter(4)])).toBe("left");
+    // The route runs back the way you're heading: turn round.
+    expect(nextTurn(pts, Math.PI, true, [blockCenter(1), blockCenter(4)])).toBe("uturn");
+    const ahead: [number, number][] = [[S(2), S(1) + 5], [S(2), S(1) + 5], [S(2), S(3)], [S(2), S(4)], [S(2), S(4) + 10], [S(2) + 3, S(4) + 10]];
+    expect(nextTurn(ahead, 0, true, [blockCenter(3), blockCenter(5)])).toBe("straight");
+  });
+  it("in the destination's block: arrived (✓); on foot: which way it lies", () => {
+    const t: [number, number] = [blockCenter(2) + 18, blockCenter(2)];
+    expect(nextTurn([[blockCenter(2) - 10, blockCenter(2)], t], 0, false, t)).toBe("arrive");
+    const far: [number, number] = [blockCenter(0), blockCenter(5)];
+    expect(nextTurn([[blockCenter(0), blockCenter(1)], far], 0, false, far)).toBe("straight");
+    expect(nextTurn([[blockCenter(0), blockCenter(1)], far], Math.PI, false, far)).toBe("uturn");
+    // Facing +x, a place toward +z is on your right.
+    expect(nextTurn([[blockCenter(0), blockCenter(1)], far], Math.PI / 2, false, far)).toBe("right");
+  });
+});

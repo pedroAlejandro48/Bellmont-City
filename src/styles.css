@@ -510,7 +510,11 @@
   .inventory-num { font-size: 0.5rem; top: 0.1rem; left: 0.2rem; }
 }
 /* The round route map: bottom right, or just above the touch buttons. */
-.minimap { position: fixed; z-index: 19; right: 1.5rem; bottom: 1.5rem; width: 10rem; height: 10rem; border-radius: 50%; pointer-events: none; opacity: 0; transform: scale(0.8); transition: opacity 0.3s ease, transform 0.35s cubic-bezier(0.2, 1.2, 0.4, 1); box-shadow: 0 8px 22px rgba(0,0,0,0.4); }
+.minimap { position: fixed; z-index: 19; right: 1.5rem; bottom: 1.5rem; width: 10rem; height: 10rem; pointer-events: none; opacity: 0; transform: scale(0.8); transform-origin: bottom center; transition: opacity 0.3s ease, transform 0.35s cubic-bezier(0.2, 1.2, 0.4, 1); }
+.minimap canvas { display: block; width: 100%; height: 100%; border-radius: 50%; box-shadow: 0 8px 22px rgba(0,0,0,0.4); }
+/* On top of the round map: the next move and how far to go along the route. */
+.minimap-badge { position: absolute; left: 50%; bottom: calc(100% + 0.35rem); transform: translateX(-50%); display: flex; align-items: center; gap: 0.3rem; padding: 0.22rem 0.6rem 0.22rem 0.4rem; border-radius: 999px; background: #2f7bff; color: #ffffff; font: 800 0.8rem/1 Manrope, Arial, sans-serif; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.35); }
+.minimap-badge.arrive { background: #2e9d5b; }
 .minimap.on { opacity: 1; transform: none; }
 .minimap.touch { width: 8rem; height: 8rem; right: calc(16px + env(safe-area-inset-right)); bottom: calc(164px + 64px + 14px + env(safe-area-inset-bottom)); }
 @media (orientation: landscape) {

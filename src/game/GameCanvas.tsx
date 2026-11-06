@@ -35,7 +35,7 @@ import { Grocery } from "./Grocery";
 import { Apartments } from "./Apartments";
 import { AptPanels } from "@/components/AptPanels";
 import { pressInventorySlot } from "./invRuntime";
-import { LevelBadge, Phone, RouteHint, Toasts } from "@/components/Phone";
+import { LevelBadge, Phone, Toasts } from "@/components/Phone";
 import { MiniMap } from "@/components/MiniMap";
 import { guideDone } from "./lifeRuntime";
 import { autoLowerQuality, qualityChosen, quality, readQuality, softwareRendering, startQuality } from "./quality";
@@ -353,7 +353,6 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
       {fpHint && <div className="pointer-events-none fixed left-1/2 top-1/2 z-20 -translate-x-1/2 translate-y-10 rounded-md bg-black/55 px-3 py-1.5 text-xs font-semibold text-white">Press any key or click to look around freely</div>}
       {!dead && <TouchControls state={state} />}
       <OrderMenu state={state} />
-      <RouteHint state={state} />
       <MiniMap state={state} />
       <Toasts state={state} />
       <Phone state={state} /><ShopPanel state={state} /><AptPanels state={state} />

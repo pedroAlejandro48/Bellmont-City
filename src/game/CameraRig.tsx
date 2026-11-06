@@ -122,7 +122,7 @@ export function CameraRig({ state }: { state: GameState }) {
       // Riding: the view turns with the bike, facing the way it goes. A look aside (mouse, or a finger on the
       // screen) is kept while looking, then eases back to the front.
       const now = performance.now(), tl = state.touchLook;
-      const looking = now - state.lastMouseLookAt < 1000 || tl.fingers > 0 || now - tl.releasedAt < 2000;
+      const looking = now - state.lastMouseLookAt < 2000 || tl.fingers > 0 || now - tl.releasedAt < 2000;
       let off = Math.atan2(Math.sin(state.camOrbit), Math.cos(state.camOrbit));
       if (!looking) off *= Math.exp(-3 * dt);
       off = Math.max(-1.55, Math.min(1.55, off));
@@ -149,6 +149,13 @@ export function CameraRig({ state }: { state: GameState }) {
     const captured = uiCaptured(state);
     if (captured && document.pointerLockElement === gl.domElement) document.exitPointerLock();
     gl.domElement.style.cursor = state.firstPerson && !captured ? "none" : "";
+    // Field of view: wider in first person — 90° (110° across on a wide screen, so a computer gains as much as an
+    // upright phone); eased between the two.
+    const cam = camera as THREE.PerspectiveCamera;
+    if (cam.isPerspectiveCamera) {
+      const want = state.firstPerson ? (cam.aspect <= 1 ? 90 : Math.max(60, Math.min(90, 2 * Math.atan(Math.tan((110 * Math.PI) / 360) / cam.aspect) * 180 / Math.PI))) : 60;
+      if (Math.abs(cam.fov - want) > 0.05) { cam.fov += (want - cam.fov) * (1 - Math.exp(-8 * dt)); if (Math.abs(cam.fov - want) < 0.1) cam.fov = want; cam.updateProjectionMatrix(); }
+    }
     if (state.firstPerson && firstPerson(dt)) return;
     const riding = state.scooter.riding || state.scooter.action === "mount";
     const forward = state.movingForward || (riding && state.scooter.speed > 0 && (state.keys.has("KeyW") || state.keys.has("ArrowUp") || state.stick !== null));
@@ -163,7 +170,14 @@ export function CameraRig({ state }: { state: GameState }) {
     const recenter = state.stick
       ? forwardSince.current !== null && now - forwardSince.current > 150 && tl.fingers === 0 && now - tl.releasedAt > 2000
       : cameraRecenterReady(forwardSince.current, state.lastMouseLookAt, now);
-    if (state.stick && recenter) {
+    if (riding) {
+      const looking = now - state.lastMouseLookAt < 2000 || tl.fingers > 0 || now - tl.releasedAt < 2000;
+      if (!looking) {
+        state.camOrbit = Math.atan2(Math.sin(state.camOrbit), Math.cos(state.camOrbit)) * Math.exp(-3 * dt);
+        const wrappedPitch = Math.asin(Math.sin(state.camPitch));
+        state.camPitch = wrappedPitch + (0.22 - wrappedPitch) * (1 - Math.exp(-3 * dt));
+      }
+    } else if (state.stick && recenter) {
       // The joystick: the camera eases round behind gently, as much as the push is forward, so a diagonal push
       // makes a smooth curve rather than the view spinning after the character.
       const st = state.stick, ahead = Math.max(0, st.y) / (Math.hypot(st.x, st.y) || 1);
