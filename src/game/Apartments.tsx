@@ -12,7 +12,7 @@ import { FRIDGE_DRINKS, FRIDGE_FOOD, fridgeSplit } from "@/components/FridgePane
 import { CEILING, CHAIR, ENTER, LEAVE, TABLE, enterLead, enterPose, leaveLead, leavePose, planSit, toLocal, toWorld, worldYaw, type Reach } from "./restaurantRoom";
 import { toast, type GameState, type Script } from "./state";
 import { handWorld } from "./arms";
-import { BedSheet, MATTRESS_TOP, PILLOW_TOP, type SheetLink } from "./BedSheet";
+import { BedSheet, MATTRESS_TOP, PILLOW_TOP, SHEET_NX, SHEET_NZ, sheetGrips, sheetPoint, type SheetLead, type SheetLink, type SheetShape } from "./BedSheet";
 import { canSleepAt, hoursTo6, sleepEnergy, wakeElapsed } from "./needs";
 import { ItemModel, useLooks } from "./InventoryWorld";
 import { ITEMS, type ItemKind } from "./inventory";
@@ -559,41 +559,55 @@ function RoomChairs({ fl, m }: { fl: AptFloor; m: FMats }) {
 
 // ---------- moving about: the elevator, the apartment door, bed and fridge ----------
 type Seat = { x: number; z: number; yaw: number; approach: [number, number]; surface: { x: number; z: number; y: number; lx: number; lz: number } };
-type Move = { kind: "board" | "alight" | "keyIn" | "push" | "pull" | "fridge" | "closet" | "sit" | "bed"; plan: Plan | null; t0: number; which?: "apartment" | "bedroom"; from?: [number, number]; fromYaw?: number; keyT?: number; phase?: "open" | "held" | "close" | "down" | "seated" | "up" | "in" | "asleep" | "out" | "make"; seat?: Seat; grip?: [number, number, number] | null; slept?: number };
-/** Making the bed: reach for the top edge, lift-shake-lay it, let go (seconds). */
-const MAKE = { reach: 0.6, pull: 1.8, release: 0.5 };
-/** Where one stands to make the bed: beside it, by the head, facing it. */
-const makeSpot = (fl: AptFloor): [number, number] => [fl.bed.edgeX + 0.5, fl.bed.z + fl.bed.l / 2 - 0.55];
+type Move = { kind: "board" | "alight" | "keyIn" | "push" | "pull" | "fridge" | "closet" | "sit" | "bed"; plan: Plan | null; t0: number; which?: "apartment" | "bedroom"; from?: [number, number]; fromYaw?: number; keyT?: number; phase?: "open" | "held" | "close" | "down" | "seated" | "up" | "in" | "asleep" | "out"; seat?: Seat; slept?: number; /** The sheet point a hand lifts it by. */ flap?: [number, number] | null };
 /**
- * Getting into bed (seconds from beside it): sit on the edge, the right hand takes the sheet's top corner and lifts
- * it, the left leg swings up onto the bed, then lying back the right leg follows, the sheet over; let go.
+ * The bed, step by step (seconds). Getting in: beside it facing it, the left hand takes the sheet's top corner and
+ * folds it back diagonally (baring the mattress there), let go; turn round and sit on the bare edge; the left hand
+ * takes the folded sheet and, lying back with the legs swinging up, brings it over — down to the shoulders; let go.
+ * Getting out is that backward (the right hand lifts the sheet off). Then the bed is made: by its side, bent over,
+ * the left hand at the head and the right at the foot take the sheet's open edge and lay it out flat again.
  */
-const BED = { sit: 0.9, grab: 0.55, lift: 0.5, legL: 1.1, lie: 1.4, release: 0.6, asleep: 2.6 };
-const BT = (() => { let a = 0; const at = (d: number) => (a += d); return { s1: at(BED.sit), s2: at(BED.grab), s3: at(BED.lift), s4: at(BED.legL), s5: at(BED.lie), s6: at(BED.release) }; })();
-type BedPose = { x: number; z: number; yaw: number; lean: number; bed: { sit: number; lie: number; legL: number; legR: number }; right: Reach | null; pin: [number, number, number] | null };
-/** The pose `u` seconds into getting in (or, `out`, the same moment getting out: the hand's ends differ). */
-function bedPose(fl: AptFloor, u: number, grip: [number, number, number], out: boolean): BedPose {
-  const b = fl.bed, k = (a: number, d: number) => smooth((u - a) / d);
-  const L1: [number, number, number] = [b.edgeX + 0.05, 0.9, b.sit[1] + 0.45], L2: [number, number, number] = [b.edgeX - 0.25, 1.0, b.lie[1] + 0.35], L3: [number, number, number] = [b.x - 0.05, 0.95, b.lie[1] + 0.55];
-  const D: [number, number, number] = [b.edgeX + 0.1, 0.52, b.sit[1] + 0.42];
-  const lerp3 = (a: [number, number, number], c: [number, number, number], t: number): [number, number, number] => [a[0] + (c[0] - a[0]) * t, a[1] + (c[1] - a[1]) * t, a[2] + (c[2] - a[2]) * t];
-  const sit = k(0, BED.sit), legL = k(BT.s3, BED.legL), legR = k(BT.s4, BED.lie * 0.6), lie = k(BT.s4 + 0.28, BED.lie - 0.28);
-  let x = b.stand[0] + (b.sit[0] - b.stand[0]) * sit, z = b.stand[1] + (b.sit[1] - b.stand[1]) * sit;
-  const toLie = k(BT.s4, BED.lie); x += (b.lie[0] - b.sit[0]) * toLie; z += (b.lie[1] - b.sit[1]) * toLie;
-  const yaw = Math.PI / 2 + Math.PI / 4 * k(BT.s3, BED.legL) + Math.PI / 4 * k(BT.s4, BED.lie);
-  let right: Reach | null = null, pin: [number, number, number] | null = null;
-  if (u > BT.s1 && u < BT.s6) {
-    const from = out ? D : grip;
-    let at: [number, number, number], blend = 1;
-    if (u < BT.s2) { at = from; blend = k(BT.s1, BED.grab); }
-    else if (u < BT.s3) at = lerp3(from, L1, k(BT.s2, BED.lift));
-    else if (u < BT.s4) at = lerp3(L1, L2, k(BT.s3, BED.legL));
-    else if (u < BT.s5) at = lerp3(L2, L3, k(BT.s4, BED.lie));
-    else { at = L3; blend = 1 - k(BT.s5, BED.release); }
-    right = { at, blend, pole: "out" };
-    if (u >= BT.s2 && u < BT.s5) pin = at;
+const BI = (() => { let a = 0; const at = (d: number) => (a += d); return { reach: at(0.5), fold: at(1.5), let: at(0.35), turn: at(0.9), sit: at(0.9), grab: at(0.5), lie: at(2.6), release: at(0.4) }; })();
+const BO = (() => { let a = 0; const at = (d: number) => (a += d); return { reach: at(0.5), off: at(2.6), let: at(0.35), up: at(0.9), walk: at(0.9), bend: at(0.55), make: at(2.0), done: at(0.5) }; })();
+const ASLEEP = 2.6;
+type BedStep = { x: number; z: number; yaw: number; lean: number; crouch: number; bed: { sit: number; lie: number; legL: number; legR: number } | null;
+  left: { grip: "corner" | "flap" | "head"; blend: number } | null; right: { grip: "flap" | "foot"; blend: number } | null;
+  sheet: { from: SheetShape; to: SheetShape; k: number; lead: SheetLead; lift: number } };
+const lerp2 = (a: [number, number], c: [number, number], k: number): [number, number] => [a[0] + (c[0] - a[0]) * k, a[1] + (c[1] - a[1]) * k];
+/** Spots by the bed: facing it to fold the sheet (and a step along while folding), getting up to sit, making it. */
+const bedSpots = (fl: AptFloor) => { const b = fl.bed; return { S: [b.edgeX + 0.42, b.sit[1]] as [number, number], S2: [b.edgeX + 0.34, b.sit[1] - 0.4] as [number, number], up: [b.edgeX + 0.45, b.sit[1]] as [number, number], M: [b.edgeX + 0.36, b.z + 0.1] as [number, number] }; };
+/** Getting in, `u` seconds after arriving beside the bed. */
+function bedIn(fl: AptFloor, u: number): BedStep {
+  const b = fl.bed, P = bedSpots(fl), k = (from: number, d: number) => smooth((u - from) / d);
+  const none = { sit: 0, lie: 0, legL: 0, legR: 0 };
+  if (u < BI.fold) {
+    const g = k(0, 0.5), f = k(BI.reach, BI.fold - BI.reach), at = lerp2(P.S, P.S2, f);
+    return { x: at[0], z: at[1], yaw: -Math.PI / 2, lean: 0.42 * g, crouch: 0.12 * g, bed: null, left: { grip: "corner", blend: g }, right: null, sheet: { from: "made", to: "turned", k: f, lead: "corner", lift: 0.16 } };
   }
-  return { x, z, yaw, lean: 0.12 * Math.sin(Math.PI * k(BT.s1, BED.grab + BED.lift)) * (1 - lie), bed: { sit, lie, legL, legR }, right, pin };
+  if (u < BI.let) { const r = 1 - k(BI.fold, BI.let - BI.fold); return { x: P.S2[0], z: P.S2[1], yaw: -Math.PI / 2, lean: 0.42 * r, crouch: 0.12 * r, bed: null, left: { grip: "corner", blend: r }, right: null, sheet: { from: "turned", to: "turned", k: 1, lead: "corner", lift: 0 } }; }
+  if (u < BI.turn) { const t = k(BI.let, BI.turn - BI.let), at = lerp2(P.S2, P.up, t); return { x: at[0], z: at[1], yaw: -Math.PI / 2 + Math.PI * t, lean: 0, crouch: 0, bed: none, left: null, right: null, sheet: { from: "turned", to: "turned", k: 1, lead: "corner", lift: 0 } }; }
+  if (u < BI.grab) {
+    const t = k(BI.turn, BI.sit - BI.turn), at = lerp2(P.up, b.sit, t), g = k(BI.sit, BI.grab - BI.sit);
+    return { x: at[0], z: at[1], yaw: Math.PI / 2, lean: 0.25 * Math.sin(Math.PI * t) + 0.1 * g, crouch: 0, bed: { ...none, sit: t }, left: g > 0 ? { grip: "flap", blend: g } : null, right: null, sheet: { from: "turned", to: "turned", k: 1, lead: "corner", lift: 0 } };
+  }
+  // Lying back under it: the legs swing up, the back goes down, the sheet comes over (lifted high enough for the legs).
+  const L = BI.lie - BI.grab, legL = k(BI.grab, 0.9), legR = k(BI.grab + 0.8, 1.0), lie = k(BI.grab + 1.0, L - 1.0), toLie = k(BI.grab + 1.0, L - 1.0);
+  const at = lerp2(b.sit, b.lie, toLie), yaw = Math.PI / 2 + Math.PI / 2 * k(BI.grab, L), sheetK = k(BI.grab, L), rel = 1 - k(BI.lie, BI.release - BI.lie);
+  return { x: at[0], z: at[1], yaw, lean: 0, crouch: 0, bed: { sit: 1, lie, legL, legR }, left: rel > 0 ? { grip: "flap", blend: rel } : null, right: null, sheet: { from: "turned", to: "covering", k: sheetK, lead: "corner", lift: 0.45 } };
+}
+/** Getting out and making the bed, `t` seconds after waking. */
+function bedOut(fl: AptFloor, t: number): BedStep {
+  const P = bedSpots(fl), k = (from: number, d: number) => smooth((t - from) / d);
+  if (t < BO.let) {
+    // The right hand lifts the sheet off while the legs swing out and he sits up (getting in, backward).
+    const g = k(0, 0.5), v = BI.lie - Math.max(0, t - BO.reach) * ((BI.lie - BI.grab) / (BO.off - BO.reach)), st = bedIn(fl, Math.max(BI.grab, v)), rel = 1 - k(BO.off, BO.let - BO.off);
+    return { ...st, left: null, right: { grip: "flap", blend: t < BO.reach ? g : rel }, sheet: { from: "covering", to: "turned", k: k(BO.reach, BO.off - BO.reach), lead: "corner", lift: 0.45 } };
+  }
+  if (t < BO.up) { const st = bedIn(fl, BI.sit - (t - BO.let)); return { ...st, left: null, right: null, sheet: { from: "turned", to: "turned", k: 1, lead: "corner", lift: 0 } }; }
+  if (t < BO.walk) { const w = k(BO.up, BO.walk - BO.up), at = lerp2(P.up, P.M, w); return { x: at[0], z: at[1], yaw: Math.PI / 2 - Math.PI * w, lean: 0, crouch: 0, bed: null, left: null, right: null, sheet: { from: "turned", to: "turned", k: 1, lead: "open", lift: 0 } }; }
+  // Bent over the bed, a hand at each end of its open edge: lay the sheet out flat again (it hangs as made).
+  const bend = k(BO.walk, BO.bend - BO.walk), mk = k(BO.bend, BO.make - BO.bend), rel = 1 - k(BO.make, BO.done - BO.make), h = Math.min(bend, rel);
+  return { x: P.M[0], z: P.M[1], yaw: -Math.PI / 2, lean: 0.75 * h, crouch: 0.3 * h, bed: null, left: { grip: "head", blend: h }, right: { grip: "foot", blend: h }, sheet: { from: "turned", to: "made", k: mk, lead: "open", lift: 0.28 } };
 }
 /** The closet: both hands take the handles in the middle and swing the two doors open (and shut again). */
 const CLOSET = { reach: 0.45, pull: 0.9, release: 0.35, open: 1.45 };
@@ -638,7 +652,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   const closing = useRef<{ which: "apartment" | "bedroom"; kind: "leave" | "enter"; from: [number, number]; fromYaw: number; start: number }[]>([]);
   /** Each floor's bedsheet and the hand holding its corner. */
   const sheets = useRef(new Map<string, SheetLink>());
-  const sheetLink = (key: string) => { let l = sheets.current.get(key); if (!l) { l = { corner: null, pin: null, active: false, make: null }; sheets.current.set(key, l); } return l; };
+  const sheetLink = (key: string) => { let l = sheets.current.get(key); if (!l) { l = { from: "made", to: "made", k: 1, lead: "top", lift: 0, points: null }; sheets.current.set(key, l); } return l; };
   /** Putting things in the fridge: the one in hand now, and how far the character has stepped in (0..1). */
   const load = useRef<{ name: string; t0: number; slot: [number, number, number]; drink: boolean; placed: boolean } | null>(null);
   const loadStep = useRef(0);
@@ -698,8 +712,8 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     const yNow = lvl ? lvl.y : SIDEWALK_H;
     const toW = (x: number, z: number) => (frameNow ? toWorld(frameNow, x, z) : [x, z] as [number, number]);
     const reachW = (r: Reach | null) => { if (!r || !frameNow) return null; const [x, z] = toWorld(frameNow, r.at[0], r.at[2]); return { at: new THREE.Vector3(x, yNow + r.at[1], z), blend: r.blend, pole: r.pole }; };
-    const scriptFrom = (pose: GPose | { x: number; z: number; yaw: number; lean: number; left: Reach | null; right: Reach | null; crouch?: number; sit?: number; bed?: BedPose["bed"] }): Script => {
-      const inBed = (pose as { bed?: BedPose["bed"] }).bed;
+    const scriptFrom = (pose: GPose | { x: number; z: number; yaw: number; lean: number; left: Reach | null; right: Reach | null; crouch?: number; sit?: number; bed?: NonNullable<BedStep["bed"]> }): Script => {
+      const inBed = (pose as { bed?: NonNullable<BedStep["bed"]> }).bed;
       if (inBed) { const sc = scriptOf(pose); return { ...sc, walk: 0, bed: inBed }; }
       return scriptOf(pose);
     };
@@ -964,22 +978,35 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         if (t >= CLOSET.reach + CLOSET.pull * 0.85 + CLOSET.release) { closetAngle.current = 0; move.current = null; script = null; }
       }
     }
-    // ---------- the bed: getting in, asleep, getting out ----------
+    // ---------- the bed: getting in, asleep, getting out, making it ----------
     const link = floor ? sheetLink(floor.key) : null;
-    if (link) { link.pin = null; link.make = null; link.active = mv?.kind === "bed" && mv.phase !== "asleep" && mv.phase !== "make" && !!mv.plan && now - mv.t0 >= (mv.phase === "in" ? mv.plan.total : 0); }
     if (!eRide && mv && floor && mv.kind === "bed" && link) {
-      const t = now - mv.t0;
+      const t = now - mv.t0, grips = sheetGrips(floor);
+      // A hand on the sheet: at that point of it (where the sheet has it now).
+      const hold = (h: { grip: string; blend: number } | null): Reach | null => {
+        if (!h || h.blend <= 0) return null;
+        const ij = h.grip === "flap" ? (mv.flap ?? grips.corner) : h.grip === "head" ? grips.head : h.grip === "foot" ? grips.foot : grips.corner;
+        const pt = sheetPoint(link, ij[0], ij[1]);
+        return pt ? { at: [pt[0], pt[1] + 0.03, pt[2]], blend: h.blend, pole: "out" } : null;
+      };
+      const play = (st: BedStep) => {
+        link.from = st.sheet.from; link.to = st.sheet.to; link.k = st.sheet.k; link.lead = st.sheet.lead; link.lift = st.sheet.lift;
+        script = scriptFrom({ x: st.x, z: st.z, yaw: st.yaw, lean: st.lean, crouch: st.crouch, left: hold(st.left), right: hold(st.right), ...(st.bed ? { bed: st.bed } : {}) });
+      };
+      // The point of the sheet a hand takes to lift it: the nearest to where that hand is.
+      const nearest = (to: [number, number, number]): [number, number] => {
+        let best: [number, number] = grips.corner, bd = Infinity;
+        for (let j = 0; j < SHEET_NZ; j++) for (let i = 0; i < SHEET_NX; i++) { const q = sheetPoint(link, i, j); if (!q) continue; const d = Math.hypot(q[0] - to[0], (q[1] - to[1]) * 0.5, q[2] - to[2]); if (d < bd) { bd = d; best = [i, j]; } }
+        return best;
+      };
       if (mv.phase === "in") {
         const walk = mv.plan!.total;
         if (t < walk) script = scriptFrom(planAt(mv.plan!, t).pose);
         else {
           const u = t - walk;
-          // The corner is taken where it is when the hand gets there.
-          if (u >= BT.s2 && !mv.grip) mv.grip = link.corner ? [...link.corner] : [floor.bed.edgeX + 0.1, 0.5, floor.bed.sit[1] + 0.42];
-          const bp = bedPose(floor, Math.min(u, BT.s6), mv.grip ?? link.corner ?? [floor.bed.edgeX, 0.5, floor.bed.sit[1]], false);
-          link.pin = bp.pin;
-          script = scriptFrom({ x: bp.x, z: bp.z, yaw: bp.yaw, lean: bp.lean, left: null, right: bp.right, bed: bp.bed });
-          if (u >= BT.s6) {
+          if (u >= BI.sit && !mv.flap) mv.flap = nearest([floor.bed.sit[0] - 0.05, MATTRESS_TOP + 0.03, floor.bed.sit[1] - 0.4]);
+          play(bedIn(floor, Math.min(u, BI.release)));
+          if (u >= BI.release) {
             // Asleep: the night passes (in a shared room the clock is everyone's, so only rest), energy comes back.
             mv.phase = "asleep"; mv.t0 = now; state.uiLock = "sleep"; state.keys.clear();
             // Energy by the hours slept (to 6 AM): an hour or less +20%, eight or more full.
@@ -989,41 +1016,16 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
           }
         }
       } else if (mv.phase === "asleep") {
-        const bp = bedPose(floor, BT.s6, [0, 0, 0], false);
-        script = scriptFrom({ x: bp.x, z: bp.z, yaw: bp.yaw, lean: 0, left: null, right: null, bed: bp.bed });
-        if (t >= BED.asleep) {
-          state.uiLock = null; mv.phase = "out"; mv.t0 = now; mv.grip = null;
+        play({ ...bedIn(floor, BI.release), left: null });
+        if (t >= ASLEEP) {
+          state.uiLock = null; mv.phase = "out"; mv.t0 = now; mv.flap = null;
           const h = Math.round((mv.slept ?? 8) * 10) / 10;
           toast(state, "Good morning!", "info", `${state.npcLink ? "Rested" : "It's 6 AM"}: you slept ${h} h, energy ${Math.round(state.energy)}%.`);
         }
       } else if (mv.phase === "out") {
-        // Getting up: the hand finds the corner (wherever the sheet put it) and lifts it, then everything backward.
-        const REACH = 0.6, LIFT = 0.4, back = REACH + LIFT;
-        let bp: BedPose;
-        const lieEnd = bedPose(floor, BT.s5, [0, 0, 0], true), L3: [number, number, number] = lieEnd.right!.at;
-        if (t < REACH) {
-          bp = { ...bedPose(floor, BT.s6, [0, 0, 0], true), right: link.corner ? { at: link.corner, blend: smooth(t / REACH), pole: "out" } : null, pin: null };
-        } else if (t < back) {
-          if (!mv.grip) mv.grip = link.corner ? [...link.corner] : L3;
-          const g = mv.grip, k2 = smooth((t - REACH) / LIFT), at: [number, number, number] = [g[0] + (L3[0] - g[0]) * k2, g[1] + (L3[1] - g[1]) * k2, g[2] + (L3[2] - g[2]) * k2];
-          bp = { ...bedPose(floor, BT.s6, [0, 0, 0], true), right: { at, blend: 1, pole: "out" }, pin: at };
-        } else bp = bedPose(floor, Math.max(0, BT.s5 - (t - back)), [0, 0, 0], true);
-        link.pin = bp.pin;
-        script = scriptFrom({ x: bp.x, z: bp.z, yaw: bp.yaw, lean: bp.lean, left: null, right: bp.right, bed: bp.bed });
-        // Up: now the bed gets made.
-        if (t >= back + BT.s5) { mv.phase = "make"; mv.t0 = now; mv.grip = null; mv.plan = makePlan([walkSeg(floor.bed.stand, Math.PI / 2, makeSpot(floor), -Math.PI / 2, { basket: false, bag: !!state.groceryBag })]); }
-      } else if (mv.phase === "make") {
-        // Making the bed: to the head of it, both hands take the sheet's top edge, lift and shake it out over the
-        // bed, lay it down flat and smooth it; then back.
-        const walk = mv.plan!.total, u = t - walk, b = floor.bed, at = makeSpot(floor), yaw = -Math.PI / 2;
-        const topZ = b.z + b.l / 2 - 0.4, y0 = MATTRESS_TOP + 0.03;
-        const k = smooth((u - MAKE.reach) / MAKE.pull), reach = smooth(u / MAKE.reach), rel = smooth((u - MAKE.reach - MAKE.pull) / MAKE.release);
-        const lift = Math.sin(Math.PI * k) * 0.35, blend = u < 0 ? 0 : reach * (1 - rel);
-        if (u >= MAKE.reach) link.make = Math.min(1, k);
-        const hand = (dx: number): Reach => ({ at: [b.edgeX - dx, y0 + lift + 0.05, topZ - 0.08 * k], blend, pole: "out" });
-        if (u < 0) script = scriptFrom(planAt(mv.plan!, t).pose);
-        else script = scriptFrom({ x: at[0], z: at[1], yaw, lean: 0.35 * blend * (1 - 0.6 * Math.sin(Math.PI * k)), crouch: 0.15 * blend, left: hand(0.55), right: hand(0.12) });
-        if (u >= MAKE.reach + MAKE.pull + MAKE.release) { link.make = null; const [x, z] = toW(at[0], at[1]); state.pos.x = x; state.pos.z = z; state.rotY = worldYaw(floor.frame, yaw); move.current = null; script = null; }
+        if (!mv.flap) mv.flap = nearest([floor.bed.edgeX - 0.2, MATTRESS_TOP + 0.2, floor.bed.lie[1] + 0.2]);
+        play(bedOut(floor, Math.min(t, BO.done)));
+        if (t >= BO.done) { const P = bedSpots(floor), [x, z] = toW(P.M[0], P.M[1]); state.pos.x = x; state.pos.z = z; state.rotY = worldYaw(floor.frame, -Math.PI / 2); link.from = link.to = "made"; link.k = 1; move.current = null; script = null; }
       }
     }
     // ---------- sitting on the couch (the chairs sit like a restaurant's: RestaurantInteraction runs them) ----------
@@ -1134,7 +1136,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         act = () => {
           // Only at night: from 9 PM to 5 AM.
           if (!canSleepAt(timeInfo(state.elapsed).hours)) { toast(state, "Not tired enough yet", "info", "You can go to bed between 9 PM and 5 AM."); return; }
-          move.current = { kind: "bed", phase: "in", t0: now, grip: null, plan: makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, floor.bed.stand, Math.PI / 2, { basket: false, bag: !!state.groceryBag })]) };
+          move.current = { kind: "bed", phase: "in", t0: now, flap: null, plan: makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, bedSpots(floor).S, -Math.PI / 2, { basket: false, bag: !!state.groceryBag })]) };
           state.keys.clear();
         };
       } else if (mine && Math.hypot(lx - floor.spots.fridge[0], lz - floor.spots.fridge[1]) < 1.0) {
