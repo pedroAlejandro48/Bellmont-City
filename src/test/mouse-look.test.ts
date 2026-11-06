@@ -122,9 +122,26 @@ describe("looking around (pointer lock, or dragging where there is none)", () =>
     document.dispatchEvent(pointer("pointermove", { x: 280, y: 104, kind: "touch", id: 2, buttons: 1 }));
     expect(move.mock.calls).toEqual([[10, 0], [-10, 4]]);
   });
-  it("in first person, looks around by just moving the cursor before any lock", () => {
+  it("in first person, locks by itself (no click on the view) and then turns without limit", () => {
     firstPerson = true;
+    drag(10, 10, 0);
+    expect(request).toHaveBeenCalledOnce(); expect(locked).toBe(canvas);
+    motion(15, -5, 0);
+    expect(move.mock.calls).toEqual([[15, -5]]);
+  });
+  it("in first person, where the browser won't lock yet, the cursor's own movement still looks around", () => {
+    firstPerson = true;
+    request.mockImplementation(() => Promise.reject(new Error("needs a gesture")));
     drag(10, 10, 0); drag(25, 5, 0);
     expect(move.mock.calls).toEqual([[15, -5]]);
+  });
+  it("in first person, a key press locks the pointer (not Escape)", async () => {
+    firstPerson = true;
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(request).not.toHaveBeenCalled();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "w" }));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(request).toHaveBeenCalledOnce(); expect(locked).toBe(canvas);
   });
 });

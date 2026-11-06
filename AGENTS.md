@@ -109,3 +109,4 @@
 - Hinged doors (apartment, bedroom): control returns at LEAVE.free / ENTER.free (through the doorway); the door finishes closing by itself (Apartments `closing`).
 - While a panel holds you still (state.uiLock: fridge, closet, elevator buttons, sleep) the joystick does nothing (Player ignores state.stick; TouchControls won't start one).
 - The fridge's cabinet pieces meet edge to edge (back full width; sides, top and bottom in front of it) so no faces share a plane.
+- First person on a computer: the pointer locks by itself (mouseLook `tryLock`: after any key press except Escape, any click, or a mouse move right after one — browsers only grant a lock during a user gesture), and every mouse movement turns the view with no button held; panels (uiCaptured: phone, shops, fridge…) release it (CameraRig), and it locks again at the next key or click. A failed automatic attempt doesn't mark the browser as unable to lock.

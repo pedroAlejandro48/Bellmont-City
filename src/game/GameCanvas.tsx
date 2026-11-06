@@ -350,7 +350,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
           : <>The game was running slowly here, so it switched to <b>Device speed: Low</b> for smoother play. You can change it on the home page.</>}</p>
         <button type="button" aria-label="Close" className="text-muted-foreground hover:text-foreground" onClick={() => setNotice(null)}>✕</button>
       </div>}
-      {fpHint && <div className="pointer-events-none fixed left-1/2 top-1/2 z-20 -translate-x-1/2 translate-y-10 rounded-md bg-black/55 px-3 py-1.5 text-xs font-semibold text-white">Click to look around freely</div>}
+      {fpHint && <div className="pointer-events-none fixed left-1/2 top-1/2 z-20 -translate-x-1/2 translate-y-10 rounded-md bg-black/55 px-3 py-1.5 text-xs font-semibold text-white">Press any key or click to look around freely</div>}
       {!dead && <TouchControls state={state} />}
       <OrderMenu state={state} />
       <RouteHint state={state} />

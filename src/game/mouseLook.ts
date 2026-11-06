@@ -6,8 +6,10 @@
  * from the pointer's own positions, so it works everywhere. Pointer events (not mouse events) are used, and the
  * canvas is marked `touch-action: none`, so Safari doesn't take a touchpad or finger drag as a page pan.
  *
- * `sticky()` true (first person): moving the mouse looks around without holding a button, and once a click has
- * locked the pointer it stays locked until `sticky()` turns false or Escape.
+ * `sticky()` true (first person): moving the mouse looks around without holding a button, and the pointer is locked
+ * by itself — at the first key press or click (any one: browsers only lock during one), or when the mouse moves just
+ * after one (closing a panel) — and stays locked until `sticky()` turns false (a panel opens) or Escape. No click
+ * on the view is needed.
  */
 /** This browser has refused (or can't do) pointer lock: looking around works by dragging instead. */
 export const lookSupport = { lockRefused: typeof document !== "undefined" && typeof document.exitPointerLock !== "function" };
@@ -40,7 +42,21 @@ export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: numbe
     unlock();
   };
   /** The lock couldn't be had: keep looking by dragging instead. */
-  const lockFailed = () => { pending = false; lookSupport.lockRefused = true; };
+  /** A lock asked for by itself (not by pressing on the view): its failing doesn't mean the browser can't lock. */
+  let auto = false, lastTry = -Infinity;
+  const lockFailed = () => { pending = false; if (!auto) lookSupport.lockRefused = true; auto = false; };
+  /** First person and free (no panel open): lock the pointer now if the browser lets us. */
+  const tryLock = () => {
+    if (disposed || !sticky() || locked() || pending || doc.pointerLockElement || typeof element.requestPointerLock !== "function" || doc.visibilityState === "hidden") return;
+    const now = performance.now();
+    if (now - lastTry < 400) return;
+    lastTry = now; pending = true; auto = true;
+    try {
+      Promise.resolve(element.requestPointerLock()).catch(() => { /* no key press or click just now: next time */ }).finally(() => { pending = false; auto = false; if (!sticky() || disposed) unlock(); });
+    } catch { pending = false; auto = false; }
+  };
+  // Any key or click (not Escape) gives the browser's go-ahead: right after it, lock if in first person.
+  const soon = (event: Event) => { if ((event as KeyboardEvent).key === "Escape") return; win?.setTimeout(tryLock, 0); };
   const down = (event: PointerEvent) => {
     if (disposed) return;
     if (doc.pointerLockElement && !locked()) return;
@@ -81,8 +97,14 @@ export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: numbe
     const isDrag = dragId === null || typeof event.pointerId !== "number" || event.pointerId === dragId;
     // First person, not locked: the cursor's own movement looks around (a mouse or touchpad; a finger only while
     // pressed on the view).
-    if (sticky() && !locked()) { if (event.pointerType !== "touch" ? isDrag || !held : held && isDrag) { if (dx || dy) onMove(dx, dy); } return; }
-    if (!held) return;
+    if (sticky() && !locked()) {
+      if (event.pointerType !== "touch" ? isDrag || !held : held && isDrag) { if (dx || dy) onMove(dx, dy); }
+      // (A mouse moving just after a key or click — closing a panel — can still lock.)
+      if (event.pointerType === "mouse") tryLock();
+      return;
+    }
+    // (First person, locked: every movement looks around, no button held.)
+    if (!held && !(sticky() && locked())) return;
     // (The press ends on pointerup; `buttons` isn't trusted here, as some browsers report 0 while locked.)
     if (!locked() && dragId !== null && typeof event.pointerId === "number" && event.pointerId !== dragId) return;
     if (dx || dy) onMove(dx, dy);
@@ -110,6 +132,8 @@ export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: numbe
   doc.addEventListener("pointerlockchange", change);
   doc.addEventListener("pointerlockerror", lockFailed);
   doc.addEventListener("visibilitychange", visibility);
+  doc.addEventListener("keydown", soon, true);
+  doc.addEventListener("pointerup", soon, true);
   win?.addEventListener("blur", release);
   return () => {
     disposed = true;
@@ -122,6 +146,8 @@ export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: numbe
     doc.removeEventListener("pointerlockchange", change);
     doc.removeEventListener("pointerlockerror", lockFailed);
     doc.removeEventListener("visibilitychange", visibility);
+    doc.removeEventListener("keydown", soon, true);
+    doc.removeEventListener("pointerup", soon, true);
     win?.removeEventListener("blur", release);
   };
 }
