@@ -9,13 +9,16 @@ export type Kitchen = {
   cupboard: WareKind[];
   rack: WareKind[];
   sink: WareKind[];
-  /** On the stove: a pot or pan, the cans in it, and when it started cooking (game seconds; null: not yet). */
-  stove: { ware: "pot" | "pan"; cans: CanKind[]; start: number | null } | null;
+  /** On the stove's two burners: a pot or pan each, the cans in it, and when it started cooking (game seconds;
+   * null: not yet). */
+  stoves: (Burner | null)[];
   /** Plates on the table: in front of which chair, with what, eaten yet, the silverware laid on it. */
   table: { chair: number; ware: "plate" | "bowl"; cans: CanKind[]; eaten: boolean; silver: boolean }[];
   hands: { left: Held | null; right: Held | null };
 };
-export const newKitchen = (): Kitchen => ({ cupboard: [], rack: [], sink: [], stove: null, table: [], hands: { left: null, right: null } });
+export type Burner = { ware: "pot" | "pan"; cans: CanKind[]; start: number | null };
+export const BURNERS = 2;
+export const newKitchen = (): Kitchen => ({ cupboard: [], rack: [], sink: [], stoves: [null, null], table: [], hands: { left: null, right: null } });
 export const isPotLike = (w: WareKind): w is "pot" | "pan" => w === "pot" || w === "pan";
 export const isDish = (w: WareKind): w is "plate" | "bowl" => w === "plate" || w === "bowl";
 
@@ -35,11 +38,14 @@ export function readKitchen(v: unknown): Kitchen {
   k.cupboard = wares(o["cupboard"], 12).filter(isPotLike);
   k.rack = wares(o["rack"], 40).filter((w) => !isPotLike(w));
   k.sink = wares(o["sink"], 40);
-  const st = o["stove"] as Record<string, unknown> | null | undefined;
-  if (st && (st["ware"] === "pot" || st["ware"] === "pan")) {
+  const burner = (st: Record<string, unknown> | null | undefined): Burner | null => {
+    if (!st || (st["ware"] !== "pot" && st["ware"] !== "pan")) return null;
     const cans = Array.isArray(st["cans"]) ? (st["cans"] as unknown[]).filter((c): c is CanKind => typeof c === "string" && isCan(c)).slice(0, CAPACITY[st["ware"]]) : [];
-    k.stove = { ware: st["ware"], cans, start: typeof st["start"] === "number" && Number.isFinite(st["start"]) ? st["start"] : null };
-  }
+    return { ware: st["ware"], cans, start: typeof st["start"] === "number" && Number.isFinite(st["start"]) ? st["start"] : null };
+  };
+  // (Older saves had one stove: it's the first burner.)
+  if (Array.isArray(o["stoves"])) k.stoves = Array.from({ length: BURNERS }, (_, i) => burner((o["stoves"] as Record<string, unknown>[])[i]));
+  else k.stoves[0] = burner(o["stove"] as Record<string, unknown> | null);
   if (Array.isArray(o["table"])) for (const t of o["table"] as Record<string, unknown>[]) {
     if (!t || typeof t["chair"] !== "number" || (t["ware"] !== "plate" && t["ware"] !== "bowl")) continue;
     const cans = Array.isArray(t["cans"]) ? (t["cans"] as unknown[]).filter((c): c is CanKind => typeof c === "string" && isCan(c)).slice(0, 3) : [];
@@ -53,13 +59,14 @@ export function readKitchen(v: unknown): Kitchen {
 /** Bought kitchenware put away: pots and pans in the cupboard, the rest on the counter. */
 export function putAway(k: Kitchen, w: WareKind) { if (isPotLike(w)) k.cupboard.push(w); else k.rack.push(w); }
 
-/** Game minutes since the stove's pot started cooking (or null). */
-export const cookedFor = (k: Kitchen, elapsed: number, gameMinute: number) => (k.stove?.start != null ? (elapsed - k.stove.start) / gameMinute : null);
-/** How the stove's pot is now. */
-export function stoveState(k: Kitchen, elapsed: number, gameMinute: number): "empty" | "none" | "filling" | "cooking" | "ready" | "burnt" {
-  if (!k.stove) return "none";
-  const m = cookedFor(k, elapsed, gameMinute);
-  if (m === null) return k.stove.cans.length ? "filling" : "empty";
+/** Game minutes since burner `i`'s pot started cooking (or null). */
+export const cookedFor = (k: Kitchen, i: number, elapsed: number, gameMinute: number) => { const b = k.stoves[i]; return b?.start != null ? (elapsed - b.start) / gameMinute : null; };
+/** How burner `i`'s pot is now. */
+export function stoveState(k: Kitchen, i: number, elapsed: number, gameMinute: number): "empty" | "none" | "filling" | "cooking" | "ready" | "burnt" {
+  const b = k.stoves[i];
+  if (!b) return "none";
+  const m = cookedFor(k, i, elapsed, gameMinute);
+  if (m === null) return b.cans.length ? "filling" : "empty";
   return cookState(m);
 }
 /** How dark the food has gone (0 fresh .. 1 black): from the moment it's ready it starts to catch, black when burnt. */

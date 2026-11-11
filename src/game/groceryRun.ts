@@ -4,7 +4,7 @@
 // next (one movement, no stops).
 import type { ItemKind } from "./inventory";
 import { CANDIES, CANDY_INFO, CANS, CAN_INFO, WARES, WARE_INFO, shelfSections } from "./pantry";
-import { smooth, walkTo, type Reach } from "./restaurantRoom";
+import { smooth, walkTo, type Box, type Reach } from "./restaurantRoom";
 import type { Fixture, VenueLayout } from "./venueRoom";
 
 /** The drinks shelf's sections, left to right, and where each one's middle is along a shelf `w` wide. */
@@ -16,6 +16,71 @@ export const GROCERY_PRICE: Partial<Record<ItemKind, number>> = {
   ...Object.fromEntries(CANS.map((k) => [k, CAN_INFO[k].price])), ...Object.fromEntries(CANDIES.map((k) => [k, CANDY_INFO[k].price])), ...Object.fromEntries(WARES.map((k) => [k, WARE_INFO[k].price])),
 };
 export const BASKET_MAX = 10;
+
+// ---------- finding a way round the shelves ----------
+/** The store's furniture to walk round, and its floor (set once from its layout). */
+let OBST: { boxes: Box[]; minX: number; maxX: number; minZ: number; maxZ: number } | null = null;
+export function setGroceryObstacles(boxes: Box[], bounds: { minX: number; maxX: number; minZ: number; maxZ: number }) { OBST = { boxes, ...bounds }; }
+const PAD = 0.42;
+/** Whether the straight line a→b passes through any of the boxes (grown by `pad`). */
+function blocked(a: [number, number], b: [number, number], boxes: Box[], pad: number) {
+  for (const o of boxes) {
+    let t0 = 0, t1 = 1;
+    const slab = (p: number, d: number, lo: number, hi: number) => {
+      if (Math.abs(d) < 1e-9) { if (p <= lo || p >= hi) t1 = -1; return; }
+      let u = (lo - p) / d, v = (hi - p) / d; if (u > v) [u, v] = [v, u];
+      t0 = Math.max(t0, u); t1 = Math.min(t1, v);
+    };
+    slab(a[0], b[0] - a[0], o.x - o.hx - pad, o.x + o.hx + pad);
+    slab(a[1], b[1] - a[1], o.z - o.hz - pad, o.z + o.hz + pad);
+    if (t1 > t0) return true;
+  }
+  return false;
+}
+/** The shortest way from a to b that keeps clear of the furniture: the corners to pass on the way (none when the
+ * way is clear). Ends inside a box's margin (standing at a shelf) are fine: only the boxes not touching them count. */
+export function route(a: [number, number], b: [number, number]): [number, number][] {
+  if (!OBST) return [];
+  const near = (p: [number, number], o: Box) => Math.abs(p[0] - o.x) < o.hx + PAD && Math.abs(p[1] - o.z) < o.hz + PAD;
+  const boxes = OBST.boxes.filter((o) => !near(a, o) && !near(b, o));
+  if (!blocked(a, b, boxes, PAD - 0.04)) return [];
+  const { minX, maxX, minZ, maxZ } = OBST, m = PAD + 0.02;
+  const corners: [number, number][] = [];
+  for (const o of boxes) for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const c: [number, number] = [o.x + sx * (o.hx + m), o.z + sz * (o.hz + m)];
+    if (c[0] < minX + 0.3 || c[0] > maxX - 0.3 || c[1] < minZ + 0.3 || c[1] > maxZ - 0.3) continue;
+    if (boxes.some((q) => Math.abs(c[0] - q.x) < q.hx + PAD - 0.05 && Math.abs(c[1] - q.z) < q.hz + PAD - 0.05)) continue;
+    corners.push(c);
+  }
+  const nodes: [number, number][] = [a, ...corners, b], n = nodes.length, dist = Array(n).fill(Infinity), prev = Array(n).fill(-1), done = Array(n).fill(false);
+  dist[0] = 0;
+  for (;;) {
+    let u = -1; for (let i = 0; i < n; i++) if (!done[i] && dist[i] < Infinity && (u < 0 || dist[i] < dist[u])) u = i;
+    if (u < 0 || u === n - 1) break;
+    done[u] = true;
+    for (let v = 0; v < n; v++) {
+      if (done[v] || v === u) continue;
+      const d = Math.hypot(nodes[v]![0] - nodes[u]![0], nodes[v]![1] - nodes[u]![1]);
+      if (dist[u] + d < dist[v] && !blocked(nodes[u]!, nodes[v]!, boxes, PAD - 0.04)) { dist[v] = dist[u] + d; prev[v] = u; }
+    }
+  }
+  if (dist[n - 1] === Infinity) return [];
+  const path: [number, number][] = [];
+  for (let v = prev[n - 1]; v > 0; v = prev[v]) path.unshift(nodes[v]!);
+  return path;
+}
+/** Walking from one spot to another the way round the furniture: a step for each leg, turning toward the next. */
+export function walkRoute(from: [number, number], fromYaw: number, to: [number, number], endYaw: number, carry: { basket: boolean; bag: boolean }): Seg[] {
+  const pts = [from, ...route(from, to), to], segs: Seg[] = [];
+  let yaw = fromYaw;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i]!, b = pts[i + 1]!, last = i === pts.length - 2;
+    const next = last ? endYaw : Math.atan2(pts[i + 2]![0] - b[0], pts[i + 2]![1] - b[1]);
+    segs.push(walkSeg(a, yaw, b, next, carry));
+    yaw = next;
+  }
+  return segs;
+}
 /** Held at the waist, out in front and to the right (body frame: x right, y up, z forward). */
 export const CARRY = { right: 0.2, y: 0.92, fwd: 0.3 } as const;
 export const BAG_CARRY = { left: 0.24, y: 0.78, fwd: 0.1 } as const;
@@ -78,7 +143,7 @@ export function takeBasket(from: [number, number], fromYaw: number, pile: Fixtur
   const handle: [number, number, number] = [s.top[0] - 0.03, s.top[1], s.top[2] - 0.04];
   const left = bag ? bagReach(x, z, yaw) : null;
   return plan([
-    walkSeg(from, fromYaw, s.stand, yaw, { basket: false, bag }),
+    ...walkRoute(from, fromYaw, s.stand, yaw, { basket: false, bag }),
     { dur: 0.75, end: "basket", pose: (k) => { const e = smooth(k); return { x, z, yaw, crouch: 0.42 * e, lean: 0.38 * e, left, right: { at: handle, blend: e, pole: "low" } }; } },
     { dur: 0.75, pose: (k) => { const e = smooth(k); return { x, z, yaw, crouch: 0.42 * (1 - e), lean: 0.38 * (1 - e) + 0.04 * e, left, right: { at: lerp3(handle, carry, e), blend: 1, pole: "low" } }; } },
   ]);
@@ -90,7 +155,7 @@ export function returnBasket(from: [number, number], fromYaw: number, pile: Fixt
   const left = bag ? bagReach(x, z, yaw) : null;
   const door: [number, number] = [0, -1.25];
   return plan([
-    walkSeg(from, fromYaw, s.stand, yaw, { basket: true, bag }),
+    ...walkRoute(from, fromYaw, s.stand, yaw, { basket: true, bag }),
     { dur: 0.8, end: "basketDown", pose: (k) => { const e = smooth(k); return { x, z, yaw, crouch: 0.42 * e, lean: 0.38 * e, left, right: { at: lerp3(carry, handle, e), blend: 1, pole: "low" } }; } },
     { dur: 0.6, pose: (k) => { const e = smooth(k); return { x, z, yaw, crouch: 0.42 * (1 - e), lean: 0.38 * (1 - e), left, right: { at: handle, blend: 1 - e, pole: "low" } }; } },
     walkSeg(s.stand, yaw, door, 0, { basket: false, bag }),
@@ -141,7 +206,7 @@ export function pickItem(from: [number, number], fromYaw: number, src: Source, b
   // With a bag in the left hand, the bag is set on the floor? No: the left hand keeps the bag and the right hand
   // (with the basket on the forearm) does the picking. Without a bag, the free left hand picks.
   return plan([
-    walkSeg(from, fromYaw, src.stand, yaw, { basket: true, bag }),
+    ...walkRoute(from, fromYaw, src.stand, yaw, { basket: true, bag }),
     { dur: 0.7, end: "take", pose: (k) => { const e = smooth(k); return { x, z, yaw, crouch: (low ? 0.18 : 0) * e, lean: (low ? 0.34 : 0.12) * e, left: { at: src.take, blend: e, pole: "out" }, right: right() }; } },
     { dur: 0.65, end: "drop", pose: (k) => { const e = smooth(k); return { x, z, yaw, crouch: (low ? 0.18 : 0) * (1 - e), lean: (low ? 0.34 : 0.12) * (1 - e) + 0.06 * e, left: { at: lerp3(src.take, over, e), blend: 1, pole: "out" }, right: right() }; } },
     { dur: 0.45, pose: (k) => { const e = smooth(k); return { x, z, yaw, crouch: 0, lean: 0.06 * (1 - e), left: bag ? bagReach(x, z, yaw, 1) : { at: over, blend: 1 - e, pole: "out" }, right: right() }; } },

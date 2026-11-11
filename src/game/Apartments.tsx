@@ -1134,7 +1134,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       if (mv.kind === "shower") {
         // The camera held on the shower the whole time.
         const v = showerView(floor), [px, pz] = toW(v.pos[0], v.pos[2]), [ax, az] = toW(v.at[0], v.at[2]);
-        state.camLock = { pos: [px, yNow + v.pos[1], pz], at: [ax, yNow + v.at[1], az] };
+        state.camLock = { pos: [px, yNow + v.pos[1], pz], at: [ax, yNow + v.at[1], az], by: "shower" };
       }
       if (t < walk) script = scriptFrom(planAt(mv.plan!, t).pose);
       else {
@@ -1149,7 +1149,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
           move.current = null; script = null;
         }
       }
-    } else if (state.camLock && !(mv?.kind === "shower")) state.camLock = null;
+    } else if (state.camLock?.by === "shower" && !(mv?.kind === "shower")) state.camLock = null;
     // ---------- the kitchen (your own apartment's) ----------
     const kr = kitchen.current;
     kr.watch(state);
@@ -1167,7 +1167,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         }
       }
       kr.seated(kc);
-    } else if (!kc && kr.busy) { kr.mv = null; if (state.uiLock === "cupboard") state.uiLock = null; }
+    } else if (!kc && kr.busy) { kr.mv = null; kr.view.choosing = false; if (state.uiLock === "cupboard") state.uiLock = null; if (state.camLock?.by === "cupboard") state.camLock = null; }
     if (!kc || eRide || move.current) lastKc.current = null;
     state.kitchenQ = false;
     // ---------- sitting on the couch (the chairs sit like a restaurant's: RestaurantInteraction runs them) ----------

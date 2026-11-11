@@ -57,7 +57,7 @@ export type AptFloor = Room & {
    */
   kitchen: {
     sinkStand: [number, number]; ovenStand: [number, number]; rackStand: [number, number]; trashStand: [number, number];
-    burner: [number, number, number]; basin: [number, number, number]; rack: [number, number, number];
+    burners: [number, number, number][]; basin: [number, number, number]; rack: [number, number, number];
     cupboard: { x: number; z: number; w: number }; trash: [number, number, number];
     places: { chair: number; at: [number, number, number]; stand: [number, number]; yaw: number }[];
   };
@@ -163,7 +163,7 @@ export function aptFloor(b: Building, floor: number): AptFloor {
     spots: { elevator: [minX + SHAFT / 2, hall0 + 0.65], bed: [bedX + BW / 2 + 0.48, maxZ - 1.12], fridge: [maxX - 0.42, maxZ - 1.3] },
     kitchen: {
       sinkStand: [maxX - 2.02, KZ - 0.72], ovenStand: [maxX - 2.8, KZ - 0.74], rackStand: [maxX - 1.22, KZ - 0.72], trashStand: [maxX - 3.42, maxZ - 0.95],
-      burner: [maxX - 2.8 - 0.17, 0.92, KZ - 0.13], basin: [maxX - 2.02, 0.84, KZ + 0.02], rack: [maxX - 1.22, 0.92, KZ + 0.02],
+      burners: [[maxX - 2.8 - 0.17, 0.92, KZ - 0.13], [maxX - 2.8 + 0.17, 0.92, KZ - 0.13]], basin: [maxX - 2.02, 0.84, KZ + 0.02], rack: [maxX - 1.22, 0.92, KZ + 0.02],
       cupboard: { x: maxX - 2.02, z: KZ - 0.31, w: 0.7 }, trash: [maxX - 3.42, 0.62, maxZ - 0.28],
       places: [1, 2].map((ci) => {
         const c = items[ci]!, at: [number, number, number] = [c.x + c.f[0] * 0.5, TABLE.top + 0.005, c.z + c.f[1] * 0.5];

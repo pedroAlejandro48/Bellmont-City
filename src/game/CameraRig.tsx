@@ -163,7 +163,8 @@ export function CameraRig({ state }: { state: GameState }) {
     }
     // Held on one view (the shower while showering): eased there, looking at it.
     if (state.camLock) {
-      const L = state.camLock, k = 1 - Math.exp(-4 * dt);
+      const L = state.camLock, k = L.snap ? 1 : 1 - Math.exp(-4 * dt);
+      if (L.fov && cam.isPerspectiveCamera && Math.abs(cam.fov - L.fov) > 0.05) { cam.fov = L.fov; cam.updateProjectionMatrix(); }
       camera.position.lerp(vectors.target.set(L.pos[0], L.pos[1], L.pos[2]), k);
       lockLook.current.lerp(vectors.up.set(L.at[0], L.at[1], L.at[2]), k);
       camera.up.set(0, 1, 0); camera.lookAt(lockLook.current);

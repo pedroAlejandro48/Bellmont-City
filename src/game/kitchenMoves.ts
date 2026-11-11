@@ -12,6 +12,10 @@ export type KPose = {
   door?: number; lid?: number; canOpen?: number; potTilt?: number; canTilt?: number; water?: number;
   /** What's pouring: from a can into the pot, from the pot onto a plate, burnt food into the bin. */
   stream?: "can" | "pot" | "burnt" | null;
+  /** How far the pouring has got (0..1: the food lands bit by bit). */
+  pourK?: number;
+  /** A thing shown in a hand just for this move (put away after washing, or out of the bag). */
+  holdL?: WareKind | null; holdR?: WareKind | null;
 };
 export type KSeg = { dur: number; pose: (k: number) => KPose; end?: string };
 export type KPlan = { segs: KSeg[]; total: number };
@@ -92,12 +96,13 @@ export function takeFromCupboard(fl: AptFloor, i: number): KSeg[] {
   ];
 }
 /** Putting pots and pans away (`n` of them, into slots from `first`): crouch, doors open, each in, doors shut, up. */
-export function intoCupboard(fl: AptFloor, from: [number, number], fromYaw: number, first: number, n: number, c: Carry): KSeg[] {
+export function intoCupboard(fl: AptFloor, from: [number, number], fromYaw: number, first: number, n: number, c: Carry, wares: WareKind[] = []): KSeg[] {
   const [x, z] = fl.kitchen.sinkStand, segs = openCupboard(fl, from, fromYaw, c).slice(0, 3);
   const bend = { crouch: 0.48, lean: 0.42 };
   for (let k = 0; k < n; k++) {
     const slot = cupboardSlot(fl, first + k), hold = carryAt(x, z, 0, 1);
-    segs.push({ dur: 0.8, end: "in", pose: (q) => { const e = smooth(q); return { x, z, yaw: 0, ...bend, left: null, right: R(lerp3(hold, [slot[0], slot[1] + 0.12, slot[2]], e), 1, "low"), door: 1 }; } });
+    const w = wares[k] ?? null;
+    segs.push({ dur: 0.8, end: "in", pose: (q) => { const e = smooth(q); return { x, z, yaw: 0, ...bend, left: null, right: R(lerp3(hold, [slot[0], slot[1] + 0.12, slot[2]], e), 1, "low"), door: 1, holdR: w }; } });
     segs.push({ dur: 0.45, pose: (q) => { const e = smooth(q); return { x, z, yaw: 0, ...bend, left: null, right: R(lerp3([slot[0], slot[1] + 0.12, slot[2]], hold, e), 1 - 0.5 * e, "low"), door: 1 }; } });
   }
   segs.push({ dur: 0.8, pose: (q) => { const e = smooth(q); return { x, z, yaw: 0, ...bend, left: R(handleAt(fl, -1, 1 - e)), right: R(handleAt(fl, 1, 1 - e)), door: 1 - e }; } });
@@ -107,8 +112,8 @@ export function intoCupboard(fl: AptFloor, from: [number, number], fromYaw: numb
 
 // ---------- the stove ----------
 /** To the oven, and the pot (or pan) in the right hand set on the burner (event "onStove"). */
-export function toStove(fl: AptFloor, from: [number, number], fromYaw: number, c: Carry): KSeg[] {
-  const [x, z] = fl.kitchen.ovenStand, b = fl.kitchen.burner, hold = carryAt(x, z, 0, 1), over: V3 = [b[0] + 0.12, b[1] + 0.06, b[2]];
+export function toStove(fl: AptFloor, from: [number, number], fromYaw: number, c: Carry, bi = 0): KSeg[] {
+  const [x, z] = fl.kitchen.ovenStand, b = fl.kitchen.burners[bi]!, hold = carryAt(x, z, 0, 1), over: V3 = [b[0] + 0.12, b[1] + 0.06, b[2]];
   return [
     walk(from, fromYaw, [x, z], 0, c),
     { dur: 0.8, end: "onStove", pose: (k) => { const e = smooth(k); return { x, z, yaw: 0, crouch: 0, lean: 0.18 * e, left: c.left ? R(carryAt(x, z, 0, -1), 1, "low") : null, right: R(lerp3(hold, over, e), 1, "low") }; } },
@@ -118,8 +123,8 @@ export function toStove(fl: AptFloor, from: [number, number], fromYaw: number, c
 /** Cans into the pot, one after another: each comes up in the left hand, the right pulls its ring and peels the
  * lid back (event "opened:i"), the left tips it over the pot and it pours (event "canIn:i"), and it's tossed in the
  * bin beside the oven (event "toss:i"). Then the cooking starts (event "cook"). */
-export function cansIn(fl: AptFloor, n: number): KSeg[] {
-  const [x, z] = fl.kitchen.ovenStand, b = fl.kitchen.burner, front = rel(x, z, 0, -0.04, 0.3, 1.1), ring: V3 = [front[0], front[1] + 0.11, front[2] + 0.02];
+export function cansIn(fl: AptFloor, n: number, bi = 0): KSeg[] {
+  const [x, z] = fl.kitchen.ovenStand, b = fl.kitchen.burners[bi]!, front = rel(x, z, 0, -0.04, 0.3, 1.1), ring: V3 = [front[0], front[1] + 0.11, front[2] + 0.02];
   const over: V3 = [b[0] - 0.02, b[1] + 0.32, b[2] - 0.04], toss: V3 = rel(x, z, 0, -0.35, 0.25, 1.05);
   const segs: KSeg[] = [];
   for (let i = 0; i < n; i++) {
@@ -128,15 +133,15 @@ export function cansIn(fl: AptFloor, n: number): KSeg[] {
     segs.push({ dur: 0.7, end: `opened:${i}`, pose: (k) => { const e = smooth(k); return { x, z, yaw: 0, crouch: 0, lean: 0.08, left: R(front, 1, "low"), right: R([ring[0], ring[1] + 0.06 * e, ring[2] - 0.05 * e], 1, "out"), canOpen: e }; } });
     segs.push({ dur: 0.35, pose: (k) => { const e = smooth(k); return { x, z, yaw: 0, crouch: 0, lean: 0.08, left: R(front, 1, "low"), right: R(ring, 1 - e, "out"), canOpen: 1 }; } });
     segs.push({ dur: 0.6, pose: (k) => { const e = smooth(k); return { x, z, yaw: 0, crouch: 0, lean: 0.08 + 0.12 * e, left: R(lerp3(front, over, e), 1, "low"), right: null, canOpen: 1, canTilt: 1.9 * e }; } });
-    segs.push({ dur: 1.1, end: `canIn:${i}`, pose: (k) => ({ x, z, yaw: 0, crouch: 0, lean: 0.2, left: R([over[0], over[1] + 0.01 * Math.sin(k * 12), over[2]], 1, "low"), right: null, canOpen: 1, canTilt: 1.9 + 0.25 * k, stream: k > 0.06 && k < 0.9 ? "can" : null }) });
+    segs.push({ dur: 1.1, end: `canIn:${i}`, pose: (k) => ({ x, z, yaw: 0, crouch: 0, lean: 0.2, left: R([over[0], over[1] + 0.01 * Math.sin(k * 12), over[2]], 1, "low"), right: null, canOpen: 1, canTilt: 1.9 + 0.25 * k, stream: k > 0.06 && k < 0.9 ? "can" : null, pourK: Math.min(1, Math.max(0, (k - 0.06) / 0.84)) }) });
     segs.push({ dur: 0.55, end: `toss:${i}`, pose: (k) => { const e = smooth(k); return { x, z, yaw: -0.5 * Math.sin(Math.PI * k), crouch: 0, lean: 0.12, left: R(lerp3(over, toss, e), 1, "low"), right: null, canOpen: 1, canTilt: 2.1 * (1 - e) }; } });
   }
   segs.push({ dur: 0.4, end: "cook", pose: (k) => ({ x, z, yaw: 0, crouch: 0, lean: 0.1 * (1 - k), left: R(toss, 1 - smooth(k), "low"), right: null }) });
   return segs;
 }
 /** Taking the pot off the stove by its handle, into the right hand (event "lift"). */
-export function offStove(fl: AptFloor, from: [number, number], fromYaw: number, c: Carry): KSeg[] {
-  const [x, z] = fl.kitchen.ovenStand, b = fl.kitchen.burner, hold = carryAt(x, z, 0, 1), on: V3 = [b[0] + 0.12, b[1] + 0.06, b[2]];
+export function offStove(fl: AptFloor, from: [number, number], fromYaw: number, c: Carry, bi = 0): KSeg[] {
+  const [x, z] = fl.kitchen.ovenStand, b = fl.kitchen.burners[bi]!, hold = carryAt(x, z, 0, 1), on: V3 = [b[0] + 0.12, b[1] + 0.06, b[2]];
   return [
     walk(from, fromYaw, [x, z], 0, c),
     { dur: 0.7, end: "lift", pose: (k) => { const e = smooth(k); return { x, z, yaw: 0, crouch: 0, lean: 0.18 * e, left: c.left ? R(carryAt(x, z, 0, -1), 1, "low") : null, right: R(on, e, "low") }; } },
@@ -152,7 +157,7 @@ export function pourToPlate(x: number, z: number, yaw: number): KSeg[] {
   return [
     { dur: 0.7, pose: (k) => { const e = smooth(k); return { x, z, yaw, crouch: 0, lean: 0.12 * e, left: R(lerp3(carryAt(x, z, yaw, -1), plate, e), 1, "low"), right: R(lerp3(carryAt(x, z, yaw, 1), pot, e), 1, "low"), potTilt: 0 }; } },
     { dur: 0.6, pose: (k) => { const e = smooth(k); return { x, z, yaw, crouch: 0, lean: 0.14, left: R(plate, 1, "low"), right: R(pot, 1, "low"), potTilt: 1.5 * e }; } },
-    { dur: 1.5, end: "poured", pose: (k) => ({ x, z, yaw, crouch: 0, lean: 0.14, left: R(plate, 1, "low"), right: R([pot[0], pot[1] + 0.02 * Math.sin(k * 14), pot[2]], 1, "low"), potTilt: 1.5 + 0.35 * k, stream: k < 0.9 ? "pot" : null }) },
+    { dur: 1.5, end: "poured", pose: (k) => ({ x, z, yaw, crouch: 0, lean: 0.14, left: R(plate, 1, "low"), right: R([pot[0], pot[1] + 0.02 * Math.sin(k * 14), pot[2]], 1, "low"), potTilt: 1.5 + 0.35 * k, stream: k < 0.9 ? "pot" : null, pourK: Math.min(1, k / 0.9) }) },
     { dur: 0.8, pose: (k) => { const e = smooth(k); return { x, z, yaw, crouch: 0, lean: 0.14 * (1 - e), left: R(lerp3(plate, carryAt(x, z, yaw, -1), e), 1, "low"), right: R(lerp3(pot, carryAt(x, z, yaw, 1), e), 1, "low"), potTilt: 1.85 * (1 - e) }; } },
   ];
 }
@@ -184,12 +189,14 @@ export function washUp(fl: AptFloor, n: number): KSeg[] {
   return segs;
 }
 /** At the counter beside the sink: a hand to a spot on it and back (event `ev` as it gets there). */
-export function atRack(fl: AptFloor, from: [number, number], fromYaw: number, spot: V3, hand: "left" | "right", ev: string, c: Carry): KSeg[] {
+export function atRack(fl: AptFloor, from: [number, number], fromYaw: number, spot: V3, hand: "left" | "right", ev: string, c: Carry, show: WareKind | null = null): KSeg[] {
   const [x, z] = fl.kitchen.rackStand, side = hand === "left" ? -1 : 1, hold = carryAt(x, z, 0, side);
   const other = hand === "left" ? (c.right ? R(carryAt(x, z, 0, 1), 1, "low") : null) : (c.left ? R(carryAt(x, z, 0, -1), 1, "low") : null);
   const reach = (e: number) => R(lerp3(hold, [spot[0], spot[1] + 0.05, spot[2]], e), 1, "low");
-  const pose = (e: number, lean: number): KPose => ({ x, z, yaw: 0, crouch: 0, lean, left: hand === "left" ? reach(e) : other, right: hand === "right" ? reach(e) : other });
-  return [walk(from, fromYaw, [x, z], 0, c), { dur: 0.7, end: ev, pose: (k) => pose(smooth(k), 0.2 * smooth(k)) }, { dur: 0.55, pose: (k) => pose(1 - smooth(k), 0.2 * (1 - smooth(k))) }];
+  const pose = (e: number, lean: number, held: boolean): KPose => ({ x, z, yaw: 0, crouch: 0, lean, left: hand === "left" ? reach(e) : other, right: hand === "right" ? reach(e) : other, ...(held && show ? (hand === "left" ? { holdL: show } : { holdR: show }) : {}) });
+  const walking = walk(from, fromYaw, [x, z], 0, c);
+  const carryIt: KSeg = show ? { dur: walking.dur, pose: (k) => { const p = walking.pose(k); return { ...p, ...(hand === "left" ? { left: R(carryAt(p.x, p.z, p.yaw, -1), 1, "low"), holdL: show } : { right: R(carryAt(p.x, p.z, p.yaw, 1), 1, "low"), holdR: show }) }; } } : walking;
+  return [carryIt, { dur: 0.7, end: ev, pose: (k) => pose(smooth(k), 0.2 * smooth(k), true) }, { dur: 0.55, pose: (k) => pose(1 - smooth(k), 0.2 * (1 - smooth(k)), false) }];
 }
 /** To the table and the plate (left hand) set down at a chair's place (event "down"). */
 export function toTable(place: { at: V3; stand: [number, number]; yaw: number }, from: [number, number], fromYaw: number, c: Carry): KSeg[] {
@@ -218,7 +225,7 @@ export function dumpInBin(fl: AptFloor, from: [number, number], fromYaw: number,
     walk(from, fromYaw, [x, z], 0, c),
     { dur: 0.5, pose: (k) => ({ x, z, yaw: 0, crouch: 0, lean: 0.1 * k, left, right: R(hold, 1, "low"), lid: smooth(k) }) },
     { dur: 0.6, pose: (k) => { const e = smooth(k); return { x, z, yaw: 0, crouch: 0, lean: 0.1 + 0.15 * e, left, right: R(lerp3(hold, over, e), 1, "low"), lid: 1, potTilt: 1.4 * e }; } },
-    { dur: 1.5, end: "dumped", pose: (k) => ({ x, z, yaw: 0, crouch: 0, lean: 0.25, left, right: R([over[0], over[1] + 0.03 * Math.abs(Math.sin(k * 9)), over[2]], 1, "low"), lid: 1, potTilt: 1.4 + 0.5 * k, stream: k < 0.85 ? "burnt" : null }) },
+    { dur: 1.5, end: "dumped", pose: (k) => ({ x, z, yaw: 0, crouch: 0, lean: 0.25, left, right: R([over[0], over[1] + 0.03 * Math.abs(Math.sin(k * 9)), over[2]], 1, "low"), lid: 1, potTilt: 1.4 + 0.5 * k, stream: k < 0.85 ? "burnt" : null, pourK: Math.min(1, k / 0.85) }) },
     { dur: 0.7, pose: (k) => { const e = smooth(k); return { x, z, yaw: 0, crouch: 0, lean: 0.25 * (1 - e), left, right: R(lerp3(over, hold, e), 1, "low"), lid: 1 - e, potTilt: 1.9 * (1 - e) }; } },
   ];
 }

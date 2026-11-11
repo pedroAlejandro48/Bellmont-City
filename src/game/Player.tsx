@@ -610,16 +610,19 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     // a drink is lifted once and sipped with the head tipped back.
     // (Eating or drinking a thing from the inventory works the same way, over its own time.)
     const invUse = inv && (inv.kind === "eat" || inv.kind === "drink") ? { at: inv.at, drink: inv.kind === "drink", T: USE_SECONDS } : null;
-    const eat = state.eating ? { at: state.eating.at, drink: state.eating.drink, T: EAT_SECONDS } : state.meal ? { at: state.meal.at, drink: false, T: state.meal.T } : invUse;
+    const eat = state.eating ? { at: state.eating.at, drink: state.eating.drink, T: EAT_SECONDS } : state.meal ? { at: state.meal.at, drink: false, T: state.meal.T, bites: state.meal.bites } : invUse;
     if (eat && !dead && !incapacitated && root.current && head.current) {
       const t = state.simulationTime - eat.at, T = eat.T;
       let up = 0, tip = 0;
       if (eat.drink) { up = Math.min(smoothstep(t / 0.6), 1 - smoothstep((t - (T - 0.6)) / 0.6)); tip = up * Math.min(1, Math.max(0, (t - 0.5) / 0.5)); }
-      else { const bite = T / 3, u = (t % bite) / bite; up = u < 0.35 ? smoothstep(u / 0.35) : u < 0.6 ? 1 : 1 - smoothstep((u - 0.6) / 0.4); }
+      else { const bite = T / ((eat as { bites?: number }).bites ?? 3), u = (t % bite) / bite; up = u < 0.35 ? smoothstep(u / 0.35) : u < 0.6 ? 1 : 1 - smoothstep((u - 0.6) / 0.4); }
       head.current.rotation.x -= 0.32 * tip;
       root.current.updateMatrixWorld(true);
       const mouth = head.current.localToWorld(new THREE.Vector3(0, -0.06, 0.16 + 0.04 * tip));
       reachArm(armR.current, foreR.current, mouth, POLES.low(-1), up);
+      // A home meal: the knife stays down by the plate in the left hand.
+      const kl = state.meal?.left;
+      if (kl && state.meal) reachArm(armL.current, foreL.current, new THREE.Vector3(kl[0], kl[1], kl[2]), POLES.low(1), Math.min(1, t / 0.6));
     }
 
   });

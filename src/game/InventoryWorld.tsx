@@ -1,4 +1,5 @@
 import { PantryItem } from "./PantryModels";
+import { CANDIES, CANDY_INFO, isCandy } from "./pantry";
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -149,7 +150,7 @@ export function InventoryWorld({ state }: { state: GameState }) {
   const looks = useLooks();
   const held = useRef<THREE.Group>(null);
   const shown = useRef<Thing | null>(null);
-  const kinds = useMemo(() => ["phone", "water", "bottle", "can", "orangeJuice", "appleJuice", "cola", "lemonSoda", "energy", "apple", "banana", "orange", "pear", "lemon", "lime", "grape", "peach", "key"] as Thing[], []);
+  const kinds = useMemo(() => ["phone", "water", "bottle", "can", "orangeJuice", "appleJuice", "cola", "lemonSoda", "energy", "apple", "banana", "orange", "pear", "lemon", "lime", "grape", "peach", "key", ...CANDIES] as Thing[], []);
   const parts = useRef<Map<Thing, THREE.Group>>(new Map());
   const ground = useRef<THREE.Group>(null);
   const bagHeld = useRef<THREE.Group>(null), bagCount = useRef(-1);
@@ -206,6 +207,8 @@ export function InventoryWorld({ state }: { state: GameState }) {
         if (kind === "water" || kind === "bottle" || kind === "orangeJuice" || kind === "appleJuice") g.position.y -= 0.07;
         if (kind === "cola" || kind === "lemonSoda" || kind === "energy" || kind === "can") g.position.y -= 0.05;
         if (kind === "phone") g.position.y += 0.05;
+        // Candy: held up in the fingers, the wrapper toward the face (a bar stands on its end).
+        if (kind && isCandy(kind)) { g.position.y -= 0.03; if (CANDY_INFO[kind].shape !== "pop" && CANDY_INFO[kind].shape !== "bag") { tmp.e.set(-Math.PI / 2 + 0.35, state.rotY, 0, "YXZ"); g.quaternion.setFromEuler(tmp.e); } }
       }
     }
     // A bag of groceries in the left hand (held by its handles).

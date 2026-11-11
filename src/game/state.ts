@@ -152,11 +152,11 @@ export type GameState = {
   /** Some other panel that needs the mouse (a reception desk, an elevator's buttons…), by name. */
   uiLock: string | null;
   /** The camera held on one view (world: where it is, what it looks at), e.g. the shower while showering. */
-  camLock: { pos: [number, number, number]; at: [number, number, number] } | null;
+  camLock: { pos: [number, number, number]; at: [number, number, number]; /** Put there at once (no easing). */ snap?: boolean; /** A field of view while held. */ fov?: number; /** Whose it is (only they let go of it). */ by?: string } | null;
   /** A kitchen panel's answer: a thing to take from the counter, or the cans to cook. */
-  kitchenAsk: { rack?: import("./pantry").WareKind; cans?: import("./pantry").CanKind[] } | null;
+  kitchenAsk: { rack?: import("./pantry").WareKind; cans?: import("./pantry").CanKind[]; burner?: number } | null;
   /** Eating a home-cooked meal at the table (the fork to the mouth): when it started, how long. */
-  meal: { at: number; T: number } | null;
+  meal: { at: number; T: number; bites?: number; left?: [number, number, number] } | null;
   /** Q pressed (for the kitchen, which looks at it after the food and inventory have). */
   kitchenQ: boolean;
   /** Things on their way into the fridge (one at a time, by hand): the name, and the grocery bag's kind if from the bag. */

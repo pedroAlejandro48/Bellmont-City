@@ -82,6 +82,8 @@ function build() {
     ring: new THREE.MeshStandardMaterial({ color: "#c2c7cd", roughness: 0.3, metalness: 0.45 }),
     pot: new THREE.MeshStandardMaterial({ color: "#cfd4da", roughness: 0.28, metalness: 0.45 }),
     panIn: new THREE.MeshStandardMaterial({ color: "#2a2b2e", roughness: 0.45, metalness: 0.4 }),
+    panInSide: new THREE.MeshStandardMaterial({ color: "#2a2b2e", roughness: 0.45, metalness: 0.4, side: THREE.BackSide }),
+    potIn: new THREE.MeshStandardMaterial({ color: "#b8bec5", roughness: 0.35, metalness: 0.4, side: THREE.BackSide }),
     handle: new THREE.MeshStandardMaterial({ color: "#1e1f22", roughness: 0.6 }),
     porcelain: new THREE.MeshStandardMaterial({ color: "#f7f6f2", roughness: 0.18 }),
     rim: new THREE.MeshStandardMaterial({ color: "#2f5f9a", roughness: 0.3 }),
@@ -126,16 +128,31 @@ export function WareModel({ kind, food = null }: { kind: WareKind; food?: { a: s
   const L = pantryLooks();
   switch (kind) {
     case "pot": return <group>
-      <mesh position={[0, 0.07, 0]} material={L.pot} castShadow><cylinderGeometry args={[0.11, 0.1, 0.14, 24, 1, true]} /></mesh>
-      <mesh position={[0, 0.003, 0]} material={L.pot}><cylinderGeometry args={[0.1, 0.1, 0.006, 24]} /></mesh>
-      {[-1, 1].map((s) => <mesh key={s} position={[s * 0.125, 0.115, 0]} rotation-x={Math.PI / 2} material={L.handle}><torusGeometry args={[0.022, 0.006, 6, 12, Math.PI]} /></mesh>)}
-      {food && <FoodFill r={0.1} y={0.012 + 0.11 * food.level} food={food} />}
+      {/* A solid steel pot: thick walls (outside, the brushed inside, a rolled rim), a heavy base, two loop handles
+          riveted to its sides. */}
+      <mesh position={[0, 0.075, 0]} material={L.pot} castShadow receiveShadow><cylinderGeometry args={[0.11, 0.105, 0.15, 32, 1, true]} /></mesh>
+      <mesh position={[0, 0.078, 0]} material={L.potIn}><cylinderGeometry args={[0.103, 0.098, 0.144, 32, 1, true]} /></mesh>
+      <mesh position={[0, 0.15, 0]} rotation-x={Math.PI / 2} material={L.pot}><torusGeometry args={[0.1065, 0.0045, 8, 40]} /></mesh>
+      <mesh position={[0, 0.008, 0]} material={L.pot} castShadow><cylinderGeometry args={[0.105, 0.1, 0.016, 32]} /></mesh>
+      <mesh position={[0, 0.0165, 0]} rotation-x={-Math.PI / 2} material={L.potIn}><circleGeometry args={[0.099, 32]} /></mesh>
+      {[-1, 1].map((sd) => <group key={sd} position={[sd * 0.108, 0.118, 0]} rotation-y={sd > 0 ? Math.PI / 2 : -Math.PI / 2}>
+        <mesh rotation-x={Math.PI / 2} material={L.handle} castShadow><torusGeometry args={[0.032, 0.007, 8, 18, Math.PI]} /></mesh>
+        {[-1, 1].map((e) => <mesh key={e} position={[e * 0.032, 0, 0]} material={L.pot}><sphereGeometry args={[0.009, 8, 6]} /></mesh>)}
+      </group>)}
+      {food && <FoodFill r={0.1} y={0.018 + 0.11 * food.level} food={food} />}
     </group>;
     case "pan": return <group>
-      <mesh position={[0, 0.025, 0]} material={[L.pot, L.panIn, L.pot]} castShadow><cylinderGeometry args={[0.13, 0.11, 0.05, 24, 1, true]} /></mesh>
-      <mesh position={[0, 0.003, 0]} material={L.panIn}><cylinderGeometry args={[0.11, 0.11, 0.006, 24]} /></mesh>
-      <mesh position={[0.25, 0.04, 0]} rotation-z={-0.12} material={L.handle} castShadow><boxGeometry args={[0.2, 0.018, 0.03]} /></mesh>
-      {food && <FoodFill r={0.11} y={0.01 + 0.035 * food.level} food={food} />}
+      {/* A frying pan: flared steel sides with a dark non-stick inside, a thick base, a long handle off a riveted
+          bracket at the rim. */}
+      <mesh position={[0, 0.026, 0]} material={L.pot} castShadow receiveShadow><cylinderGeometry args={[0.13, 0.112, 0.052, 32, 1, true]} /></mesh>
+      <mesh position={[0, 0.028, 0]} material={L.panInSide}><cylinderGeometry args={[0.125, 0.108, 0.048, 32, 1, true]} /></mesh>
+      <mesh position={[0, 0.052, 0]} rotation-x={Math.PI / 2} material={L.pot}><torusGeometry args={[0.1275, 0.0035, 8, 40]} /></mesh>
+      <mesh position={[0, 0.005, 0]} material={L.pot} castShadow><cylinderGeometry args={[0.112, 0.11, 0.01, 32]} /></mesh>
+      <mesh position={[0, 0.0105, 0]} rotation-x={-Math.PI / 2} material={L.panIn}><circleGeometry args={[0.108, 32]} /></mesh>
+      <mesh position={[0.14, 0.045, 0]} material={L.pot}><boxGeometry args={[0.04, 0.02, 0.03]} /></mesh>
+      <mesh position={[0.25, 0.058, 0]} rotation-z={0.16} material={L.handle} castShadow><boxGeometry args={[0.19, 0.02, 0.028]} /></mesh>
+      <mesh position={[0.345, 0.073, 0]} rotation-x={Math.PI / 2} material={L.handle}><torusGeometry args={[0.012, 0.004, 6, 12]} /></mesh>
+      {food && <FoodFill r={0.11} y={0.013 + 0.035 * food.level} food={food} />}
     </group>;
     case "plate": return <group>
       <mesh position={[0, 0.008, 0]} material={L.porcelain} castShadow><cylinderGeometry args={[0.12, 0.085, 0.016, 28]} /></mesh>
@@ -204,13 +221,13 @@ function partsOf(kind: string): Part[] {
   }
   switch (kind) {
     case "pot": return [
-      { geo: new THREE.CylinderGeometry(0.11, 0.1, 0.14, 20), mat: L.pot, m: at(0, 0.07, 0) },
-      { geo: new THREE.TorusGeometry(0.022, 0.006, 5, 10, Math.PI), mat: L.handle, m: at(0.125, 0.115, 0, Math.PI / 2) },
-      { geo: new THREE.TorusGeometry(0.022, 0.006, 5, 10, Math.PI), mat: L.handle, m: at(-0.125, 0.115, 0, Math.PI / 2) },
+      { geo: new THREE.CylinderGeometry(0.11, 0.105, 0.15, 24), mat: L.pot, m: at(0, 0.075, 0) },
+      { geo: new THREE.TorusGeometry(0.032, 0.007, 6, 12, Math.PI), mat: L.handle, m: at(0.108, 0.118, 0, 0, Math.PI / 2, 0).multiply(at(0, 0, 0, Math.PI / 2)) },
+      { geo: new THREE.TorusGeometry(0.032, 0.007, 6, 12, Math.PI), mat: L.handle, m: at(-0.108, 0.118, 0, 0, -Math.PI / 2, 0).multiply(at(0, 0, 0, Math.PI / 2)) },
     ];
     case "pan": return [
-      { geo: new THREE.CylinderGeometry(0.13, 0.11, 0.05, 20), mat: [L.pot, L.panIn, L.pot], m: at(0, 0.025, 0) },
-      { geo: new THREE.BoxGeometry(0.2, 0.018, 0.03), mat: L.handle, m: at(0.22, 0.035, 0, 0, 0, -0.1) },
+      { geo: new THREE.CylinderGeometry(0.13, 0.112, 0.052, 24), mat: [L.pot, L.panIn, L.pot], m: at(0, 0.026, 0) },
+      { geo: new THREE.BoxGeometry(0.19, 0.02, 0.028), mat: L.handle, m: at(0.25, 0.058, 0, 0, 0, 0.16) },
     ];
     case "plate": return [{ geo: new THREE.CylinderGeometry(0.12, 0.085, 0.016, 24), mat: L.porcelain, m: at(0, 0.008, 0) }, { geo: new THREE.RingGeometry(0.108, 0.115, 24), mat: L.rim, m: at(0, 0.0165, 0, -Math.PI / 2) }];
     case "bowl": return [{ geo: new THREE.CylinderGeometry(0.08, 0.045, 0.07, 18), mat: L.porcelain, m: at(0, 0.035, 0) }];
@@ -250,7 +267,6 @@ export function PantryShelf({ tag, w, d, frame }: { tag: string; w: number; d: n
     <mesh position={[0, 0.9, 0]} material={frame}><boxGeometry args={[w, 1.8, 0.04]} /></mesh>
     {[-1, 1].map((s) => <mesh key={s} position={[s * w / 2, 0.9, 0]} material={frame}><boxGeometry args={[0.04, 1.8, d]} /></mesh>)}
     {levels.map((y) => <mesh key={y} position={[0, y, 0]} material={frame}><boxGeometry args={[w, 0.03, d]} /></mesh>)}
-    {secs.map((sec, si) => <mesh key={si} position={[sec.u0, 0.9, sec.side * d / 4]} material={frame}><boxGeometry args={[0.012, 1.8, d / 2]} /></mesh>)}
     {meshes.map((im, i) => <primitive key={i} object={im} />)}
   </group>;
 }

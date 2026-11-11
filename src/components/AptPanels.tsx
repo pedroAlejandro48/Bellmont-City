@@ -63,7 +63,7 @@ function RackPanel({ state, onClose }: { state: GameState; onClose: () => void }
 }
 /** The stove: which cans go in the pot (up to three) or pan (two), from the fridge; then it cooks. */
 function CookPanel({ state, onClose }: { state: GameState; onClose: () => void }) {
-  const k = state.life.kitchen, ware = k.stove?.ware ?? "pot", cap = CAPACITY[ware];
+  const k = state.life.kitchen, burner = state.kitchenAsk?.burner ?? 0, ware = k.stoves[burner]?.ware ?? "pot", cap = CAPACITY[ware];
   const have = CANS.map((c) => ({ c, n: state.life.fridge.filter((f) => f === CAN_INFO[c].name).length })).filter((x) => x.n > 0);
   const [pick, setPick] = useState<CanKind[]>([]);
   const add = (c: CanKind) => { if (pick.length < cap && pick.filter((x) => x === c).length < (have.find((h) => h.c === c)?.n ?? 0)) setPick([...pick, c]); };
@@ -76,6 +76,6 @@ function CookPanel({ state, onClose }: { state: GameState; onClose: () => void }
     <p className="phone-label">In the {ware} · {pick.length}/{cap}</p>
     {pick.length ? <div className="kitchen-picks">{pick.map((c, i) => <button key={i} type="button" className="kitchen-pick" onClick={() => drop(i)}>{CAN_INFO[c].name} ✕</button>)}</div> : <p className="phone-note">Nothing yet.</p>}
     {pick.length > 0 && <p className="phone-note">Fills {Math.round(fill.hunger)}% hunger, +{fill.thirst}% thirst, +{fill.energy}% energy.</p>}
-    <button type="button" className="phone-btn" disabled={!pick.length} onClick={() => { state.kitchenAsk = { cans: pick }; onClose(); }}>Open the cans and cook</button>
+    <button type="button" className="phone-btn" disabled={!pick.length} onClick={() => { state.kitchenAsk = { cans: pick, burner }; onClose(); }}>Open the cans and cook</button>
   </div>;
 }

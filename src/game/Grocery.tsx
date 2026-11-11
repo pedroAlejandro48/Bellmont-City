@@ -8,7 +8,7 @@ import { SIDEWALK_H, timeInfo, type City } from "./config";
 import { OPENER_PASS } from "./doors";
 import {
   BASKET_MAX, GROCERY_PRICE, checkoutLength, checkoutSpots, clerkAt, landingSpot, payPlan, pickItem, pileSpot, planAt, returnBasket,
-  sources, takeBasket, walkSeg, plan as makePlan, type GPose, type Plan, type Source,
+  sources, takeBasket, walkSeg, walkRoute, setGroceryObstacles, plan as makePlan, type GPose, type Plan, type Source,
 } from "./groceryRun";
 import { InteractionPrompt } from "./InteractionPrompt";
 import { ITEMS, addItem, freeSlots, type ItemKind } from "./inventory";
@@ -93,6 +93,8 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
   const yawOf = (y: number) => worldYaw(f, y);
   const pile = useMemo(() => layout.fixtures.find((x) => x.type === "baskets")!, [layout]);
   const srcs = useMemo(() => sources(layout), [layout]);
+  // Everyone's walks here go round the shelves, crates and counter.
+  useMemo(() => setGroceryObstacles(layout.solids, layout.bounds), [layout]);
   const spots = useMemo(() => checkoutSpots(layout), [layout]);
   const clerk = useBodyRig();
 
@@ -299,8 +301,13 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
           next("pay", withWalk(payPlan([svc.x, svc.z], svc.yaw, layout, n), [sh.pose.x, sh.pose.z], sh.pose.yaw, [svc.x, svc.z], svc.yaw));
         }
       } else if (sh.plan) {
-        const r = planAt(sh.plan, t, sh.prev);
-        sh.prev = t; sh.pose = r.pose;
+        // Someone in the way (the player, inside): wait for them to pass rather than walk through them.
+        if (there && !me.plan) {
+          const [px, pz] = local(), ahead = planAt(sh.plan, t + 0.35).pose, dNow = Math.hypot(sh.pose.x - px, sh.pose.z - pz), dAhead = Math.hypot(ahead.x - px, ahead.z - pz);
+          if (dAhead < 0.75 && dAhead < dNow - 0.01) { sh.t0 += dt; }
+        }
+        const r = planAt(sh.plan, now - sh.t0, sh.prev);
+        sh.prev = now - sh.t0; sh.pose = r.pose;
         for (const ev of r.events) {
           if (ev === "basket") sh.basket = [];
           if (ev === "take") sh.holding = sh.wants[0]?.kind ?? null;
@@ -321,7 +328,7 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
             if (sh.stage === "pick") sh.wants.shift();
             const want = sh.wants[0];
             if (want) next("pick", pickItem(here, sh.pose.yaw, want, false));
-            else { const q: [number, number] = [layout.service.x - 0.2, layout.service.z - 1.1]; next("queue", null); sh.plan = makePlan([walkSeg(here, sh.pose.yaw, q, layout.service.yaw, { basket: true, bag: false })]); sh.stage = "queue"; }
+            else { const q: [number, number] = [layout.service.x - 0.2, layout.service.z - 1.1]; next("queue", null); sh.plan = makePlan(walkRoute(here, sh.pose.yaw, q, layout.service.yaw, { basket: true, bag: false })); sh.stage = "queue"; }
           } else if (sh.stage === "pay") next("return", returnBasket(here, sh.pose.yaw, pile, true));
           else if (sh.stage === "return") {
             const from: [number, number] = [0, -1.25], lead = leaveLead(from);
@@ -352,6 +359,14 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
     placeAtHand(shopperItem.current, shopperRig.foreL.current, !!shopperNow?.holding, 0);
     if (shopperItem.current && shopperNow?.holding) shopperItem.current.children.forEach((c) => { c.visible = c.userData["kind"] === shopperNow.holding; });
 
+    // The shopper and the clerk are solid to the player (walking into them leans on them).
+    if (there) {
+      const extra: { x: number; z: number; r: number }[] = [];
+      const shNow = shopper.current;
+      if (shNow && shNow.stage !== "approach" && shNow.stage !== "away") { const [wx, wz] = world(shNow.pose.x, shNow.pose.z); extra.push({ x: wx, z: wz, r: 0.3 }); }
+      const [cx0, cz0] = world(layout.staff.x, layout.staff.z); extra.push({ x: cx0, z: cz0, r: 0.3 });
+      state.staffBodies = [...state.staffBodies, ...extra];
+    }
     // ---- the clerk: idle at the register, or bagging ----
     const s = layout.staff, root = clerk.root.current;
     if (root && clerk.hips.current) {
@@ -387,7 +402,9 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
       if (ci.visible && c && clerk.foreR.current) { clerk.foreR.current.updateWorldMatrix(true, false); handWorld(clerk.foreR.current, ci.position); ci.children.forEach((g) => { g.visible = g.userData["kind"] === c.items[holding!]?.kind; }); }
     }
     if (c && c.items.length !== (c as Checkout & { shown?: number }).shown) { (c as Checkout & { shown?: number }).shown = c.items.length; }
-    checkoutView.current = { who: c?.who ?? null, bagged, holding };
+    // (Redrawn as each thing leaves the basket, so they go one by one.)
+    const cv = checkoutView.current;
+    if (cv.who !== (c?.who ?? null) || cv.bagged !== bagged || cv.holding !== holding) { checkoutView.current = { who: c?.who ?? null, bagged, holding }; bump(); }
     if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") Object.assign(window, { __grocery: { checkout: c ? { who: c.who, t: now - c.t0, n: c.items.length } : null, view: checkoutView.current, shopper: shopper.current ? { stage: shopper.current.stage, basket: shopper.current.basket?.length ?? null, bag: shopper.current.bag?.length ?? null } : null, nextShopper: nextShopper.current } });
   }, -0.65);
 
@@ -422,7 +439,7 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
 /** A move that starts with a few steps from where someone is to where the move begins. */
 function withWalk(p: Plan, from: [number, number], fromYaw: number, to: [number, number], toYaw: number): Plan {
   if (Math.hypot(to[0] - from[0], to[1] - from[1]) < 0.05) return p;
-  return makePlan([walkSeg(from, fromYaw, to, toYaw, { basket: true, bag: false }), ...p.segs]);
+  return makePlan([...walkRoute(from, fromYaw, to, toYaw, { basket: true, bag: false }), ...p.segs]);
 }
 
 /** Keeps a thing at a hand (or hides it). */

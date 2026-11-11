@@ -1,5 +1,7 @@
 import { useFrame } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Reflector } from "three/examples/jsm/objects/Reflector.js";
+import { quality } from "./quality";
 import * as THREE from "three";
 import type { AptFloor } from "./aptRoom";
 import { handWorld } from "./arms";
@@ -119,6 +121,14 @@ export function BathroomThings({ fl, state, link, m }: { fl: AptFloor; state: Ga
   const floorGeo = useMemo(() => scaledPlane(b.x1 - b.x0, b.z1 - b.z0, 1.2), [b]);
   useEffect(() => () => floorGeo.dispose(), [floorGeo]);
   const water = useWaterMaterial();
+  // The mirror's reflection: only while the player is on this floor, as it draws the room again (smaller on Low).
+  const reflector = useMemo(() => { const lo = quality().detail < 1; return new Reflector(new THREE.PlaneGeometry(0.54, 0.68), { textureWidth: lo ? 256 : 512, textureHeight: lo ? 320 : 640, color: 0xd2dade, clipBias: 0.003 }); }, []);
+  useEffect(() => () => { reflector.getRenderTarget().dispose(); reflector.dispose(); }, [reflector]);
+  const [reflect, setReflect] = useState(false);
+  useFrame(() => {
+    const on = state.level?.building === fl.key.split("#")[0] && state.level?.floor === fl.upper;
+    if (on !== reflect) setReflect(on);
+  });
   const sinkStream = useRef<THREE.Mesh>(null), showerStream = useRef<THREE.Mesh>(null), splash = useRef<THREE.Mesh>(null), swirl = useRef<THREE.Mesh>(null);
   const paperHand = useRef<THREE.Mesh>(null), paperDrop = useRef<THREE.Mesh>(null);
 
@@ -252,6 +262,8 @@ export function BathroomThings({ fl, state, link, m }: { fl: AptFloor; state: Ga
       {/* The mirror above, in a thin dark frame. */}
       <mesh position={[0, 1.55, -0.225]} material={mats.trim}>{B([0.58, 0.72, 0.02])}</mesh>
       <mesh position={[0, 1.55, -0.213]} material={mats.mirror}>{B([0.54, 0.68, 0.006])}</mesh>
+      {/* A real mirror on your own floor: it reflects the room and you in it (drawn only while in view). */}
+      {reflect && <primitive object={reflector} position={[0, 1.55, -0.2095]} />}
     </group>
     <mesh position={[si.tap[0], si.tap[1] - 0.1, si.tap[2]]} material={mats.chrome} castShadow><cylinderGeometry args={[0.018, 0.022, 0.2, 10]} /></mesh>
     <mesh position={[(si.tap[0] + si.bowl[0]) / 2, si.tap[1], si.tap[2]]} rotation-z={Math.PI / 2} material={mats.chrome} castShadow><cylinderGeometry args={[0.015, 0.015, si.tap[0] - si.bowl[0] + 0.02, 10]} /></mesh>

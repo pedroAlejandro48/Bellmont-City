@@ -3,7 +3,7 @@
 import type { AptFloor } from "./aptRoom";
 import { GAME_MINUTE } from "./config";
 import { handFree, handsFullMessage, holdingOther } from "./handsHeld";
-import { dirtyHeld, freePlace, isDish, isPotLike, putAway, stoveState, type Held, type Kitchen } from "./kitchen";
+import { BURNERS, dirtyHeld, freePlace, isDish, isPotLike, putAway, stoveState, type Held, type Kitchen } from "./kitchen";
 import {
   atRack, cansIn, dumpInBin, fromTable, intoCupboard, kplan, kplanAt, offStove, openCupboard, pourToPlate, rackSpot, takeFromCupboard, toSink, toStove, toTable, washUp,
   type Carry, type KPlan, type KPose, type KSeg,
@@ -23,8 +23,12 @@ export type KView = {
   choosing: boolean; picked: number | null;
   /** A meal being eaten at the table: the chair, when it started, how long. */
   eat: { chair: number; t0: number; T: number } | null;
+  /** Pouring: how far it's got (the food lands bit by bit), and which burner the cans go into. */
+  pourK: number; pourInto: number;
+  /** Things shown in a hand for a move (washed things being put away, new ones out of the bag). */
+  holdL: WareKind | null; holdR: WareKind | null;
 };
-export const newKView = (): KView => ({ door: 0, lid: 0, canOpen: 0, canTilt: 0, potTilt: 0, water: 0, stream: null, can: null, tossAt: -1, washing: null, drying: [], choosing: false, picked: null, eat: null });
+export const newKView = (): KView => ({ door: 0, lid: 0, canOpen: 0, canTilt: 0, potTilt: 0, water: 0, stream: null, can: null, tossAt: -1, washing: null, drying: [], choosing: false, picked: null, eat: null, pourK: 0, pourInto: 0, holdL: null, holdR: null });
 
 export type KCtx = { state: GameState; fl: AptFloor; now: number; lx: number; lz: number; yaw: number; world: (x: number, z: number) => [number, number]; y0: number };
 type Ctx = KCtx;
@@ -33,7 +37,7 @@ type Mv = { plan: KPlan; t0: number; prev: number; on: (ev: string) => void; pau
 export class KitchenRun {
   view = newKView();
   mv: Mv | null = null;
-  private told = { start: -1, ready: false, burnt: false };
+  private told = Array.from({ length: BURNERS }, () => ({ start: -1, ready: false, burnt: false }));
   private nagged = false;
 
   get busy() { return this.mv !== null; }
@@ -63,23 +67,27 @@ export class KitchenRun {
     if (this.mv !== m) return this.mv ? this.step(c) : (this.apply(r.pose), r.pose);
     this.apply(r.pose);
     if (ev(r.events, "choose")) { m.pausedAt = t; this.cupboardOpened(c); return r.pose; }
-    if (r.done) { this.mv = null; this.view.stream = null; }
+    if (r.done) { this.mv = null; this.view.stream = null; this.view.pourK = 0; this.view.holdL = null; this.view.holdR = null; }
     return r.pose;
   }
   private apply(p: KPose) {
     const v = this.view;
     v.door = p.door ?? (this.view.choosing ? 1 : v.door * 0.8);
     v.lid = p.lid ?? 0; v.canOpen = p.canOpen ?? 0; v.canTilt = p.canTilt ?? 0; v.potTilt = p.potTilt ?? 0; v.water = p.water ?? 0; v.stream = p.stream ?? null;
+    v.pourK = p.pourK ?? 0; v.holdL = p.holdL ?? null; v.holdR = p.holdR ?? null;
   }
 
   /** The cooking watched, wherever the player is: told when it's ready, and when it burns. */
   watch(s: GameState) {
-    const k = this.k(s), st = k.stove;
-    if (!st || st.start === null) return;
-    if (this.told.start !== st.start) this.told = { start: st.start, ready: false, burnt: false };
-    const now = stoveState(k, s.elapsed, GAME_MINUTE);
-    if (now === "ready" && !this.told.ready) { this.told.ready = true; toast(s, "Your food is ready", "info", "Take it off the stove within 10 minutes or it burns."); }
-    if (now === "burnt" && !this.told.burnt) { this.told.burnt = true; this.told.ready = true; toast(s, "Your food burned!", "warn", "It's ruined: throw it in the bin."); }
+    const k = this.k(s);
+    k.stoves.forEach((st, i) => {
+      if (!st || st.start === null) return;
+      const told = this.told[i]!;
+      if (told.start !== st.start) Object.assign(told, { start: st.start, ready: false, burnt: false });
+      const now = stoveState(k, i, s.elapsed, GAME_MINUTE), what = st.cans.map((c) => CAN_INFO[c].name).join(" and ");
+      if (now === "ready" && !told.ready) { told.ready = true; toast(s, "Your food is ready", "info", `${what}: take it off the stove within 10 minutes or it burns.`); }
+      if (now === "burnt" && !told.burnt) { told.burnt = true; told.ready = true; toast(s, "Your food burned!", "warn", `${what} is ruined: throw it in the bin.`); }
+    });
   }
 
   /** Sat at the table: with the plate in front and silverware in hand, eating; when done the silverware is laid on
@@ -113,7 +121,14 @@ export class KitchenRun {
     // Fork in the right hand.
     if (k.hands.right?.ware !== "silverware") { const l = k.hands.left; k.hands.left = k.hands.right; k.hands.right = l; }
     v.eat = { chair: seat.plan.chair, t0: c.now, T: 4 + 2.5 * plate.cans.length };
-    s.meal = { at: c.now, T: v.eat.T };
+    // The knife rests by the plate in the left hand (no knife for soup: that hand rests on the table there).
+    const pl = c.fl.kitchen.places.find((x) => x.chair === seat.plan.chair), ch = c.fl.items[seat.plan.chair];
+    let left: [number, number, number] | undefined;
+    if (pl && ch) {
+      const [fx, fz] = ch.f, lx2 = fz, lz2 = -fx, [wx, wz] = c.world(pl.at[0] - fx * 0.12 + lx2 * 0.11, pl.at[2] - fz * 0.12 + lz2 * 0.11);
+      left = [wx, c.y0 + pl.at[1] + 0.05, wz];
+    }
+    s.meal = { at: c.now, T: v.eat.T, bites: Math.max(3, Math.round(v.eat.T / 2.2)), ...(left ? { left } : {}) };
   }
 
   /** Q: pour, take dirty things to the sink, a full plate to the table, clear the table, put a thing back. */
@@ -184,7 +199,7 @@ export class KitchenRun {
   prompt(c: Ctx): { at: [number, number, number]; label: string; act: (() => void) | null } | null {
     const s = c.state, k = this.k(s), h = k.hands, fl = c.fl, K = fl.kitchen, from: [number, number] = [c.lx, c.lz], carry = this.carry(s);
     const near = (p: [number, number], r = 0.85) => Math.hypot(c.lx - p[0], c.lz - p[1]) < r;
-    const st = stoveState(k, s.elapsed, GAME_MINUTE);
+    const states = k.stoves.map((_, i) => stoveState(k, i, s.elapsed, GAME_MINUTE));
     // ---- the bin ----
     if (near(K.trashStand, 0.8)) {
       const burnt = (["right", "left"] as const).find((x) => h[x]?.burnt && h[x]?.food);
@@ -193,33 +208,44 @@ export class KitchenRun {
         this.go(c, dumpInBin(fl, from, c.yaw, this.carry(s)), (e) => { if (e === "dumped" && h.right) h.right = { ware: h.right.ware, food: null, dirty: true }; });
       } };
     }
-    // ---- the stove ----
+    // ---- the stove (two burners) ----
     if (near(K.ovenStand)) {
-      const at: [number, number, number] = [K.burner[0], 1.25, K.burner[2]];
-      const holdingPot = (["right", "left"] as const).find((x) => !!h[x] && isPotLike(h[x]!.ware) && !h[x]!.dirty && !h[x]!.food);
-      if (st === "none" && holdingPot) return { at, label: `E  PUT THE ${h[holdingPot]!.ware.toUpperCase()} ON THE STOVE`, act: () => {
-        if (holdingPot === "left") { const r = h.right; h.right = h.left; h.left = r; }
-        this.go(c, toStove(fl, from, c.yaw, this.carry(s)), (e) => { if (e === "onStove" && h.right) { k.stove = { ware: h.right.ware as "pot" | "pan", cans: [], start: null }; h.right = null; } });
-      } };
-      if (st === "empty") {
-        const cans = s.life.fridge.filter((n) => canByName(n));
-        if (!cans.length) return { at, label: "NO CANNED FOOD IN THE FRIDGE", act: null };
-        if (!handFree(s, "left") || !handFree(s, "right")) return { at, label: "FREE YOUR HANDS TO COOK", act: null };
-        return { at, label: `E  COOK (UP TO ${CAPACITY[k.stove!.ware]} CANS)`, act: () => { s.uiLock = "cook"; s.kitchenAsk = null; s.keys.clear(); } };
-      }
-      if (st === "cooking") { const left = Math.ceil(COOK_MINUTES - (s.elapsed - k.stove!.start!) / GAME_MINUTE); return { at, label: `COOKING · ${left} MIN LEFT`, act: null }; }
-      if (st === "ready" || st === "burnt") {
+      const mid = K.burners.reduce((a2, b2) => [a2[0] + b2[0] / K.burners.length, 0, a2[2] + b2[2] / K.burners.length], [0, 0, 0] as [number, number, number]);
+      const at: [number, number, number] = [mid[0], 1.25, mid[2]];
+      // Something done: take it off (the burnt one first, so it stops smoking).
+      const done = states.indexOf("burnt") >= 0 ? states.indexOf("burnt") : states.indexOf("ready");
+      if (done >= 0) {
         if (!this.canTakeRight(s)) return { at, label: "YOUR HANDS ARE FULL", act: null };
-        return { at, label: st === "burnt" ? "E  TAKE IT OFF (BURNT)" : "E  TAKE IT OFF THE STOVE", act: () => {
+        const burntNow = states[done] === "burnt";
+        return { at, label: burntNow ? "E  TAKE IT OFF (BURNT)" : "E  TAKE IT OFF THE STOVE", act: () => {
           this.rightFree(s);
-          this.go(c, offStove(fl, from, c.yaw, this.carry(s)), (e) => {
-            if (e !== "lift" || !k.stove) return;
-            const burnt = stoveState(k, s.elapsed, GAME_MINUTE) === "burnt";
-            h.right = { ware: k.stove.ware, food: k.stove.cans, dirty: false, ...(burnt ? { burnt: true } : {}) };
-            k.stove = null;
+          this.go(c, offStove(fl, from, c.yaw, this.carry(s), done), (e) => {
+            const b2 = k.stoves[done];
+            if (e !== "lift" || !b2) return;
+            const burnt = stoveState(k, done, s.elapsed, GAME_MINUTE) === "burnt";
+            h.right = { ware: b2.ware, food: b2.cans, dirty: false, ...(burnt ? { burnt: true } : {}) };
+            k.stoves[done] = null;
           });
         } };
       }
+      // A clean pot or pan in hand and a free burner: on it goes.
+      const holdingPot = (["right", "left"] as const).find((x) => !!h[x] && isPotLike(h[x]!.ware) && !h[x]!.dirty && !h[x]!.food);
+      const free = states.indexOf("none");
+      if (holdingPot && free >= 0) return { at, label: `E  PUT THE ${h[holdingPot]!.ware.toUpperCase()} ON THE STOVE`, act: () => {
+        if (holdingPot === "left") { const r = h.right; h.right = h.left; h.left = r; }
+        this.go(c, toStove(fl, from, c.yaw, this.carry(s), free), (e) => { if (e === "onStove" && h.right) { k.stoves[free] = { ware: h.right.ware as "pot" | "pan", cans: [], start: null }; h.right = null; } });
+      } };
+      // An empty pot or pan on a burner: cook in it.
+      const empty = states.indexOf("empty");
+      const cooking = states.map((st2, i) => (st2 === "cooking" ? Math.ceil(COOK_MINUTES - (s.elapsed - k.stoves[i]!.start!) / GAME_MINUTE) : null)).filter((x): x is number => x !== null);
+      const cookingLabel = cooking.length ? `COOKING · ${cooking.map((m2) => `${m2} MIN`).join(" / ")} LEFT` : null;
+      if (empty >= 0) {
+        const cans = s.life.fridge.filter((n) => canByName(n));
+        if (!cans.length) return { at, label: cookingLabel ?? "NO CANNED FOOD IN THE FRIDGE", act: null };
+        if (!handFree(s, "left") || !handFree(s, "right")) return { at, label: "FREE YOUR HANDS TO COOK", act: null };
+        return { at, label: `E  COOK IN THE ${k.stoves[empty]!.ware.toUpperCase()} (UP TO ${CAPACITY[k.stoves[empty]!.ware]} CANS)${cookingLabel ? ` · ${cookingLabel}` : ""}`, act: () => { s.uiLock = "cook"; s.kitchenAsk = { burner: empty }; s.keys.clear(); } };
+      }
+      if (cookingLabel) return { at, label: cookingLabel, act: null };
     }
     // ---- the sink ----
     if (near(K.sinkStand, 0.75)) {
@@ -265,16 +291,18 @@ export class KitchenRun {
       if (!k.rack.includes(w)) return;
       this.go(c, atRack(c.fl, from, c.yaw, rackSpot(c.fl, w), hand, "take", this.carry(s)), (e) => { if (e === "take") { k.rack.splice(k.rack.indexOf(w), 1); h[hand] = { ware: w, food: null, dirty: false }; } });
     }
-    if (ask.cans && ask.cans.length && k.stove && k.stove.start === null) {
-      const cans = ask.cans.slice(0, CAPACITY[k.stove.ware]);
+    const bi = ask.burner ?? 0, burner = k.stoves[bi];
+    if (ask.cans && ask.cans.length && burner && burner.start === null) {
+      const cans = ask.cans.slice(0, CAPACITY[burner.ware]);
       // Out of the fridge.
       for (const cn of cans) { const i = s.life.fridge.indexOf(CAN_INFO[cn].name); if (i >= 0) s.life.fridge.splice(i, 1); }
-      this.go(c, cansIn(c.fl, cans.length), (e) => {
+      this.view.pourInto = bi;
+      this.go(c, cansIn(c.fl, cans.length, bi), (e) => {
         const [what, i] = e.split(":");
         if (what === "show") { this.view.can = cans[Number(i)]!; }
-        if (what === "canIn" && k.stove) k.stove.cans.push(cans[Number(i)]!);
+        if (what === "canIn" && k.stoves[bi]) k.stoves[bi]!.cans.push(cans[Number(i)]!);
         if (what === "toss") { this.view.can = null; this.view.tossAt = c.state.simulationTime; }
-        if (what === "cook" && k.stove) { k.stove.start = c.state.elapsed; toast(s, "Cooking", "info", `Ready in ${COOK_MINUTES} minutes.`); }
+        if (what === "cook" && k.stoves[bi]) { k.stoves[bi]!.start = c.state.elapsed; toast(s, "Cooking", "info", `Ready in ${COOK_MINUTES} minutes.`); }
       });
     }
   }
@@ -284,20 +312,21 @@ export class KitchenRun {
     this.view.choosing = true; this.view.picked = null;
     c.state.uiLock = "cupboard";
     // Right in front of the open doors, low (between them and the crouching body), looking in.
-    const cb = c.fl.kitchen.cupboard, [px, pz] = c.world(cb.x + 0.03, cb.z - 0.42), [ax, az] = c.world(cb.x, cb.z + 0.3);
-    c.state.camLock = { pos: [px, c.y0 + 0.5, pz], at: [ax, c.y0 + 0.24, az] };
+    // Fixed (no easing), close to the open doors at the height of the shelf, so all of it shows.
+    const cb = c.fl.kitchen.cupboard, [px, pz] = c.world(cb.x, cb.z - 0.3), [ax, az] = c.world(cb.x, cb.z + 0.32);
+    c.state.camLock = { pos: [px, c.y0 + 0.4, pz], at: [ax, c.y0 + 0.22, az], snap: true, fov: 75, by: "cupboard" };
   }
   private afterPick(c: Ctx, i: number) {
     const s = c.state, k = this.k(s), h = k.hands;
     const w = k.cupboard[i];
     if (!w) { this.shutCupboard(c); return; }
     const segs = takeFromCupboard(c.fl, i);
-    const toStoveToo = !k.stove;
+    const free = k.stoves.findIndex((b2) => !b2);
     const end = segs[segs.length - 1]!.pose(1);
-    const all = toStoveToo ? [...segs, ...toStove(c.fl, [end.x, end.z], end.yaw, { left: !!h.left, right: true })] : segs;
+    const all = free >= 0 ? [...segs, ...toStove(c.fl, [end.x, end.z], end.yaw, { left: !!h.left, right: true }, free)] : segs;
     this.go(c, all, (e) => {
       if (e === "took") { k.cupboard.splice(k.cupboard.indexOf(w), 1); h.right = { ware: w, food: null, dirty: false }; }
-      if (e === "onStove" && h.right) { k.stove = { ware: h.right.ware as "pot" | "pan", cans: [], start: null }; h.right = null; }
+      if (e === "onStove" && h.right && free >= 0) { k.stoves[free] = { ware: h.right.ware as "pot" | "pan", cans: [], start: null }; h.right = null; }
     });
   }
   private shutCupboard(c: Ctx) {
@@ -313,8 +342,8 @@ export class KitchenRun {
     const list = [...k.sink, ...dirty.flatMap((x) => (h[x]!.silver ? [h[x]!.ware, "silverware" as WareKind] : [h[x]!.ware]))];
     segs.push(...washUp(fl, list.length));
     const toRack = list.filter((w) => !isPotLike(w)), toCup = list.filter(isPotLike);
-    if (toRack.length) segs.push(...atRack(fl, fl.kitchen.sinkStand, 0, rackSpot(fl, toRack[0]!), "left", "racked", { left: false, right: false }));
-    if (toCup.length) segs.push(...intoCupboard(fl, toRack.length ? fl.kitchen.rackStand : fl.kitchen.sinkStand, 0, k.cupboard.length, toCup.length, { left: false, right: false }));
+    if (toRack.length) segs.push(...atRack(fl, fl.kitchen.sinkStand, 0, rackSpot(fl, toRack[0]!), "left", "racked", { left: false, right: false }, toRack[0]!));
+    if (toCup.length) segs.push(...intoCupboard(fl, toRack.length ? fl.kitchen.rackStand : fl.kitchen.sinkStand, 0, k.cupboard.length, toCup.length, { left: false, right: false }, toCup));
     let cupIn = 0;
     this.go(c, segs, (e) => {
       const [what, i] = e.split(":");
@@ -331,8 +360,8 @@ export class KitchenRun {
     const pots = wares.filter(isPotLike), rest = wares.filter((w) => !isPotLike(w));
     const take = (w: WareKind) => { const b = s.groceryBag; if (!b) return; const i = b.indexOf(w); if (i >= 0) b.splice(i, 1); if (!b.length) s.groceryBag = null; };
     const segs: KSeg[] = [];
-    if (pots.length) segs.push(...intoCupboard(fl, from, c.yaw, k.cupboard.length, pots.length, { left: true, right: false }));
-    if (rest.length) segs.push(...atRack(fl, pots.length ? fl.kitchen.sinkStand : from, pots.length ? 0 : c.yaw, rackSpot(fl, rest[0]!), "right", "racked", { left: true, right: false }));
+    if (pots.length) segs.push(...intoCupboard(fl, from, c.yaw, k.cupboard.length, pots.length, { left: true, right: false }, pots));
+    if (rest.length) segs.push(...atRack(fl, pots.length ? fl.kitchen.sinkStand : from, pots.length ? 0 : c.yaw, rackSpot(fl, rest[0]!), "right", "racked", { left: true, right: false }, rest[0]!));
     let n = 0;
     this.go(c, segs, (e) => {
       if (e === "in") { const w = pots[n++]; if (w) { take(w); k.cupboard.push(w); } }
