@@ -120,7 +120,7 @@ export function BedSheet({ fl, state, mat, live, link }: { fl: AptFloor; state: 
 
   // The body, as capsules in the floor's frame (only lying or level parts, and the feet: what a sheet goes over).
   const tmp = useMemo(() => Array.from({ length: 16 }, () => new THREE.Vector3()), []);
-  const caps = useRef<{ a: THREE.Vector3; b: THREE.Vector3; r: number }[]>([]);
+  const caps = useRef<{ a: THREE.Vector3; b: THREE.Vector3; r: number; drape?: number }[]>([]);
   const bodyTop = (x: number, z: number) => {
     let best = -1;
     for (const c of caps.current) {
@@ -128,7 +128,7 @@ export function BedSheet({ fl, state, mat, live, link }: { fl: AptFloor; state: 
       const t = l2 > 1e-8 ? Math.max(0, Math.min(1, ((x - c.a.x) * abx + (z - c.a.z) * abz) / l2)) : 0;
       // (An upright part, like the feet lying on the back with the toes up: its top counts, so the toes stay under.)
       const upright = l2 < 0.25 * (c.b.y - c.a.y) ** 2;
-      const cx = c.a.x + abx * t, cz = c.a.z + abz * t, cy = upright ? Math.max(c.a.y, c.b.y) : c.a.y + (c.b.y - c.a.y) * t, h = Math.hypot(x - cx, z - cz), reach = c.r + 0.12;
+      const cx = c.a.x + abx * t, cz = c.a.z + abz * t, cy = upright ? Math.max(c.a.y, c.b.y) : c.a.y + (c.b.y - c.a.y) * t, h = Math.hypot(x - cx, z - cz), reach = c.r + (c.drape ?? 0.12);
       // Over the part and draped down off it (never through it).
       if (h < reach) best = Math.max(best, cy + c.r * Math.cos(Math.min(Math.PI / 2, (h / reach) * Math.PI / 2)) + THICK);
     }
@@ -149,17 +149,19 @@ export function BedSheet({ fl, state, mat, live, link }: { fl: AptFloor; state: 
         o.updateWorldMatrix(true, false); o.localToWorld(v.set(lx, ly, lz));
         const [x, z] = toLocal(f, v.x, v.z); return v.set(x, v.y - fl.y, z);
       };
-      const level = (a: THREE.Vector3 | null, c: THREE.Vector3 | null, r: number, any = false) => {
+      const level = (a: THREE.Vector3 | null, c: THREE.Vector3 | null, r: number, any = false, drape?: number) => {
         if (!a || !c) return;
         const l = a.distanceTo(c);
-        if (any || l < 1e-4 || Math.abs(c.y - a.y) / l < 0.6) caps.current.push({ a: a.clone(), b: c.clone(), r });
+        if (any || l < 1e-4 || Math.abs(c.y - a.y) / l < 0.6) caps.current.push({ a: a.clone(), b: c.clone(), r, ...(drape !== undefined ? { drape } : {}) });
       };
       const hip = at(B[1], tmp[0]!), neck = at(B[2], tmp[1]!, 0, 0.55, 0);
       const hl = at(B[4], tmp[2]!), kl = at(B[5], tmp[3]!), al = at(B[5], tmp[4]!, 0, -0.46, 0);
       const hr = at(B[6], tmp[5]!), kr = at(B[7], tmp[6]!), ar = at(B[7], tmp[7]!, 0, -0.46, 0);
-      const heelL = at(B[5], tmp[8]!, 0, -0.46, -0.04), toeL = at(B[5], tmp[9]!, 0, -0.46, 0.2), heelR = at(B[7], tmp[10]!, 0, -0.46, -0.04), toeR = at(B[7], tmp[11]!, 0, -0.46, 0.2);
+      // The foot as drawn: a capsule (radius 0.07) along the foot from 0.01 to 0.11 ahead of the ankle — the sheet
+      // rests right on it (a thread over), draping off it only a little, so the feet keep their real size.
+      const heelL = at(B[5], tmp[8]!, 0, -0.46, 0.01), toeL = at(B[5], tmp[9]!, 0, -0.46, 0.11), heelR = at(B[7], tmp[10]!, 0, -0.46, 0.01), toeR = at(B[7], tmp[11]!, 0, -0.46, 0.11);
       level(hip, neck, 0.17); level(hl, kl, 0.085); level(kl, al, 0.075); level(hr, kr, 0.085); level(kr, ar, 0.075);
-      level(heelL, toeL, 0.085, true); level(heelR, toeR, 0.085, true);
+      level(heelL, toeL, 0.073, true, 0.05); level(heelR, toeR, 0.073, true, 0.05);
       // (Only what is over the mattress counts.)
       caps.current = caps.current.filter((c) => Math.min(c.a.y, c.b.y) < MATTRESS_TOP + 0.45 && Math.min(c.a.x, c.b.x) < box.x1 + 0.05);
     }
