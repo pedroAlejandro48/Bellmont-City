@@ -126,7 +126,9 @@ export function BedSheet({ fl, state, mat, live, link }: { fl: AptFloor; state: 
     for (const c of caps.current) {
       const abx = c.b.x - c.a.x, abz = c.b.z - c.a.z, l2 = abx * abx + abz * abz;
       const t = l2 > 1e-8 ? Math.max(0, Math.min(1, ((x - c.a.x) * abx + (z - c.a.z) * abz) / l2)) : 0;
-      const cx = c.a.x + abx * t, cz = c.a.z + abz * t, cy = c.a.y + (c.b.y - c.a.y) * t, h = Math.hypot(x - cx, z - cz), reach = c.r + 0.12;
+      // (An upright part, like the feet lying on the back with the toes up: its top counts, so the toes stay under.)
+      const upright = l2 < 0.25 * (c.b.y - c.a.y) ** 2;
+      const cx = c.a.x + abx * t, cz = c.a.z + abz * t, cy = upright ? Math.max(c.a.y, c.b.y) : c.a.y + (c.b.y - c.a.y) * t, h = Math.hypot(x - cx, z - cz), reach = c.r + 0.12;
       // Over the part and draped down off it (never through it).
       if (h < reach) best = Math.max(best, cy + c.r * Math.cos(Math.min(Math.PI / 2, (h / reach) * Math.PI / 2)) + THICK);
     }
@@ -193,5 +195,8 @@ export function sheetGrips(fl: AptFloor) {
   const b = fl.bed, xa = b.x - b.w / 2 + 0.005, xb = b.x + b.w / 2 + OVER;
   const iEdge = Math.round((b.x + b.w / 2 - xa) / (xb - xa) * (NX - 1));
   const za = b.z + b.l / 2 - 0.44 + 0.04, zb = b.z - b.l / 2 - FOOT, row = (z: number) => Math.round((za - z) / (za - zb) * (NZ - 1));
-  return { corner: [iEdge, 0] as [number, number], head: [iEdge, row(za - 0.12)] as [number, number], foot: [iEdge, row(b.z - b.l / 2 + 0.2)] as [number, number] };
+  const col = (x: number) => Math.max(0, Math.min(NX - 1, Math.round((x - xa) / (xb - xa) * (NX - 1))));
+  // Pulling it over oneself lying down: the top edge either side of the body.
+  return { corner: [iEdge, 0] as [number, number], head: [iEdge, row(za - 0.12)] as [number, number], foot: [iEdge, row(b.z - b.l / 2 + 0.2)] as [number, number],
+    pullL: [col(b.x - 0.2), 0] as [number, number], pullR: [col(b.x + 0.2), 0] as [number, number] };
 }

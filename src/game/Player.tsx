@@ -477,6 +477,9 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       riderOffset = THREE.MathUtils.lerp(THREE.MathUtils.lerp(0.95, BED_SIT_HIPS, bed.sit), BED_LIE_HIPS, bed.lie) - 0.95;
       shL = shR = THREE.MathUtils.lerp(shL, 0, bed.sit); elbow = THREE.MathUtils.lerp(elbow, -0.1, bed.sit);
     }
+    // Each leg set outright (stepping high over something).
+    const legs = script?.legs;
+    if (legs) { hipL = legs.hipL; kneeL = legs.kneeL; hipR = legs.hipR; kneeR = legs.kneeR; bob = 0; }
     if (hips.current) { hips.current.position.y = 0.95 + bob + riderOffset; hips.current.rotation.x = bed ? -Math.PI / 2 * bed.lie : 0; }
     // Leaning in over the counter while reaching for food.
     if (grabbing && !script && !usingBike && !lowGrab) lean = Math.max(lean, 0.3 * grabReach(grabT));

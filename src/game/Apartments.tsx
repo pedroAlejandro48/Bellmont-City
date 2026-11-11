@@ -12,6 +12,8 @@ import { FRIDGE_DRINKS, FRIDGE_FOOD, fridgeSplit } from "@/components/FridgePane
 import { CEILING, CHAIR, ENTER, LEAVE, TABLE, enterLead, enterPose, leaveLead, leavePose, planSit, toLocal, toWorld, worldYaw, type Reach } from "./restaurantRoom";
 import { toast, type GameState, type Script } from "./state";
 import { handWorld } from "./arms";
+import { BathroomThings, newBathLink, type BathLink } from "./Bathroom";
+import { SHOWER, TOILET, WASH, showerAt, showerSpots, showerView, toiletAt, washAt, washStand, type BathPose } from "./bathMoves";
 import { BedSheet, MATTRESS_TOP, PILLOW_TOP, SHEET_NX, SHEET_NZ, sheetGrips, sheetPoint, type SheetLead, type SheetLink, type SheetShape } from "./BedSheet";
 import { canSleepAt, hoursTo6, sleepEnergy, wakeElapsed } from "./needs";
 import { ItemModel, useLooks } from "./InventoryWorld";
@@ -159,6 +161,7 @@ function useFloorMats() {
       plant: s("#3f7d3a", 0.9), pot: s("#d9cbb5", 0.7), brass: s("#c9a54a", 0.3, 0.8),
       shaft: s("#2b2d32", 0.9, 0.2, THREE.DoubleSide),
       slab: s("#8f8a83", 0.95),
+      bathTile: s("#e3ecef", 0.4),
       // Satin steel (not a mirror: without reflections to show, full metal reads as dark patches).
       liftDoor: s("#b7bdc4", 0.38, 0.3),
       fridgeLight: new THREE.MeshStandardMaterial({ color: "#f2f7fa", roughness: 0.4, emissive: new THREE.Color("#e8f4ff"), emissiveIntensity: 0.45 }),
@@ -398,9 +401,10 @@ function DoorCasing({ at, rot, m, white = false }: { at: [number, number]; rot: 
 }
 
 /** The floor the player is on: hallway, apartment (two rooms), the walls with real windows, the doors, the furniture. */
-function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, elevatorOpen, sheet, lift }: { lift: () => { floor: number; dir: number }; sheet: SheetLink; fl: AptFloor; state: GameState; m: FMats; door: () => number; bedDoor: () => number; fridgeDoor: () => number; closetDoor: () => number; elevatorOpen: () => number }) {
+function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, elevatorOpen, sheet, lift, bathDoor, bath }: { bathDoor: () => number; bath: BathLink; lift: () => { floor: number; dir: number }; sheet: SheetLink; fl: AptFloor; state: GameState; m: FMats; door: () => number; bedDoor: () => number; fridgeDoor: () => number; closetDoor: () => number; elevatorOpen: () => number }) {
   const { frame, bounds, windowSide: ws, hallZ, wallZ, divX, bedroomDoor } = fl;
   const { minX, maxX, minZ, maxZ } = bounds;
+  const bathLeaf = useRef<THREE.Group>(null);
   const leaf = useRef<THREE.Group>(null), bedLeaf = useRef<THREE.Group>(null), fridgeLeaf = useRef<THREE.Group>(null), closetL = useRef<THREE.Group>(null), closetR = useRef<THREE.Group>(null);
   const closet = fl.furniture.find((f) => f.type === "closet")!;
   // Only your own apartment's doors move (and only its fridge shows your food).
@@ -408,6 +412,7 @@ function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, el
   useFrame(() => {
     if (leaf.current) leaf.current.rotation.y = -door();
     if (bedLeaf.current) bedLeaf.current.rotation.y = -bedDoor();
+    if (bathLeaf.current) bathLeaf.current.rotation.y = -bathDoor();
     const own = mineHere();
     if (fridgeLeaf.current) fridgeLeaf.current.rotation.y = own ? fridgeDoor() : 0;
     const c = own ? closetDoor() : 0;
@@ -508,6 +513,20 @@ function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, el
         {[-1, 1].map((s) => <mesh key={s} position={[0.88, 1.02, -0.024 + s * 0.045]} material={m.steel}><sphereGeometry args={[0.03, 10, 8]} /></mesh>)}
       </group>
     </group>
+    {/* The bathroom: its wall where the TV is (tiles inside), the short wall with its door (white, like the bedroom's),
+        and everything in it. */}
+    <mesh position={[fl.bath.x1 + INNER_WALL / 2, HT / 2, (fl.bath.wallZ + maxZ) / 2]} material={[m.wall, m.bathTile, m.wall, m.wall, m.wall, m.wall]} castShadow>{B([INNER_WALL, HT, maxZ - fl.bath.wallZ])}</mesh>
+    {[[fl.bath.x0, fl.bath.door[0]], [fl.bath.door[1], fl.bath.x1]].map(([a, c], i) => <mesh key={i} position={[(a! + c!) / 2, HT / 2, fl.bath.wallZ + INNER_WALL / 2]} material={[m.wall, m.wall, m.wall, m.wall, m.bathTile, m.wall]}>{B([c! - a!, HT, INNER_WALL])}</mesh>)}
+    <mesh position={[(fl.bath.door[0] + fl.bath.door[1]) / 2, (HT + 2.1) / 2, fl.bath.wallZ + INNER_WALL / 2]} material={m.wall}>{B([fl.bath.door[1] - fl.bath.door[0], HT - 2.1, INNER_WALL])}</mesh>
+    <DoorCasing at={[(fl.bath.door[0] + fl.bath.door[1]) / 2, fl.bath.wallZ + INNER_WALL / 2]} rot={0} m={m} white />
+    <group position={[fl.bath.door[0], 0, fl.bath.z0]}>
+      <group ref={bathLeaf}>
+        <mesh position={[0.5, 1.05, -0.024]} material={m.doorWhite} castShadow>{B([0.996, 2.096, 0.04])}</mesh>
+        {[-1, 1].flatMap((s) => [0.6, 1.5].map((y) => <mesh key={`${s}${y}`} position={[0.5, y, -0.024 + s * 0.022]} material={m.s("#e6e1d7", 0.5)}>{B([0.66, 0.7, 0.006])}</mesh>))}
+        {[-1, 1].map((s) => <mesh key={s} position={[0.88, 1.02, -0.024 + s * 0.045]} material={m.steel}><sphereGeometry args={[0.03, 10, 8]} /></mesh>)}
+      </group>
+    </group>
+    <BathroomThings fl={fl} state={state} link={bath} m={m} />
     {/* The closet's two doors, hinged at its sides, handles by the middle; inside, your clothes on their hangers. */}
     <group position={[closet.x, 0, closet.z]} rotation-y={closet.rot}>
       {state.life.home?.building === fl.key.split("#")[0] && state.life.home?.floor === fl.upper && <ClosetClothes state={state} closet={closet} m={m} />}
@@ -559,7 +578,7 @@ function RoomChairs({ fl, m }: { fl: AptFloor; m: FMats }) {
 
 // ---------- moving about: the elevator, the apartment door, bed and fridge ----------
 type Seat = { x: number; z: number; yaw: number; approach: [number, number]; surface: { x: number; z: number; y: number; lx: number; lz: number } };
-type Move = { kind: "board" | "alight" | "keyIn" | "push" | "pull" | "fridge" | "closet" | "sit" | "bed"; plan: Plan | null; t0: number; which?: "apartment" | "bedroom"; from?: [number, number]; fromYaw?: number; keyT?: number; phase?: "open" | "held" | "close" | "down" | "seated" | "up" | "in" | "asleep" | "out"; seat?: Seat; slept?: number; /** The sheet point a hand lifts it by. */ flap?: [number, number] | null };
+type Move = { kind: "board" | "alight" | "keyIn" | "push" | "pull" | "fridge" | "closet" | "sit" | "bed" | "wash" | "toilet" | "shower"; plan: Plan | null; t0: number; which?: "apartment" | "bedroom" | "bathroom"; from?: [number, number]; fromYaw?: number; keyT?: number; phase?: "open" | "held" | "close" | "down" | "seated" | "up" | "in" | "asleep" | "out"; seat?: Seat; slept?: number; /** The sheet point a hand lifts it by. */ flap?: [number, number] | null };
 /**
  * The bed, step by step (seconds). Getting in: beside it facing it, the left hand takes the sheet's top corner and
  * folds it back diagonally (baring the mattress there), let go; turn round and sit on the bare edge; the left hand
@@ -567,15 +586,23 @@ type Move = { kind: "board" | "alight" | "keyIn" | "push" | "pull" | "fridge" | 
  * Getting out is that backward (the right hand lifts the sheet off). Then the bed is made: by its side, bent over,
  * the left hand at the head and the right at the foot take the sheet's open edge and lay it out flat again.
  */
-const BI = (() => { let a = 0; const at = (d: number) => (a += d); return { reach: at(0.5), fold: at(1.5), let: at(0.35), turn: at(0.9), sit: at(0.9), grab: at(0.5), lie: at(2.6), release: at(0.4) }; })();
-const BO = (() => { let a = 0; const at = (d: number) => (a += d); return { reach: at(0.5), off: at(2.6), let: at(0.35), up: at(0.9), walk: at(0.9), bend: at(0.55), make: at(2.0), done: at(0.5) }; })();
+const BI = (() => { let a = 0; const at = (d: number) => (a += d); return { reach: at(0.5), fold: at(1.5), let: at(0.35), turn: at(0.9), sit: at(0.9), lie: at(2.1), grab: at(0.6), pull: at(1.7), release: at(0.5) }; })();
+const BO = (() => { let a = 0; const at = (d: number) => (a += d); return { grab: at(0.6), push: at(1.5), let: at(0.4), rise: at(2.1), up: at(0.9), walk: at(0.9), bend: at(0.55), make: at(2.0), done: at(0.5) }; })();
 const ASLEEP = 2.6;
+type Grip = "corner" | "head" | "foot" | "pullL" | "pullR";
 type BedStep = { x: number; z: number; yaw: number; lean: number; crouch: number; bed: { sit: number; lie: number; legL: number; legR: number } | null;
-  left: { grip: "corner" | "flap" | "head"; blend: number } | null; right: { grip: "flap" | "foot"; blend: number } | null;
+  left: { grip: Grip; blend: number } | null; right: { grip: Grip; blend: number } | null;
   sheet: { from: SheetShape; to: SheetShape; k: number; lead: SheetLead; lift: number } };
 const lerp2 = (a: [number, number], c: [number, number], k: number): [number, number] => [a[0] + (c[0] - a[0]) * k, a[1] + (c[1] - a[1]) * k];
 /** Spots by the bed: facing it to fold the sheet (and a step along while folding), getting up to sit, making it. */
 const bedSpots = (fl: AptFloor) => { const b = fl.bed; return { S: [b.edgeX + 0.42, b.sit[1]] as [number, number], S2: [b.edgeX + 0.34, b.sit[1] - 0.4] as [number, number], up: [b.edgeX + 0.45, b.sit[1]] as [number, number], M: [b.edgeX + 0.36, b.z + 0.1] as [number, number] }; };
+const TURNED = { from: "turned" as const, to: "turned" as const, k: 1, lead: "corner" as const, lift: 0 };
+/** Sat on the edge (v = 0) to lying flat on the back (v = 1): the legs swing up one after the other, the back goes down. */
+function lieDown(fl: AptFloor, v: number) {
+  const b = fl.bed, k = (from: number, d: number) => smooth((v - from) / d);
+  const legL = k(0, 0.45), legR = k(0.3, 0.45), lie = k(0.4, 0.6), toLie = k(0.35, 0.65), at = lerp2(b.sit, b.lie, toLie);
+  return { x: at[0], z: at[1], yaw: Math.PI / 2 + Math.PI / 2 * k(0, 1), bed: { sit: 1, lie, legL, legR } };
+}
 /** Getting in, `u` seconds after arriving beside the bed. */
 function bedIn(fl: AptFloor, u: number): BedStep {
   const b = fl.bed, P = bedSpots(fl), k = (from: number, d: number) => smooth((u - from) / d);
@@ -584,27 +611,29 @@ function bedIn(fl: AptFloor, u: number): BedStep {
     const g = k(0, 0.5), f = k(BI.reach, BI.fold - BI.reach), at = lerp2(P.S, P.S2, f);
     return { x: at[0], z: at[1], yaw: -Math.PI / 2, lean: 0.42 * g, crouch: 0.12 * g, bed: null, left: { grip: "corner", blend: g }, right: null, sheet: { from: "made", to: "turned", k: f, lead: "corner", lift: 0.16 } };
   }
-  if (u < BI.let) { const r = 1 - k(BI.fold, BI.let - BI.fold); return { x: P.S2[0], z: P.S2[1], yaw: -Math.PI / 2, lean: 0.42 * r, crouch: 0.12 * r, bed: null, left: { grip: "corner", blend: r }, right: null, sheet: { from: "turned", to: "turned", k: 1, lead: "corner", lift: 0 } }; }
-  if (u < BI.turn) { const t = k(BI.let, BI.turn - BI.let), at = lerp2(P.S2, P.up, t); return { x: at[0], z: at[1], yaw: -Math.PI / 2 + Math.PI * t, lean: 0, crouch: 0, bed: none, left: null, right: null, sheet: { from: "turned", to: "turned", k: 1, lead: "corner", lift: 0 } }; }
-  if (u < BI.grab) {
-    const t = k(BI.turn, BI.sit - BI.turn), at = lerp2(P.up, b.sit, t), g = k(BI.sit, BI.grab - BI.sit);
-    return { x: at[0], z: at[1], yaw: Math.PI / 2, lean: 0.25 * Math.sin(Math.PI * t) + 0.1 * g, crouch: 0, bed: { ...none, sit: t }, left: g > 0 ? { grip: "flap", blend: g } : null, right: null, sheet: { from: "turned", to: "turned", k: 1, lead: "corner", lift: 0 } };
-  }
-  // Lying back under it: the legs swing up, the back goes down, the sheet comes over (lifted high enough for the legs).
-  const L = BI.lie - BI.grab, legL = k(BI.grab, 0.9), legR = k(BI.grab + 0.8, 1.0), lie = k(BI.grab + 1.0, L - 1.0), toLie = k(BI.grab + 1.0, L - 1.0);
-  const at = lerp2(b.sit, b.lie, toLie), yaw = Math.PI / 2 + Math.PI / 2 * k(BI.grab, L), sheetK = k(BI.grab, L), rel = 1 - k(BI.lie, BI.release - BI.lie);
-  return { x: at[0], z: at[1], yaw, lean: 0, crouch: 0, bed: { sit: 1, lie, legL, legR }, left: rel > 0 ? { grip: "flap", blend: rel } : null, right: null, sheet: { from: "turned", to: "covering", k: sheetK, lead: "corner", lift: 0.45 } };
+  if (u < BI.let) { const r = 1 - k(BI.fold, BI.let - BI.fold); return { x: P.S2[0], z: P.S2[1], yaw: -Math.PI / 2, lean: 0.42 * r, crouch: 0.12 * r, bed: null, left: { grip: "corner", blend: r }, right: null, sheet: TURNED }; }
+  if (u < BI.turn) { const t = k(BI.let, BI.turn - BI.let), at = lerp2(P.S2, P.up, t); return { x: at[0], z: at[1], yaw: -Math.PI / 2 + Math.PI * t, lean: 0, crouch: 0, bed: none, left: null, right: null, sheet: TURNED }; }
+  if (u < BI.sit) { const t = k(BI.turn, BI.sit - BI.turn), at = lerp2(P.up, b.sit, t); return { x: at[0], z: at[1], yaw: Math.PI / 2, lean: 0.25 * Math.sin(Math.PI * t), crouch: 0, bed: { ...none, sit: t }, left: null, right: null, sheet: TURNED }; }
+  // Lying down flat first (the sheet still turned down; the legs go over it).
+  const ld = lieDown(fl, (u - BI.sit) / (BI.lie - BI.sit));
+  if (u < BI.lie) return { ...ld, lean: 0, crouch: 0, left: null, right: null, sheet: TURNED };
+  // Then, lying, both hands reach down to the sheet's top edge and pull it up over himself, to the shoulders; let go.
+  const g = k(BI.lie, BI.grab - BI.lie), pull = k(BI.grab, BI.pull - BI.grab), rel = 1 - k(BI.pull, BI.release - BI.pull), h = Math.min(g, rel);
+  return { ...ld, lean: 0, crouch: 0, left: h > 0 ? { grip: "pullL", blend: h } : null, right: h > 0 ? { grip: "pullR", blend: h } : null, sheet: { from: "turned", to: "covering", k: pull, lead: "top", lift: 0.22 } };
 }
 /** Getting out and making the bed, `t` seconds after waking. */
 function bedOut(fl: AptFloor, t: number): BedStep {
   const P = bedSpots(fl), k = (from: number, d: number) => smooth((t - from) / d);
+  const lying = lieDown(fl, 1);
+  // Lying: both hands take the sheet's top edge and push it down off himself (turned down again); let go.
   if (t < BO.let) {
-    // The right hand lifts the sheet off while the legs swing out and he sits up (getting in, backward).
-    const g = k(0, 0.5), v = BI.lie - Math.max(0, t - BO.reach) * ((BI.lie - BI.grab) / (BO.off - BO.reach)), st = bedIn(fl, Math.max(BI.grab, v)), rel = 1 - k(BO.off, BO.let - BO.off);
-    return { ...st, left: null, right: { grip: "flap", blend: t < BO.reach ? g : rel }, sheet: { from: "covering", to: "turned", k: k(BO.reach, BO.off - BO.reach), lead: "corner", lift: 0.45 } };
+    const g = k(0, BO.grab), rel = 1 - k(BO.push, BO.let - BO.push), h = Math.min(g, rel);
+    return { ...lying, lean: 0, crouch: 0, left: h > 0 ? { grip: "pullL", blend: h } : null, right: h > 0 ? { grip: "pullR", blend: h } : null, sheet: { from: "covering", to: "turned", k: k(BO.grab, BO.push - BO.grab), lead: "top", lift: 0.22 } };
   }
-  if (t < BO.up) { const st = bedIn(fl, BI.sit - (t - BO.let)); return { ...st, left: null, right: null, sheet: { from: "turned", to: "turned", k: 1, lead: "corner", lift: 0 } }; }
-  if (t < BO.walk) { const w = k(BO.up, BO.walk - BO.up), at = lerp2(P.up, P.M, w); return { x: at[0], z: at[1], yaw: Math.PI / 2 - Math.PI * w, lean: 0, crouch: 0, bed: null, left: null, right: null, sheet: { from: "turned", to: "turned", k: 1, lead: "open", lift: 0 } }; }
+  // Sitting up, the legs swinging down off the bed (lying down, backward).
+  if (t < BO.rise) return { ...lieDown(fl, 1 - (t - BO.let) / (BO.rise - BO.let)), lean: 0, crouch: 0, left: null, right: null, sheet: TURNED };
+  if (t < BO.up) { const st = bedIn(fl, BI.sit - (t - BO.rise)); return { ...st, left: null, right: null, sheet: TURNED }; }
+  if (t < BO.walk) { const w = k(BO.up, BO.walk - BO.up), at = lerp2(P.up, P.M, w); return { x: at[0], z: at[1], yaw: Math.PI / 2 - Math.PI * w, lean: 0, crouch: 0, bed: null, left: null, right: null, sheet: { ...TURNED, lead: "open" } }; }
   // Bent over the bed, a hand at each end of its open edge: lay the sheet out flat again (it hangs as made).
   const bend = k(BO.walk, BO.bend - BO.walk), mk = k(BO.bend, BO.make - BO.bend), rel = 1 - k(BO.make, BO.done - BO.make), h = Math.min(bend, rel);
   return { x: P.M[0], z: P.M[1], yaw: -Math.PI / 2, lean: 0.75 * h, crouch: 0.3 * h, bed: null, left: { grip: "head", blend: h }, right: { grip: "foot", blend: h }, sheet: { from: "turned", to: "made", k: mk, lead: "open", lift: 0.28 } };
@@ -640,7 +669,9 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   const buildings = useMemo(() => city.buildings.filter((b) => b.venue === "apartments"), [city]);
   const m = useFloorMats();
   const move = useRef<Move | null>(null);
-  const doorAngle = useRef(0), bedAngle = useRef(0), fridgeAngle = useRef(0), closetAngle = useRef(0);
+  const doorAngle = useRef(0), bedAngle = useRef(0), fridgeAngle = useRef(0), closetAngle = useRef(0), bathAngle = useRef(0);
+  const baths = useRef(new Map<string, BathLink>());
+  const bathLink = (key: string) => { let l = baths.current.get(key); if (!l) { l = newBathLink(); baths.current.set(key, l); } return l; };
   const [shown, setShown] = useState<AptFloor[]>([]);
   const shownKeys = useRef("");
   const cache = useRef(new Map<string, AptFloor>());
@@ -649,7 +680,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   const sleeping = useRef(0);
   const lastLift = useRef<string | null>(null);
   /** Doors closing behind someone who has walked on: which, how it was used (pushed open: leave; pulled: enter), when. */
-  const closing = useRef<{ which: "apartment" | "bedroom"; kind: "leave" | "enter"; from: [number, number]; fromYaw: number; start: number }[]>([]);
+  const closing = useRef<{ which: "apartment" | "bedroom" | "bathroom"; kind: "leave" | "enter"; from: [number, number]; fromYaw: number; start: number }[]>([]);
   /** Each floor's bedsheet and the hand holding its corner. */
   const sheets = useRef(new Map<string, SheetLink>());
   const sheetLink = (key: string) => { let l = sheets.current.get(key); if (!l) { l = { from: "made", to: "made", k: 1, lead: "top", lift: 0, points: null }; sheets.current.set(key, l); } return l; };
@@ -690,7 +721,13 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     const dt = Math.min(raw, 0.1), now = state.simulationTime, p = state.pos;
     const inter = state.interior;
     const lobby = inter?.phase === "inside" && !state.level ? (() => { const b = byKey.get(inter.key); return b ? { b, layout: venueLayout(b) } : null; })() : null;
-    const lvl = state.level, fb = lvl ? byKey.get(lvl.building) : undefined;
+    let lvl = state.level, fb = lvl ? byKey.get(lvl.building) : undefined;
+    // Never up in the air: on a floor of a building that isn't there (a changed world), back down outside its door.
+    if (lvl && !fb && buildings.length) {
+      const out = state.interior?.outside;
+      state.level = null; state.interior = null; state.elevator = null; move.current = null; lvl = null;
+      if (out) state.pos.set(out[0], SIDEWALK_H, out[1]); else state.pos.y = SIDEWALK_H;
+    }
     // Each floor's room is made once and kept (with the others in state.rooms).
     const floorOf = (b: Building, n: number) => {
       const k = floorKey(b, n);
@@ -712,7 +749,9 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     const yNow = lvl ? lvl.y : SIDEWALK_H;
     const toW = (x: number, z: number) => (frameNow ? toWorld(frameNow, x, z) : [x, z] as [number, number]);
     const reachW = (r: Reach | null) => { if (!r || !frameNow) return null; const [x, z] = toWorld(frameNow, r.at[0], r.at[2]); return { at: new THREE.Vector3(x, yNow + r.at[1], z), blend: r.blend, pole: r.pole }; };
-    const scriptFrom = (pose: GPose | { x: number; z: number; yaw: number; lean: number; left: Reach | null; right: Reach | null; crouch?: number; sit?: number; bed?: NonNullable<BedStep["bed"]> }): Script => {
+    const scriptFrom = (pose: GPose | BathPose | { x: number; z: number; yaw: number; lean: number; left: Reach | null; right: Reach | null; crouch?: number; sit?: number; bed?: NonNullable<BedStep["bed"]> }): Script => {
+      const own = pose as { legs?: Script["legs"]; shuffle?: number };
+      if (own.legs || own.shuffle) return { ...scriptOf(pose), ...(own.legs ? { legs: own.legs, walk: 0 } : {}), shuffle: own.shuffle ?? 0 };
       const inBed = (pose as { bed?: NonNullable<BedStep["bed"]> }).bed;
       if (inBed) { const sc = scriptOf(pose); return { ...sc, walk: 0, bed: inBed }; }
       return scriptOf(pose);
@@ -810,14 +849,14 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     closing.current = closing.current.filter((c) => {
       const tt = now - c.start, done = c.kind === "leave" ? LEAVE.done + leaveLead(c.from) : ENTER.done + enterLead(c.from);
       const a = tt >= done ? 0 : c.kind === "leave" ? leavePose(tt, c.from, c.fromYaw).door.left : enterPose(tt, c.from, c.fromYaw).door.right;
-      if (c.which === "apartment") doorAngle.current = a; else bedAngle.current = a;
+      if (c.which === "apartment") doorAngle.current = a; else if (c.which === "bathroom") bathAngle.current = a; else bedAngle.current = a;
       return tt < done;
     });
     // ---------- the hinged doors (the apartment's and the bedroom's) ----------
     const mv = move.current;
     if (!eRide && mv && floor && (mv.kind === "keyIn" || mv.kind === "push" || mv.kind === "pull")) {
       const t = now - mv.t0, which = mv.which ?? "apartment", F = floor.hinged[which], c = Math.cos(F.theta), sn = Math.sin(F.theta);
-      const setAngle = (a: number) => { if (which === "apartment") doorAngle.current = a; else bedAngle.current = a; };
+      const setAngle = (a: number) => { if (which === "apartment") doorAngle.current = a; else if (which === "bathroom") bathAngle.current = a; else bedAngle.current = a; };
       // The door's frame: origin at the doorway's edge, +z into the room the door opens into (the opening is local
       // x −1..0, like the restaurants' left leaf); going in pushes it open, coming out (mirrored) pulls it.
       const fr = (u: number, v: number): [number, number] => [F.ox + u * c + v * sn, F.oz - u * sn + v * c];
@@ -983,9 +1022,9 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     if (!eRide && mv && floor && mv.kind === "bed" && link) {
       const t = now - mv.t0, grips = sheetGrips(floor);
       // A hand on the sheet: at that point of it (where the sheet has it now).
-      const hold = (h: { grip: string; blend: number } | null): Reach | null => {
+      const hold = (h: { grip: Grip; blend: number } | null): Reach | null => {
         if (!h || h.blend <= 0) return null;
-        const ij = h.grip === "flap" ? (mv.flap ?? grips.corner) : h.grip === "head" ? grips.head : h.grip === "foot" ? grips.foot : grips.corner;
+        const ij = h.grip === "pullL" ? grips.pullL : h.grip === "pullR" ? grips.pullR : h.grip === "head" ? grips.head : h.grip === "foot" ? grips.foot : grips.corner;
         const pt = sheetPoint(link, ij[0], ij[1]);
         return pt ? { at: [pt[0], pt[1] + 0.03, pt[2]], blend: h.blend, pole: "out" } : null;
       };
@@ -993,18 +1032,11 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         link.from = st.sheet.from; link.to = st.sheet.to; link.k = st.sheet.k; link.lead = st.sheet.lead; link.lift = st.sheet.lift;
         script = scriptFrom({ x: st.x, z: st.z, yaw: st.yaw, lean: st.lean, crouch: st.crouch, left: hold(st.left), right: hold(st.right), ...(st.bed ? { bed: st.bed } : {}) });
       };
-      // The point of the sheet a hand takes to lift it: the nearest to where that hand is.
-      const nearest = (to: [number, number, number]): [number, number] => {
-        let best: [number, number] = grips.corner, bd = Infinity;
-        for (let j = 0; j < SHEET_NZ; j++) for (let i = 0; i < SHEET_NX; i++) { const q = sheetPoint(link, i, j); if (!q) continue; const d = Math.hypot(q[0] - to[0], (q[1] - to[1]) * 0.5, q[2] - to[2]); if (d < bd) { bd = d; best = [i, j]; } }
-        return best;
-      };
       if (mv.phase === "in") {
         const walk = mv.plan!.total;
         if (t < walk) script = scriptFrom(planAt(mv.plan!, t).pose);
         else {
           const u = t - walk;
-          if (u >= BI.sit && !mv.flap) mv.flap = nearest([floor.bed.sit[0] - 0.05, MATTRESS_TOP + 0.03, floor.bed.sit[1] - 0.4]);
           play(bedIn(floor, Math.min(u, BI.release)));
           if (u >= BI.release) {
             // Asleep: the night passes (in a shared room the clock is everyone's, so only rest), energy comes back.
@@ -1016,18 +1048,46 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
           }
         }
       } else if (mv.phase === "asleep") {
-        play({ ...bedIn(floor, BI.release), left: null });
+        play({ ...bedIn(floor, BI.release), left: null, right: null });
         if (t >= ASLEEP) {
           state.uiLock = null; mv.phase = "out"; mv.t0 = now; mv.flap = null;
           const h = Math.round((mv.slept ?? 8) * 10) / 10;
           toast(state, "Good morning!", "info", `${state.npcLink ? "Rested" : "It's 6 AM"}: you slept ${h} h, energy ${Math.round(state.energy)}%.`);
         }
       } else if (mv.phase === "out") {
-        if (!mv.flap) mv.flap = nearest([floor.bed.edgeX - 0.2, MATTRESS_TOP + 0.2, floor.bed.lie[1] + 0.2]);
         play(bedOut(floor, Math.min(t, BO.done)));
         if (t >= BO.done) { const P = bedSpots(floor), [x, z] = toW(P.M[0], P.M[1]); state.pos.x = x; state.pos.z = z; state.rotY = worldYaw(floor.frame, -Math.PI / 2); link.from = link.to = "made"; link.k = 1; move.current = null; script = null; }
       }
     }
+    // ---------- the bathroom: washing the hands, the toilet, the shower ----------
+    const bl = floor ? bathLink(floor.key) : null;
+    if (bl) {
+      // The curtain sways a little after it moves, and settles.
+      bl.sway *= Math.exp(-1.4 * dt);
+      if (bl.paper === "drop" && now - bl.paperAt > 0.7) bl.paper = "none";
+    }
+    if (!eRide && mv && floor && bl && (mv.kind === "wash" || mv.kind === "toilet" || mv.kind === "shower")) {
+      const t = now - mv.t0, walk = mv.plan!.total;
+      const total = mv.kind === "wash" ? WASH.down : mv.kind === "toilet" ? TOILET.watch : SHOWER.let4;
+      if (mv.kind === "shower") {
+        // The camera held on the shower the whole time.
+        const v = showerView(floor), [px, pz] = toW(v.pos[0], v.pos[2]), [ax, az] = toW(v.at[0], v.at[2]);
+        state.camLock = { pos: [px, yNow + v.pos[1], pz], at: [ax, yNow + v.at[1], az] };
+      }
+      if (t < walk) script = scriptFrom(planAt(mv.plan!, t).pose);
+      else {
+        const u = Math.min(t - walk, total), c0 = bl.curtain;
+        const pose = mv.kind === "wash" ? washAt(floor, u, bl) : mv.kind === "toilet" ? toiletAt(floor, u, bl, now) : showerAt(floor, u, bl);
+        bl.sway = Math.min(0.08, bl.sway + Math.abs(bl.curtain - c0) * 0.5);
+        script = scriptFrom(pose);
+        if (t - walk >= total) {
+          state.pos.x = script.x; state.pos.z = script.z; state.rotY = script.yaw;
+          bl.sink = 0; bl.shower = 0; bl.flush = -1;
+          if (mv.kind === "shower") { bl.curtain = 0; state.camLock = null; }
+          move.current = null; script = null;
+        }
+      }
+    } else if (state.camLock && !(mv?.kind === "shower")) state.camLock = null;
     // ---------- sitting on the couch (the chairs sit like a restaurant's: RestaurantInteraction runs them) ----------
     if (!eRide && mv && floor && mv.kind === "sit") {
       const st = mv.seat!, t = now - mv.t0, SIT = 0.9;
@@ -1122,6 +1182,27 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
           move.current = { kind: "pull", which: "apartment", t0: now, plan: null, from: [fx, fz], fromYaw: fyaw };
           state.keys.clear();
         };
+      } else if (mine && lz > floor.bath.z0 && lx > floor.bath.x0 && lx < floor.bath.x1 && bathNear(floor, lx, lz)) {
+        const what = bathNear(floor, lx, lz)!, from: [number, number] = [lx, lz], fromYaw = state.rotY - floor.frame.rot, carry = { basket: false, bag: !!state.groceryBag };
+        const B = floor.bath;
+        if (what === "sink") {
+          show(B.sink.x, B.sink.z, 1.5, "E  WASH HANDS");
+          act = () => { move.current = { kind: "wash", t0: now, plan: makePlan([walkSeg(from, fromYaw, washStand(floor), Math.PI / 2, carry)]) }; state.keys.clear(); };
+        } else if (what === "toilet") {
+          show(B.toilet.x, B.toilet.z, 1.3, "E  USE TOILET");
+          act = () => { move.current = { kind: "toilet", t0: now, plan: makePlan([walkSeg(from, fromYaw, B.toilet.front, Math.PI / 2, carry)]) }; state.keys.clear(); };
+        } else {
+          show((B.shower.x0 + B.shower.x1) / 2, B.shower.curtainZ, 2.2, "E  SHOWER");
+          act = () => { move.current = { kind: "shower", t0: now, plan: makePlan([walkSeg(from, fromYaw, showerSpots(floor).out, 0, carry)]) }; state.keys.clear(); };
+        }
+      } else if (mine && doorSide(floor, "bathroom", lx, lz) && (!bedroomSide(floor, lx, lz) || nearerBath(floor, lx, lz))) {
+        // The bathroom door (kept shut): pushed open going in, pulled open coming out.
+        const F = floor.hinged.bathroom, [u, v] = doorSide(floor, "bathroom", lx, lz)!, fyaw = state.rotY - floor.frame.rot - F.theta;
+        show(F.ox - 0.5, F.oz + (v < 0 ? -0.35 : 0.25), 2.1, v < 0 ? "E  BATHROOM" : "E  OUT");
+        act = () => {
+          move.current = v < 0 ? { kind: "push", which: "bathroom", t0: now, plan: null, from: [u, v], fromYaw: fyaw } : { kind: "pull", which: "bathroom", t0: now, plan: null, from: [-u, v], fromYaw: -fyaw };
+          state.keys.clear();
+        };
       } else if (mine && bedroomSide(floor, lx, lz)) {
         // The bedroom door (kept shut): pushed open going in, pulled open coming out.
         const F = floor.hinged.bedroom, [u, v] = bedroomSide(floor, lx, lz)!, fyaw = state.rotY - floor.frame.rot - F.theta;
@@ -1190,7 +1271,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       <LobbyCar state={state} bkey={aptKey(b)} at={[layout.bounds.minX + SHAFT / 2, layout.bounds.minZ + SHAFT / 2]} m={m} />
       <LobbyVisitor state={state} layout={layout} />
     </group>)}
-    {shown.map((fl) => <FloorInterior key={fl.key} lift={() => carShown(fl.key.split("#")[0]!)} sheet={sheetLink(fl.key)} fl={fl} state={state} m={m} door={() => doorAngle.current} bedDoor={() => bedAngle.current} fridgeDoor={() => fridgeAngle.current} closetDoor={() => closetAngle.current} elevatorOpen={elevatorOpen(fl.key.split("#")[0]!, fl.upper)} />)}
+    {shown.map((fl) => <FloorInterior key={fl.key} lift={() => carShown(fl.key.split("#")[0]!)} sheet={sheetLink(fl.key)} bath={bathLink(fl.key)} bathDoor={() => (state.level?.floor === fl.upper ? bathAngle.current : 0)} fl={fl} state={state} m={m} door={() => doorAngle.current} bedDoor={() => bedAngle.current} fridgeDoor={() => fridgeAngle.current} closetDoor={() => closetAngle.current} elevatorOpen={elevatorOpen(fl.key.split("#")[0]!, fl.upper)} />)}
     <CarAt state={state} buildings={byKey} m={m} />
     {/* The thing being put in the fridge, in the right hand. */}
     <group ref={carry} visible={false}>
@@ -1228,6 +1309,28 @@ function closetNear(fl: AptFloor, lx: number, lz: number) {
   return Math.hypot(lx - fx, lz - fz) < 0.9 ? c : null;
 }
 
+/** Near a hinged door (frame like the bedroom's), on either side: the spot in its frame (v < 0 outside), or null. */
+function doorSide(fl: AptFloor, which: "bathroom" | "bedroom", lx: number, lz: number): [number, number] | null {
+  const F = fl.hinged[which], c = Math.cos(F.theta), s = Math.sin(F.theta), dx = lx - F.ox, dz = lz - F.oz;
+  const u = dx * c - dz * s, v = dx * s + dz * c;
+  if (u < -1.6 || u > 0.3) return null;
+  if (v < -INNER_WALL - 0.05 && v > -1.5) return [u, v];
+  if (v > 0.05 && v < 1.6) return [u, v];
+  return null;
+}
+/** In the bathroom, close to the sink, the toilet or the shower: which (the nearest). */
+function bathNear(fl: AptFloor, lx: number, lz: number): "sink" | "toilet" | "shower" | null {
+  const B = fl.bath, spots: ["sink" | "toilet" | "shower", [number, number]][] = [["sink", B.sink.stand], ["toilet", B.toilet.front], ["shower", B.shower.outside]];
+  let best: "sink" | "toilet" | "shower" | null = null, d = 0.85;
+  for (const [n, sp] of spots) { const e = Math.hypot(lx - sp[0], lz - sp[1]); if (e < d) { d = e; best = n; } }
+  return best;
+}
+/** Between the two doors: the bathroom's is the nearer. */
+function nearerBath(fl: AptFloor, lx: number, lz: number) {
+  const a = fl.hinged.bathroom, b = fl.hinged.bedroom;
+  const bathMid: [number, number] = [a.ox - 0.5, a.oz], bedMid: [number, number] = [b.ox, fl.bedroomDoor[0] + 0.5];
+  return Math.hypot(lx - bathMid[0], lz - bathMid[1]) < Math.hypot(lx - bedMid[0], lz - bedMid[1]);
+}
 /** Near the bedroom door, on either side: the spot in the door's frame (v < 0 the main room's side), or null. */
 function bedroomSide(fl: AptFloor, lx: number, lz: number): [number, number] | null {
   const F = fl.hinged.bedroom, c = Math.cos(F.theta), s = Math.sin(F.theta), dx = lx - F.ox, dz = lz - F.oz;

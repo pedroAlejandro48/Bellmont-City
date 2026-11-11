@@ -59,7 +59,9 @@ export type WorldReach = { at: THREE.Vector3; blend: number; pole: "low" | "out"
  */
 export type Script = { x: number; z: number; yaw: number; walk: number; sit: number; shuffle: number; lean: number; left: WorldReach | null; right: WorldReach | null; crouch?: number;
   /** Getting into bed: sat on its edge (sit), each leg up straight on it (legL, legR), lying back flat (lie); 0..1. */
-  bed?: { sit: number; lie: number; legL: number; legR: number } };
+  bed?: { sit: number; lie: number; legL: number; legR: number };
+  /** Each leg set outright (a high step over a shower's curb): thigh forward (negative) and knee bend, radians. */
+  legs?: { hipL: number; kneeL: number; hipR: number; kneeR: number } };
 /** Someone's use of an apartment building's elevator: the car going `from` → `to` (the same: standing there), `at`
  * seconds into that (t0: when it started, on this player's clock), and whether they're using it now. */
 export type LiftUse = { b: string; from: number; to: number; at: number; active: boolean; t0?: number };
@@ -147,6 +149,8 @@ export type GameState = {
   extraDoorUses: import("./doors").DoorUse[];
   /** Some other panel that needs the mouse (a reception desk, an elevator's buttons…), by name. */
   uiLock: string | null;
+  /** The camera held on one view (world: where it is, what it looks at), e.g. the shower while showering. */
+  camLock: { pos: [number, number, number]; at: [number, number, number] } | null;
   /** Things on their way into the fridge (one at a time, by hand): the name, and the grocery bag's kind if from the bag. */
   fridgeLoad: { name: string; bag: ItemKind | null }[];
   keys: Set<string>;
@@ -258,7 +262,7 @@ export function createState(save: SaveData): GameState {
     lastImpactAt: -Infinity,
     elapsed: save.elapsed,
     // Saved up in an apartment building: back on that floor (in the building, its room made by Apartments).
-    pos: save.apt ? new THREE.Vector3(save.apt.x, floorY(save.apt.floor), save.apt.z) : new THREE.Vector3(...save.pos),
+    pos: save.apt ? new THREE.Vector3(save.apt.x, floorY(Math.max(1, save.apt.floor)), save.apt.z) : new THREE.Vector3(...save.pos),
     rotY: save.apt ? save.apt.yaw : save.rotY,
     camYaw: save.camYaw,
     camOrbit: save.camYaw - save.rotY - Math.PI,
@@ -280,10 +284,10 @@ export function createState(save: SaveData): GameState {
     groceryBasket: null,
     groceryBag: null,
     extraDoorUses: [],
-    level: save.apt ? { building: save.apt.building, floor: save.apt.floor, y: floorY(save.apt.floor) } : null,
+    level: save.apt && save.apt.floor >= 2 ? { building: save.apt.building, floor: save.apt.floor, y: floorY(save.apt.floor) } : null,
     seatSurface: null,
     elevator: null,
-    uiLock: null, fridgeLoad: [],
+    uiLock: null, fridgeLoad: [], camLock: null,
     keys: new Set(),
     jumpQueued: false,
     simulationTime: 0,
@@ -298,7 +302,7 @@ export function createState(save: SaveData): GameState {
     impacts: [],
     vehicles: [],
     vehiclePushes: new Map(),
-    rooms: new Map(), interior: save.apt ? { key: `${save.apt.building}#${save.apt.floor}`, phase: "inside", startedAt: 0, from: [0, 0], fromYaw: 0, outside: save.apt.outside, outsideYaw: save.apt.outsideYaw, cameraSet: true } : null, seat: null, script: null, standQueued: false, fade: 0, fadeInAt: null, doorPrompt: false,
+    rooms: new Map(), interior: save.apt ? { key: save.apt.floor >= 2 ? `${save.apt.building}#${save.apt.floor}` : save.apt.building, phase: "inside", startedAt: 0, from: [0, 0], fromYaw: 0, outside: save.apt.outside, outsideYaw: save.apt.outsideYaw, cameraSet: true } : null, seat: null, script: null, standQueued: false, fade: 0, fadeInAt: null, doorPrompt: false,
     cash: Math.max(0, save.cash ?? STARTING_CASH),
     life: readLife(save.life, timeInfo(save.elapsed).day),
     toasts: [], waypoint: null, phone: { open: false, app: null, atm: false }, job: null, home: null, busking: null,
@@ -370,19 +374,31 @@ function aptSave(s: GameState): import("./config").SavedApt | null {
   if (!s.interior || s.interior.phase !== "inside") return null;
   const e = s.elevator, lvl = s.level;
   const building = e?.building ?? lvl?.building;
-  const floor = e ? (e.phase === "moving" && e.target !== null ? e.target : e.floor) : lvl?.floor;
-  if (!building || !floor || floor < 2) return null;
-  let x = s.pos.x, z = s.pos.z, yaw = s.rotY;
-  if (e || s.seat) {
-    // In the elevator (or sat on a chair): on the floor's hallway in front of the elevator, or where one sat down from.
-    const room = s.rooms.get(`${building}#${floor}`) as (Room & { spots?: { elevator: [number, number] } }) | undefined;
-    if (!room) return null;
-    const at: [number, number] = e ? room.spots!.elevator : s.seat!.plan.start, f = room.frame;
-    x = f.ox + at[0] * f.c + at[1] * f.s; z = f.oz - at[0] * f.s + at[1] * f.c;
-    yaw = e ? f.rot + Math.PI : f.rot + s.seat!.plan.startYaw;
+  if (!building) return null;
+  const outside = s.interior.outside, outsideYaw = s.interior.outsideYaw;
+  if (e) {
+    // In the elevator (going up, down, or waiting in it): back on the ground floor, in the lobby in front of its
+    // doors — never somewhere up a shaft.
+    const lobby = s.rooms.get(building);
+    if (!lobby) return null;
+    const f = lobby.frame, at: [number, number] = [lobby.bounds.minX + LOBBY_SHAFT / 2, lobby.bounds.minZ + LOBBY_SHAFT + 0.9];
+    return { building, floor: 1, x: f.ox + at[0] * f.c + at[1] * f.s, z: f.oz - at[0] * f.s + at[1] * f.c, yaw: f.rot, outside, outsideYaw };
   }
-  return { building, floor, x, z, yaw, outside: s.interior.outside, outsideYaw: s.interior.outsideYaw };
+  const floor = lvl?.floor;
+  if (!floor || floor < 2) return null;
+  let x = s.pos.x, z = s.pos.z, yaw = s.rotY;
+  if (s.seat) {
+    // Sat on a chair: where one sat down from.
+    const room = s.rooms.get(`${building}#${floor}`);
+    if (!room) return null;
+    const at = s.seat.plan.start, f = room.frame;
+    x = f.ox + at[0] * f.c + at[1] * f.s; z = f.oz - at[0] * f.s + at[1] * f.c;
+    yaw = f.rot + s.seat.plan.startYaw;
+  }
+  return { building, floor, x, z, yaw, outside, outsideYaw };
 }
+/** The elevator shaft's size (venueRoom SHAFT), for the lobby spot in front of it. */
+const LOBBY_SHAFT = 2.6;
 
 export function knockDown(state: GameState, vehicleId: number, path: RoadPath, position: [number, number], direction: [number, number], launchSpeed: number, seed: number) {
   if (state.accident || !hitByVehicle(state, performance.now())) return false;

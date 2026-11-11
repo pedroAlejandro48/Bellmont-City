@@ -72,7 +72,7 @@ type Shopper = {
 };
 
 /**
- * The grocery in play: walking in, the player takes a basket from the pile; E at a crate (or the water shelf) picks
+ * The grocery in play: E at the pile by the door takes a basket (nothing can be picked without one); E at a crate (or the water shelf) picks
  * one into it; E at the register pays — the basket goes on the belt, the clerk bags everything and hands the bag
  * over while the player takes the empty basket back; E at the door puts the basket back on the pile on the way out.
  * Now and then a shopper comes in and does the same.
@@ -151,11 +151,12 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
       const reach = (h: Reach | null) => (h ? { at: at3(h.at), blend: h.blend, pole: h.pole } : null);
       script = { x: wx, z: wz, yaw: yawOf(p.yaw), walk: 0, sit: 0, shuffle: 0, lean: p.lean, left: reach(p.left), right: reach(p.right), crouch: p.crouch };
       if (r.done) {
-        const wasReturn = me.kind === "return";
+        const wasReturn = me.kind === "return", wasToDoor = me.kind === "toDoor";
         me.plan = null; script = null;
         state.pos.x = wx; state.pos.z = wz; state.rotY = yawOf(p.yaw);
-        // Basket back on the pile: on out through the door.
-        if (wasReturn) state.interactQueued = true;
+        // Basket back on the pile: walk on to the door (one smooth walk), and out through it.
+        if (wasReturn) start(makePlan([walkSeg([p.x, p.z], p.yaw, [0, -0.9], 0, { basket: false, bag: !!state.groceryBag })]), "toDoor");
+        if (wasToDoor) state.interactQueued = true;
         // Just paid, still at the till: the register's panel waits until they step away and back.
         if (me.kind === "pay") served.current = true;
       }
@@ -173,9 +174,17 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
     const p = promptRef.current; p.visible = false; p.label = undefined;
     if (there && !me.plan && !state.accident && state.health > 0) {
       const [lx, lz] = local(), yaw = state.rotY - f.rot;
-      // Just in: take a basket (without one, there's nothing to shop with).
-      if (!state.groceryBasket) start(takeBasket([lx, lz], yaw, pile, !!state.groceryBag), "take");
-      else {
+      // No basket yet: E at the pile by the door takes one (nothing can be picked without one).
+      if (!state.groceryBasket) {
+        const ps = pileSpot(pile);
+        if (Math.hypot(lx - ps.stand[0], lz - ps.stand[1]) < 1.3) {
+          const [x, z] = world(pile.x, pile.z); Object.assign(p, { visible: true, x, y: SIDEWALK_H + 1.0, z, label: "E  TAKE A BASKET" });
+          if (state.interactQueued) { state.interactQueued = false; start(takeBasket([lx, lz], yaw, pile, !!state.groceryBag), "take"); }
+        } else {
+          const src = srcs.find((sr) => Math.hypot(lx - sr.stand[0], lz - sr.stand[1]) < 1.25);
+          if (src) { const [x, z] = world(src.take[0], src.take[2]); Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: "TAKE A BASKET FIRST" }); }
+        }
+      } else {
         const n = items.current.length, svc = layout.service, atTill = Math.hypot(lx - svc.x, lz - svc.z) < 0.75;
         const src = srcs.map((s) => ({ s, d: Math.hypot(lx - s.stand[0], lz - s.stand[1]) })).filter((x) => x.d < 1.25).sort((a, c) => a.d - c.d)[0]?.s;
         const total = items.current.reduce((a, it) => a + (GROCERY_PRICE[it.kind] ?? 1), 0);

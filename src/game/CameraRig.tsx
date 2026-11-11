@@ -110,6 +110,10 @@ export function CameraRig({ state }: { state: GameState }) {
    * view can turn about as far as a head can.
    */
   const fpVec = useMemo(() => ({ head: new THREE.Vector3(), look: new THREE.Vector3() }), []);
+  /** Where the held view looks (eased toward it). */
+  const lockLook = useRef(new THREE.Vector3());
+  /** Let go of a held view: eased from where it was back to following (seconds since, and that view). */
+  const unlock = useRef<{ t: number; pos: THREE.Vector3; look: THREE.Vector3 } | null>(null), wasLocked = useRef(false);
   const firstPerson = (dt: number) => {
     const head = state.avatar.body[3];
     if (!head) return false;
@@ -156,6 +160,17 @@ export function CameraRig({ state }: { state: GameState }) {
       const want = state.firstPerson ? (cam.aspect <= 1 ? 90 : Math.max(60, Math.min(90, 2 * Math.atan(Math.tan((110 * Math.PI) / 360) / cam.aspect) * 180 / Math.PI))) : 60;
       if (Math.abs(cam.fov - want) > 0.05) { cam.fov += (want - cam.fov) * (1 - Math.exp(-8 * dt)); if (Math.abs(cam.fov - want) < 0.1) cam.fov = want; cam.updateProjectionMatrix(); }
     }
+    // Held on one view (the shower while showering): eased there, looking at it.
+    if (state.camLock) {
+      const L = state.camLock, k = 1 - Math.exp(-4 * dt);
+      camera.position.lerp(vectors.target.set(L.pos[0], L.pos[1], L.pos[2]), k);
+      lockLook.current.lerp(vectors.up.set(L.at[0], L.at[1], L.at[2]), k);
+      camera.up.set(0, 1, 0); camera.lookAt(lockLook.current);
+      wasLocked.current = true; unlock.current = null;
+      return;
+    }
+    if (wasLocked.current) { wasLocked.current = false; unlock.current = { t: 0, pos: camera.position.clone(), look: lockLook.current.clone() }; }
+    lockLook.current.copy(camera.position).add(camera.getWorldDirection(vectors.direction));
     if (state.firstPerson && firstPerson(dt)) return;
     const riding = state.scooter.riding || state.scooter.action === "mount";
     const forward = state.movingForward || (riding && state.scooter.speed > 0 && (state.keys.has("KeyW") || state.keys.has("ArrowUp") || state.stick !== null));
@@ -267,6 +282,14 @@ export function CameraRig({ state }: { state: GameState }) {
     // Continuous up vector permits full vertical loops without a pole flip.
     up.set(-Math.sin(yaw) * Math.sin(pitch), Math.cos(pitch), -Math.cos(yaw) * Math.sin(pitch));
     camera.up.copy(up); camera.lookAt(target);
+    // Just let go of a held view: from it back to here, smoothly.
+    const ul = unlock.current;
+    if (ul) {
+      ul.t += dt; const k = Math.min(1, ul.t / 1.1), e = k * k * (3 - 2 * k);
+      camera.position.lerpVectors(ul.pos, camera.position, e);
+      camera.up.set(0, 1, 0).lerp(up, e).normalize(); camera.lookAt(lockLook.current.lerpVectors(ul.look, target, e));
+      if (k >= 1) unlock.current = null;
+    }
     // Test builds: a fixed camera for checking scenery up close (window.__camAt = [x, y, z, lookX, lookY, lookZ]).
     const fixed = import.meta.env["VITE_TRAFFIC_AUDIT"] === "1" ? (window as unknown as { __camAt?: number[] }).__camAt : undefined;
     if (fixed && fixed.length === 6) { camera.position.set(fixed[0]!, fixed[1]!, fixed[2]!); camera.up.set(0, 1, 0); camera.lookAt(fixed[3]!, fixed[4]!, fixed[5]!); }

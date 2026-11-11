@@ -25,7 +25,19 @@ export type AptFloor = Room & {
   door: { x: number; z: number };
   /** Both hinged doors as frames like that one: origin, and the turn from the room's axes (θ: frame +z = into the
    * room the door opens into). */
-  hinged: { apartment: DoorFrame; bedroom: DoorFrame };
+  hinged: { apartment: DoorFrame; bedroom: DoorFrame; bathroom: DoorFrame };
+  /**
+   * The bathroom, between the living room and the bedroom: from the bedroom's wall (x0) to the TV's wall (x1), from
+   * the short wall with its door (z0, its inner face; the door from dx0 to dx1) to the front. In it the shower (the
+   * front corner by the bedroom wall: a low curb and a curtain along `curtainZ`), the toilet (against the bedroom
+   * wall, facing in) and the sink (on the TV's wall). Each with where one stands to use it.
+   */
+  bath: {
+    x0: number; x1: number; z0: number; z1: number; wallZ: number; door: [number, number];
+    shower: { x0: number; x1: number; z0: number; z1: number; curtainZ: number; outside: [number, number]; inside: [number, number] };
+    toilet: { x: number; z: number; rot: number; front: [number, number]; paper: [number, number, number]; flush: [number, number, number] };
+    sink: { x: number; z: number; rot: number; stand: [number, number]; tap: [number, number, number]; bowl: [number, number, number] };
+  };
   bedroomDoor: [number, number];
   furniture: AptFurniture[];
   /** The full-height walls inside (the shaft, the storage, the hallway's wall and door, the bedroom's wall). */
@@ -62,6 +74,14 @@ export function aptFloor(b: Building, floor: number): AptFloor {
   box(divX - INNER_WALL / 2, divX + INNER_WALL / 2, bd1, maxZ);
   box(divX - INNER_WALL / 2, divX + INNER_WALL / 2, inside0, bd0);
   box(divX - INNER_WALL / 2 - 0.02, divX + INNER_WALL / 2 + 0.02, bd0, bd1);
+  // The bathroom: a wall where the TV is (parallel to the bedroom's), and a short wall across from just past the
+  // bedroom door to it, with the bathroom's door; both doors open off the same bit of floor. 3/4 the bedroom's width.
+  const bx0 = divX + INNER_WALL / 2, bx1 = bx0 + 0.75 * (divX - minX), sw0 = bd1 + 0.35, sw1 = sw0 + INNER_WALL;
+  const bdx0 = bx0 + 0.35, bdx1 = bdx0 + 1;
+  box(bx1, bx1 + INNER_WALL, sw0, maxZ);
+  box(bx0, bdx0, sw0, sw1);
+  box(bdx1, bx1 + INNER_WALL, sw0, sw1);
+  box(bdx0, bdx1, sw0 - 0.02, sw1 + 0.02);
 
   // (Everything so far is a wall, floor to ceiling: the camera keeps to this side of them.)
   const walls = solids.map((w) => ({ ...w }));
@@ -77,16 +97,17 @@ export function aptFloor(b: Building, floor: number): AptFloor {
   // The table for two to the right of the kitchen. It and its chairs are the room's furniture (`items`), like a
   // restaurant's: solid, and sat at the same way (the chair pulled out, round it, down, shuffled in).
   const items: Item[] = [];
-  const tx = Math.max(divX + 1.0, maxX - 3.4), tz = maxZ - 1.15;
+  const tx = Math.max(bx1 + INNER_WALL + 1.05, maxX - 3.4), tz = maxZ - 1.15;
   add("table", tx, tz, 0, TABLE.half * 2, TABLE.half * 2, false);
   items.push({ kind: "table", x: tx, z: tz, f: [0, 1] });
   items.push({ kind: "chair", x: tx - 0.72, z: tz, f: [1, 0] }, { kind: "chair", x: tx + 0.72, z: tz, f: [-1, 0] });
-  // The couch on the left wall facing the TV on the right wall (the bedroom's wall), on its little table.
+  // The couch on the left wall facing the TV on the right wall (the bathroom's wall), on its little table.
+  const tvWall = bx1 + INNER_WALL;
   const living0 = inside0 + 1.25, living1 = maxZ - 1.9, lz = (living0 + living1) / 2;
-  add("rug", (divX + maxX) / 2, lz, 0, Math.min(2.4, maxX - divX - 1.2), 1.8, false);
+  add("rug", (tvWall + maxX) / 2, lz, 0, Math.min(2.4, maxX - tvWall - 1.2), 1.8, false);
   add("couch", maxX - 0.45, lz, -Math.PI / 2, 2.0, 0.85);
-  add("tvTable", divX + INNER_WALL / 2 + 0.26, lz, Math.PI / 2, 1.1, 0.42);
-  add("tv", divX + INNER_WALL / 2 + 0.1, lz, Math.PI / 2, 1.0, 0.06, false);
+  add("tvTable", tvWall + 0.26, lz, Math.PI / 2, 1.1, 0.42);
+  add("tv", tvWall + 0.1, lz, Math.PI / 2, 1.0, 0.06, false);
   // The bedroom: a single bed, a desk under the window, a closet by the door.
   // The bed in the front corner, its head against the front wall (under the window), the long side to the room.
   const BW = 0.98, BL = 2.05, bedX = minX + BW / 2 + 0.05, bedZ = maxZ - BL / 2 - 0.05;
@@ -98,11 +119,19 @@ export function aptFloor(b: Building, floor: number): AptFloor {
   add("closet", minX + 0.95, inside0 + 0.33, 0, 1.4, 0.6);
   add("lamp", minX + 0.3, maxZ - 2.85, 0, 0.3, 0.3);
 
+  // The bathroom's fixtures: the shower tray (a low curb where one steps in), the toilet, the sink.
+  const SH = 0.95, shower = { x0: bx0, x1: bx0 + SH, z0: maxZ - SH, z1: maxZ, curtainZ: maxZ - SH, outside: [bx0 + SH / 2, maxZ - SH - 0.55] as [number, number], inside: [bx0 + SH / 2, maxZ - SH / 2 - 0.05] as [number, number] };
+  solids.push({ x: (shower.x0 + shower.x1) / 2, z: (shower.z0 + shower.z1) / 2, hx: SH / 2, hz: SH / 2 });
+  const toilet = { x: bx0 + 0.36, z: maxZ - SH - 1.05, rot: Math.PI / 2, front: [bx0 + 0.36 + 0.62, maxZ - SH - 1.05] as [number, number], paper: [bx0 + 0.06, 0.72, maxZ - SH - 1.05 + 0.45] as [number, number, number], flush: [bx0 + 0.12, 0.86, maxZ - SH - 1.05 - 0.12] as [number, number, number] };
+  solids.push({ x: toilet.x - 0.03, z: toilet.z, hx: 0.36, hz: 0.22 });
+  const sink = { x: bx1 - 0.25, z: sw1 + 1.3, rot: -Math.PI / 2, stand: [bx1 - 0.25 - 0.62, sw1 + 1.3] as [number, number], tap: [bx1 - 0.08, 1.02, sw1 + 1.3] as [number, number, number], bowl: [bx1 - 0.27, 0.86, sw1 + 1.3] as [number, number, number] };
+  solids.push({ x: sink.x, z: sink.z, hx: 0.25, hz: 0.3 });
   // Windows: on the front (bedroom; the living part of the main room; over the kitchen counter, higher), and on the
   // window side's wall (the main room's over the couch, or the bedroom's beside the bed).
   const front = [
     { a0: minX + 0.6, a1: divX - 0.55, y0: WIN.y0 },
-    { a0: divX + 0.55, a1: Math.max(divX + 1.2, maxX - 2.55), y0: WIN.y0 },
+    { a0: divX + 1.2, a1: bx1 - 0.35, y0: WIN.y0 },
+    { a0: tvWall + 0.35, a1: Math.max(tvWall + 1.0, maxX - 2.55), y0: WIN.y0 },
     { a0: maxX - 2.45, a1: maxX - 0.25, y0: WIN.kitchenY0 },
   ].filter((w) => w.a1 - w.a0 > 0.5);
   const side = ws === 1 ? [{ a0: living0 + 0.1, a1: living1 - 0.1, y0: WIN.y0 }] : [{ a0: inside0 + 0.45, a1: maxZ - 2.85, y0: WIN.y0 }];
@@ -112,8 +141,10 @@ export function aptFloor(b: Building, floor: number): AptFloor {
     key: floorKey(b, floor), upper: floor, y: floorY(floor),
     solids, walls, plants: [], hallZ: [hall0, hall1], wallZ, divX, door: { x: doorX, z: wallZ }, bedroomDoor: [bd0, bd1], furniture: F, front, side,
     // (The bedroom door opens into the bedroom, toward −x: its frame's +z is the room's −x.)
-    hinged: { apartment: { ox: doorX, oz: inside0, theta: 0 }, bedroom: { ox: divX - INNER_WALL / 2, oz: bd1, theta: -Math.PI / 2 } },
-    bed: { x: bedX, z: bedZ, w: BW, l: BL, edgeX: bedX + BW / 2, sit: [bedX + BW / 2 - 0.22, maxZ - 1.12], lie: [bedX, maxZ - 1.12], stand: [bedX + BW / 2 + 0.48, maxZ - 1.12] },
+    // (The bathroom door opens into the bathroom, toward +z, like the apartment's.)
+    hinged: { apartment: { ox: doorX, oz: inside0, theta: 0 }, bedroom: { ox: divX - INNER_WALL / 2, oz: bd1, theta: -Math.PI / 2 }, bathroom: { ox: bdx1, oz: sw1, theta: 0 } },
+    bath: { x0: bx0, x1: bx1, z0: sw1, z1: maxZ, wallZ: sw0, door: [bdx0, bdx1], shower, toilet, sink },
+    bed: { x: bedX, z: bedZ, w: BW, l: BL, edgeX: bedX + BW / 2, sit: [bedX + BW / 2 - 0.22, maxZ - 1.12], lie: [bedX, maxZ - 1.03], stand: [bedX + BW / 2 + 0.48, maxZ - 1.12] },
     spots: { elevator: [minX + SHAFT / 2, hall0 + 0.65], bed: [bedX + BW / 2 + 0.48, maxZ - 1.12], fridge: [maxX - 0.37 - 0.8, maxZ - 1.3] },
   };
 }

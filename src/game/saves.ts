@@ -30,7 +30,7 @@ function readApt(value: unknown): SavedApt | null {
   const a = saveRecord(value);
   const num = (v: unknown) => typeof v === "number" && Number.isFinite(v);
   const pair = (v: unknown) => Array.isArray(v) && v.length === 2 && v.every(num);
-  if (typeof a['building'] !== "string" || !num(a['floor']) || (a['floor'] as number) < 2 || !num(a['x']) || !num(a['z']) || !pair(a['outside'])) return null;
+  if (typeof a['building'] !== "string" || !num(a['floor']) || (a['floor'] as number) < 1 || !num(a['x']) || !num(a['z']) || !pair(a['outside'])) return null;
   return { building: a['building'], floor: Math.round(a['floor'] as number), x: a['x'] as number, z: a['z'] as number, yaw: num(a['yaw']) ? a['yaw'] as number : 0, outside: a['outside'] as [number, number], outsideYaw: num(a['outsideYaw']) ? a['outsideYaw'] as number : 0 };
 }
 
