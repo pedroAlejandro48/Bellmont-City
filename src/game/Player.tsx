@@ -114,6 +114,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     camInit: false,
     turnRate: 0,
     reverseBlend: 0,
+    along: 1, side: 0,
     /** Which bike action is playing (and the facing it started from), so its approach can step from there. */
     actionKey: "",
     actionYaw: 0,
@@ -130,7 +131,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     const left = k.has("KeyA") || k.has("ArrowLeft");
     const right = k.has("KeyD") || k.has("ArrowRight");
     const shift = k.has("ShiftLeft") || k.has("ShiftRight");
-    // The on-screen joystick: how far it is pushed sets the pace; right to the edge, running.
+    // The on-screen joystick: how far it is pushed sets the pace; after a double tap, running.
     // (Not while a panel holds you still: the fridge open, the closet, the elevator's buttons…)
     const stick = state.uiLock ? null : state.stick, stickPush = stick ? Math.min(1, Math.hypot(stick.x, stick.y)) : 0;
 
@@ -179,14 +180,20 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       const sideways = useStick ? stick!.x : Number(right) - Number(left);
       // Nobody runs holding a drink, nor anywhere indoors.
       // (Out of energy: no running.)
-      running = !holdingDrink && !state.interior && state.energy > 0 && (useStick ? stickPush > 0.92 : shift && fwdKey && !back);
+      // (The joystick runs after a double tap: tap, then press again and push. A plain push always walks.)
+      running = !holdingDrink && !state.interior && state.energy > 0 && (useStick ? state.stickRun && stickPush > 0.3 : shift && fwdKey && !back);
       state.runningNow = running;
       // Fitness (from the gym and running) makes running faster: 2.5% a level.
       const run = RUN * (1 + 0.025 * skillLevel(state.life.skills.fitness));
-      const pace = useStick && !running ? WALK * Math.min(1, 0.35 + stickPush * 0.75) : running ? run : WALK;
+      // First person: backing up or stepping aside is slower than walking ahead.
+      const fpOnFoot = state.firstPerson;
+      const fpPace = fpOnFoot ? (direction < -0.1 ? 0.62 : Math.abs(sideways) > Math.abs(direction) ? 0.75 : 1) : 1;
+      const pace = (useStick && !running ? WALK * Math.min(1, 0.35 + stickPush * 0.75) : running ? run : WALK) * fpPace;
       const [vx, vz] = cameraRelativeVelocity(state.camYaw, direction, sideways, pace);
       s.vel.set(damp(s.vel.x, vx, ACCEL, dt), 0, damp(s.vel.z, vz, ACCEL, dt));
-      if (direction || sideways) {
+      // In first person the body always faces where the view does (the camera turns it); it walks backward or
+      // sideways rather than turning round.
+      if ((direction || sideways) && !fpOnFoot) {
         const desiredYaw = Math.atan2(vx, vz);
         const angle = Math.atan2(Math.sin(desiredYaw - state.rotY), Math.cos(desiredYaw - state.rotY));
         state.rotY += angle * (1 - Math.exp(-12 * dt));
@@ -299,10 +306,19 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     const sin = Math.sin(ph);
     const cos = Math.cos(ph);
 
-    const legA = (0.5 + run * 0.45) * mv;
+    // Which way the feet go relative to the body: ahead (along 1), backward (−1), to the side (side ±1).
+    const fx = Math.sin(state.rotY), fz = Math.cos(state.rotY), sp = Math.hypot(s.vel.x, s.vel.z);
+    const alongT = script ? Math.sign(script.walk || 1) : sp > 0.05 ? (s.vel.x * fx + s.vel.z * fz) / sp : 1;
+    const sideT = script || sp <= 0.05 ? 0 : (s.vel.x * -fz + s.vel.z * fx) / sp;
+    s.along = damp(s.along, alongT, 10, dt); s.side = damp(s.side, sideT, 10, dt);
+    const along = s.along, side = s.side;
+    const legA = (0.5 + run * 0.45) * mv * Math.max(0.25, Math.abs(along));
     const kneeA = (0.65 + run * 0.9) * mv;
-    let hipL = -sin * legA;
-    let hipR = sin * legA;
+    // Walking backward the thighs swing the other way round (the foot reaching back, not ahead).
+    let hipL = -sin * legA * Math.sign(along || 1);
+    let hipR = sin * legA * Math.sign(along || 1);
+    // Stepping sideways: each leg swings out and in across the body, the leading one first.
+    const sideSwing = 0.32 * side * mv * (1 - run);
     let kneeL = 0.08 + kneeA * Math.max(0, cos) + run * 0.3 * mv;
     let kneeR = 0.08 + kneeA * Math.max(0, -cos) + run * 0.3 * mv;
     let shL = sin * (0.4 + run * 0.6) * mv;
@@ -450,7 +466,8 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       if (seated > 0) { shL = shR = THREE.MathUtils.lerp(shL, -0.5, seated); elbow = THREE.MathUtils.lerp(elbow, -0.6, seated); }
     }
     if (root.current) {
-      root.current.visible = !incapacitated;
+      // (Hidden while looking into the kitchen cupboard close up: the camera is where the body is.)
+      root.current.visible = !incapacitated && state.uiLock !== "cupboard";
       root.current.position.copy(p);
       root.current.position.y += collapse * 0.12;
       root.current.rotation.y = state.rotY;
@@ -479,15 +496,16 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     }
     // Each leg set outright (stepping high over something).
     const legs = script?.legs;
-    if (legs) { hipL = legs.hipL; kneeL = legs.kneeL; hipR = legs.hipR; kneeR = legs.kneeR; bob = 0; }
+    if (legs) { hipL = legs.hipL; kneeL = legs.kneeL; hipR = legs.hipR; kneeR = legs.kneeR; bob = -(legs.drop ?? 0); }
     if (hips.current) { hips.current.position.y = 0.95 + bob + riderOffset; hips.current.rotation.x = bed ? -Math.PI / 2 * bed.lie : 0; }
     // Leaning in over the counter while reaching for food.
     if (grabbing && !script && !usingBike && !lowGrab) lean = Math.max(lean, 0.3 * grabReach(grabT));
     if (torso.current) torso.current.rotation.set(lean, s.reverseBlend * 0.65, 0);
     if (head.current) head.current.rotation.set(-lean * 0.5, s.reverseBlend * 1.05, 0);
     const splay = bed ? 0.15 : 1;
-    thighL.current?.rotation.set(hipL, 0, (0.13 + Math.max(0, -legSwing) + Math.max(0, plantSwing) + 0.32 * straddle) * splay);
-    thighR.current?.rotation.set(hipR, 0, (-0.13 - Math.max(0, legSwing) + Math.min(0, plantSwing) - 0.32 * straddle) * splay);
+    const sideL = script || usingBike ? 0 : -sideSwing * (0.5 + 0.5 * Math.sin(ph)), sideR = script || usingBike ? 0 : -sideSwing * (0.5 - 0.5 * Math.sin(ph));
+    thighL.current?.rotation.set(hipL, 0, (0.13 + Math.max(0, -legSwing) + Math.max(0, plantSwing) + 0.32 * straddle) * splay + sideL);
+    thighR.current?.rotation.set(hipR, 0, (-0.13 - Math.max(0, legSwing) + Math.min(0, plantSwing) - 0.32 * straddle) * splay + sideR);
     shinL.current?.rotation.set(kneeL, 0, 0);
     shinR.current?.rotation.set(kneeR, 0, 0);
     armL.current?.rotation.set(shL, 0, (0.12 + air * 0.2) * (1 - sitHands) - 0.1 * sitHands);
@@ -500,9 +518,10 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     if (onFoot) {
       // Full packs ride at the waist; an empty one (or a number sign) just hangs from a relaxed arm.
       const heavy = (h: typeof state.hands.left) => !!h && h.kind !== "sign" && (h.items?.length ?? 1) > 0;
-      if (heavy(state.hands.left) || grab?.hand === "left" || state.groceryBag) { armL.current?.rotation.set(shL, 0, 0.2); foreL.current?.rotation.set(carryElbow(shL), 0, 0); }
+      const kh = state.life.kitchen.hands;
+      if (heavy(state.hands.left) || grab?.hand === "left" || state.groceryBag || kh.left) { armL.current?.rotation.set(shL, 0, 0.2); foreL.current?.rotation.set(carryElbow(shL), 0, 0); }
       // A thing from the inventory (or an emptied bottle) is carried the same way in the right hand.
-      if (heavy(state.hands.right) || grab?.hand === "right" || state.heldSlot !== null || state.heldTrash || state.groceryBasket) { armR.current?.rotation.set(shR, 0, -0.2); foreR.current?.rotation.set(carryElbow(shR), 0, 0); }
+      if (heavy(state.hands.right) || grab?.hand === "right" || state.heldSlot !== null || state.heldTrash || state.groceryBasket || kh.right) { armR.current?.rotation.set(shR, 0, -0.2); foreR.current?.rotation.set(carryElbow(shR), 0, 0); }
       // The phone out: held up in front of the chest, the screen toward the face.
       if (state.phone.open && !state.hands.right && root.current) {
         root.current.updateMatrixWorld(true);
@@ -591,7 +610,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     // a drink is lifted once and sipped with the head tipped back.
     // (Eating or drinking a thing from the inventory works the same way, over its own time.)
     const invUse = inv && (inv.kind === "eat" || inv.kind === "drink") ? { at: inv.at, drink: inv.kind === "drink", T: USE_SECONDS } : null;
-    const eat = state.eating ? { at: state.eating.at, drink: state.eating.drink, T: EAT_SECONDS } : invUse;
+    const eat = state.eating ? { at: state.eating.at, drink: state.eating.drink, T: EAT_SECONDS } : state.meal ? { at: state.meal.at, drink: false, T: state.meal.T } : invUse;
     if (eat && !dead && !incapacitated && root.current && head.current) {
       const t = state.simulationTime - eat.at, T = eat.T;
       let up = 0, tip = 0;

@@ -39,7 +39,8 @@ export function pressInventorySlot(state: GameState, slot: number) {
     return;
   }
   if (r.kind === "store") {
-    const fromBag = state.groceryBag?.find((k) => k !== "phone");
+    // (Only what one eats or drinks: canned food and kitchenware stay in the bag for the kitchen.)
+    const fromBag = state.groceryBag?.find((k) => k !== "phone" && (ITEMS[k].use === "eat" || ITEMS[k].use === "drink"));
     if (fromBag && state.groceryBag) {
       addItem(inv, fromBag, slot);
       state.groceryBag.splice(state.groceryBag.indexOf(fromBag), 1);

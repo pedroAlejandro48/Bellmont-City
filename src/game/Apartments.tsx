@@ -12,7 +12,10 @@ import { FRIDGE_DRINKS, FRIDGE_FOOD, fridgeSplit } from "@/components/FridgePane
 import { CEILING, CHAIR, ENTER, LEAVE, TABLE, enterLead, enterPose, leaveLead, leavePose, planSit, toLocal, toWorld, worldYaw, type Reach } from "./restaurantRoom";
 import { toast, type GameState, type Script } from "./state";
 import { handWorld } from "./arms";
+import { makeCarpet, makePlanks, scaledPlane } from "./floorTextures";
 import { BathroomThings, newBathLink, type BathLink } from "./Bathroom";
+import { KitchenRun, type KCtx, type KView } from "./kitchenRun";
+import { KitchenThings } from "./KitchenThings";
 import { SHOWER, TOILET, WASH, showerAt, showerSpots, showerView, toiletAt, washAt, washStand, type BathPose } from "./bathMoves";
 import { BedSheet, MATTRESS_TOP, PILLOW_TOP, SHEET_NX, SHEET_NZ, sheetGrips, sheetPoint, type SheetLead, type SheetLink, type SheetShape } from "./BedSheet";
 import { canSleepAt, hoursTo6, sleepEnergy, wakeElapsed } from "./needs";
@@ -148,6 +151,9 @@ function wallPieces(a0: number, a1: number, h: number, holes: Hole[]) {
   return out.filter((r) => r.a1 - r.a0 > 1e-3 && r.y1 - r.y0 > 1e-3);
 }
 
+/** The apartments' floors, made once: wooden planks (the main room), carpet (the bedroom). */
+let FLOOR_TEX: { planks: ReturnType<typeof makePlanks>; carpet: ReturnType<typeof makeCarpet> } | null = null;
+const FLOORS = () => (FLOOR_TEX ??= { planks: makePlanks(), carpet: makeCarpet("#8a8174") });
 function useFloorMats() {
   const mats = useMemo(() => {
     const s = (color: string, roughness = 0.7, metalness = 0, side: THREE.Side = THREE.FrontSide) => new THREE.MeshStandardMaterial({ color, roughness, metalness, side });
@@ -161,7 +167,9 @@ function useFloorMats() {
       plant: s("#3f7d3a", 0.9), pot: s("#d9cbb5", 0.7), brass: s("#c9a54a", 0.3, 0.8),
       shaft: s("#2b2d32", 0.9, 0.2, THREE.DoubleSide),
       slab: s("#8f8a83", 0.95),
-      bathTile: s("#e3ecef", 0.4),
+      bathTile: s("#a9c3cb", 0.85),
+      planks: new THREE.MeshStandardMaterial({ map: FLOORS().planks.map, roughness: 0.55, metalness: 0 }),
+      bedCarpet: new THREE.MeshStandardMaterial({ map: FLOORS().carpet.map, roughness: 1, metalness: 0 }),
       // Satin steel (not a mirror: without reflections to show, full metal reads as dark patches).
       liftDoor: s("#b7bdc4", 0.38, 0.3),
       fridgeLight: new THREE.MeshStandardMaterial({ color: "#f2f7fa", roughness: 0.4, emissive: new THREE.Color("#e8f4ff"), emissiveIntensity: 0.45 }),
@@ -178,7 +186,32 @@ function Furniture({ f, m }: { f: AptFurniture; m: FMats }) {
   const { w, d } = f;
   switch (f.type) {
     case "counter": return <group><mesh position={[0, 0.44, 0]} material={m.white} castShadow>{B([w, 0.88, d])}</mesh><mesh position={[0, 0.9, 0]} material={m.darkWood}>{B([w + 0.02, 0.04, d + 0.02])}</mesh>{[-0.2, 0.2].map((x) => <mesh key={x} position={[x, 0.6, d / 2 + 0.005]} material={m.steel}>{B([0.12, 0.02, 0.01])}</mesh>)}</group>;
-    case "sink": return <group><mesh position={[0, 0.44, 0]} material={m.white} castShadow>{B([w, 0.88, d])}</mesh><mesh position={[0, 0.9, 0]} material={m.darkWood}>{B([w + 0.02, 0.04, d + 0.02])}</mesh><mesh position={[0, 0.87, 0.02]} material={m.steel}>{B([0.5, 0.08, 0.38])}</mesh><mesh position={[0, 1.02, -d / 2 + 0.1]} rotation-x={-0.6} material={m.steel}><cylinderGeometry args={[0.015, 0.015, 0.28, 8]} /></mesh></group>;
+    case "sink": {
+      // The cabinet (its doors drawn by the kitchen: they open), a worktop with a hole cut for the basin, the steel
+      // basin sunk in it with its drain, and a chrome gooseneck tap at the back with its lever.
+      const hw = 0.25, hd = 0.19, cz = 0.03, top = 0.9;
+      return <group>
+        {/* A hollow cabinet (open at the front, behind its doors): back, sides, floor, a shelf, the plinth. */}
+        <mesh position={[0, 0.44, -d / 2 + 0.01]} material={m.white} castShadow receiveShadow>{B([w, 0.88, 0.02])}</mesh>
+        {[-1, 1].map((sd) => <mesh key={sd} position={[sd * (w / 2 - 0.01), 0.44, -0.02]} material={m.white} castShadow receiveShadow>{B([0.02, 0.88, d - 0.04])}</mesh>)}
+        <mesh position={[0, 0.06, -0.02]} material={m.s("#d9d3c8", 0.85)} receiveShadow>{B([w - 0.04, 0.02, d - 0.04])}</mesh>
+        <mesh position={[0, 0.4, -0.02]} material={m.s("#d9d3c8", 0.85)} receiveShadow>{B([w - 0.04, 0.02, d - 0.08])}</mesh>
+        <mesh position={[0, 0.025, d / 2 - 0.06]} material={m.s("#2a2724", 0.9)}>{B([w, 0.05, 0.02])}</mesh>
+        {[[-(w / 2 + hw) / 2 - 0.0, (w / 2 - hw), d + 0.02, 0], [(w / 2 + hw) / 2, (w / 2 - hw), d + 0.02, 0]].map(([x, ww], k) => <mesh key={k} position={[x!, top, 0]} material={m.darkWood} castShadow receiveShadow>{B([ww!, 0.04, d + 0.02])}</mesh>)}
+        <mesh position={[0, top, (cz - hd + -d / 2 - 0.01) / 2]} material={m.darkWood}>{B([hw * 2, 0.04, (cz - hd) - (-d / 2 - 0.01)])}</mesh>
+        <mesh position={[0, top, (cz + hd + d / 2 + 0.01) / 2]} material={m.darkWood}>{B([hw * 2, 0.04, (d / 2 + 0.01) - (cz + hd)])}</mesh>
+        {/* The basin: a floor and four sides, open on top. */}
+        <mesh position={[0, top - 0.17, cz]} material={m.steel} receiveShadow>{B([hw * 2, 0.01, hd * 2])}</mesh>
+        {[-1, 1].map((sd) => <mesh key={`x${sd}`} position={[sd * (hw - 0.005), top - 0.085, cz]} material={m.steel} receiveShadow>{B([0.01, 0.17, hd * 2])}</mesh>)}
+        {[-1, 1].map((sd) => <mesh key={`z${sd}`} position={[0, top - 0.085, cz + sd * (hd - 0.005)]} material={m.steel} receiveShadow>{B([hw * 2, 0.17, 0.01])}</mesh>)}
+        <mesh position={[0, top - 0.164, cz]} rotation-x={-Math.PI / 2} material={m.black}><ringGeometry args={[0.012, 0.03, 18]} /></mesh>
+        {/* The tap: a column up from the worktop's back, curving over and down toward the middle of the basin. */}
+        <mesh position={[0, top + 0.13, -d / 2 + 0.07]} material={m.steel} castShadow><cylinderGeometry args={[0.016, 0.02, 0.26, 12]} /></mesh>
+        <mesh position={[0, top + 0.26, -d / 2 + 0.07 + 0.08]} rotation-y={Math.PI / 2} material={m.steel} castShadow><torusGeometry args={[0.08, 0.014, 8, 20, Math.PI]} /></mesh>
+        <mesh position={[0, top + 0.235, -d / 2 + 0.07 + 0.16]} material={m.steel}><cylinderGeometry args={[0.016, 0.014, 0.05, 12]} /></mesh>
+        <mesh position={[0.05, top + 0.2, -d / 2 + 0.07]} rotation-z={-0.5} material={m.steel}>{B([0.09, 0.012, 0.016])}</mesh>
+      </group>;
+    }
     case "oven": return <group><mesh position={[0, 0.45, 0]} material={m.black} castShadow>{B([w, 0.9, d])}</mesh><mesh position={[0, 0.42, d / 2 + 0.005]} material={m.screen}>{B([w - 0.14, 0.42, 0.01])}</mesh><mesh position={[0, 0.74, d / 2 + 0.02]} material={m.steel}>{B([w - 0.2, 0.025, 0.03])}</mesh>{[-0.17, 0.17].flatMap((x) => [-0.13, 0.13].map((z) => <mesh key={`${x}${z}`} position={[x, 0.905, z]} rotation-x={-Math.PI / 2} material={m.steel}><ringGeometry args={[0.05, 0.08, 18]} /></mesh>))}</group>;
     case "microwave": return <group position={[0, 1.55, 0]}><mesh material={m.white} castShadow>{B([w, 0.3, d])}</mesh><mesh position={[-0.05, 0, d / 2 + 0.005]} material={m.screen}>{B([w * 0.6, 0.22, 0.01])}</mesh></group>;
     case "fridge": {
@@ -215,6 +248,12 @@ function Furniture({ f, m }: { f: AptFurniture; m: FMats }) {
         <mesh position={[0, 1.78, -0.02]} rotation-z={Math.PI / 2} material={m.steel}><cylinderGeometry args={[0.012, 0.012, w - 0.08, 8]} /></mesh>
       </group>;
     }
+    case "trash": return <group>
+      {/* A brushed-steel pedal bin (its lid is drawn by the kitchen: it opens). */}
+      <mesh position={[0, 0.3, 0]} material={m.s("#d6dadf", 0.3, 0.42)} castShadow receiveShadow><cylinderGeometry args={[0.165, 0.15, 0.6, 28]} /></mesh>
+      <mesh position={[0, 0.6, 0]} material={m.s("#c4c9ce", 0.25, 0.45)}><torusGeometry args={[0.165, 0.008, 6, 28]} /></mesh>
+      <mesh position={[0, 0.015, 0.17]} material={m.black}>{B([0.12, 0.02, 0.08])}</mesh>
+    </group>;
     case "lamp": return <group><mesh position={[0, 0.7, 0]} material={m.brass}><cylinderGeometry args={[0.015, 0.015, 1.4, 6]} /></mesh><mesh position={[0, 1.45, 0]} material={m.fabric2}><cylinderGeometry args={[0.12, 0.18, 0.22, 14, 1, true]} /></mesh><mesh position={[0, 0.02, 0]} material={m.brass}><cylinderGeometry args={[0.12, 0.12, 0.03, 12]} /></mesh></group>;
   }
 }
@@ -401,7 +440,7 @@ function DoorCasing({ at, rot, m, white = false }: { at: [number, number]; rot: 
 }
 
 /** The floor the player is on: hallway, apartment (two rooms), the walls with real windows, the doors, the furniture. */
-function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, elevatorOpen, sheet, lift, bathDoor, bath }: { bathDoor: () => number; bath: BathLink; lift: () => { floor: number; dir: number }; sheet: SheetLink; fl: AptFloor; state: GameState; m: FMats; door: () => number; bedDoor: () => number; fridgeDoor: () => number; closetDoor: () => number; elevatorOpen: () => number }) {
+function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, elevatorOpen, sheet, lift, bathDoor, bath, kview }: { kview: KView; bathDoor: () => number; bath: BathLink; lift: () => { floor: number; dir: number }; sheet: SheetLink; fl: AptFloor; state: GameState; m: FMats; door: () => number; bedDoor: () => number; fridgeDoor: () => number; closetDoor: () => number; elevatorOpen: () => number }) {
   const { frame, bounds, windowSide: ws, hallZ, wallZ, divX, bedroomDoor } = fl;
   const { minX, maxX, minZ, maxZ } = bounds;
   const bathLeaf = useRef<THREE.Group>(null);
@@ -424,6 +463,8 @@ function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, el
   const frontHoles = fl.front.map((w) => ({ a0: w.a0, a1: w.a1, y0: w.y0, y1: 2.35 }));
   const sideHoles = fl.side.map((w) => ({ a0: w.a0, a1: w.a1, y0: w.y0, y1: 2.35 }));
   const inside0 = wallZ + INNER_WALL;
+  const floorGeos = useMemo(() => ({ main: scaledPlane(maxX - divX, maxZ - inside0, FLOORS().planks.size), bed: scaledPlane(divX - minX, maxZ - inside0, FLOORS().carpet.size) }), [minX, maxX, divX, maxZ, inside0]);
+  useEffect(() => () => { floorGeos.main.dispose(); floorGeos.bed.dispose(); }, [floorGeos]);
   const panels = (pieces: { a0: number; a1: number; y0: number; y1: number }[], place: (a: number) => [number, number], ry: number, mat: THREE.Material) => pieces.map((r, i) => {
     const [x, z] = place((r.a0 + r.a1) / 2);
     return <mesh key={i} position={[x, (r.y0 + r.y1) / 2, z]} rotation-y={ry} material={mat} receiveShadow><planeGeometry args={[r.a1 - r.a0, r.y1 - r.y0]} /></mesh>;
@@ -453,7 +494,9 @@ function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, el
     <mesh position={[(minX + maxX) / 2, 0.002, (hallZ[1] + wallZ + INNER_WALL) / 2]} rotation-x={-Math.PI / 2} material={m.carpet}><planeGeometry args={[maxX - minX, INNER_WALL + 0.02]} /></mesh>
     {/* Floors: carpet in the hallway, wood in the apartment (the ceiling is the slab's underside). */}
     <mesh position={[(minX + maxX) / 2, 0.004, (hallZ[0] + hallZ[1]) / 2]} rotation-x={-Math.PI / 2} material={m.carpet} receiveShadow><planeGeometry args={[maxX - minX, hallZ[1] - hallZ[0]]} /></mesh>
-    <mesh position={[(minX + maxX) / 2, 0.004, (inside0 + maxZ) / 2]} rotation-x={-Math.PI / 2} material={m.wood} receiveShadow><planeGeometry args={[maxX - minX, maxZ - inside0]} /></mesh>
+    {/* The apartment: wooden planks in the main room, carpet in the bedroom (tiles in the bathroom, over these). */}
+    <mesh position={[(divX + maxX) / 2, 0.004, (inside0 + maxZ) / 2]} rotation-x={-Math.PI / 2} material={m.planks} geometry={floorGeos.main} receiveShadow />
+    <mesh position={[(minX + divX) / 2, 0.004, (inside0 + maxZ) / 2]} rotation-x={-Math.PI / 2} material={m.bedCarpet} geometry={floorGeos.bed} receiveShadow />
     {/* The outside walls (front, both sides, back), the front and the window side with their windows. */}
     {along(wallPieces(minX - T, maxX + T, SH, frontHoles), (a) => [a, maxZ + T / 2], true, frontMats)}
     {along(wallPieces(minX - T, maxX + T, SH, []), (a) => [a, minZ - T / 2], true, backMats)}
@@ -527,6 +570,7 @@ function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, el
       </group>
     </group>
     <BathroomThings fl={fl} state={state} link={bath} m={m} />
+    {state.life.home?.building === fl.key.split("#")[0] && state.life.home?.floor === fl.upper && <KitchenThings fl={fl} state={state} view={kview} m={m} />}
     {/* The closet's two doors, hinged at its sides, handles by the middle; inside, your clothes on their hangers. */}
     <group position={[closet.x, 0, closet.z]} rotation-y={closet.rot}>
       {state.life.home?.building === fl.key.split("#")[0] && state.life.home?.floor === fl.upper && <ClosetClothes state={state} closet={closet} m={m} />}
@@ -671,6 +715,19 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   const move = useRef<Move | null>(null);
   const doorAngle = useRef(0), bedAngle = useRef(0), fridgeAngle = useRef(0), closetAngle = useRef(0), bathAngle = useRef(0);
   const baths = useRef(new Map<string, BathLink>());
+  /** The kitchen in play (your own apartment's): its moves, what its things show. */
+  const kitchen = useRef(new KitchenRun());
+  const lastKc = useRef<KCtx | null>(null);
+  // Q in the kitchen is looked at first (before the inventory's and the food's own Q): pour, to the sink, to the
+  // table, clear it — from where the player is now (the rest of the place as of the last frame).
+  useFrame(() => {
+    const kc = lastKc.current, kr = kitchen.current;
+    if (!state.kitchenQ || !kc || kr.busy || state.seat) return;
+    const [lx, lz] = toLocal(kc.fl.frame, state.pos.x, state.pos.z);
+    if (kr.q({ ...kc, now: state.simulationTime, lx, lz, yaw: state.rotY - kc.fl.frame.rot })) { state.dropQueued = false; state.kitchenQ = false; }
+  }, -0.9);
+  /** The bathroom's ceiling light (on your floor, lit while you're up in the building). */
+  const bathLight = useRef<THREE.PointLight>(null);
   const bathLink = (key: string) => { let l = baths.current.get(key); if (!l) { l = newBathLink(); baths.current.set(key, l); } return l; };
   const [shown, setShown] = useState<AptFloor[]>([]);
   const shownKeys = useRef("");
@@ -1061,6 +1118,11 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     }
     // ---------- the bathroom: washing the hands, the toilet, the shower ----------
     const bl = floor ? bathLink(floor.key) : null;
+    if (bathLight.current) {
+      const L = bathLight.current;
+      if (floor) { const B = floor.bath, [x, z] = toW((B.x0 + B.x1) / 2, (B.z0 + B.z1) / 2); L.position.set(x, yNow + 2.35, z); L.intensity = 2.2; }
+      else L.intensity = 0;
+    }
     if (bl) {
       // The curtain sways a little after it moves, and settles.
       bl.sway *= Math.exp(-1.4 * dt);
@@ -1088,6 +1150,26 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         }
       }
     } else if (state.camLock && !(mv?.kind === "shower")) state.camLock = null;
+    // ---------- the kitchen (your own apartment's) ----------
+    const kr = kitchen.current;
+    kr.watch(state);
+    if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") (window as unknown as { __kitchen?: KitchenRun }).__kitchen = kr;
+    const ownFloor = !!floor && !!lvl && state.life.home?.building === lvl.building && state.life.home.floor === lvl.floor;
+    const kc: KCtx | null = ownFloor && floor ? (() => { const [klx, klz] = toLocal(floor.frame, p.x, p.z); return { state, fl: floor, now, lx: klx, lz: klz, yaw: state.rotY - floor.frame.rot, world: (x: number, z: number) => toW(x, z), y0: yNow }; })() : null;
+    if (kc && !eRide && !move.current) {
+      if (!kr.busy) kr.answer(kc);
+      lastKc.current = kc;
+      if (kr.busy) {
+        const pose = kr.step(kc);
+        if (pose) {
+          script = scriptFrom(pose);
+          if (!kr.busy) { const [x, z] = toW(pose.x, pose.z); state.pos.x = x; state.pos.z = z; state.rotY = worldYaw(floor!.frame, pose.yaw); script = null; }
+        }
+      }
+      kr.seated(kc);
+    } else if (!kc && kr.busy) { kr.mv = null; if (state.uiLock === "cupboard") state.uiLock = null; }
+    if (!kc || eRide || move.current) lastKc.current = null;
+    state.kitchenQ = false;
     // ---------- sitting on the couch (the chairs sit like a restaurant's: RestaurantInteraction runs them) ----------
     if (!eRide && mv && floor && mv.kind === "sit") {
       const st = mv.seat!, t = now - mv.t0, SIT = 0.9;
@@ -1129,7 +1211,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
 
     // ---------- E: what can be done here ----------
     const pr = prompt.current; pr.visible = false; pr.label = undefined;
-    if (eRide || move.current || state.accident || state.health <= 0 || sleeping.current) { if (eRide || move.current) state.interactQueued = false; return; }
+    if (eRide || move.current || kr.busy || state.accident || state.health <= 0 || sleeping.current) { if (eRide || move.current || kr.busy) state.interactQueued = false; return; }
     // Calling the car: where it is now (it comes 2 s a floor); busy with someone else: wait for it.
     const callLift = (bkey: string, here: number) => {
       const c = carOf(bkey), at = carShown(bkey).floor;
@@ -1160,7 +1242,11 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       const [lx, lz] = toLocal(floor.frame, p.x, p.z), ex = floor.bounds.minX + SHAFT / 2, hz0 = floor.hallZ[0];
       const mine = state.life.home?.building === lvl.building && state.life.home.floor === lvl.floor;
       const dx = floor.door.x, wz = floor.wallZ;
-      if (Math.abs(lx - ex) < 1.1 && lz - hz0 > 0 && lz - hz0 < 1.5) {
+      const kp = mine && kc ? kr.prompt(kc) : null;
+      if (kp) {
+        show(kp.at[0], kp.at[2], kp.at[1], kp.label);
+        if (kp.act) act = kp.act;
+      } else if (Math.abs(lx - ex) < 1.1 && lz - hz0 > 0 && lz - hz0 < 1.5) {
         show(ex, hz0 + 0.3, 2.2, liftLabel(lvl.building, lvl.floor));
         if (!state.elevator) act = () => callLift(lvl.building, lvl.floor);
       } else if (lx > dx - 1.7 && lx < dx + 0.3 && lz < wz && lz > wz - 1.4) {
@@ -1271,8 +1357,9 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       <LobbyCar state={state} bkey={aptKey(b)} at={[layout.bounds.minX + SHAFT / 2, layout.bounds.minZ + SHAFT / 2]} m={m} />
       <LobbyVisitor state={state} layout={layout} />
     </group>)}
-    {shown.map((fl) => <FloorInterior key={fl.key} lift={() => carShown(fl.key.split("#")[0]!)} sheet={sheetLink(fl.key)} bath={bathLink(fl.key)} bathDoor={() => (state.level?.floor === fl.upper ? bathAngle.current : 0)} fl={fl} state={state} m={m} door={() => doorAngle.current} bedDoor={() => bedAngle.current} fridgeDoor={() => fridgeAngle.current} closetDoor={() => closetAngle.current} elevatorOpen={elevatorOpen(fl.key.split("#")[0]!, fl.upper)} />)}
+    {shown.map((fl) => <FloorInterior key={fl.key} lift={() => carShown(fl.key.split("#")[0]!)} sheet={sheetLink(fl.key)} bath={bathLink(fl.key)} kview={kitchen.current.view} bathDoor={() => (state.level?.floor === fl.upper ? bathAngle.current : 0)} fl={fl} state={state} m={m} door={() => doorAngle.current} bedDoor={() => bedAngle.current} fridgeDoor={() => fridgeAngle.current} closetDoor={() => closetAngle.current} elevatorOpen={elevatorOpen(fl.key.split("#")[0]!, fl.upper)} />)}
     <CarAt state={state} buildings={byKey} m={m} />
+    <pointLight ref={bathLight} intensity={0} distance={3.4} decay={1.4} color="#fff4e6" />
     {/* The thing being put in the fridge, in the right hand. */}
     <group ref={carry} visible={false}>
       <mesh name="food" material={carryMats.food}><sphereGeometry args={[0.05, 10, 8]} /></mesh>

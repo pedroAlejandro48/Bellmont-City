@@ -4,6 +4,7 @@ import type { GameState } from "@/game/state";
 import { FridgePanel } from "./FridgePanel";
 import { shownFloor } from "@/game/Apartments";
 import { CLOSET_MAX } from "@/game/life";
+import { CANS, CAN_INFO, CAPACITY, mealEffect, type CanKind, type WareKind } from "@/game/pantry";
 
 /**
  * Panels for life in an apartment building: the elevator's buttons (close up, when inside the car), the fridge,
@@ -39,6 +40,42 @@ export function AptPanels({ state }: { state: GameState }) {
         : <p className="phone-note">No clothes here yet.</p>}
     </div></div>}
     {lock === "fridge" && <div className="fridge-wrap"><FridgePanel state={state} onClose={() => { state.uiLock = null; tick((n) => n + 1); }} /></div>}
+    {lock === "rack" && <div className="fridge-wrap"><RackPanel state={state} onClose={() => { state.uiLock = null; tick((n) => n + 1); }} /></div>}
+    {lock === "cook" && <div className="fridge-wrap"><CookPanel state={state} onClose={() => { state.uiLock = null; tick((n) => n + 1); }} /></div>}
+    {lock === "cupboard" && <div className="cupboard-hint" role="dialog" aria-label="Cupboard"><span>Click a pot or pan to take it</span><button type="button" onClick={() => { state.uiLock = null; tick((n) => n + 1); }}>Close</button></div>}
     <div className={`home-sleep ${lock === "sleep" ? "on" : ""}`}><span>Zzz…</span></div>
   </>;
+}
+
+/** The counter beside the sink: take a plate, a bowl, a cup or silverware (one hand each). */
+function RackPanel({ state, onClose }: { state: GameState; onClose: () => void }) {
+  const k = state.life.kitchen, count = (w: WareKind) => k.rack.filter((x) => x === w).length;
+  const take = (w: WareKind) => { state.kitchenAsk = { rack: w }; onClose(); };
+  const opts: [WareKind, string, string][] = [["plate", "🍽️", "Plate"], ["bowl", "🥣", "Bowl"], ["cup", "☕", "Cup"], ["silverware", "🍴", "Silverware"]];
+  return <div className="home-panel" role="dialog" aria-label="Counter">
+    <div className="home-panel-head"><b>Counter</b><button type="button" onClick={onClose} aria-label="Close">✕</button></div>
+    <div className="kitchen-choices">
+      {opts.map(([w, icon, name]) => <button key={w} type="button" className="kitchen-choice" disabled={!count(w)} onClick={() => take(w)}>
+        <span className="kitchen-icon">{icon}</span><span>{name}</span><small>{count(w)}</small>
+      </button>)}
+    </div>
+  </div>;
+}
+/** The stove: which cans go in the pot (up to three) or pan (two), from the fridge; then it cooks. */
+function CookPanel({ state, onClose }: { state: GameState; onClose: () => void }) {
+  const k = state.life.kitchen, ware = k.stove?.ware ?? "pot", cap = CAPACITY[ware];
+  const have = CANS.map((c) => ({ c, n: state.life.fridge.filter((f) => f === CAN_INFO[c].name).length })).filter((x) => x.n > 0);
+  const [pick, setPick] = useState<CanKind[]>([]);
+  const add = (c: CanKind) => { if (pick.length < cap && pick.filter((x) => x === c).length < (have.find((h) => h.c === c)?.n ?? 0)) setPick([...pick, c]); };
+  const drop = (i: number) => setPick(pick.filter((_, j) => j !== i));
+  const fill = mealEffect(pick.length);
+  return <div className="home-panel" role="dialog" aria-label="Cook">
+    <div className="home-panel-head"><b>Cook in the {ware}</b><button type="button" onClick={onClose} aria-label="Close">✕</button></div>
+    <p className="phone-note">Up to {cap} cans. Takes 30 minutes; take it off within 10 more or it burns.</p>
+    <ul className="phone-list">{have.map(({ c, n }) => <li key={c}><span>🥫 {CAN_INFO[c].name} <small>×{n}</small></span><button type="button" className="phone-btn" disabled={pick.length >= cap} onClick={() => add(c)}>Add</button></li>)}</ul>
+    <p className="phone-label">In the {ware} · {pick.length}/{cap}</p>
+    {pick.length ? <div className="kitchen-picks">{pick.map((c, i) => <button key={i} type="button" className="kitchen-pick" onClick={() => drop(i)}>{CAN_INFO[c].name} ✕</button>)}</div> : <p className="phone-note">Nothing yet.</p>}
+    {pick.length > 0 && <p className="phone-note">Fills {Math.round(fill.hunger)}% hunger, +{fill.thirst}% thirst, +{fill.energy}% energy.</p>}
+    <button type="button" className="phone-btn" disabled={!pick.length} onClick={() => { state.kitchenAsk = { cans: pick }; onClose(); }}>Open the cans and cook</button>
+  </div>;
 }

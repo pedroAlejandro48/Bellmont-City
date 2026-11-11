@@ -7,7 +7,9 @@ import { CHAIR, smooth, type Reach } from "./restaurantRoom";
  * The bathroom's moves, as poses at each moment (in the floor's frame; hands' heights above its floor). Each also
  * sets what the bathroom's things show (`link`): the water, the curtain, the paper, the flush.
  */
-export type Legs = { hipL: number; kneeL: number; hipR: number; kneeR: number };
+export type Legs = { hipL: number; kneeL: number; hipR: number; kneeR: number; drop?: number };
+/** The shower tray's top above the floor (standing in it). */
+const TRAY = 0.05;
 export type BathPose = { x: number; z: number; yaw: number; lean: number; crouch: number; sit: number; shuffle: number; left: Reach | null; right: Reach | null; legs?: Legs };
 type V3 = [number, number, number];
 
@@ -114,16 +116,35 @@ export const SHOWER = cum({
 /** Outside the shower (where one walks to) and inside it. */
 export const showerSpots = (fl: AptFloor) => {
   const s = fl.bath.shower, cx = (s.x0 + s.x1) / 2;
-  return { out: [cx, s.curtainZ - 0.5] as [number, number], mid: [cx, s.curtainZ + 0.03] as [number, number], in: [cx, (s.curtainZ + s.z1) / 2] as [number, number] };
+  return { out: [cx, s.curtainZ - 0.34] as [number, number], in: [cx, s.curtainZ + 0.42] as [number, number] };
 };
+const THIGH = 0.46, SHIN = 0.46, HIP = 0.95, ANKLE = HIP - THIGH - SHIN;
+/** One leg reaching an ankle point `f` forward and `y` up from the hip's foot (the floor under it), the hip `drop`
+ * lowered: the thigh's forward swing (negative) and the knee's bend. */
+function legTo(f: number, y: number, drop: number): { hip: number; knee: number } {
+  const dz = f, dy = (y + ANKLE) - (HIP - drop), d = Math.min(THIGH + SHIN - 1e-4, Math.max(0.05, Math.hypot(dz, dy)));
+  const knee = Math.acos(Math.max(-1, Math.min(1, (d * d - THIGH * THIGH - SHIN * SHIN) / (2 * THIGH * SHIN))));
+  const toward = Math.atan2(dz, -dy), lead = Math.acos(Math.max(-1, Math.min(1, (THIGH * THIGH + d * d - SHIN * SHIN) / (2 * THIGH * d))));
+  return { hip: -(toward + lead), knee };
+}
 /**
- * A step over the shower's curb, walking forward from `a` to `b`: the leading (left) leg lifted high, thigh up and
- * knee bent, over it and down on the far side (astride it), then the trailing leg the same way.
+ * A step over the shower's curb, walking forward from `a` to `b` (the floor at each end `ya`, `yb` high): the left
+ * foot lifted high over it while the right stays planted where it stood, the body going forward to straddle the
+ * curb; then the right lifted over while the left stays planted where it landed, the body going on to `b`. The
+ * planted foot never slides (each leg is reached to its foot's spot), and the hips dip a little astride.
  */
-function stepOver(a: [number, number], mid: [number, number], b: [number, number], v: number) {
-  const v1 = Math.min(1, v * 2), v2 = Math.max(0, v * 2 - 1), l1 = Math.sin(Math.PI * v1), l2 = Math.sin(Math.PI * v2);
-  const at = v < 0.5 ? [lerp(a[0], mid[0], smooth(v1)), lerp(a[1], mid[1], smooth(v1))] : [lerp(mid[0], b[0], smooth(v2)), lerp(mid[1], b[1], smooth(v2))];
-  return { x: at[0]!, z: at[1]!, lean: 0.08 + 0.06 * (l1 + l2), legs: { hipL: -1.25 * l1 + 0.2 * l2, kneeL: 1.8 * l1, hipR: -1.05 * l2 + 0.25 * l1, kneeR: 2.0 * l2 + 0.15 * l1 } };
+export function stepOver(a: [number, number], b: [number, number], v: number, ya = 0, yb = 0) {
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]), mid = len / 2;
+  const v1 = Math.min(1, v * 2), v2 = Math.max(0, v * 2 - 1), e1 = smooth(v1), e2 = smooth(v2);
+  // Where the body is along the way; each foot's spot along it and its height.
+  const root = v < 0.5 ? mid * e1 : mid + (len - mid) * e2;
+  const swing = (k: number) => 0.34 * Math.sin(Math.PI * k);
+  const footL = v < 0.5 ? { s: len * e1, y: ya + (yb - ya) * e1 + swing(v1) } : { s: len, y: yb };
+  const footR = v < 0.5 ? { s: 0, y: ya } : { s: len * e2, y: ya + (yb - ya) * e2 + swing(v2) };
+  const drop = 0.1 * Math.sin(Math.PI * v), groundY = ya + (yb - ya) * Math.min(1, Math.max(0, root / len));
+  const L = legTo(footL.s - root, footL.y - groundY, drop), R = legTo(footR.s - root, footR.y - groundY, drop);
+  const k = len > 1e-6 ? root / len : 0;
+  return { x: a[0] + (b[0] - a[0]) * k, z: a[1] + (b[1] - a[1]) * k, lean: 0.06 + 0.1 * Math.sin(Math.PI * v), legs: { hipL: L.hip, kneeL: L.knee, hipR: R.hip, kneeR: R.knee, drop: drop - groundY } };
 }
 /**
  * Showering: the curtain pulled open (left hand), stepping in over the curb, turned round to draw it shut, the water
@@ -131,6 +152,15 @@ function stepOver(a: [number, number], mid: [number, number], b: [number, number
  * the same way (forward, over the curb), turned round and the curtain drawn shut behind.
  */
 export function showerAt(fl: AptFloor, u: number, link: BathLink): BathPose {
+  const p = showerPose(fl, u, link);
+  // Standing in the tray (between the steps): up on it, small steps while turning round.
+  if (!p.legs && u >= SHOWER.stepIn && u < SHOWER.let3) {
+    const w = Math.sin(u * 9) * p.shuffle, kl = 0.45 * Math.max(0, w), kr = 0.45 * Math.max(0, -w);
+    return { ...p, shuffle: 0, legs: { hipL: -0.5 * kl, kneeL: kl, hipR: -0.5 * kr, kneeR: kr, drop: -TRAY } };
+  }
+  return p;
+}
+function showerPose(fl: AptFloor, u: number, link: BathLink): BathPose {
   const s = fl.bath.shower, P = showerSpots(fl), k = (a: number, d: number) => smooth((u - a) / d);
   const edge = (open: number, side: 1 | -1): V3 => { const e = curtainEdge(fl, open); return [e[0], e[1], e[2] + side * 0.06]; };
   const base = { crouch: 0, sit: 0, shuffle: 0, lean: 0 };
@@ -141,7 +171,7 @@ export function showerAt(fl: AptFloor, u: number, link: BathLink): BathPose {
   if (u < SHOWER.reach) { curtain(0); return { ...base, x: P.out[0], z: P.out[1], yaw: 0, lean: 0.08, left: hand(edge(0, -1), k(0, SHOWER.reach), "out"), right: null }; }
   if (u < SHOWER.open) { const c = k(SHOWER.reach, SHOWER.open - SHOWER.reach); curtain(c); return { ...base, x: P.out[0], z: P.out[1], yaw: 0, lean: 0.08, left: hand(edge(c, -1), 1, "out"), right: null }; }
   if (u < SHOWER.let) { curtain(1); return { ...base, x: P.out[0], z: P.out[1], yaw: 0, left: hand(edge(1, -1), 1 - k(SHOWER.open, SHOWER.let - SHOWER.open), "out"), right: null }; }
-  if (u < SHOWER.stepIn) { curtain(1); return { ...base, ...stepOver(P.out, P.mid, P.in, (u - SHOWER.let) / (SHOWER.stepIn - SHOWER.let)), yaw: 0, left: null, right: null }; }
+  if (u < SHOWER.stepIn) { curtain(1); return { ...base, ...stepOver(P.out, P.in, (u - SHOWER.let) / (SHOWER.stepIn - SHOWER.let), 0, TRAY), yaw: 0, left: null, right: null }; }
   // Inside: turned round to the curtain, drawn shut (left hand), turned back to the water.
   if (u < SHOWER.turn) { curtain(1); const e = k(SHOWER.stepIn, SHOWER.turn - SHOWER.stepIn); return { ...base, x: P.in[0], z: P.in[1], yaw: Math.PI * e, shuffle: Math.sin(Math.PI * e), left: null, right: null }; }
   if (u < SHOWER.reachC) { curtain(1); return { ...base, x: P.in[0], z: P.in[1], yaw: Math.PI, lean: 0.08, left: hand(edge(1, 1), k(SHOWER.turn, SHOWER.reachC - SHOWER.turn), "out"), right: null }; }
@@ -166,7 +196,7 @@ export function showerAt(fl: AptFloor, u: number, link: BathLink): BathPose {
   if (u < SHOWER.open2) return { ...inside, yaw: Math.PI, lean: 0.08, left: null, right: hand(edge(link.curtain, 1), 1, "out") };
   if (u < SHOWER.let3) return { ...inside, yaw: Math.PI, left: null, right: hand(edge(1, 1), 1 - k(SHOWER.open2, SHOWER.let3 - SHOWER.open2), "out") };
   // Out the same way as in: forward over the curb, the left leg first.
-  if (u < SHOWER.stepOut) return { ...base, ...stepOver(P.in, P.mid, P.out, (u - SHOWER.let3) / (SHOWER.stepOut - SHOWER.let3)), yaw: Math.PI, left: null, right: null };
+  if (u < SHOWER.stepOut) return { ...base, ...stepOver(P.in, P.out, (u - SHOWER.let3) / (SHOWER.stepOut - SHOWER.let3), TRAY, 0), yaw: Math.PI, left: null, right: null };
   const outside = { ...base, x: P.out[0], z: P.out[1] };
   if (u < SHOWER.turn3) { const e = k(SHOWER.stepOut, SHOWER.turn3 - SHOWER.stepOut); return { ...outside, yaw: Math.PI * (1 - e), shuffle: Math.sin(Math.PI * e), left: null, right: null }; }
   if (u < SHOWER.reachC2) return { ...outside, yaw: 0, lean: 0.08, left: null, right: hand(edge(1, -1), k(SHOWER.turn3, SHOWER.reachC2 - SHOWER.turn3), "out") };

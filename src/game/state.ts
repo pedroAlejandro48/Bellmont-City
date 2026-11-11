@@ -61,7 +61,7 @@ export type Script = { x: number; z: number; yaw: number; walk: number; sit: num
   /** Getting into bed: sat on its edge (sit), each leg up straight on it (legL, legR), lying back flat (lie); 0..1. */
   bed?: { sit: number; lie: number; legL: number; legR: number };
   /** Each leg set outright (a high step over a shower's curb): thigh forward (negative) and knee bend, radians. */
-  legs?: { hipL: number; kneeL: number; hipR: number; kneeR: number } };
+  legs?: { hipL: number; kneeL: number; hipR: number; kneeR: number; /** The hips this much lower (negative: higher). */ drop?: number } };
 /** Someone's use of an apartment building's elevator: the car going `from` → `to` (the same: standing there), `at`
  * seconds into that (t0: when it started, on this player's clock), and whether they're using it now. */
 export type LiftUse = { b: string; from: number; to: number; at: number; active: boolean; t0?: number };
@@ -116,6 +116,8 @@ export type GameState = {
   movingForward: boolean;
   /** The on-screen joystick (touchscreens): x to the right, y forward, each -1..1 (length up to 1); null when untouched. */
   stick: { x: number; y: number } | null;
+  /** The joystick was double-tapped (and is still held): pushing it runs. */
+  stickRun: boolean;
   /** Fingers on the screen turning the view (not the joystick's), and when the last one let go (performance.now). */
   touchLook: { fingers: number; releasedAt: number };
   worldSeed: number;
@@ -151,6 +153,12 @@ export type GameState = {
   uiLock: string | null;
   /** The camera held on one view (world: where it is, what it looks at), e.g. the shower while showering. */
   camLock: { pos: [number, number, number]; at: [number, number, number] } | null;
+  /** A kitchen panel's answer: a thing to take from the counter, or the cans to cook. */
+  kitchenAsk: { rack?: import("./pantry").WareKind; cans?: import("./pantry").CanKind[] } | null;
+  /** Eating a home-cooked meal at the table (the fork to the mouth): when it started, how long. */
+  meal: { at: number; T: number } | null;
+  /** Q pressed (for the kitchen, which looks at it after the food and inventory have). */
+  kitchenQ: boolean;
   /** Things on their way into the fridge (one at a time, by hand): the name, and the grocery bag's kind if from the bag. */
   fridgeLoad: { name: string; bag: ItemKind | null }[];
   keys: Set<string>;
@@ -270,7 +278,7 @@ export function createState(save: SaveData): GameState {
     camDistance: 6, firstPerson: false,
     lastMouseLookAt: performance.now(),
     movingForward: false,
-    stick: null,
+    stick: null, stickRun: false,
     touchLook: { fingers: 0, releasedAt: -Infinity },
     worldSeed: save.worldSeed ?? 1337,
     darkness: 0,
@@ -287,7 +295,7 @@ export function createState(save: SaveData): GameState {
     level: save.apt && save.apt.floor >= 2 ? { building: save.apt.building, floor: save.apt.floor, y: floorY(save.apt.floor) } : null,
     seatSurface: null,
     elevator: null,
-    uiLock: null, fridgeLoad: [], camLock: null,
+    uiLock: null, fridgeLoad: [], camLock: null, kitchenAsk: null, meal: null, kitchenQ: false,
     keys: new Set(),
     jumpQueued: false,
     simulationTime: 0,

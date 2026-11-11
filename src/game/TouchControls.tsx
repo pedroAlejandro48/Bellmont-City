@@ -8,7 +8,7 @@ const REACH = 46;
 /**
  * Touchscreen controls: a joystick bottom left (above the health bars when upright, level with them when on its
  * side) and E and Q bottom right. Moving the joystick walks or rides like the arrow keys, its push setting the pace
- * (right to the edge runs); the rest of the screen turns the view with another finger.
+ * (a double tap, then pushing, runs); the rest of the screen turns the view with another finger.
  */
 export function TouchControls({ state }: { state: GameState }) {
   const [show, setShow] = useState(false);
@@ -26,7 +26,7 @@ export function TouchControls({ state }: { state: GameState }) {
         if (state.bench || state.scooter.riding || state.scooter.action) return;
         state.jumpQueued = true;
       }} />
-      <ActionButton label="Q" title="Put down (Q)" onPress={() => { if (state.health > 0 && !state.accident) state.dropQueued = true; }} />
+      <ActionButton label="Q" title="Put down (Q)" onPress={() => { if (state.health > 0 && !state.accident) { state.dropQueued = true; state.kitchenQ = true; } }} />
       <ActionButton label="E" title="Interact (E)" primary onPress={() => {
         if (state.health === 0 || state.accident) return;
         // Sitting at a table there's no Space key to get up with: E does it.
@@ -48,7 +48,8 @@ function ActionButton({ label, title, primary, onPress }: { label: string; title
 
 /**
  * The joystick appears right under the finger wherever the bottom-left of the screen is touched (it rests, faded,
- * at its usual spot until then), and follows the finger's push from there.
+ * at its usual spot until then), and follows the finger's push from there. Pushing it walks (faster the further);
+ * a quick tap and then pressing again runs while that finger stays down (the knob turns orange).
  */
 function Joystick({ state }: { state: GameState }) {
   const base = useRef<HTMLDivElement>(null);
@@ -56,6 +57,9 @@ function Joystick({ state }: { state: GameState }) {
   const finger = useRef<number | null>(null);
   const centre = useRef({ x: 0, y: 0 });
   const [active, setActive] = useState(false);
+  /** A quick tap just now (when it lifted), and when the current press began: a second press soon after runs. */
+  const tapAt = useRef(-Infinity), downAt = useRef(0);
+  const [run, setRun] = useState(false);
   const place = (clientX: number, clientY: number) => {
     let dx = clientX - centre.current.x, dy = clientY - centre.current.y;
     const d = Math.hypot(dx, dy);
@@ -64,7 +68,9 @@ function Joystick({ state }: { state: GameState }) {
     state.stick = { x: dx / REACH, y: -dy / REACH };
   };
   const end = () => {
-    finger.current = null; state.stick = null; setActive(false);
+    const now = performance.now();
+    tapAt.current = now - downAt.current < 280 && !state.stickRun ? now : -Infinity;
+    finger.current = null; state.stick = null; state.stickRun = false; setActive(false); setRun(false);
     const b = base.current;
     if (b) { b.style.left = ""; b.style.top = ""; b.style.bottom = ""; }
     if (knob.current) knob.current.style.transform = "translate(0px, 0px)";
@@ -77,6 +83,10 @@ function Joystick({ state }: { state: GameState }) {
       e.preventDefault(); e.stopPropagation();
       if (document.pointerLockElement) document.exitPointerLock();
       finger.current = e.pointerId;
+      // Double tap: this press came right after a quick tap, so pushing it runs (until the finger lifts).
+      const now = performance.now();
+      downAt.current = now;
+      if (now - tapAt.current < 380) { state.stickRun = true; setRun(true); tapAt.current = -Infinity; }
       try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* fine */ }
       // Centred under the finger (kept fully on screen).
       const half = 64, x = Math.max(half + 4, Math.min(window.innerWidth - half - 4, e.clientX)), y = Math.max(half + 4, Math.min(window.innerHeight - half - 4, e.clientY));
@@ -93,7 +103,7 @@ function Joystick({ state }: { state: GameState }) {
     <div ref={base} data-stick className={`touch-stick pointer-events-none fixed h-32 w-32 rounded-full border-2 border-white/45 bg-black/30 shadow-lg backdrop-blur-[2px] transition-opacity ${active ? "opacity-100" : "opacity-45"}`}>
       {/* The top half: walk ahead and the camera swings round behind. */}
       <div className="absolute inset-x-3 top-1/2 h-px bg-white/15" />
-      <div ref={knob} className="absolute left-1/2 top-1/2 -ml-7 -mt-7 h-14 w-14 rounded-full border-2 border-white/80 bg-white/55 shadow-md" />
+      <div ref={knob} className={`absolute left-1/2 top-1/2 -ml-7 -mt-7 h-14 w-14 rounded-full border-2 shadow-md ${run ? "border-[#ffb547] bg-[#ffb547]/80" : "border-white/80 bg-white/55"}`} />
     </div>
   </div>;
 }

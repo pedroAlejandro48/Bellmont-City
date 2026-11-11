@@ -529,3 +529,15 @@
   .touch-buttons button { width: var(--btn) !important; height: var(--btn) !important; font-size: 1.05rem !important; border-width: 2px; }
   .minimap.touch { width: 6.5rem; height: 6.5rem; right: calc(12px + env(safe-area-inset-right)); bottom: calc(0.75rem + 2.75rem + 0.6rem + env(safe-area-inset-bottom)); }
 }
+
+/* The kitchen's panels: the counter's choices, the cans picked for the pot, the hint while choosing in the cupboard. */
+.kitchen-choices { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
+.kitchen-choice { display: flex; flex-direction: column; align-items: center; gap: 0.15rem; padding: 0.7rem 0.4rem; border-radius: 0.7rem; background: #232733; color: #fff; font-weight: 700; border: 1px solid rgba(255,255,255,0.08); }
+.kitchen-choice:disabled { opacity: 0.4; }
+.kitchen-choice:not(:disabled):hover { background: #2e3443; }
+.kitchen-choice small { color: #9aa3b5; font-weight: 600; }
+.kitchen-icon { font-size: 1.6rem; }
+.kitchen-picks { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.4rem; }
+.kitchen-pick { padding: 0.3rem 0.55rem; border-radius: 999px; background: #ffb547; color: #1b1206; font-weight: 700; font-size: 0.8rem; }
+.cupboard-hint { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0.9rem; border-radius: 0.8rem; background: rgba(15,17,23,0.85); color: #fff; font-weight: 600; }
+.cupboard-hint button { padding: 0.35rem 0.8rem; border-radius: 0.5rem; background: #ffb547; color: #1b1206; font-weight: 800; }

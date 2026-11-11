@@ -1,6 +1,9 @@
 // The inventory (pure): nine slots (3 × 3), the phone always in the first. Things that can be kept are listed in
-// ITEMS; trash (an empty bottle) can't go in.
-export type ItemKind = "phone" | "water" | "orangeJuice" | "appleJuice" | "cola" | "lemonSoda" | "energy" | "apple" | "banana" | "orange" | "pear" | "lemon" | "lime" | "grape" | "peach" | "key";
+// ITEMS; trash (an empty bottle) can't go in. (Canned food and kitchenware are bought too, but kept at home: the
+// fridge, the sink's cupboard; candy goes straight into the inventory.)
+import { CANDIES, CANDY_INFO, CANS, CAN_INFO, WARES, WARE_INFO, type CandyKind, type CanKind, type WareKind } from "./pantry";
+
+export type ItemKind = "phone" | "water" | "orangeJuice" | "appleJuice" | "cola" | "lemonSoda" | "energy" | "apple" | "banana" | "orange" | "pear" | "lemon" | "lime" | "grape" | "peach" | "key" | CanKind | CandyKind | WareKind;
 export type Inventory = (ItemKind | null)[];
 export const SLOTS = 9;
 
@@ -21,7 +24,10 @@ export const ITEMS: Record<ItemKind, { name: string; icon: string; use: "eat" | 
   grape: { name: "Grapes", icon: "🍇", use: "eat", value: 4 },
   peach: { name: "Peach", icon: "🍑", use: "eat", value: 3 },
   key: { name: "Apartment key", icon: "🔑", use: "hold" },
-};
+  ...Object.fromEntries(CANS.map((k) => [k, { name: CAN_INFO[k].name, icon: "🥫", use: "hold" as const }])),
+  ...Object.fromEntries(CANDIES.map((k) => [k, { name: CANDY_INFO[k].name, icon: CANDY_INFO[k].shape === "pop" ? "🍭" : CANDY_INFO[k].shape === "bag" ? "🍬" : "🍫", use: "eat" as const }])),
+  ...Object.fromEntries(WARES.map((k) => [k, { name: WARE_INFO[k].name, icon: k === "pot" || k === "pan" ? "🍳" : k === "cup" ? "☕" : k === "silverware" ? "🍴" : "🍽️", use: "hold" as const }])),
+} as Record<ItemKind, { name: string; icon: string; use: "eat" | "drink" | "open" | "hold"; value?: number; trash?: "bottle" | "can" }>;
 export const isItemKind = (k: unknown): k is ItemKind => typeof k === "string" && k in ITEMS;
 
 export function newInventory(): Inventory {

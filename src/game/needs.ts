@@ -1,3 +1,4 @@
+import { CANDIES, CANDY_EFFECT, CANDY_INFO } from "./pantry";
 // Health, hunger and thirst over time, and what eating and drinking does for them (pure, testable).
 import { CYCLE } from "./config";
 import { MENU_BOARDS, isDrinkName, isWaterName } from "./food";
@@ -13,6 +14,8 @@ export const HEALING_PER_MINUTE = 10 / (24 * 60);
 export const ENERGY_PER_MINUTE = 75 / (24 * 60);
 export const RUN_ENERGY_FACTOR = 3;
 export type Needs = { health: number; hunger: number; thirst: number; energy?: number };
+/** Candy (by name): half an energy drink's energy and half its harm, a little hunger. */
+const CANDY_NAMES = new Set(CANDIES.map((k) => CANDY_INFO[k].name));
 /** Shop drinks: what one does (juices fill a little too; an energy drink gives energy). */
 export const DRINK_EFFECTS: Record<string, { hunger: number; thirst: number; energy: number; health?: number }> = {
   "Orange Juice": { hunger: 5, thirst: 30, energy: 0 },
@@ -59,6 +62,7 @@ const CHEAPEST = Math.min(...foodPrices), DEAREST = Math.max(...foodPrices);
  */
 export function nutrition(name: string, price: number): { hunger: number; thirst: number; energy: number } {
   if (isWaterName(name)) return { hunger: 0, thirst: 40, energy: 0 };
+  if (CANDY_NAMES.has(name)) return { hunger: CANDY_EFFECT.hunger, thirst: CANDY_EFFECT.thirst, energy: CANDY_EFFECT.energy };
   const d = DRINK_EFFECTS[name];
   if (d) return { ...d };
   if (isDrinkName(name)) return { hunger: 5, thirst: 10, energy: 0 };
@@ -68,10 +72,11 @@ export function nutrition(name: string, price: number): { hunger: number; thirst
 /** Food can't be eaten on a full stomach, nor a drink drunk when not thirsty at all. */
 export function canConsume(n: Needs, name: string) {
   if (DRINK_EFFECTS[name]?.energy && (n.energy ?? 100) < 100) return true;
+  if (CANDY_NAMES.has(name)) return n.hunger < 100 || (n.energy ?? 100) < 100;
   return isDrinkName(name) ? n.thirst < 100 : n.hunger < 100;
 }
 export function consume(n: Needs, name: string, price: number): Needs & { energy: number } {
-  const g = nutrition(name, price), hurt = DRINK_EFFECTS[name]?.health ?? 0;
+  const g = nutrition(name, price), hurt = DRINK_EFFECTS[name]?.health ?? (CANDY_NAMES.has(name) ? CANDY_EFFECT.health : 0);
   return { health: clamp(n.health + hurt), hunger: clamp(n.hunger + g.hunger), thirst: clamp(n.thirst + g.thirst), energy: clamp((n.energy ?? 100) + g.energy) };
 }
 

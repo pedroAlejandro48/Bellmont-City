@@ -10,7 +10,8 @@ import {
   sources, takeBasket, walkSeg, plan as makePlan, type GPose, type Plan, type Source,
 } from "./groceryRun";
 import { InteractionPrompt } from "./InteractionPrompt";
-import { ITEMS, type ItemKind } from "./inventory";
+import { ITEMS, addItem, freeSlots, type ItemKind } from "./inventory";
+import { isCandy } from "./pantry";
 import { GroceryBagModel, ItemModel, useLooks, type Looks } from "./InventoryWorld";
 import { lifeEvent } from "./lifeRuntime";
 import { spend } from "./life";
@@ -143,7 +144,14 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
           me.holding = null;
         }
         if (ev === "basketDown" && me.kind === "pay") { checkout.current = { who: "player", t0: now, items: [...items.current] }; }
-        if (ev === "bag" && me.kind === "pay") { state.groceryBag = [...(state.groceryBag ?? []), ...items.current.map((i) => i.kind)]; }
+        if (ev === "bag" && me.kind === "pay") {
+          // Candy goes straight into the inventory (there was room for it when it was picked); the rest in the bag.
+          const rest: ItemKind[] = [];
+          for (const it of items.current) { if (isCandy(it.kind) && addItem(state.life.inventory, it.kind) > 0) continue; rest.push(it.kind); }
+          if (rest.length) state.groceryBag = [...(state.groceryBag ?? []), ...rest];
+          const sweets = items.current.length - rest.length;
+          if (sweets) toast(state, `${sweets} cand${sweets > 1 ? "ies" : "y"} in your inventory`, "info");
+        }
         if (ev === "basketUp" && me.kind === "pay") { items.current = []; state.groceryBasket = []; bump(); }
         if (ev === "basketDown" && me.kind === "return") { state.groceryBasket = null; items.current = []; bump(); }
       }
@@ -202,6 +210,9 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
             toast(state, `Paid ${money(total)}`, "money", `${n} item${n > 1 ? "s" : ""} at Fresh Market.`);
             start(withWalk(payPlan([svc.x, svc.z], svc.yaw, layout, n), [lx, lz], yaw, [svc.x, svc.z], svc.yaw), "pay");
           };
+        } else if (src && n < BASKET_MAX && isCandy(src.kind) && items.current.filter((i) => isCandy(i.kind)).length >= freeSlots(state.life.inventory)) {
+          // Candy goes into the inventory once paid for: no more than there's room for.
+          const [x, z] = world(src.take[0], src.take[2]); Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: "NO ROOM IN YOUR INVENTORY" });
         } else if (src && n < BASKET_MAX) {
           const [x, z] = world(src.take[0], src.take[2]);
           Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: `E  ${ITEMS[src.kind].name.toUpperCase()} ${money(GROCERY_PRICE[src.kind] ?? 1)}` });

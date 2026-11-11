@@ -1,3 +1,4 @@
+import { PantryItem } from "./PantryModels";
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -135,6 +136,7 @@ export function ItemModel({ kind, looks, empty = false }: { kind: Thing; looks: 
       <mesh material={looks.key} position={[0.045, 0, 0]}><boxGeometry args={[0.06, 0.008, 0.004]} /></mesh>
       <mesh material={looks.key} position={[0.068, -0.007, 0]}><boxGeometry args={[0.008, 0.012, 0.004]} /></mesh>
     </group>;
+    default: return <PantryItem kind={kind} />;
   }
 }
 
@@ -156,7 +158,9 @@ export function InventoryWorld({ state }: { state: GameState }) {
 
   // Before the food's own Q and E (which would take the press otherwise).
   useFrame(() => {
-    if (state.dropQueued && (state.heldTrash || state.heldSlot !== null || (state.groceryBag && !state.groceryBasket))) { if (dropHeld(state)) state.dropQueued = false; }
+    // (With kitchen things in hand, Q is the kitchen's: pour, to the sink, to the table.)
+    const kh = state.life.kitchen.hands, kitchenHolds = !!(kh.left || kh.right) && !!state.level;
+    if (state.dropQueued && !kitchenHolds && (state.heldTrash || state.heldSlot !== null || (state.groceryBag && !state.groceryBasket))) { if (dropHeld(state)) state.dropQueued = false; }
     if (state.interactQueued && !state.scooter.riding && pickUpNear(state)) state.interactQueued = false;
     stepInventory(state);
   }, -0.8);

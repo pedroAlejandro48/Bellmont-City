@@ -1,3 +1,4 @@
+import { PantryShelf } from "./PantryModels";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
@@ -224,6 +225,7 @@ function FixtureModel({ f, m, kind }: { f: Fixture; m: VMats; kind: VenueKind })
       <mesh position={[w / 2 - 0.45, 1.05, 0]} material={m.solid("#d62f3a", 0.5, 0.3)}>{box([0.5, 0.24, 0.26])}</mesh>
     </group>;
     case "shelf": if (f.tag === "bottles") return <DrinkShelf f={f} m={m} />;
+    if (f.tag === "pantry" || f.tag === "kitchenware") return <PantryShelf tag={f.tag} w={w} d={d} frame={m.white} />;
     return <group>
       <mesh position={[0, 0.9, 0]} material={m.white}>{box([w, 1.8, 0.04])}</mesh>
       {[-1, 1].map((s) => <mesh key={s} position={[s * w / 2, 0.9, 0]} material={m.white}>{box([0.04, 1.8, d])}</mesh>)}

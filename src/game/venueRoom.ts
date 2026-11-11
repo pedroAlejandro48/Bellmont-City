@@ -130,8 +130,9 @@ export function venueLayout(b: Building): VenueLayout {
     service = { x: maxX - 0.95 - 0.35 - 0.5, z: cz - 0.85, yaw: Math.PI / 2 }; staff = { x: maxX - 0.25, z: cz - 0.85, yaw: -Math.PI / 2, sit: false };
     // Big crates heaped with fruit; one shelf of drinks at the back (the middle aisles are the pantry).
     FRUITS.forEach((tag, k) => add("crate", minX + 0.42, -2.55 - k * 0.88, Math.PI / 2, 0.82, 0.62, true, tag));
-    add("shelf", -1.2, -7.2, 0, 3.2, 0.6, true, "jars");
-    add("shelf", 1.6, -7.2, 0, 3.0, 0.6, true, "boxes");
+    // The pantry shelf (cans on the front, candy on the back) and the kitchenware shelf.
+    add("shelf", -1.2, -7.2, 0, 3.2, 0.6, true, "pantry");
+    add("shelf", 1.6, -7.2, 0, 3.0, 0.6, true, "kitchenware");
     add("shelf", 0, minZ + 0.35, 0, Math.min(6, width - 4), 0.6, true, "bottles");
     add("baskets", -1.9, -1.0, 0, 0.5, 0.4, true);
   }

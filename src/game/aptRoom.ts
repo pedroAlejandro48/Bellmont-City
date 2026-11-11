@@ -15,7 +15,7 @@ export const INNER_WALL = 0.14;
 export const FLOOR_CLEAR = 2.8;
 export const WIN = { y0: 0.95, y1: 2.35, kitchenY0: 1.25 } as const;
 
-export type AptFurniture = { type: "counter" | "sink" | "oven" | "microwave" | "fridge" | "table" | "chair" | "couch" | "tvTable" | "tv" | "rug" | "bed" | "desk" | "deskChair" | "closet" | "lamp"; x: number; z: number; rot: number; w: number; d: number; solid: boolean };
+export type AptFurniture = { type: "counter" | "sink" | "oven" | "microwave" | "fridge" | "table" | "chair" | "couch" | "tvTable" | "tv" | "rug" | "bed" | "desk" | "deskChair" | "closet" | "lamp" | "trash"; x: number; z: number; rot: number; w: number; d: number; solid: boolean };
 export type DoorFrame = { ox: number; oz: number; theta: number };
 export type AptFloor = Room & {
   upper: number; y: number;
@@ -49,6 +49,18 @@ export type AptFloor = Room & {
   bed: { x: number; z: number; w: number; l: number; edgeX: number; sit: [number, number]; lie: [number, number]; stand: [number, number] };
   /** Spots: in front of the elevator (hallway), the bed, the fridge. */
   spots: { elevator: [number, number]; bed: [number, number]; fridge: [number, number] };
+  /**
+   * The kitchen along the front wall (from the corner: fridge, counter, sink, oven, the bin): where one stands at
+   * each (facing the wall, +z), the burner a pot sits on, the sink's basin, the counter's spots for clean plates,
+   * bowls, cups, jars and silverware, the cupboard under the sink (its doors' hinges), and on the table the place
+   * in front of each dining chair (`items` index → where a plate goes).
+   */
+  kitchen: {
+    sinkStand: [number, number]; ovenStand: [number, number]; rackStand: [number, number]; trashStand: [number, number];
+    burner: [number, number, number]; basin: [number, number, number]; rack: [number, number, number];
+    cupboard: { x: number; z: number; w: number }; trash: [number, number, number];
+    places: { chair: number; at: [number, number, number]; stand: [number, number]; yaw: number }[];
+  };
 };
 
 export function aptFloor(b: Building, floor: number): AptFloor {
@@ -74,9 +86,11 @@ export function aptFloor(b: Building, floor: number): AptFloor {
   box(divX - INNER_WALL / 2, divX + INNER_WALL / 2, bd1, maxZ);
   box(divX - INNER_WALL / 2, divX + INNER_WALL / 2, inside0, bd0);
   box(divX - INNER_WALL / 2 - 0.02, divX + INNER_WALL / 2 + 0.02, bd0, bd1);
-  // The bathroom: a wall where the TV is (parallel to the bedroom's), and a short wall across from just past the
-  // bedroom door to it, with the bathroom's door; both doors open off the same bit of floor. 3/4 the bedroom's width.
-  const bx0 = divX + INNER_WALL / 2, bx1 = bx0 + 0.75 * (divX - minX), sw0 = bd1 + 0.35, sw1 = sw0 + INNER_WALL;
+  // The bathroom: a wall where the TV is (parallel to the bedroom's), and a short wall across to it with the
+  // bathroom's door, toward the bedroom door. 0.6 of the bedroom's width; from the front only as deep as leaves the
+  // TV (in the middle of the living part) on its wall.
+  const living0 = inside0 + 1.25, living1 = maxZ - 1.9, lz = (living0 + living1) / 2;
+  const bx0 = divX + INNER_WALL / 2, bx1 = bx0 + 0.6 * (divX - minX), sw0 = Math.max(bd1 + 0.35, lz - 0.72), sw1 = sw0 + INNER_WALL;
   const bdx0 = bx0 + 0.35, bdx1 = bdx0 + 1;
   box(bx1, bx1 + INNER_WALL, sw0, maxZ);
   box(bx0, bdx0, sw0, sw1);
@@ -89,21 +103,22 @@ export function aptFloor(b: Building, floor: number): AptFloor {
   const add = (type: AptFurniture["type"], x: number, z: number, rot: number, w: number, d: number, solid = true) => { F.push({ type, x, z, rot, w, d, solid }); if (solid) { const across = Math.abs(Math.sin(rot)) > 0.5; solids.push({ x, z, hx: (across ? d : w) / 2, hz: (across ? w : d) / 2 }); } };
   // The kitchen in the main room's front corner (on the left as you walk in): counter in the corner, the sink, the
   // oven with its stovetop facing the door, the microwave on the wall above; the fridge on the side wall.
-  add("counter", maxX - 0.42, maxZ - 0.32, Math.PI, 0.8, 0.62);
-  add("sink", maxX - 1.22, maxZ - 0.32, Math.PI, 0.8, 0.62);
-  add("oven", maxX - 2.02, maxZ - 0.32, Math.PI, 0.76, 0.62);
-  add("microwave", maxX - 2.02, maxZ - 0.2, Math.PI, 0.5, 0.36, false);
-  add("fridge", maxX - 0.37, maxZ - 1.3, -Math.PI / 2, 0.78, 0.7);
+  // (The fridge in the corner, so the sink has room in front of it to stand and wash up.)
+  const KZ = maxZ - 0.32;
+  add("fridge", maxX - 0.42, maxZ - 0.37, Math.PI, 0.78, 0.7);
+  add("counter", maxX - 1.22, KZ, Math.PI, 0.8, 0.62);
+  add("sink", maxX - 2.02, KZ, Math.PI, 0.8, 0.62);
+  add("oven", maxX - 2.8, KZ, Math.PI, 0.76, 0.62);
+  add("trash", maxX - 3.42, maxZ - 0.28, Math.PI, 0.36, 0.36);
   // The table for two to the right of the kitchen. It and its chairs are the room's furniture (`items`), like a
   // restaurant's: solid, and sat at the same way (the chair pulled out, round it, down, shuffled in).
   const items: Item[] = [];
-  const tx = Math.max(bx1 + INNER_WALL + 1.05, maxX - 3.4), tz = maxZ - 1.15;
+  const tx = Math.max(bx1 + INNER_WALL + 1.05, maxX - 2.4), tz = maxZ - 2.1;
   add("table", tx, tz, 0, TABLE.half * 2, TABLE.half * 2, false);
   items.push({ kind: "table", x: tx, z: tz, f: [0, 1] });
   items.push({ kind: "chair", x: tx - 0.72, z: tz, f: [1, 0] }, { kind: "chair", x: tx + 0.72, z: tz, f: [-1, 0] });
   // The couch on the left wall facing the TV on the right wall (the bathroom's wall), on its little table.
   const tvWall = bx1 + INNER_WALL;
-  const living0 = inside0 + 1.25, living1 = maxZ - 1.9, lz = (living0 + living1) / 2;
   add("rug", (tvWall + maxX) / 2, lz, 0, Math.min(2.4, maxX - tvWall - 1.2), 1.8, false);
   add("couch", maxX - 0.45, lz, -Math.PI / 2, 2.0, 0.85);
   add("tvTable", tvWall + 0.26, lz, Math.PI / 2, 1.1, 0.42);
@@ -124,15 +139,15 @@ export function aptFloor(b: Building, floor: number): AptFloor {
   solids.push({ x: (shower.x0 + shower.x1) / 2, z: (shower.z0 + shower.z1) / 2, hx: SH / 2, hz: SH / 2 });
   const toilet = { x: bx0 + 0.36, z: maxZ - SH - 1.05, rot: Math.PI / 2, front: [bx0 + 0.36 + 0.62, maxZ - SH - 1.05] as [number, number], paper: [bx0 + 0.06, 0.72, maxZ - SH - 1.05 + 0.45] as [number, number, number], flush: [bx0 + 0.12, 0.86, maxZ - SH - 1.05 - 0.12] as [number, number, number] };
   solids.push({ x: toilet.x - 0.03, z: toilet.z, hx: 0.36, hz: 0.22 });
-  const sink = { x: bx1 - 0.25, z: sw1 + 1.3, rot: -Math.PI / 2, stand: [bx1 - 0.25 - 0.62, sw1 + 1.3] as [number, number], tap: [bx1 - 0.08, 1.02, sw1 + 1.3] as [number, number, number], bowl: [bx1 - 0.27, 0.86, sw1 + 1.3] as [number, number, number] };
+  const sink = { x: bx1 - 0.25, z: sw1 + 1.15, rot: -Math.PI / 2, stand: [bx1 - 0.25 - 0.62, sw1 + 1.15] as [number, number], tap: [bx1 - 0.08, 1.02, sw1 + 1.15] as [number, number, number], bowl: [bx1 - 0.27, 0.86, sw1 + 1.15] as [number, number, number] };
   solids.push({ x: sink.x, z: sink.z, hx: 0.25, hz: 0.3 });
   // Windows: on the front (bedroom; the living part of the main room; over the kitchen counter, higher), and on the
   // window side's wall (the main room's over the couch, or the bedroom's beside the bed).
   const front = [
     { a0: minX + 0.6, a1: divX - 0.55, y0: WIN.y0 },
     { a0: divX + 1.2, a1: bx1 - 0.35, y0: WIN.y0 },
-    { a0: tvWall + 0.35, a1: Math.max(tvWall + 1.0, maxX - 2.55), y0: WIN.y0 },
-    { a0: maxX - 2.45, a1: maxX - 0.25, y0: WIN.kitchenY0 },
+    { a0: tvWall + 0.35, a1: Math.max(tvWall + 1.0, maxX - 3.75), y0: WIN.y0 },
+    { a0: maxX - 3.2, a1: maxX - 0.95, y0: WIN.kitchenY0 },
   ].filter((w) => w.a1 - w.a0 > 0.5);
   const side = ws === 1 ? [{ a0: living0 + 0.1, a1: living1 - 0.1, y0: WIN.y0 }] : [{ a0: inside0 + 0.45, a1: maxZ - 2.85, y0: WIN.y0 }];
 
@@ -145,6 +160,17 @@ export function aptFloor(b: Building, floor: number): AptFloor {
     hinged: { apartment: { ox: doorX, oz: inside0, theta: 0 }, bedroom: { ox: divX - INNER_WALL / 2, oz: bd1, theta: -Math.PI / 2 }, bathroom: { ox: bdx1, oz: sw1, theta: 0 } },
     bath: { x0: bx0, x1: bx1, z0: sw1, z1: maxZ, wallZ: sw0, door: [bdx0, bdx1], shower, toilet, sink },
     bed: { x: bedX, z: bedZ, w: BW, l: BL, edgeX: bedX + BW / 2, sit: [bedX + BW / 2 - 0.22, maxZ - 1.12], lie: [bedX, maxZ - 1.03], stand: [bedX + BW / 2 + 0.48, maxZ - 1.12] },
-    spots: { elevator: [minX + SHAFT / 2, hall0 + 0.65], bed: [bedX + BW / 2 + 0.48, maxZ - 1.12], fridge: [maxX - 0.37 - 0.8, maxZ - 1.3] },
+    spots: { elevator: [minX + SHAFT / 2, hall0 + 0.65], bed: [bedX + BW / 2 + 0.48, maxZ - 1.12], fridge: [maxX - 0.42, maxZ - 1.3] },
+    kitchen: {
+      sinkStand: [maxX - 2.02, KZ - 0.72], ovenStand: [maxX - 2.8, KZ - 0.74], rackStand: [maxX - 1.22, KZ - 0.72], trashStand: [maxX - 3.42, maxZ - 0.95],
+      burner: [maxX - 2.8 - 0.17, 0.92, KZ - 0.13], basin: [maxX - 2.02, 0.84, KZ + 0.02], rack: [maxX - 1.22, 0.92, KZ + 0.02],
+      cupboard: { x: maxX - 2.02, z: KZ - 0.31, w: 0.7 }, trash: [maxX - 3.42, 0.62, maxZ - 0.28],
+      places: [1, 2].map((ci) => {
+        const c = items[ci]!, at: [number, number, number] = [c.x + c.f[0] * 0.5, TABLE.top + 0.005, c.z + c.f[1] * 0.5];
+        // Standing beside the chair (toward the room's front), turned to the table.
+        const stand: [number, number] = [c.x + c.f[0] * 0.1, c.z + 0.55];
+        return { chair: ci, at, stand, yaw: Math.atan2(at[0] - stand[0], at[2] - stand[1]) };
+      }),
+    },
   };
 }

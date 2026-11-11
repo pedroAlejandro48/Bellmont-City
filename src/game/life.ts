@@ -1,3 +1,4 @@
+import { newKitchen, readKitchen, type Kitchen } from "./kitchen";
 import { newInventory, readInventory, addItem, type Inventory } from "./inventory";
 import { FREE_DAYS, type ApartmentHome } from "./apartments";
 
@@ -56,6 +57,8 @@ export type Life = {
   inventory: Inventory;
   /** Clothes hung in the apartment's closet (up to CLOSET_MAX): tops and bottoms. */
   closet: Clothing[];
+  /** The apartment's kitchen: the pots, plates and the rest, what's cooking, what's on the table and in hand. */
+  kitchen: Kitchen;
 };
 export type Clothing = { name: string; part: "upper" | "lower"; color: string };
 export const CLOSET_MAX = 10;
@@ -66,7 +69,7 @@ export function newLife(day = 1): Life {
     bank: 300, loan: 0, credit: 650, xp: 0,
     skills: { fitness: 0, riding: 0, work: 0, charm: 0 },
     quests: rollQuests(day), questDay: day, guide: 0, home: null, billedDay: day, fridge: [], ledger: [],
-    earned: 0, jobsDone: 0, fines: [], record: 0, insured: false, outfit: null, bikePaint: null, workoutDay: 0, inventory: newInventory(), closet: [],
+    earned: 0, jobsDone: 0, fines: [], record: 0, insured: false, outfit: null, bikePaint: null, workoutDay: 0, inventory: newInventory(), closet: [], kitchen: newKitchen(),
   };
 }
 
@@ -96,6 +99,7 @@ export function readLife(value: unknown, day = 1): Life {
     workoutDay: num("workoutDay", 0, 1e9, 0),
     inventory: readInventory(v["inventory"]),
     closet: Array.isArray(v["closet"]) ? (v["closet"] as Clothing[]).filter((c) => c && typeof c.name === "string" && (c.part === "upper" || c.part === "lower") && typeof c.color === "string" && /^#[0-9a-f]{6}$/i.test(c.color)).slice(0, CLOSET_MAX) : [],
+    kitchen: readKitchen(v["kitchen"]),
   };
 }
 

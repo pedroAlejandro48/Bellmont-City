@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { isDrinkName } from "@/game/food";
 import { ITEMS } from "@/game/inventory";
+import { canByName, isWare } from "@/game/pantry";
 import { lifeEvent } from "@/game/lifeRuntime";
 import { canConsume, consume } from "@/game/needs";
 import { foodValue } from "@/game/shops";
@@ -32,7 +33,8 @@ export function FridgePanel({ state, onClose }: { state: GameState; onClose: () 
     }
     if (state.groceryBag) {
       // Taken out of the bag one at a time as they go in (what doesn't fit stays in it).
-      for (const k of state.groceryBag) { const name = ITEMS[k].name; if (room(name)) state.fridgeLoad.push({ name, bag: k }); else left++; }
+      // (Kitchenware isn't food: it stays in the bag, to be put away by the sink.)
+      for (const k of state.groceryBag) { if (isWare(k)) continue; const name = ITEMS[k].name; if (room(name)) state.fridgeLoad.push({ name, bag: k }); else left++; }
     }
     if (left) toast(state, "The fridge is full", "warn", `${left} thing${left > 1 ? "s" : ""} didn't fit.`);
     tick((n) => n + 1);
@@ -47,13 +49,13 @@ export function FridgePanel({ state, onClose }: { state: GameState; onClose: () 
     tick((n) => n + 1);
   };
   const list = (items: string[], verb: string) => items.length === 0 ? <p className="phone-note">Empty.</p> :
-    <ul className="phone-list">{items.map((f, i) => <li key={i}><span>{f}</span><button type="button" className="phone-btn" onClick={() => eat(f)}>{verb}</button></li>)}</ul>;
+    <ul className="phone-list">{items.map((f, i) => <li key={i}><span>{canByName(f) ? `🥫 ${f}` : f}</span>{canByName(f) ? <span className="phone-note">Cook it on the stove</span> : <button type="button" className="phone-btn" onClick={() => eat(f)}>{verb}</button>}</li>)}</ul>;
   return <div className="home-panel" role="dialog" aria-label="Fridge">
     <div className="home-panel-head"><b>Fridge</b><button type="button" onClick={onClose} aria-label="Close">✕</button></div>
     <p className="phone-label">Shelves · {food.length}/{FRIDGE_FOOD}</p>
     {list(food, "Eat")}
     <p className="phone-label">Door · {drinks.length}/{FRIDGE_DRINKS}</p>
     {list(drinks, "Drink")}
-    <button type="button" className="phone-btn ghost" disabled={loading || (!held.length && !state.groceryBag)} onClick={store}>{loading ? "Putting it away…" : "Store the food you're carrying"}</button>
+    <button type="button" className="phone-btn ghost" disabled={loading || (!held.length && !state.groceryBag?.some((k) => !isWare(k)))} onClick={store}>{loading ? "Putting it away…" : "Store the food you're carrying"}</button>
   </div>;
 }
