@@ -21,7 +21,7 @@ import { DinerSim, POLE_NAMES, type DinerRow } from "./diners";
 import type { DoorUse } from "./doors";
 import { benchJoints } from "./config";
 import { bodyColor } from "@/platform/account";
-import type { GameState } from "./state";
+import { toast, type GameState } from "./state";
 
 /** How long after the cashier says hello the menu comes up (s). */
 const MENU_DELAY = 2.2;
@@ -65,7 +65,7 @@ export function Food({ state }: { state: GameState }) {
   /** Food this player has just put down, where (until the host shows it on the ground). */
   const dropped = useMemo(() => new Map<number, { x: number; z: number; yaw: number; until: number; y?: number }>(), []);
   /** A meal on a bench (once eaten or full, the packs are taken back up), and a trip to a bin. */
-  const meal = useRef({ benchDone: false, leftTray: 0, justAte: null as null | { pack: number; item: string; left: number; until: number }, toss: null as null | { bin: { x: number; z: number }; from: [number, number]; fromYaw: number; at: number; front: [number, number]; yaw: number; items: { id: number; hand: "left" | "right" }[]; sent: Set<number> } });
+  const meal = useRef({ handsNagAt: -99 as number | undefined, benchDone: false, leftTray: 0, justAte: null as null | { pack: number; item: string; left: number; until: number }, toss: null as null | { bin: { x: number; z: number }; from: [number, number]; fromYaw: number; at: number; front: [number, number]; yaw: number; items: { id: number; hand: "left" | "right" }[]; sent: Set<number> } });
   const mine = useRef({ greeted: "" as string, greetAt: 0, wasHost: true, published: "", publishedAt: 0, inside: null as string | null, sessionSeenAt: 0 });
 
   useFrame(() => {
@@ -313,6 +313,11 @@ export function Food({ state }: { state: GameState }) {
     const nextItem = (items: string[]) => items.find((n) => !isDrinkName(n)) ?? items[0];
     const startEating = (pk: FoodPack) => {
       if (mm.justAte) return "wait";
+      // Nothing else in hand (a thing from the inventory, the grocery bag, kitchen things): put it down first.
+      if (state.heldSlot !== null || state.heldTrash || state.groceryBag || state.groceryBasket || state.life.kitchen.hands.left || state.life.kitchen.hands.right) {
+        if (st - (mm.handsNagAt ?? -99) > 6) { mm.handsNagAt = st; toast(state, "Your hands are full", "warn", "Put down what you're holding (Q) before eating."); }
+        return "wait";
+      }
       const item = nextItem(pk.items);
       if (!item) return "none";
       if (!canConsume(state, item)) return "full";

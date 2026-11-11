@@ -1,4 +1,4 @@
-import { handFree, handsFullMessage } from "./handsHeld";
+import { handFree, handsFullMessage, holding } from "./handsHeld";
 // The inventory in play: taking things out and putting them away (number keys), storing carried water, using
 // (E: eat, drink), putting down (Q) and picking up again. Animations read `state.invAct`.
 import * as THREE from "three";
@@ -66,6 +66,8 @@ export function consumeHeld(state: GameState) {
   const use = ITEMS[kind].use;
   if (use !== "eat" && use !== "drink") return false;
   const name = ITEMS[kind].name;
+  // (Only the thing being eaten in hand: anything in the other hand has to be put down first.)
+  if (holding(state, "left") !== null) { toast(state, "Your left hand is full", "warn", `Put it down (Q) before ${use === "drink" ? "drinking" : "eating"}.`); return true; }
   if (!canConsume(state, name)) { toast(state, use === "drink" ? "Not thirsty" : "You're full", "warn"); return true; }
   state.invAct = { kind: use, at: state.simulationTime, item: kind, target: null, done: false };
   return true;

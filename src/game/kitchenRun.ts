@@ -116,6 +116,9 @@ export class KitchenRun {
     if (seat.phase !== "seated") return;
     const plate = k.table.find((t) => t.chair === seat.plan.chair && !t.eaten);
     if (!plate) return;
+    // Only the silverware in hand: anything else has to be put down before eating.
+    const other = (["right", "left"] as const).some((x) => (k.hands[x] && k.hands[x]!.ware !== "silverware") || holdingOther(s, x));
+    if (other) { if (!this.nagged) { this.nagged = true; toast(s, "Your hands are full", "warn", "Put down what you're holding (Q) before eating — keep only the silverware."); } return; }
     const silver = (["right", "left"] as const).some((x) => k.hands[x]?.ware === "silverware" && !k.hands[x]?.dirty);
     if (!silver) { if (!this.nagged) { this.nagged = true; toast(s, "You need silverware", "info", "Get up and take a fork from the counter by the sink."); } return; }
     // Fork in the right hand.

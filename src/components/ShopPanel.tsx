@@ -1,3 +1,4 @@
+import { needFreeHands } from "@/game/handsHeld";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { timeInfo } from "@/game/config";
@@ -124,12 +125,13 @@ function Swatches({ state, refresh, what }: Props & { what: "outfit" | "paint" }
     <div className="swatches">{list.map((c) => <button key={c} type="button" className={`swatch ${current === c ? "on" : ""}`} style={{ background: c }} aria-label={`Colour ${c}`}
       onClick={() => {
         if (current === c) return;
+        if (what === "outfit" && !needFreeHands(state, "changing your outfit")) return;
         if (!pay(state, price, what === "outfit" ? "New outfit" : "Bike paint")) return;
         if (what === "outfit") life.outfit = c; else life.bikePaint = c;
         toast(state, what === "outfit" ? "Looking sharp!" : "Fresh paint!", "money");
         refresh();
       }} />)}</div>
-    {current && <button type="button" className="phone-btn ghost" onClick={() => { if (what === "outfit") life.outfit = null; else life.bikePaint = null; refresh(); }}>Back to the original (free)</button>}
+    {current && <button type="button" className="phone-btn ghost" onClick={() => { if (what === "outfit") { if (!needFreeHands(state, "changing your outfit")) return; life.outfit = null; } else life.bikePaint = null; refresh(); }}>Back to the original (free)</button>}
     <p className="phone-note">{what === "outfit" ? "Your colour shows on your character everywhere you play." : "Paint goes on your own bike."}</p>
   </>;
 }

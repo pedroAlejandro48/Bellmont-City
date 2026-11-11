@@ -1,3 +1,4 @@
+import { needFreeHands } from "./handsHeld";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -1273,13 +1274,13 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         const B = floor.bath;
         if (what === "sink") {
           show(B.sink.x, B.sink.z, 1.5, "E  WASH HANDS");
-          act = () => { move.current = { kind: "wash", t0: now, plan: makePlan([walkSeg(from, fromYaw, washStand(floor), Math.PI / 2, carry)]) }; state.keys.clear(); };
+          act = () => { if (!needFreeHands(state, "washing your hands")) return; move.current = { kind: "wash", t0: now, plan: makePlan([walkSeg(from, fromYaw, washStand(floor), Math.PI / 2, carry)]) }; state.keys.clear(); };
         } else if (what === "toilet") {
           show(B.toilet.x, B.toilet.z, 1.3, "E  USE TOILET");
-          act = () => { move.current = { kind: "toilet", t0: now, plan: makePlan([walkSeg(from, fromYaw, B.toilet.front, Math.PI / 2, carry)]) }; state.keys.clear(); };
+          act = () => { if (!needFreeHands(state, "using the toilet")) return; move.current = { kind: "toilet", t0: now, plan: makePlan([walkSeg(from, fromYaw, B.toilet.front, Math.PI / 2, carry)]) }; state.keys.clear(); };
         } else {
           show((B.shower.x0 + B.shower.x1) / 2, B.shower.curtainZ, 2.2, "E  SHOWER");
-          act = () => { move.current = { kind: "shower", t0: now, plan: makePlan([walkSeg(from, fromYaw, showerSpots(floor).out, 0, carry)]) }; state.keys.clear(); };
+          act = () => { if (!needFreeHands(state, "showering")) return; move.current = { kind: "shower", t0: now, plan: makePlan([walkSeg(from, fromYaw, showerSpots(floor).out, 0, carry)]) }; state.keys.clear(); };
         }
       } else if (mine && doorSide(floor, "bathroom", lx, lz) && (!bedroomSide(floor, lx, lz) || nearerBath(floor, lx, lz))) {
         // The bathroom door (kept shut): pushed open going in, pulled open coming out.
@@ -1303,6 +1304,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         act = () => {
           // Only at night: from 9 PM to 5 AM.
           if (!canSleepAt(timeInfo(state.elapsed).hours)) { toast(state, "Not tired enough yet", "info", "You can go to bed between 9 PM and 5 AM."); return; }
+          if (!needFreeHands(state, "going to bed")) return;
           move.current = { kind: "bed", phase: "in", t0: now, flap: null, plan: makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, bedSpots(floor).S, -Math.PI / 2, { basket: false, bag: !!state.groceryBag })]) };
           state.keys.clear();
         };
@@ -1316,7 +1318,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       } else if (mine && closetNear(floor, lx, lz)) {
         const c = closetNear(floor, lx, lz)!, stand: [number, number] = [c.x + Math.sin(c.rot) * (c.d / 2 + 0.62), c.z + Math.cos(c.rot) * (c.d / 2 + 0.62)];
         show(c.x, c.z + 0.4, 2.2, "E  CLOSET");
-        act = () => { move.current = { kind: "closet", phase: "open", t0: now, plan: makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, stand, c.rot + Math.PI, { basket: false, bag: !!state.groceryBag })]) }; state.keys.clear(); };
+        act = () => { if (!needFreeHands(state, "changing your clothes")) return; move.current = { kind: "closet", phase: "open", t0: now, plan: makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, stand, c.rot + Math.PI, { basket: false, bag: !!state.groceryBag })]) }; state.keys.clear(); };
       } else if (mine && chairNear(floor, lx, lz) !== null) {
         const idx = chairNear(floor, lx, lz)!, c = floor.items[idx]!;
         show(c.x - c.f[0] * CHAIR.back, c.z - c.f[1] * CHAIR.back, 1.5, "E  SIT");
