@@ -1,3 +1,4 @@
+import { MoonTalk } from "@/components/MoonTalk";
 import { touchMode } from "./touchMode";
 import * as THREE from "three";
 import { Canvas, useThree } from "@react-three/fiber";
@@ -356,7 +357,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
       <OrderMenu state={state} />
       <MiniMap state={state} />
       <Toasts state={state} />
-      <Phone state={state} /><ShopPanel state={state} /><AptPanels state={state} />
+      <Phone state={state} /><ShopPanel state={state} /><AptPanels state={state} /><MoonTalk state={state} />
       
       <div ref={fade} className="pointer-events-none fixed inset-0 z-30 bg-black" style={{ opacity: 0 }} aria-hidden />
       {dead && (

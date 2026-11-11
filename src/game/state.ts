@@ -173,6 +173,12 @@ export type GameState = {
   avatar: AvatarRig;
   /** The character's colour (from the account's gender; white for guests). */
   bodyColor: string;
+  /** The player's gender (from the account; null for guests). */
+  gender: "female" | "male" | null;
+  /** Where the moon is in the sky (a unit vector from the viewer), kept by Sky. */
+  moonDir: THREE.Vector3;
+  /** Talking to the moon: her face in the sky (mood, blush 0..1) and until when it shows. */
+  moonFace: { mood: import("./moon").Mood; blush: number; until: number } | null;
   others: OtherBody[];
   /** Other players' parked scooters: solid, but only their owners can move them. */
   otherBikes: OtherBike[];
@@ -303,7 +309,7 @@ export function createState(save: SaveData): GameState {
     incidents: [],
     interactQueued: false,
     avatar: { body: [], ragdoll: [], scooter: [] },
-    bodyColor: "#ffffff",
+    bodyColor: "#ffffff", gender: null, moonDir: new THREE.Vector3(0, 1, 0), moonFace: null,
     others: [],
     otherBikes: [],
     parkedBikes: [],

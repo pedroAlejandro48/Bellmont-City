@@ -1,3 +1,4 @@
+import { drawMoonFace } from "./moonFace";
 import { stepEnergy, stepNeeds } from "./needs";
 import { quality } from "./quality";
 import { useFrame, useThree } from "@react-three/fiber";
@@ -74,6 +75,12 @@ export function SkyAndLights({ state }: { state: GameState }) {
   const hemi = useRef<THREE.HemisphereLight>(null);
   const sunMesh = useRef<THREE.Group>(null);
   const moonMesh = useRef<THREE.Group>(null);
+  const faceSprite = useRef<THREE.Sprite>(null), faceKey = useRef("");
+  const face = useMemo(() => {
+    const c = document.createElement("canvas"); c.width = c.height = 256;
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    return { ctx: c.getContext("2d")!, tex, mat: new THREE.SpriteMaterial({ map: tex, transparent: true, fog: false, toneMapped: false, depthWrite: false }) };
+  }, []);
   const bodies = useMemo(() => ({
     sun: new THREE.SpriteMaterial({ map: makeSunGlow(), color: "#ffffff", transparent: true, depthWrite: false, fog: false, toneMapped: false, blending: THREE.AdditiveBlending }),
     moon: new THREE.MeshBasicMaterial({ map: makeMoon(), fog: false, toneMapped: false }),
@@ -126,6 +133,19 @@ export function SkyAndLights({ state }: { state: GameState }) {
     state.darkness = ti.darkness;
     const e = ti.elevation;
     const dir = new THREE.Vector3(Math.cos(ti.angle), Math.sin(ti.angle), 0.35).normalize();
+    state.moonDir.copy(dir);
+    // Talking to the moon: her face, drawn again whenever her mood or blush changes, fading after the talk.
+    const mf = state.moonFace, fs = faceSprite.current;
+    if (fs) {
+      const left = mf ? mf.until - state.simulationTime : -1, show = !ti.isDay && !!mf && left > 0;
+      fs.visible = show;
+      if (show && mf) {
+        const key = `${mf.mood}|${mf.blush.toFixed(2)}|${state.gender}`;
+        if (key !== faceKey.current) { faceKey.current = key; drawMoonFace(face.ctx, 256, mf.mood, mf.blush, state.gender !== "female"); face.tex.needsUpdate = true; }
+        face.mat.opacity = Math.min(1, left / 2);
+        fs.position.copy(dir).multiplyScalar(-20.5);
+      }
+    }
 
     // sky colour
     if (ti.isDay) {
@@ -174,7 +194,7 @@ export function SkyAndLights({ state }: { state: GameState }) {
       const body = new THREE.Vector3().copy(camera.position).addScaledVector(dir, away);
       sunMesh.current.visible = ti.isDay;
       // Behind cloud the sun and moon fade (a glow is left in thin cloud).
-      bodies.sun.opacity = 1 - grey * 0.92; bodies.halo.opacity = 0.85 * (1 - grey * 0.9); bodies.moon.opacity = 1 - grey * 0.85; bodies.moon.transparent = grey > 0.01;
+      bodies.sun.opacity = 1 - grey * 0.92; bodies.halo.opacity = 0.85 * (1 - grey * 0.9); bodies.moon.opacity = 1 - grey * 0.85; bodies.moon.transparent = grey > 0.01; face.mat.opacity *= 1 - grey * 0.85;
       moonMesh.current.visible = !ti.isDay;
       const shown = ti.isDay ? sunMesh.current : moonMesh.current;
       // Nearer, smaller in proportion: the same size in the sky either way.
@@ -214,6 +234,8 @@ export function SkyAndLights({ state }: { state: GameState }) {
       <group ref={moonMesh}>
         <sprite material={bodies.halo} scale={[120, 120, 1]} renderOrder={-1} />
         <mesh material={bodies.moon} rotation={[0.3, -1.2, 0]}><sphereGeometry args={[20, 32, 24]} /></mesh>
+        {/* Her face (only while you talk to her, and a little after). */}
+        <sprite ref={faceSprite} material={face.mat} scale={[34, 34, 1]} visible={false} renderOrder={1} />
       </group>
       <points ref={stars} geometry={starGeo} material={starMat} />
       <Rain state={state} />

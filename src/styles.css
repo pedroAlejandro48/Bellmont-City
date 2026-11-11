@@ -541,3 +541,22 @@
 .kitchen-pick { padding: 0.3rem 0.55rem; border-radius: 999px; background: #ffb547; color: #1b1206; font-weight: 700; font-size: 0.8rem; }
 .cupboard-hint { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0.9rem; border-radius: 0.8rem; background: rgba(15,17,23,0.85); color: #fff; font-weight: 600; }
 .cupboard-hint button { padding: 0.35rem 0.8rem; border-radius: 0.5rem; background: #ffb547; color: #1b1206; font-weight: 800; }
+
+/* Talking to the moon: a button at night outdoors, and the talk itself (moonlit glass). */
+.moon-button { position: fixed; left: 50%; top: calc(64px + env(safe-area-inset-top)); transform: translateX(-50%); z-index: 15; display: flex; align-items: center; gap: 0.4rem; padding: 0.45rem 0.85rem; border-radius: 999px; background: rgba(20,24,46,0.72); color: #f3eecf; font-weight: 700; font-size: 0.9rem; border: 1px solid rgba(243,238,207,0.35); box-shadow: 0 0 18px rgba(200,210,255,0.25); }
+.moon-button kbd { font-size: 0.7rem; padding: 0.05rem 0.35rem; border-radius: 0.3rem; background: rgba(255,255,255,0.15); }
+.moon-talk { position: fixed; left: 50%; bottom: calc(120px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 30; width: min(440px, calc(100vw - 32px)); padding: 0.9rem 1rem 1rem; border-radius: 1rem; background: linear-gradient(180deg, rgba(28,32,64,0.92), rgba(16,18,38,0.94)); color: #f4f1e2; box-shadow: 0 10px 40px rgba(0,0,0,0.45), 0 0 30px rgba(180,190,255,0.18); border: 1px solid rgba(243,238,207,0.25); }
+.moon-head { display: flex; align-items: center; gap: 0.75rem; }
+.moon-face { width: 64px; height: 64px; filter: drop-shadow(0 0 10px rgba(255,250,220,0.45)); }
+.moon-head b { font-size: 1.1rem; letter-spacing: 0.02em; }
+.moon-hearts span { color: rgba(255,255,255,0.18); margin-right: 2px; font-size: 0.95rem; }
+.moon-hearts span.on { color: #ff7fa6; text-shadow: 0 0 6px rgba(255,127,166,0.6); }
+.moon-close { margin-left: auto; align-self: flex-start; opacity: 0.7; }
+.moon-said { margin: 0.7rem 0 0; color: #b9c2e6; font-style: italic; font-size: 0.88rem; }
+.moon-line { margin: 0.45rem 0 0.8rem; font-size: 1.02rem; line-height: 1.4; white-space: pre-line; }
+.moon-options { display: grid; gap: 0.4rem; }
+.moon-options button, .moon-bye { text-align: left; padding: 0.55rem 0.75rem; border-radius: 0.6rem; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); color: #fff; font-size: 0.9rem; }
+.moon-options button:hover, .moon-bye:hover { background: rgba(255,255,255,0.16); }
+.moon-bye { width: 100%; text-align: center; font-weight: 700; background: rgba(243,238,207,0.18); }
+
+@media (min-width: 701px) { .moon-talk { left: auto; right: 28px; bottom: auto; top: 50%; transform: translateY(-50%); width: 400px; } }

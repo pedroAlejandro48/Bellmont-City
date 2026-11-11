@@ -60,7 +60,7 @@ function useCloudGame(account: Account, world?: WorldSlot) {
       if (!data && !backup) parsed = freshSave(world);
       else if (world) parsed = { ...parsed, worldSeed: world.seed, elapsed: world.elapsed() };
       const loaded = createState(parsed);
-      loaded.bodyColor = bodyColor(account.gender);
+      loaded.bodyColor = bodyColor(account.gender); loaded.gender = account.gender ?? null;
       activeState.current = loaded;
       setState(loaded);
       } catch { if (!cancelled) setLoadError(true); }
@@ -95,7 +95,7 @@ function useCloudGame(account: Account, world?: WorldSlot) {
     const fresh = freshSave(world, activeState.current?.worldSeed);
     retained.current = {};
     const newState = createState(fresh);
-    newState.bodyColor = bodyColor(account.gender);
+    newState.bodyColor = bodyColor(account.gender); newState.gender = account.gender ?? null;
     activeState.current = newState;
     setState(newState);
     setRound((value) => value + 1);
