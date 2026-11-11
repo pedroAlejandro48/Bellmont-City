@@ -1,3 +1,4 @@
+import { handFree, handsFullMessage } from "./handsHeld";
 // The inventory in play: taking things out and putting them away (number keys), storing carried water, using
 // (E: eat, drink), putting down (Q) and picking up again. Animations read `state.invAct`.
 import * as THREE from "three";
@@ -33,7 +34,8 @@ export function pressInventorySlot(state: GameState, slot: number) {
   if (r.kind === "hide") { if (slot === 0) state.phone = { open: false, app: null, atm: false }; else state.heldSlot = null; return; }
   if (r.kind === "show") {
     if (slot === 0) { state.phone = { open: true, app: null, atm: false }; state.keys.clear(); guideDone(state, 0); return; }
-    if (state.heldTrash || state.hands.right) { toast(state, "Your right hand is full", "warn", "Put down what you're carrying first (Q)."); return; }
+    // (Swapping one inventory thing for another is fine: it goes back in the inventory.)
+    if (state.heldSlot === null && !handFree(state, "right")) { const m = handsFullMessage("right"); toast(state, m.title, "warn", m.body); return; }
     state.phone = { open: false, app: null, atm: false };
     state.heldSlot = slot;
     return;
@@ -88,7 +90,7 @@ export function pickUpNear(state: GameState) {
   if (!best) return false;
   // Can't take it (hand or inventory full): the press is left for something else (eating what's in the hand).
   const trash = best.kind === "bottle" || best.kind === "can";
-  const blocked = best.kind === "groceryBag" ? !!(state.groceryBag || state.hands.left) : trash ? !!(state.heldTrash || state.heldSlot !== null || state.hands.right) : !state.life.inventory.some((x, i) => i > 0 && x === null);
+  const blocked = best.kind === "groceryBag" ? !handFree(state, "left") : trash ? !handFree(state, "right") : !state.life.inventory.some((x, i) => i > 0 && x === null);
   if (blocked) {
     if (state.heldSlot === null) { toast(state, best.kind === "groceryBag" ? "Your left hand is full" : trash ? "Your right hand is full" : "Your inventory is full", "warn"); return true; }
     return false;

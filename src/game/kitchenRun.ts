@@ -2,7 +2,8 @@
 // (kitchenMoves); their events change what's where (life.kitchen); the cooking is watched (ready, burnt) and told.
 import type { AptFloor } from "./aptRoom";
 import { GAME_MINUTE } from "./config";
-import { dirtyHeld, freeHand, freePlace, isDish, isPotLike, putAway, stoveState, type Held, type Kitchen } from "./kitchen";
+import { handFree, handsFullMessage, holdingOther } from "./handsHeld";
+import { dirtyHeld, freePlace, isDish, isPotLike, putAway, stoveState, type Held, type Kitchen } from "./kitchen";
 import {
   atRack, cansIn, dumpInBin, fromTable, intoCupboard, kplan, kplanAt, offStove, openCupboard, pourToPlate, rackSpot, takeFromCupboard, toSink, toStove, toTable, washUp,
   type Carry, type KPlan, type KPose, type KSeg,
@@ -36,6 +37,10 @@ export class KitchenRun {
   private nagged = false;
 
   get busy() { return this.mv !== null; }
+  /** The right hand can take something: it's free, or it holds a kitchen thing that can move to a free left hand. */
+  private canTakeRight(s: GameState) { return handFree(s, "right") || (!!this.k(s).hands.right && !holdingOther(s, "right") && handFree(s, "left")); }
+  /** Makes the right hand free for taking something (moving its kitchen thing to the left hand). */
+  private rightFree(s: GameState) { const h = this.k(s).hands; if (h.right && handFree(s, "left")) { h.left = h.right; h.right = null; } }
   private k(s: GameState): Kitchen { return s.life.kitchen; }
   private carry(s: GameState): Carry { const h = this.k(s).hands; return { left: !!h.left, right: !!h.right }; }
   private go(c: Ctx, segs: KSeg[], on: (ev: string) => void) { this.mv = { plan: kplan(segs), t0: c.now, prev: -1, on, pausedAt: null }; c.state.keys.clear(); }
@@ -152,7 +157,7 @@ export class KitchenRun {
       return true;
     }
     // By the table with free hands: clear a finished plate.
-    if (!h.left && !h.right) {
+    if (handFree(s, "left") && handFree(s, "right")) {
       const place = c.fl.kitchen.places.find((p) => Math.hypot(c.lx - p.stand[0], c.lz - p.stand[1]) < 1.3 && k.table.some((t) => t.chair === p.chair && t.eaten));
       if (place) {
         const t = k.table.find((x) => x.chair === place.chair)!;
@@ -199,14 +204,14 @@ export class KitchenRun {
       if (st === "empty") {
         const cans = s.life.fridge.filter((n) => canByName(n));
         if (!cans.length) return { at, label: "NO CANNED FOOD IN THE FRIDGE", act: null };
-        if (h.left || h.right) return { at, label: "FREE YOUR HANDS TO COOK", act: null };
+        if (!handFree(s, "left") || !handFree(s, "right")) return { at, label: "FREE YOUR HANDS TO COOK", act: null };
         return { at, label: `E  COOK (UP TO ${CAPACITY[k.stove!.ware]} CANS)`, act: () => { s.uiLock = "cook"; s.kitchenAsk = null; s.keys.clear(); } };
       }
       if (st === "cooking") { const left = Math.ceil(COOK_MINUTES - (s.elapsed - k.stove!.start!) / GAME_MINUTE); return { at, label: `COOKING · ${left} MIN LEFT`, act: null }; }
       if (st === "ready" || st === "burnt") {
-        if (h.right && h.left) return { at, label: "YOUR HANDS ARE FULL", act: null };
+        if (!this.canTakeRight(s)) return { at, label: "YOUR HANDS ARE FULL", act: null };
         return { at, label: st === "burnt" ? "E  TAKE IT OFF (BURNT)" : "E  TAKE IT OFF THE STOVE", act: () => {
-          if (h.right) { h.left = h.right; h.right = null; }
+          this.rightFree(s);
           this.go(c, offStove(fl, from, c.yaw, this.carry(s)), (e) => {
             if (e !== "lift" || !k.stove) return;
             const burnt = stoveState(k, s.elapsed, GAME_MINUTE) === "burnt";
@@ -222,16 +227,16 @@ export class KitchenRun {
       const dirty = dirtyHeld(k), n = k.sink.length + dirty.reduce((a, x) => a + (h[x]!.silver ? 2 : 1), 0);
       if (n > 0) return { at, label: `E  WASH UP (${n})`, act: () => this.washAll(c) };
       const bagWares = (s.groceryBag ?? []).filter(isWare);
-      if (bagWares.length) return { at, label: "E  PUT AWAY THE KITCHENWARE", act: () => this.putAwayBag(c, bagWares) };
+      if (bagWares.length) return handFree(s, "right") ? { at, label: "E  PUT AWAY THE KITCHENWARE", act: () => this.putAwayBag(c, bagWares) } : { at, label: "YOUR RIGHT HAND IS FULL", act: null };
       const cleanPot = (["right", "left"] as const).find((x) => !!h[x] && isPotLike(h[x]!.ware) && !h[x]!.dirty && !h[x]!.food);
       if (cleanPot) return { at, label: "E  PUT IT IN THE CUPBOARD", act: () => {
         if (cleanPot === "left") { const r = h.right; h.right = h.left; h.left = r; }
         this.go(c, intoCupboard(fl, from, c.yaw, k.cupboard.length, 1, this.carry(s)), (e) => { if (e === "in" && h.right) { k.cupboard.push(h.right.ware); h.right = null; } });
       } };
       if (k.cupboard.length) {
-        if (h.right && h.left) return { at, label: "YOUR HANDS ARE FULL", act: null };
+        if (!this.canTakeRight(s)) return { at, label: "YOUR HANDS ARE FULL", act: null };
         return { at, label: "E  POTS AND PANS", act: () => {
-          if (h.right) { h.left = h.right; h.right = null; }
+          this.rightFree(s);
           this.go(c, openCupboard(fl, from, c.yaw, this.carry(s)), () => {});
         } };
       }
@@ -241,7 +246,7 @@ export class KitchenRun {
     if (near(K.rackStand, 0.7)) {
       const at: [number, number, number] = [K.rack[0], 1.25, K.rack[2]];
       if (!k.rack.length) return { at, label: "NO PLATES OR CUPS YET", act: null };
-      if (h.left && h.right) return { at, label: "YOUR HANDS ARE FULL", act: null };
+      if (!handFree(s, "left") && !handFree(s, "right")) return { at, label: "YOUR HANDS ARE FULL", act: null };
       return { at, label: "E  PLATE · CUP · SILVERWARE", act: () => { s.uiLock = "rack"; s.kitchenAsk = null; s.keys.clear(); } };
     }
     void carry;
@@ -254,8 +259,10 @@ export class KitchenRun {
     if (!ask || this.mv) return;
     s.kitchenAsk = null;
     if (ask.rack) {
-      const w = ask.rack, hand = freeHand(k, w === "silverware" ? "right" : "left");
-      if (!hand || !k.rack.includes(w)) return;
+      const w = ask.rack, pref = w === "silverware" ? "right" : "left", other = pref === "left" ? "right" : "left";
+      const hand = handFree(s, pref) ? pref : handFree(s, other) ? other : null;
+      if (!hand) { const m = handsFullMessage(); toast(s, m.title, "warn", m.body); return; }
+      if (!k.rack.includes(w)) return;
       this.go(c, atRack(c.fl, from, c.yaw, rackSpot(c.fl, w), hand, "take", this.carry(s)), (e) => { if (e === "take") { k.rack.splice(k.rack.indexOf(w), 1); h[hand] = { ware: w, food: null, dirty: false }; } });
     }
     if (ask.cans && ask.cans.length && k.stove && k.stove.start === null) {

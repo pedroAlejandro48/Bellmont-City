@@ -1,3 +1,4 @@
+import { handFree } from "./handsHeld";
 import { guideDone, lifeEvent } from "./lifeRuntime";
 import { Html } from "@react-three/drei";
 import { quality } from "./quality";
@@ -206,7 +207,7 @@ export function Food({ state }: { state: GameState }) {
     }
     // E on something lying on the ground (anyone's): squat down and pick it up.
     if (state.interactQueued && onFoot && !state.grab && !state.drop && state.interior?.phase !== "entering" && state.interior?.phase !== "leaving" && !state.script) {
-      const free = (["right", "left"] as const).filter((h) => !hands[h]);
+      const free = (["right", "left"] as const).filter((h) => !hands[h] && handFree(state, h));
       let best: { pack: FoodPack; d: number } | null = null;
       for (const p of view.packs) {
         if (p.where !== "ground" || dropped.has(p.id)) continue;
@@ -226,7 +227,7 @@ export function Food({ state }: { state: GameState }) {
     }
     // E: pick up food from the counter, one thing per free hand (only what this player ordered).
     if (state.interactQueued && place && lp && standing && !state.grab && !state.drop) {
-      const free = (["right", "left"] as const).filter((h) => !hands[h]);
+      const free = (["right", "left"] as const).filter((h) => !hands[h] && handFree(state, h));
       let best: { pack: FoodPack; d: number } | null = null;
       for (const p of view.packs) {
         if (p.key !== place.key || p.where !== "counter" || p.owner !== me) continue;
@@ -255,7 +256,7 @@ export function Food({ state }: { state: GameState }) {
     const st = state.simulationTime, mm = meal.current;
     const kindOf = (p: FoodPack) => byKey.get(p.key)?.kind ?? "burger";
     const startGrab = (pk: FoodPack, target: THREE.Vector3, type: "grab" | "pickup") => {
-      const free = (["right", "left"] as const).filter((h) => !hands[h]);
+      const free = (["right", "left"] as const).filter((h) => !hands[h] && handFree(state, h));
       if (!free.length) return false;
       state.grab = { pack: pk.id, hand: free[0]!, at: st, target, kind: pk.kind, bags: pk.bags, cups: pk.cups, confirmed: false };
       link.send({ type, pack: pk.id, hand: free[0]! });

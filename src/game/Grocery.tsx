@@ -1,3 +1,4 @@
+import { handFree, handsFullMessage, holding as heldIn } from "./handsHeld";
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -187,7 +188,12 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
         const ps = pileSpot(pile);
         if (Math.hypot(lx - ps.stand[0], lz - ps.stand[1]) < 1.3) {
           const [x, z] = world(pile.x, pile.z); Object.assign(p, { visible: true, x, y: SIDEWALK_H + 1.0, z, label: "E  TAKE A BASKET" });
-          if (state.interactQueued) { state.interactQueued = false; start(takeBasket([lx, lz], yaw, pile, !!state.groceryBag), "take"); }
+          if (state.interactQueued) {
+            state.interactQueued = false;
+            // The basket goes in the right hand: it has to be free.
+            if (!handFree(state, "right")) { const m = handsFullMessage("right"); toast(state, m.title, "warn", m.body); }
+            else start(takeBasket([lx, lz], yaw, pile, !!state.groceryBag), "take");
+          }
         } else {
           const src = srcs.find((sr) => Math.hypot(lx - sr.stand[0], lz - sr.stand[1]) < 1.25);
           if (src) { const [x, z] = world(src.take[0], src.take[2]); Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: "TAKE A BASKET FIRST" }); }
@@ -204,6 +210,8 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
           [p.x, p.z] = world(spots.basket[0], spots.basket[2]); p.y = SIDEWALK_H + 1.5; p.visible = true; p.label = `E  PAY ${money(total)}`;
           action = () => {
             if (checkout.current) { toast(state, "Wait a moment", "info", "The cashier is serving someone."); return; }
+            // The bag is handed over into the left hand (or more go in the bag already held there).
+            if (!state.groceryBag && !handFree(state, "left")) { const m = handsFullMessage("left"); toast(state, m.title, "warn", m.body); return; }
             const day = timeInfo(state.elapsed).day, paid = spend(state.life, state.cash, total, day, "Fresh Market");
             if (!paid.ok) { toast(state, "Not enough money", "warn", `Your groceries come to ${money(total)}.`); return; }
             state.cash = paid.cash;
@@ -216,7 +224,8 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
         } else if (src && n < BASKET_MAX) {
           const [x, z] = world(src.take[0], src.take[2]);
           Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: `E  ${ITEMS[src.kind].name.toUpperCase()} ${money(GROCERY_PRICE[src.kind] ?? 1)}` });
-          action = () => start(pickItem([lx, lz], yaw, src, !!state.groceryBag), "pick", { src });
+          // (The left hand takes it off the shelf: it must be free, or carrying the grocery bag.)
+          action = () => { if (heldIn(state, "left") && !state.groceryBag) { const m = handsFullMessage("left"); toast(state, m.title, "warn", m.body); return; } start(pickItem([lx, lz], yaw, src, !!state.groceryBag), "pick", { src }); };
         } else if (src && n >= BASKET_MAX) { const [x, z] = world(src.take[0], src.take[2]); Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: "BASKET FULL" }); }
         if (state.interactQueued && action) { state.interactQueued = false; action(); }
         // At the till with an empty basket: the register's panel (the clerk job), once until stepping away.
