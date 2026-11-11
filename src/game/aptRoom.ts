@@ -52,7 +52,7 @@ export type AptFloor = Room & {
   /**
    * The kitchen along the front wall (from the corner: fridge, counter, sink, oven, the bin): where one stands at
    * each (facing the wall, +z), the burner a pot sits on, the sink's basin, the counter's spots for clean plates,
-   * bowls, cups, jars and silverware, the cupboard under the sink (its doors' hinges), and on the table the place
+   * bowls, cups, glasses and silverware, the cupboard under the sink (its doors' hinges), and on the table the place
    * in front of each dining chair (`items` index → where a plate goes).
    */
   kitchen: {

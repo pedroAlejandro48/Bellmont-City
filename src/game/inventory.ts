@@ -26,7 +26,7 @@ export const ITEMS: Record<ItemKind, { name: string; icon: string; use: "eat" | 
   key: { name: "Apartment key", icon: "🔑", use: "hold" },
   ...Object.fromEntries(CANS.map((k) => [k, { name: CAN_INFO[k].name, icon: "🥫", use: "hold" as const }])),
   ...Object.fromEntries(CANDIES.map((k) => [k, { name: CANDY_INFO[k].name, icon: CANDY_INFO[k].shape === "pop" ? "🍭" : CANDY_INFO[k].shape === "bag" ? "🍬" : "🍫", use: "eat" as const }])),
-  ...Object.fromEntries(WARES.map((k) => [k, { name: WARE_INFO[k].name, icon: k === "pot" || k === "pan" ? "🍳" : k === "cup" ? "☕" : k === "silverware" ? "🍴" : "🍽️", use: "hold" as const }])),
+  ...Object.fromEntries(WARES.map((k) => [k, { name: WARE_INFO[k].name, icon: k === "pot" || k === "pan" ? "🍳" : k === "cup" ? "☕" : k === "glass" ? "🥛" : k === "silverware" ? "🍴" : "🍽️", use: "hold" as const }])),
 } as Record<ItemKind, { name: string; icon: string; use: "eat" | "drink" | "open" | "hold"; value?: number; trash?: "bottle" | "can" }>;
 export const isItemKind = (k: unknown): k is ItemKind => typeof k === "string" && k in ITEMS;
 

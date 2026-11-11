@@ -273,7 +273,7 @@ export class KitchenRun {
       const at: [number, number, number] = [K.rack[0], 1.25, K.rack[2]];
       if (!k.rack.length) return { at, label: "NO PLATES OR CUPS YET", act: null };
       if (!handFree(s, "left") && !handFree(s, "right")) return { at, label: "YOUR HANDS ARE FULL", act: null };
-      return { at, label: "E  PLATE · CUP · SILVERWARE", act: () => { s.uiLock = "rack"; s.kitchenAsk = null; s.keys.clear(); } };
+      return { at, label: "E  PLATE · CUP · GLASS · SILVERWARE", act: () => { s.uiLock = "rack"; s.kitchenAsk = null; s.keys.clear(); } };
     }
     void carry;
     return null;

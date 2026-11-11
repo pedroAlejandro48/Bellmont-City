@@ -86,6 +86,11 @@ function build() {
     potIn: new THREE.MeshStandardMaterial({ color: "#b8bec5", roughness: 0.35, metalness: 0.4, side: THREE.BackSide }),
     handle: new THREE.MeshStandardMaterial({ color: "#1e1f22", roughness: 0.6 }),
     porcelain: new THREE.MeshStandardMaterial({ color: "#f7f6f2", roughness: 0.18 }),
+    porcelain2: new THREE.MeshStandardMaterial({ color: "#f7f6f2", roughness: 0.18, side: THREE.DoubleSide }),
+    pot2: new THREE.MeshStandardMaterial({ color: "#cfd4da", roughness: 0.28, metalness: 0.45, side: THREE.DoubleSide }),
+    panDark: new THREE.MeshStandardMaterial({ color: "#2a2b2e", roughness: 0.45, metalness: 0.4, side: THREE.DoubleSide }),
+    mug2: new THREE.MeshStandardMaterial({ color: "#e8e2d6", roughness: 0.3, side: THREE.DoubleSide }),
+    clear: new THREE.MeshPhysicalMaterial({ color: "#e6f3f6", roughness: 0.04, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide, clearcoat: 1 }),
     rim: new THREE.MeshStandardMaterial({ color: "#2f5f9a", roughness: 0.3 }),
     glass: new THREE.MeshStandardMaterial({ color: "#d6ecf2", roughness: 0.05, transparent: true, opacity: 0.4, depthWrite: false }),
     lid: new THREE.MeshStandardMaterial({ color: "#c2402a", roughness: 0.4, metalness: 0.3 }),
@@ -95,6 +100,32 @@ function build() {
   };
 }
 export const pantryLooks = () => (CACHE ??= build());
+
+/**
+ * Hollow vessels as solids of revolution: each profile goes from the middle of the base out, up the outside wall,
+ * over a rounded rim and back down the inside to the middle of the inside floor — so there's a real space inside,
+ * walls with thickness and a lip. Made once, shared (marked so nothing disposes them).
+ */
+const lathe = (pts: [number, number][], seg = 40) => { const g = new THREE.LatheGeometry(pts.map(([x, y]) => new THREE.Vector2(x, y)), seg); g.userData["shared"] = true; return g; };
+let VES: ReturnType<typeof makeVessels> | null = null;
+function makeVessels() {
+  return {
+    // A stock pot: straight steel walls 4 mm thick, a heavy 12 mm base, a rolled rim.
+    pot: lathe([[0, 0], [0.1, 0], [0.105, 0.004], [0.108, 0.04], [0.11, 0.146], [0.1125, 0.149], [0.112, 0.1525], [0.1085, 0.153], [0.106, 0.15], [0.104, 0.04], [0.101, 0.014], [0.09, 0.012], [0, 0.012]]),
+    // A frying pan: flared sides; the steel outside and rim, the dark non-stick inside (its own piece).
+    panOut: lathe([[0, 0], [0.106, 0], [0.111, 0.003], [0.118, 0.02], [0.13, 0.05], [0.1325, 0.053], [0.131, 0.0555], [0.1275, 0.054]]),
+    panIn: lathe([[0.1275, 0.054], [0.124, 0.05], [0.112, 0.02], [0.106, 0.011], [0.09, 0.009], [0, 0.009]]),
+    // A porcelain bowl on a little foot ring, curving up to a rounded lip.
+    bowl: lathe([[0, 0.003], [0.036, 0.003], [0.038, 0], [0.043, 0], [0.045, 0.006], [0.058, 0.02], [0.072, 0.042], [0.08, 0.066], [0.082, 0.071], [0.0795, 0.073], [0.077, 0.069], [0.069, 0.044], [0.055, 0.024], [0.04, 0.014], [0, 0.012]]),
+    // A mug: slightly flared walls 3.5 mm thick, a thick bottom.
+    cup: lathe([[0, 0], [0.032, 0], [0.034, 0.003], [0.036, 0.05], [0.038, 0.09], [0.0385, 0.0925], [0.037, 0.094], [0.0345, 0.0915], [0.0325, 0.05], [0.0305, 0.012], [0, 0.01]]),
+    // A plain drinking glass (a tumbler): thin walls, a heavy clear bottom.
+    glass: lathe([[0, 0], [0.029, 0], [0.031, 0.003], [0.034, 0.05], [0.0375, 0.105], [0.0375, 0.1065], [0.0355, 0.1065], [0.0355, 0.105], [0.032, 0.05], [0.0285, 0.016], [0, 0.015]]),
+    // The mug's handle: a C curving off its side.
+    mugHandle: (() => { const g = new THREE.TorusGeometry(0.025, 0.0055, 8, 18, Math.PI * 1.25); g.userData["shared"] = true; return g; })(),
+  };
+}
+export const vessels = () => (VES ??= makeVessels());
 export type PantryLooks = ReturnType<typeof pantryLooks>;
 
 /** A can (origin at its bottom middle): its label round the side, steel top and bottom, the easy-open ring on top
@@ -125,34 +156,26 @@ export function CandyModel({ kind }: { kind: CandyKind }) {
 }
 /** Kitchenware (origin at its bottom middle; a pot's and pan's handles along +x). `food` shows what's in it. */
 export function WareModel({ kind, food = null }: { kind: WareKind; food?: { a: string; b: string; level: number } | null }) {
-  const L = pantryLooks();
+  const L = pantryLooks(), V = vessels();
   switch (kind) {
     case "pot": return <group>
-      {/* A solid steel pot: thick walls (outside, the brushed inside, a rolled rim), a heavy base, two loop handles
-          riveted to its sides. */}
-      <mesh position={[0, 0.075, 0]} material={L.pot} castShadow receiveShadow><cylinderGeometry args={[0.11, 0.105, 0.15, 32, 1, true]} /></mesh>
-      <mesh position={[0, 0.078, 0]} material={L.potIn}><cylinderGeometry args={[0.103, 0.098, 0.144, 32, 1, true]} /></mesh>
-      <mesh position={[0, 0.15, 0]} rotation-x={Math.PI / 2} material={L.pot}><torusGeometry args={[0.1065, 0.0045, 8, 40]} /></mesh>
-      <mesh position={[0, 0.008, 0]} material={L.pot} castShadow><cylinderGeometry args={[0.105, 0.1, 0.016, 32]} /></mesh>
-      <mesh position={[0, 0.0165, 0]} rotation-x={-Math.PI / 2} material={L.potIn}><circleGeometry args={[0.099, 32]} /></mesh>
+      {/* A steel stock pot: hollow, walls with thickness and a rolled rim, a heavy base, two loop handles riveted to
+          its sides. */}
+      <mesh geometry={V.pot} material={L.pot2} castShadow receiveShadow />
       {[-1, 1].map((sd) => <group key={sd} position={[sd * 0.108, 0.118, 0]} rotation-y={sd > 0 ? Math.PI / 2 : -Math.PI / 2}>
         <mesh rotation-x={Math.PI / 2} material={L.handle} castShadow><torusGeometry args={[0.032, 0.007, 8, 18, Math.PI]} /></mesh>
         {[-1, 1].map((e) => <mesh key={e} position={[e * 0.032, 0, 0]} material={L.pot}><sphereGeometry args={[0.009, 8, 6]} /></mesh>)}
       </group>)}
-      {food && <FoodFill r={0.1} y={0.018 + 0.11 * food.level} food={food} />}
+      {food && <FoodFill r={0.1} y={0.016 + 0.11 * food.level} food={food} />}
     </group>;
     case "pan": return <group>
-      {/* A frying pan: flared steel sides with a dark non-stick inside, a thick base, a long handle off a riveted
-          bracket at the rim. */}
-      <mesh position={[0, 0.026, 0]} material={L.pot} castShadow receiveShadow><cylinderGeometry args={[0.13, 0.112, 0.052, 32, 1, true]} /></mesh>
-      <mesh position={[0, 0.028, 0]} material={L.panInSide}><cylinderGeometry args={[0.125, 0.108, 0.048, 32, 1, true]} /></mesh>
-      <mesh position={[0, 0.052, 0]} rotation-x={Math.PI / 2} material={L.pot}><torusGeometry args={[0.1275, 0.0035, 8, 40]} /></mesh>
-      <mesh position={[0, 0.005, 0]} material={L.pot} castShadow><cylinderGeometry args={[0.112, 0.11, 0.01, 32]} /></mesh>
-      <mesh position={[0, 0.0105, 0]} rotation-x={-Math.PI / 2} material={L.panIn}><circleGeometry args={[0.108, 32]} /></mesh>
-      <mesh position={[0.14, 0.045, 0]} material={L.pot}><boxGeometry args={[0.04, 0.02, 0.03]} /></mesh>
+      {/* A frying pan: hollow, flared steel sides, the dark non-stick inside, a long handle off a riveted bracket. */}
+      <mesh geometry={V.panOut} material={L.pot2} castShadow receiveShadow />
+      <mesh geometry={V.panIn} material={L.panDark} receiveShadow />
+      <mesh position={[0.142, 0.046, 0]} material={L.pot}><boxGeometry args={[0.03, 0.02, 0.03]} /></mesh>
       <mesh position={[0.25, 0.058, 0]} rotation-z={0.16} material={L.handle} castShadow><boxGeometry args={[0.19, 0.02, 0.028]} /></mesh>
       <mesh position={[0.345, 0.073, 0]} rotation-x={Math.PI / 2} material={L.handle}><torusGeometry args={[0.012, 0.004, 6, 12]} /></mesh>
-      {food && <FoodFill r={0.11} y={0.013 + 0.035 * food.level} food={food} />}
+      {food && <FoodFill r={0.105} y={0.012 + 0.035 * food.level} food={food} />}
     </group>;
     case "plate": return <group>
       <mesh position={[0, 0.008, 0]} material={L.porcelain} castShadow><cylinderGeometry args={[0.12, 0.085, 0.016, 28]} /></mesh>
@@ -160,17 +183,15 @@ export function WareModel({ kind, food = null }: { kind: WareKind; food?: { a: s
       {food && <FoodFill r={0.08} y={0.018 + 0.012 * food.level} food={food} mound />}
     </group>;
     case "bowl": return <group>
-      <mesh position={[0, 0.035, 0]} material={L.porcelain} castShadow><cylinderGeometry args={[0.08, 0.045, 0.07, 22, 1, true]} /></mesh>
-      <mesh position={[0, 0.003, 0]} material={L.porcelain}><cylinderGeometry args={[0.045, 0.045, 0.006, 22]} /></mesh>
-      {food && <FoodFill r={0.07} y={0.02 + 0.04 * food.level} food={food} />}
+      <mesh geometry={V.bowl} material={L.porcelain2} castShadow receiveShadow />
+      {food && <FoodFill r={0.04 + 0.03 * food.level} y={0.014 + 0.045 * food.level} food={food} />}
     </group>;
     case "cup": return <group>
-      <mesh position={[0, 0.045, 0]} material={L.mug} castShadow><cylinderGeometry args={[0.038, 0.034, 0.09, 18]} /></mesh>
-      <mesh position={[0.045, 0.05, 0]} material={L.mug}><torusGeometry args={[0.022, 0.006, 6, 14]} /></mesh>
+      <mesh geometry={V.cup} material={L.mug2} castShadow receiveShadow />
+      <mesh geometry={V.mugHandle} position={[0.043, 0.05, 0]} rotation-z={-Math.PI * 0.625} material={L.mug} castShadow />
     </group>;
-    case "jar": return <group>
-      <mesh position={[0, 0.06, 0]} material={L.glass}><cylinderGeometry args={[0.045, 0.045, 0.12, 18]} /></mesh>
-      <mesh position={[0, 0.127, 0]} material={L.lid}><cylinderGeometry args={[0.042, 0.042, 0.015, 18]} /></mesh>
+    case "glass": return <group>
+      <mesh geometry={V.glass} material={L.clear} renderOrder={2} />
     </group>;
     case "silverware": return <group>
       {/* Fork, knife and spoon side by side, lying down. */}
@@ -221,18 +242,19 @@ function partsOf(kind: string): Part[] {
   }
   switch (kind) {
     case "pot": return [
-      { geo: new THREE.CylinderGeometry(0.11, 0.105, 0.15, 24), mat: L.pot, m: at(0, 0.075, 0) },
+      { geo: vessels().pot, mat: L.pot2, m: at(0, 0, 0) },
       { geo: new THREE.TorusGeometry(0.032, 0.007, 6, 12, Math.PI), mat: L.handle, m: at(0.108, 0.118, 0, 0, Math.PI / 2, 0).multiply(at(0, 0, 0, Math.PI / 2)) },
       { geo: new THREE.TorusGeometry(0.032, 0.007, 6, 12, Math.PI), mat: L.handle, m: at(-0.108, 0.118, 0, 0, -Math.PI / 2, 0).multiply(at(0, 0, 0, Math.PI / 2)) },
     ];
     case "pan": return [
-      { geo: new THREE.CylinderGeometry(0.13, 0.112, 0.052, 24), mat: [L.pot, L.panIn, L.pot], m: at(0, 0.026, 0) },
+      { geo: vessels().panOut, mat: L.pot2, m: at(0, 0, 0) },
+      { geo: vessels().panIn, mat: L.panDark, m: at(0, 0, 0) },
       { geo: new THREE.BoxGeometry(0.19, 0.02, 0.028), mat: L.handle, m: at(0.25, 0.058, 0, 0, 0, 0.16) },
     ];
     case "plate": return [{ geo: new THREE.CylinderGeometry(0.12, 0.085, 0.016, 24), mat: L.porcelain, m: at(0, 0.008, 0) }, { geo: new THREE.RingGeometry(0.108, 0.115, 24), mat: L.rim, m: at(0, 0.0165, 0, -Math.PI / 2) }];
-    case "bowl": return [{ geo: new THREE.CylinderGeometry(0.08, 0.045, 0.07, 18), mat: L.porcelain, m: at(0, 0.035, 0) }];
-    case "cup": return [{ geo: new THREE.CylinderGeometry(0.038, 0.034, 0.09, 14), mat: L.mug, m: at(0, 0.045, 0) }, { geo: new THREE.TorusGeometry(0.022, 0.006, 5, 10), mat: L.mug, m: at(0.045, 0.05, 0) }];
-    case "jar": return [{ geo: new THREE.CylinderGeometry(0.045, 0.045, 0.12, 14), mat: L.glass, m: at(0, 0.06, 0) }, { geo: new THREE.CylinderGeometry(0.042, 0.042, 0.015, 14), mat: L.lid, m: at(0, 0.127, 0) }];
+    case "bowl": return [{ geo: vessels().bowl, mat: L.porcelain2, m: at(0, 0, 0) }];
+    case "cup": return [{ geo: vessels().cup, mat: L.mug2, m: at(0, 0, 0) }, { geo: vessels().mugHandle, mat: L.mug, m: at(0.043, 0.05, 0, 0, 0, -Math.PI * 0.625) }];
+    case "glass": return [{ geo: vessels().glass, mat: L.clear, m: at(0, 0, 0) }];
     case "silverware": return [-0.03, 0, 0.03].map((x) => ({ geo: new THREE.BoxGeometry(0.012, 0.16, 0.004), mat: L.steel, m: at(x, 0.08, 0) }));
   }
   return [];
@@ -262,7 +284,7 @@ export function PantryShelf({ tag, w, d, frame }: { tag: string; w: number; d: n
     return out;
   }, [secs, d]);
   // (The materials are shared and kept; the geometries are this shelf's.)
-  useEffect(() => () => meshes.forEach((im) => { im.geometry.dispose(); im.dispose(); }), [meshes]);
+  useEffect(() => () => meshes.forEach((im) => { if (!im.geometry.userData["shared"]) im.geometry.dispose(); im.dispose(); }), [meshes]);
   return <group>
     <mesh position={[0, 0.9, 0]} material={frame}><boxGeometry args={[w, 1.8, 0.04]} /></mesh>
     {[-1, 1].map((s) => <mesh key={s} position={[s * w / 2, 0.9, 0]} material={frame}><boxGeometry args={[0.04, 1.8, d]} /></mesh>)}

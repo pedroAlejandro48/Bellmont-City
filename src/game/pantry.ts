@@ -3,7 +3,7 @@
 
 export const CANS = ["blackBeans", "kidneyBeans", "bakedBeans", "cannedChicken", "tuna", "sausages", "chickenSoup", "beefSoup", "corn", "peas", "greenBeans", "carrots"] as const;
 export const CANDIES = ["milkChocolate", "darkChocolate", "caramelBar", "peanutCups", "gummyBears", "sourWorms", "lollipop", "mintDrops"] as const;
-export const WARES = ["pot", "pan", "plate", "bowl", "cup", "jar", "silverware"] as const;
+export const WARES = ["pot", "pan", "plate", "bowl", "cup", "glass", "silverware"] as const;
 export type CanKind = (typeof CANS)[number];
 export type CandyKind = (typeof CANDIES)[number];
 export type WareKind = (typeof WARES)[number];
@@ -37,7 +37,7 @@ export const CANDY_INFO: Record<CandyKind, { name: string; price: number; wrap: 
 /** Kitchenware: name and price. */
 export const WARE_INFO: Record<WareKind, { name: string; price: number }> = {
   pot: { name: "Cooking Pot", price: 18.99 }, pan: { name: "Frying Pan", price: 15.99 }, plate: { name: "Plate", price: 4.49 },
-  bowl: { name: "Bowl", price: 3.99 }, cup: { name: "Cup", price: 3.49 }, jar: { name: "Glass Jar", price: 2.99 },
+  bowl: { name: "Bowl", price: 3.99 }, cup: { name: "Cup", price: 3.49 }, glass: { name: "Drinking Glass", price: 2.49 },
   silverware: { name: "Silverware Set", price: 6.99 },
 };
 export const isCan = (k: string): k is CanKind => (CANS as readonly string[]).includes(k);
@@ -56,7 +56,7 @@ export const CANDY_EFFECT = { hunger: 8, thirst: 0, energy: 20, health: -7.5 };
 export function shelfSections(tag: string, w: number): { kind: string; side: 1 | -1; u0: number; u1: number }[] {
   const lay = (kinds: readonly string[], side: 1 | -1) => kinds.map((kind, i) => ({ kind, side, u0: -w / 2 + (i * w) / kinds.length, u1: -w / 2 + ((i + 1) * w) / kinds.length }));
   if (tag === "pantry") return [...lay(CANS, 1), ...lay(CANDIES, -1)];
-  if (tag === "kitchenware") return [...lay(["pot", "pan", "plate", "bowl"], 1), ...lay(["cup", "jar", "silverware"], -1)];
+  if (tag === "kitchenware") return [...lay(["pot", "pan", "plate", "bowl"], 1), ...lay(["cup", "glass", "silverware"], -1)];
   return [];
 }
 

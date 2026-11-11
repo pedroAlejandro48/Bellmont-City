@@ -195,8 +195,8 @@ export function KitchenThings({ fl, state, view, m }: { fl: AptFloor; state: Gam
         {view.choosing && hover === i && <mesh position={[0, 0.07, 0]} material={mats.hover}><sphereGeometry args={[0.15, 14, 10]} /></mesh>}
       </group>;
     })}
-    {/* On the counter: plates and bowls stacked, cups and jars in a row, the silverware in a pot. */}
-    {(["plate", "bowl", "cup", "jar", "silverware"] as const).map((w) => {
+    {/* On the counter: plates and bowls stacked, cups and glasses in a row, the silverware in a pot. */}
+    {(["plate", "bowl", "cup", "glass", "silverware"] as const).map((w) => {
       const n = k.rack.filter((x) => x === w).length + view.drying.filter((x) => x === w).length - (view.holdL === w ? 1 : 0) - (view.holdR === w ? 1 : 0), at = rackSpot(fl, w);
       if (n <= 0) return null;
       if (!n) return null;

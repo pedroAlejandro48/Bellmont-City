@@ -51,7 +51,7 @@ export function AptPanels({ state }: { state: GameState }) {
 function RackPanel({ state, onClose }: { state: GameState; onClose: () => void }) {
   const k = state.life.kitchen, count = (w: WareKind) => k.rack.filter((x) => x === w).length;
   const take = (w: WareKind) => { state.kitchenAsk = { rack: w }; onClose(); };
-  const opts: [WareKind, string, string][] = [["plate", "🍽️", "Plate"], ["bowl", "🥣", "Bowl"], ["cup", "☕", "Cup"], ["silverware", "🍴", "Silverware"]];
+  const opts: [WareKind, string, string][] = [["plate", "🍽️", "Plate"], ["bowl", "🥣", "Bowl"], ["cup", "☕", "Cup"], ["glass", "🥛", "Glass"], ["silverware", "🍴", "Silverware"]];
   return <div className="home-panel" role="dialog" aria-label="Counter">
     <div className="home-panel-head"><b>Counter</b><button type="button" onClick={onClose} aria-label="Close">✕</button></div>
     <div className="kitchen-choices">

@@ -66,7 +66,7 @@ export function cupboardSlot(fl: AptFloor, i: number): V3 {
 }
 /** Spots on the counter beside the sink for each kind kept there (stacks). */
 export function rackSpot(fl: AptFloor, w: WareKind): V3 {
-  const r = fl.kitchen.rack, off: Partial<Record<WareKind, [number, number]>> = { plate: [0.2, 0.05], bowl: [0.02, 0.08], cup: [-0.16, 0.12], jar: [-0.3, 0.14], silverware: [-0.16, -0.06] };
+  const r = fl.kitchen.rack, off: Partial<Record<WareKind, [number, number]>> = { plate: [0.2, 0.05], bowl: [0.02, 0.08], cup: [-0.16, 0.12], glass: [-0.3, 0.14], silverware: [-0.16, -0.06] };
   const o = off[w] ?? [0, 0];
   return [r[0] + o[0], r[1], r[2] + o[1]];
 }

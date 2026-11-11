@@ -1,9 +1,9 @@
 // The apartment's kitchen (pure): what's kept where — pots and pans in the cupboard under the sink, plates, bowls,
-// cups, jars and silverware on the counter beside it, dirty things in the sink — what's cooking on the stove, the
+// cups, glasses and silverware on the counter beside it, dirty things in the sink — what's cooking on the stove, the
 // meals on the table, and what's in each hand. Saved with the rest of the player's life.
 import { CAN_INFO, CAPACITY, COOK_MINUTES, BURN_AFTER, cookState, isCan, isWare, type CanKind, type WareKind } from "./pantry";
 
-/** A thing in a hand: a pot, pan, plate or bowl (with what's in it), a cup, a jar or silverware; dirty once used. */
+/** A thing in a hand: a pot, pan, plate or bowl (with what's in it), a cup, a glass or silverware; dirty once used. */
 export type Held = { ware: WareKind; food: CanKind[] | null; dirty: boolean; burnt?: boolean; silver?: boolean };
 export type Kitchen = {
   cupboard: WareKind[];
