@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { bindMouseLook } from "@/game/mouseLook";
+import { setTouchMode } from "@/game/touchMode";
 
 describe("looking around (pointer lock, or dragging where there is none)", () => {
   let canvas: HTMLCanvasElement;
@@ -21,7 +22,7 @@ describe("looking around (pointer lock, or dragging where there is none)", () =>
   const motion = (mx: number, my: number, buttons = 1) => document.dispatchEvent(pointer("pointermove", { mx, my, buttons }));
   const drag = (x: number, y: number, buttons = 1) => document.dispatchEvent(pointer("pointermove", { x, y, buttons }));
   beforeEach(() => {
-    locked = null; firstPerson = false;
+    locked = null; firstPerson = false; setTouchMode(false);
     canvas = document.createElement("canvas");
     document.body.append(canvas);
     move = vi.fn<(x: number, y: number) => void>();
@@ -143,5 +144,16 @@ describe("looking around (pointer lock, or dragging where there is none)", () =>
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "w" }));
     await new Promise((r) => setTimeout(r, 5));
     expect(request).toHaveBeenCalledOnce(); expect(locked).toBe(canvas);
+  });
+  it("in first person with the on-screen joystick, never locks (a lock would freeze the joystick's finger)", async () => {
+    firstPerson = true; setTouchMode(true);
+    drag(10, 10, 0);
+    document.dispatchEvent(pointer("pointerup", { kind: "touch", id: 4 }));
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "w" }));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(request).not.toHaveBeenCalled();
+    // Already locked when the touch controls come up: let go.
+    locked = canvas; setTouchMode(false); setTouchMode(true);
+    expect(exit).toHaveBeenCalled();
   });
 });

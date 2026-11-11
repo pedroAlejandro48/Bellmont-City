@@ -11,6 +11,8 @@
  * after one (closing a panel) — and stays locked until `sticky()` turns false (a panel opens) or Escape. No click
  * on the view is needed.
  */
+import { touchMode, watchTouchMode } from "./touchMode";
+
 /** This browser has refused (or can't do) pointer lock: looking around works by dragging instead. */
 export const lookSupport = { lockRefused: typeof document !== "undefined" && typeof document.exitPointerLock !== "function" };
 
@@ -47,6 +49,9 @@ export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: numbe
   const lockFailed = () => { pending = false; if (!auto) lookSupport.lockRefused = true; auto = false; };
   /** First person and free (no panel open): lock the pointer now if the browser lets us. */
   const tryLock = () => {
+    // (Never with the on-screen joystick in use: a locked pointer freezes where fingers are, so the joystick would
+    // jump to a corner and stop following.)
+    if (touchMode()) return;
     if (disposed || !sticky() || locked() || pending || doc.pointerLockElement || typeof element.requestPointerLock !== "function" || doc.visibilityState === "hidden") return;
     const now = performance.now();
     if (now - lastTry < 400) return;
@@ -56,7 +61,7 @@ export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: numbe
     } catch { pending = false; auto = false; }
   };
   // Any key or click (not Escape) gives the browser's go-ahead: right after it, lock if in first person.
-  const soon = (event: Event) => { if ((event as KeyboardEvent).key === "Escape") return; win?.setTimeout(tryLock, 0); };
+  const soon = (event: Event) => { if ((event as KeyboardEvent).key === "Escape" || (event as PointerEvent).pointerType === "touch" || (event as PointerEvent).pointerType === "pen") return; win?.setTimeout(tryLock, 0); };
   const down = (event: PointerEvent) => {
     if (disposed) return;
     if (doc.pointerLockElement && !locked()) return;
@@ -74,7 +79,7 @@ export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: numbe
     dragId = typeof event.pointerId === "number" ? event.pointerId : null;
     if (dragId !== null) { try { element.setPointerCapture?.(dragId); } catch { /* not capturable */ } }
     // Fingers don't lock; a mouse or touchpad asks, synchronously during the press's user activation.
-    if (event.pointerType === "touch" || pending || locked() || typeof element.requestPointerLock !== "function") return;
+    if (event.pointerType === "touch" || event.pointerType === "pen" || touchMode() || pending || locked() || typeof element.requestPointerLock !== "function") return;
     pending = true;
     try {
       Promise.resolve(element.requestPointerLock()).catch(lockFailed).finally(() => {
@@ -125,6 +130,8 @@ export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: numbe
     if (wasLocked) { wasLocked = false; lastBy.clear(); }
   };
   const visibility = () => { if (doc.visibilityState === "hidden") release(); };
+  // Touch controls coming up (a finger on the screen): let go of any lock straight away.
+  const unwatch = watchTouchMode((on) => { if (on) unlock(); });
   element.addEventListener("pointerdown", down);
   doc.addEventListener("pointermove", move);
   doc.addEventListener("pointerup", up);
@@ -137,6 +144,7 @@ export function bindMouseLook(element: HTMLElement, onMove: (x: number, y: numbe
   win?.addEventListener("blur", release);
   return () => {
     disposed = true;
+    unwatch();
     release();
     element.style.touchAction = prevTouchAction;
     element.removeEventListener("pointerdown", down);

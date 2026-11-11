@@ -75,6 +75,7 @@ function Joystick({ state }: { state: GameState }) {
     onPointerDown={(e) => {
       if (finger.current !== null || e.pointerType === "mouse" || state.uiLock) return;
       e.preventDefault(); e.stopPropagation();
+      if (document.pointerLockElement) document.exitPointerLock();
       finger.current = e.pointerId;
       try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* fine */ }
       // Centred under the finger (kept fully on screen).

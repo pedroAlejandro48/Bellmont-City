@@ -1,3 +1,4 @@
+import { touchMode } from "./touchMode";
 import * as THREE from "three";
 import { Canvas, useThree } from "@react-three/fiber";
 import { memo, startTransition, Suspense, useEffect, useMemo, useRef, useState } from "react";
@@ -239,7 +240,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
       setHealth(state.health);
       setNeeds((old) => (Math.round(old.hunger * 2) === Math.round(state.hunger * 2) && Math.round(old.thirst * 2) === Math.round(state.thirst * 2) && Math.round(old.energy * 2) === Math.round(state.energy * 2) ? old : { hunger: state.hunger, thirst: state.thirst, energy: state.energy }));
       setCash(state.cash);
-      setFpHint(state.firstPerson && !document.pointerLockElement && !lookSupport.lockRefused);
+      setFpHint(state.firstPerson && !document.pointerLockElement && !lookSupport.lockRefused && !touchMode());
       setRiding(state.scooter.riding);
       setSpeed(Math.round(Math.abs(state.scooter.speed) / MPH_TO_MPS));
       if (state.deathStartedAt !== null && !deathSeen) {

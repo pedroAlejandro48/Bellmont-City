@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
+import { touchMode } from "./touchMode";
 import { useRapier } from "@react-three/rapier";
 import * as THREE from "three";
 import type { GameState } from "./state";
@@ -53,7 +54,7 @@ export function CameraRig({ state }: { state: GameState }) {
       if (state.camDistance < MIN_DISTANCE) {
         state.firstPerson = true; state.camDistance = MIN_DISTANCE; state.camPitch = Math.max(-1.25, Math.min(FP_DOWN, -0.05));
         // Lock the pointer so turning never runs out at the edge of the screen (browsers may insist on a click first).
-        if (lock) { try { void Promise.resolve(element.requestPointerLock()).catch(() => {}); } catch { /* a click will lock it */ } }
+        if (lock && !touchMode()) { try { void Promise.resolve(element.requestPointerLock()).catch(() => {}); } catch { /* a click will lock it */ } }
       }
     };
     // The wheel (or two fingers on a touchpad) brings the camera closer (up) or further (down).
