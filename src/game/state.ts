@@ -143,7 +143,7 @@ export type GameState = {
   /** On an upper floor of an apartment building (its floor's height): the ground is that floor. */
   level: { building: string; floor: number; y: number } | null;
   /** Riding an apartment building's elevator: where, from which floor to which, and how far along. */
-  elevator: { building: string; floor: number; target: number | null; phase: "boarding" | "choose" | "closing" | "moving" | "opening" | "leaving" | "waiting" | "calling"; t0: number; /** Calling: the floor the car comes from. */ from?: number; /** Leaving: when the rider was fully out (the doors close only then). */ outAt?: number } | null;
+  elevator: { building: string; floor: number; target: number | null; phase: "open" | "choose" | "closing" | "moving" | "opening" | "shutting" | "waiting" | "calling"; t0: number; /** Been inside the car (with the doors open: going out again closes them). */ boarded?: boolean; /** Calling: the floor the car comes from. */ from?: number; /** Leaving: when the rider was fully out (the doors close only then). */ outAt?: number } | null;
   /** Seated somewhere that isn't a park bench or a restaurant chair (an apartment's couch, dining chair or desk):
    * where take-out food can be set down (world; the hands' spots are the point ± the sideways step). */
   seatSurface: { x: number; y: number; z: number; yaw: number; lx: number; lz: number } | null;
@@ -390,7 +390,7 @@ function aptSave(s: GameState): import("./config").SavedApt | null {
   const building = e?.building ?? lvl?.building;
   if (!building) return null;
   const outside = s.interior.outside, outsideYaw = s.interior.outsideYaw;
-  if (e) {
+  if (e && (e.phase === "choose" || e.phase === "closing" || e.phase === "moving")) {
     // In the elevator (going up, down, or waiting in it): back on the ground floor, in the lobby in front of its
     // doors — never somewhere up a shaft.
     const lobby = s.rooms.get(building);

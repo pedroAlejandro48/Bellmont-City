@@ -1,3 +1,4 @@
+import { facesAt } from "./Apartments";
 import { handFree, handsFullMessage, holding as heldIn } from "./handsHeld";
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef, useState } from "react";
@@ -191,7 +192,7 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
       // No basket yet: E at the pile by the door takes one (nothing can be picked without one).
       if (!state.groceryBasket) {
         const ps = pileSpot(pile);
-        if (Math.hypot(lx - ps.stand[0], lz - ps.stand[1]) < 1.3) {
+        if (Math.hypot(lx - ps.stand[0], lz - ps.stand[1]) < 1.3 && facesAt(yaw, lx, lz, pile.x, pile.z)) {
           const [x, z] = world(pile.x, pile.z); Object.assign(p, { visible: true, x, y: SIDEWALK_H + 1.0, z, label: "E  TAKE A BASKET" });
           if (state.interactQueued) {
             state.interactQueued = false;
@@ -200,12 +201,12 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
             else start(takeBasket([lx, lz], yaw, pile, !!state.groceryBag), "take");
           }
         } else {
-          const src = srcs.find((sr) => Math.hypot(lx - sr.stand[0], lz - sr.stand[1]) < 1.25);
+          const src = srcs.find((sr) => Math.hypot(lx - sr.stand[0], lz - sr.stand[1]) < 1.25 && facesAt(yaw, lx, lz, sr.take[0], sr.take[2]));
           if (src) { const [x, z] = world(src.take[0], src.take[2]); Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: "TAKE A BASKET FIRST" }); }
         }
       } else {
         const n = items.current.length, svc = layout.service, atTill = Math.hypot(lx - svc.x, lz - svc.z) < 0.75;
-        const src = srcs.map((s) => ({ s, d: Math.hypot(lx - s.stand[0], lz - s.stand[1]) })).filter((x) => x.d < 1.25).sort((a, c) => a.d - c.d)[0]?.s;
+        const src = srcs.map((s) => ({ s, d: Math.hypot(lx - s.stand[0], lz - s.stand[1]) })).filter((x) => x.d < 1.25 && facesAt(yaw, lx, lz, x.s.take[0], x.s.take[2])).sort((a, c) => a.d - c.d)[0]?.s;
         const total = items.current.reduce((a, it) => a + (GROCERY_PRICE[it.kind] ?? 1), 0);
         let action: (() => void) | null = null;
         if (nearDoorInside(lx, lz)) {

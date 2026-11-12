@@ -73,13 +73,14 @@ function useWaterMaterial() {
  * the shower (tray, the curb one steps over, a glass side, the head, the rod and a white cloth curtain that bunches
  * into folds as it's pulled open and sways as it settles), and the water that runs from the tap and the shower.
  */
-export function BathroomThings({ fl, state, link, m }: { fl: AptFloor; state: GameState; link: BathLink; m: { white: THREE.Material; steel: THREE.Material; s: (c: string, r?: number, mt?: number, side?: THREE.Side) => THREE.MeshStandardMaterial } }) {
+export function BathroomThings({ fl, state, link, m, lightOn = () => true }: { lightOn?: () => boolean; fl: AptFloor; state: GameState; link: BathLink; m: { white: THREE.Material; steel: THREE.Material; s: (c: string, r?: number, mt?: number, side?: THREE.Side) => THREE.MeshStandardMaterial } }) {
   const b = fl.bath, sh = b.shower, to = b.toilet, si = b.sink;
   const mats = useMemo(() => ({
     tile: new THREE.MeshStandardMaterial({ map: surfaces().floor.map, bumpMap: surfaces().floor.bump, bumpScale: 1.5, roughness: 0.32, metalness: 0.02 }),
     wallTile: new THREE.MeshStandardMaterial({ map: surfaces().wall.map, bumpMap: surfaces().wall.bump, bumpScale: 1.2, roughness: 0.18, metalness: 0.02 }),
     paint: m.s("#a9c3cb", 0.85), trim: m.s("#4f585e", 0.5), wood: m.s("#6a4630", 0.55), counter: m.s("#e4e0d9", 0.25),
     mirror: m.s("#d9e6ec", 0.06, 0.35), shadowy: new THREE.MeshBasicMaterial({ map: surfaces().blot, transparent: true, depthWrite: false, color: "#000000", opacity: 0.85 }),
+    lampOn: new THREE.MeshStandardMaterial({ color: "#fffaf0", emissive: new THREE.Color("#fff3d8"), emissiveIntensity: 1.2 }),
     tray: m.s("#f4f6f7", 0.25), porcelain: m.s("#fbfbf9", 0.1), seat: m.s("#e9e8e2", 0.3), chrome: m.s("#d4d9de", 0.15, 0.9),
     glass: new THREE.MeshStandardMaterial({ color: "#cfe6ee", transparent: true, opacity: 0.22, roughness: 0.05, depthWrite: false, side: THREE.DoubleSide }),
     curtain: new THREE.MeshStandardMaterial({ color: "#fbfbf8", roughness: 0.85, side: THREE.DoubleSide }),
@@ -155,8 +156,10 @@ export function BathroomThings({ fl, state, link, m }: { fl: AptFloor; state: Ga
   const swirlMat = useMemo(() => new THREE.MeshStandardMaterial({ map: swirlTex, transparent: true, opacity: 0, roughness: 0.1 }), [swirlTex]);
   useEffect(() => () => { swirlTex.dispose(); swirlMat.dispose(); }, [swirlTex, swirlMat]);
 
+  const lamp = useRef<THREE.Mesh>(null);
   useFrame((_, raw) => {
     const t = state.simulationTime;
+    if (lamp.current) lamp.current.material = lightOn() ? mats.lampOn : m.white;
     water.uniforms["time"]!.value = t;
     // The water: from the tap into the basin, and from the shower head down.
     if (sinkStream.current) { sinkStream.current.visible = link.sink > 0.01; sinkStream.current.scale.set(1, Math.max(0.01, link.sink), 1); }
@@ -219,7 +222,7 @@ export function BathroomThings({ fl, state, link, m }: { fl: AptFloor; state: Ga
     {([[to.x + 0.02, to.z, 0.85, 0.7], [si.x - 0.02, si.z, 0.75, 0.95], [(sh.x0 + sh.x1) / 2, (sh.z0 + sh.z1) / 2, 1.25, 1.25]] as const).map(([x, z, w, d], i) =>
       <mesh key={i} position={[x, 0.009, z]} rotation-x={-Math.PI / 2} material={mats.shadowy} renderOrder={1}><planeGeometry args={[w, d]} /></mesh>)}
     {/* The ceiling light. */}
-    <mesh position={[(b.x0 + b.x1) / 2, FLOOR_CLEAR - 0.02, (b.z0 + b.z1) / 2]} rotation-x={Math.PI / 2} material={m.white}><circleGeometry args={[0.2, 20]} /></mesh>
+    <mesh ref={lamp} position={[(b.x0 + b.x1) / 2, FLOOR_CLEAR - 0.02, (b.z0 + b.z1) / 2]} rotation-x={Math.PI / 2} material={mats.lampOn}><circleGeometry args={[0.2, 20]} /></mesh>
     {/* The shower: tray, the curb along the curtain, a glass side, the head, the rod and the curtain. */}
     <mesh position={[(sh.x0 + sh.x1) / 2, 0.03, (sh.z0 + sh.z1) / 2]} material={mats.tray} receiveShadow>{B([sh.x1 - sh.x0, 0.05, sh.z1 - sh.z0])}</mesh>
     <mesh position={[(sh.x0 + sh.x1) / 2, 0.07, sh.curtainZ + 0.03]} material={mats.tray} castShadow>{B([sh.x1 - sh.x0, 0.14, 0.06])}</mesh>

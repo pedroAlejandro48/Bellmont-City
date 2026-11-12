@@ -19,7 +19,7 @@ export function AptPanels({ state }: { state: GameState }) {
     state.uiLock = null;
     e.target = floor;
     // The same floor: the doors just stay open and out they go.
-    e.phase = floor === e.floor ? "leaving" : "closing"; e.t0 = state.simulationTime;
+    e.phase = floor === e.floor ? "open" : "closing"; e.t0 = state.simulationTime;
     tick((n) => n + 1);
   };
   const home = state.life.home, here = e?.building;

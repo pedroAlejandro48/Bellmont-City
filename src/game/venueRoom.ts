@@ -16,6 +16,8 @@ export type FixtureType =
  * along its front) and deep (`d`), and whether people bump into it. `tag` picks a variant (a fruit, a paint…). */
 export type Fixture = { type: FixtureType; x: number; z: number; rot: number; w: number; d: number; solid: boolean; tag?: string };
 export type VenueLayout = RoomLayout & {
+  /** Apartments' lobby: the elevator doorway's box (solid while the doors are shut). */
+  liftDoor?: Box;
   venue: VenueKind;
   fixtures: Fixture[];
   /** Where a customer stands to be served (the counter or the desk), facing `yaw` (local). */
@@ -37,6 +39,26 @@ export function fixtureBox(f: Fixture): Box {
 export const SHAFT = 2.6;
 /** The elevator doorway's width (two doors, each folding into its side of the frame). */
 export const LIFT_DOOR = 1.2;
+/** The shaft's wall thickness: inside it is a car SHAFT − 2 × this across. */
+export const SHAFT_WALL = 0.15;
+/**
+ * The shaft as solids (corner at minX, minZ; its front at minZ + SHAFT): back, sides and the front either side of
+ * the doorway — and the doorway itself as one more box (`door`) that blocks it while the doors are shut (moved out
+ * of the way while they're open).
+ */
+export function shaftSolids(minX: number, minZ: number): { walls: Box[]; door: Box } {
+  const w = SHAFT_WALL, cx = minX + SHAFT / 2, front = minZ + SHAFT, half = LIFT_DOOR / 2;
+  const box = (x0: number, x1: number, z0: number, z1: number): Box => ({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, hx: (x1 - x0) / 2, hz: (z1 - z0) / 2 });
+  return {
+    walls: [box(minX, minX + SHAFT, minZ, minZ + w), box(minX, minX + w, minZ, front), box(minX + SHAFT - w, minX + SHAFT, minZ, front), box(minX, cx - half, front - w, front), box(cx + half, minX + SHAFT, front - w, front)],
+    door: box(cx - half, cx + half, front - w, front + 0.02),
+  };
+}
+/** Puts the doorway's box where it blocks (shut) or far away (open). */
+export function setLiftDoor(door: Box & { home?: [number, number] }, shut: boolean) {
+  door.home ??= [door.x, door.z];
+  door.x = shut ? door.home[0] : 1e6; door.z = shut ? door.home[1] : 1e6;
+}
 const FRUITS = ["apple", "banana", "orange", "pear", "lemon", "lime", "grape", "peach"];
 const PAINTS = ["#c9281f", "#1f5fbf", "#ffb547", "#2b2d33", "#27877b"];
 
@@ -137,7 +159,10 @@ export function venueLayout(b: Building): VenueLayout {
     add("baskets", -1.9, -1.0, 0, 0.5, 0.4, true);
   }
 
-  const solids: Box[] = F.filter((f) => f.solid).map(fixtureBox);
+  const solids: Box[] = F.filter((f) => f.solid && f.type !== "shaft").map(fixtureBox);
+  // The lobby's elevator shaft: walls you can't pass, a doorway you walk through while the doors are open.
+  let liftDoor: Box | undefined;
+  if (venue === "apartments") { const sh = shaftSolids(minX, minZ); solids.push(...sh.walls, sh.door); liftDoor = sh.door; }
   const plants: [number, number][] = venue === "gym" || venue === "grocery" ? [[windowSide * (maxX - 0.4), -0.65]] : [[maxX - 0.4, -0.65], [minX + 0.4, -0.65]];
   for (const [x, z] of plants) solids.push({ x, z, hx: 0.28, hz: 0.28 });
   const counterFix = F.find((f) => f.type === "desk" || f.type === "checkout")!;
@@ -147,6 +172,6 @@ export function venueLayout(b: Building): VenueLayout {
   return {
     key: roomKey(b), kind: "cafe", venue, frame, width, depth, bounds, counter: fixtureBox(counterFix), windowSide,
     // No divider: the lights hang over the front and back halves.
-    divider: { z: midZ, doorX: 0 }, frontWindows, sideWindows, solids, plants, fixtures: F, service, staff,
+    divider: { z: midZ, doorX: 0 }, frontWindows, sideWindows, solids, plants, fixtures: F, service, staff, ...(liftDoor ? { liftDoor } : {}),
   };
 }

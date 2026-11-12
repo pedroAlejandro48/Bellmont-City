@@ -201,10 +201,12 @@ export class KitchenRun {
   /** E at one of the kitchen's places: what it does there, and where its prompt shows. */
   prompt(c: Ctx): { at: [number, number, number]; label: string; act: (() => void) | null } | null {
     const s = c.state, k = this.k(s), h = k.hands, fl = c.fl, K = fl.kitchen, from: [number, number] = [c.lx, c.lz], carry = this.carry(s);
-    const near = (p: [number, number], r = 0.85) => Math.hypot(c.lx - p[0], c.lz - p[1]) < r;
+    // Near enough, and facing it (E works only on the thing you look at).
+    const sees = (t: readonly number[]) => { const dx = t[0]! - c.lx, dz = t[2]! - c.lz, d = Math.hypot(dx, dz); return d < 0.25 || (Math.sin(c.yaw) * dx + Math.cos(c.yaw) * dz) / d >= Math.cos(1.05); };
+    const near = (p: [number, number], r = 0.85, at?: readonly number[]) => Math.hypot(c.lx - p[0], c.lz - p[1]) < r && (!at || sees(at));
     const states = k.stoves.map((_, i) => stoveState(k, i, s.elapsed, GAME_MINUTE));
     // ---- the bin ----
-    if (near(K.trashStand, 0.8)) {
+    if (near(K.trashStand, 0.8, K.trash)) {
       const burnt = (["right", "left"] as const).find((x) => h[x]?.burnt && h[x]?.food);
       if (burnt) return { at: [K.trash[0], 1.05, K.trash[2]], label: "E  THROW THE BURNT FOOD AWAY", act: () => {
         if (burnt === "left") { const r = h.right; h.right = h.left; h.left = r; }
@@ -212,7 +214,7 @@ export class KitchenRun {
       } };
     }
     // ---- the stove (two burners) ----
-    if (near(K.ovenStand)) {
+    if (near(K.ovenStand, 0.85, K.burners[0]!.map((v, i) => (v + K.burners[1]![i]!) / 2))) {
       const mid = K.burners.reduce((a2, b2) => [a2[0] + b2[0] / K.burners.length, 0, a2[2] + b2[2] / K.burners.length], [0, 0, 0] as [number, number, number]);
       const at: [number, number, number] = [mid[0], 1.25, mid[2]];
       // Something done: take it off (the burnt one first, so it stops smoking).
@@ -251,7 +253,7 @@ export class KitchenRun {
       if (cookingLabel) return { at, label: cookingLabel, act: null };
     }
     // ---- the sink ----
-    if (near(K.sinkStand, 0.75)) {
+    if (near(K.sinkStand, 0.75, K.basin)) {
       const at: [number, number, number] = [K.basin[0], 1.3, K.basin[2]];
       const dirty = dirtyHeld(k), n = k.sink.length + dirty.reduce((a, x) => a + (h[x]!.silver ? 2 : 1), 0);
       if (n > 0) return { at, label: `E  WASH UP (${n})`, act: () => this.washAll(c) };
@@ -273,7 +275,7 @@ export class KitchenRun {
       return { at, label: "NO POTS OR PANS YET", act: null };
     }
     // ---- the counter beside the sink ----
-    if (near(K.rackStand, 0.7)) {
+    if (near(K.rackStand, 0.7, K.rack)) {
       const at: [number, number, number] = [K.rack[0], 1.25, K.rack[2]];
       // New plates, bowls, cups, glasses and silverware from the shop: with none here yet, E puts them away; with
       // some, the counter's panel (the same E) has a button for it beside taking one.
