@@ -967,7 +967,9 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       const ee = state.elevator, here = state.level?.floor ?? 1;
       const doorOpen = !!ee && ee.floor === here && (ee.phase === "open" || ee.phase === "choose" || (ee.phase === "opening" && now - ee.t0 > 0.4) || (ee.phase === "closing" && now - ee.t0 < 0.4) || (ee.phase === "shutting" && now - ee.t0 < 0.4));
       if (floor) setLiftDoor(floor.liftDoor, !doorOpen);
-      if (lobby?.layout.liftDoor) setLiftDoor(lobby.layout.liftDoor, !doorOpen);
+      // (The lobby's room the player walks in is the one in state.rooms.)
+      const lr = lobby ? state.rooms.get(aptKey(lobby.b)) as (VenueLayout | undefined) : undefined;
+      if (lr?.liftDoor) setLiftDoor(lr.liftDoor, !doorOpen);
     }
     const eRide = state.elevator && state.elevator.phase === "moving" && insideCar ? state.elevator : null;
     function here(): { x: number; z: number; yaw: number } { const [x, z] = frameNow ? toLocal(frameNow, p.x, p.z) : [p.x, p.z]; return { x, z, yaw: hereYaw() }; }
