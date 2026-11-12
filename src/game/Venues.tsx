@@ -523,7 +523,14 @@ export function Venue({ b, mats, state }: { b: Building; mats: Materials; state:
     <mesh ref={proxy} position={[0, CEILING / 2, -depth / 2]} material={own.inside} visible={false}><boxGeometry args={[width - 0.3, CEILING - 0.05, depth - 0.3]} /></mesh>
     <group ref={inner}>
       <mesh position={[0, 0.004, -depth / 2]} rotation-x={-Math.PI / 2} material={own.floor} receiveShadow><planeGeometry args={[width, depth]} /></mesh>
-      <mesh position={[0, CEILING, -depth / 2]} rotation-x={Math.PI / 2} material={own.ceiling}><planeGeometry args={[width, depth]} /></mesh>
+      {(() => {
+        // (An apartment lobby's ceiling is open over the elevator's shaft: the car goes up through it.)
+        const sh = fixtures.find((f) => f.type === "shaft");
+        if (!sh) return <mesh position={[0, CEILING, -depth / 2]} rotation-x={Math.PI / 2} material={own.ceiling}><planeGeometry args={[width, depth]} /></mesh>;
+        const x0 = -width / 2, x1 = width / 2, z0 = -depth, z1 = 0, hx0 = sh.x - sh.w / 2, hx1 = sh.x + sh.w / 2, hz0 = sh.z - sh.d / 2, hz1 = sh.z + sh.d / 2;
+        const parts: [number, number, number, number][] = [[x0, x1, z0, hz0], [x0, x1, hz1, z1], [x0, hx0, hz0, hz1], [hx1, x1, hz0, hz1]];
+        return parts.filter(([a0, a1, b0, b1]) => a1 - a0 > 0.001 && b1 - b0 > 0.001).map(([a0, a1, b0, b1], i) => <mesh key={`c${i}`} position={[(a0 + a1) / 2, CEILING, (b0 + b1) / 2]} rotation-x={Math.PI / 2} material={own.ceiling}><planeGeometry args={[a1 - a0, b1 - b0]} /></mesh>);
+      })()}
       <Wall a0={minX} a1={maxX} place={(a) => [a, -WALL]} ry={Math.PI} low={own.trim} high={own.wall} holes={frontHoles} />
       <Wall a0={minZ} a1={maxZ} place={(a) => [ws * maxX, a]} ry={-ws * Math.PI / 2} low={own.trim} high={own.wall} holes={sideHoles} />
       <Wall a0={minZ} a1={maxZ} place={(a) => [plainX, a]} ry={-plain * Math.PI / 2} low={own.trim} high={own.wall} />

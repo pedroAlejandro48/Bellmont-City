@@ -20,7 +20,7 @@ export const BULK_H = 2.4;
 export type RoofPlan = {
   /** The ladder's middle (x) on the hallway's back wall (z, its face). */
   ladX: number; wallZ: number;
-  /** The hatch, and the room on the roof round it (its doorway on the z0 side, x from–to). */
+  /** The hatch, and the room on the roof round it (its doorway on the z1 side, toward the building's front). */
   hatch: { x0: number; x1: number; z0: number; z1: number };
   bulk: { x0: number; x1: number; z0: number; z1: number; door: [number, number]; t: number };
   /** The roof's walls (the little room's), and how far the roof goes (the building's edge, with its lip). */
@@ -32,11 +32,11 @@ export function roofPlan(b: Building): RoofPlan {
   const L = venueLayout(b), { minX, minZ } = L.bounds;
   const wallZ = minZ + SHAFT, ladX = minX + SHAFT + 1.4;
   const hatch = { x0: ladX - 0.45, x1: ladX + 0.45, z0: wallZ, z1: wallZ + 0.9 };
-  const t = 0.12, bulk = { x0: ladX - 1.3, x1: ladX + 1.3, z0: wallZ - 1.6, z1: wallZ + 1.0, door: [ladX - 0.45, ladX + 0.45] as [number, number], t };
+  const t = 0.12, bulk = { x0: ladX - 1.3, x1: ladX + 1.3, z0: wallZ - 0.9, z1: wallZ + 1.7, door: [ladX - 0.45, ladX + 0.45] as [number, number], t };
   const box = (x0: number, x1: number, z0: number, z1: number): Box => ({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, hx: (x1 - x0) / 2, hz: (z1 - z0) / 2 });
   const solids = [
-    box(bulk.x0, bulk.x1, bulk.z1 - t, bulk.z1), box(bulk.x0, bulk.x0 + t, bulk.z0, bulk.z1), box(bulk.x1 - t, bulk.x1, bulk.z0, bulk.z1),
-    box(bulk.x0, bulk.door[0], bulk.z0, bulk.z0 + t), box(bulk.door[1], bulk.x1, bulk.z0, bulk.z0 + t),
+    box(bulk.x0, bulk.x1, bulk.z0, bulk.z0 + t), box(bulk.x0, bulk.x0 + t, bulk.z0, bulk.z1), box(bulk.x1 - t, bulk.x1, bulk.z0, bulk.z1),
+    box(bulk.x0, bulk.door[0], bulk.z1 - t, bulk.z1), box(bulk.door[1], bulk.x1, bulk.z1 - t, bulk.z1),
   ];
   // (The roof's lip reaches 0.2 past the walls.)
   const W = 0.2 + 0.2;

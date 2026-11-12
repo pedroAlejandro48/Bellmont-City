@@ -112,6 +112,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     bikeContact: false,
     airStyle: 0, // 1 if the jump started while running/walking
     fallTop: null as number | null, // the highest point of this time in the air
+    liftY: null as number | null, // the floor's height last frame while riding an elevator
     camPos: new THREE.Vector3(),
     camInit: false,
     turnRate: 0,
@@ -277,6 +278,12 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       for (const box of fallen) standOn = Math.max(standOn, fallenBikeStandHeight(p.x, p.z, p.y - ground, box));
     }
     const floor = sitting || usingBike || incapacitated ? ground : ground + standOn;
+    // In a moving elevator the car carries you even in the air (a jump in it goes up and down with it), and
+    // nothing in it is a fall.
+    const riding = !!state.elevator && state.elevator.building === state.level?.building && (state.elevator.phase === "moving" || state.elevator.phase === "open" || state.elevator.phase === "closing" || state.elevator.phase === "opening" || state.elevator.phase === "choose");
+    if (riding && state.level && s.liftY !== null && !s.grounded) { const d = state.level.y - s.liftY; p.y += d; if (s.fallTop !== null) s.fallTop += d; }
+    s.liftY = riding && state.level ? state.level.y : null;
+    if (riding && !s.grounded && p.y < floor) p.y = Math.max(p.y, floor - 0.05);
     if (!s.grounded) {
       s.vy -= GRAVITY * dt;
       p.y += s.vy * dt;
@@ -287,7 +294,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
         s.grounded = true;
         // A long fall hurts: a tenth of your health for a storey's height (off a building's roof, it kills).
         const drop = (s.fallTop ?? p.y) - p.y; s.fallTop = null;
-        if (drop > 2.5 && !dead) fallHurt(state, drop);
+        if (drop > 2.5 && !dead && !riding) fallHurt(state, drop);
       }
     } else {
       // step up/down curbs

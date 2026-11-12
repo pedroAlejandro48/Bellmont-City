@@ -89,6 +89,12 @@ function band(m: THREE.MeshStandardMaterial, a: number, bTop: number) {
  * apartments' windows, lit at random at night), and the roof. While the player is up on one of its floors, that
  * floor's band is left open so the inside (and the view out) shows.
  */
+const slotMats = {
+  // (Seen from outside: dark behind the glass; from inside the car both are see-through, facing away.)
+  back: new THREE.MeshStandardMaterial({ color: "#14181e", roughness: 0.9 }),
+  glass: new THREE.MeshStandardMaterial({ color: "#5d7f99", roughness: 0.08, metalness: 0.5, transparent: true, opacity: 0.55 }),
+  frame: new THREE.MeshStandardMaterial({ color: "#b9c0c8", roughness: 0.4, metalness: 0.5 }),
+};
 function AptExterior({ b, state }: { b: Building; state: GameState }) {
   const layout = useMemo(() => venueLayout(b), [b]);
   const key = aptKey(b);
@@ -133,18 +139,36 @@ function AptExterior({ b, state }: { b: Building; state: GameState }) {
     })}
     <RoofTop b={b} mat={faces.roof} y={H(UPPER)} />
     {/* The slab between the lobby and the first floor (seen from the open band, and from the lobby's windows). */}
-    <mesh position={[0, -0.06, -depth / 2]} material={faces.roof}><boxGeometry args={[width - 0.02, 0.12, depth - 0.02]} /></mesh>
+    <HoledSlab x0={-width / 2 + 0.01} x1={width / 2 - 0.01} z0={-depth + 0.01} z1={-0.01} y0={-0.12} y1={0} holes={[shaftHole(layout.bounds.minX, layout.bounds.minZ)]} mat={faces.roof} />
+    {/* The elevator's window slot up the back: dark glass, a mullion at every floor. */}
+    {(() => { const x = layout.bounds.minX + SHAFT / 2, top = H(UPPER), sx = x; return <group>
+      <mesh position={[sx, top / 2, layout.bounds.minZ + 0.02]} rotation-y={Math.PI} material={slotMats.back}><planeGeometry args={[SLOT, top]} /></mesh>
+      <mesh position={[sx, top / 2, -depth - 0.04]} rotation-y={Math.PI} material={slotMats.glass}><planeGeometry args={[SLOT, top]} /></mesh>
+      {Array.from({ length: UPPER + 1 }, (_, i) => <mesh key={i} position={[sx, i * STOREY, -depth - 0.05]} material={slotMats.frame}><boxGeometry args={[SLOT + 0.06, 0.06, 0.04]} /></mesh>)}
+      {[-1, 1].map((k) => <mesh key={k} position={[sx + k * (SLOT / 2 + 0.02), top / 2, -depth - 0.05]} material={slotMats.frame}><boxGeometry args={[0.05, top, 0.04]} /></mesh>)}
+    </group>; })()}
   </group>;
 }
 
 /** A slab (x0..x1, z0..z1) with a square hole in it: the four boxes round the hole. */
-function HoledSlab({ x0, x1, z0, z1, y0, y1, hole, mat }: { x0: number; x1: number; z0: number; z1: number; y0: number; y1: number; hole: { x0: number; x1: number; z0: number; z1: number }; mat: THREE.Material | THREE.Material[] }) {
+type Rect = { x0: number; x1: number; z0: number; z1: number };
+/** A slab (x0..x1, z0..z1) with square holes in it (not overlapping): boxes round the holes, strip by strip. */
+function HoledSlab({ x0, x1, z0, z1, y0, y1, holes, mat }: { x0: number; x1: number; z0: number; z1: number; y0: number; y1: number; holes: Rect[]; mat: THREE.Material | THREE.Material[] }) {
   const h = y1 - y0, y = (y0 + y1) / 2;
-  const parts: [number, number, number, number][] = [
-    [x0, x1, z0, hole.z0], [x0, x1, hole.z1, z1], [x0, hole.x0, hole.z0, hole.z1], [hole.x1, x1, hole.z0, hole.z1],
-  ];
-  return <>{parts.filter(([a, b, c, d]) => b - a > 0.001 && d - c > 0.001).map(([a, b, c, d], i) => <mesh key={i} position={[(a + b) / 2, y, (c + d) / 2]} material={mat} receiveShadow castShadow><boxGeometry args={[b - a, h, d - c]} /></mesh>)}</>;
+  const xs = [...new Set([x0, x1, ...holes.flatMap((o) => [o.x0, o.x1])])].filter((x) => x >= x0 && x <= x1).sort((a, c) => a - c);
+  const parts: [number, number, number, number][] = [];
+  for (let i = 0; i < xs.length - 1; i++) {
+    const a = xs[i]!, c = xs[i + 1]!, mid = (a + c) / 2;
+    let at = z0;
+    for (const o of holes.filter((o) => o.x0 < mid && o.x1 > mid).sort((p, q) => p.z0 - q.z0)) { if (o.z0 > at) parts.push([a, c, at, o.z0]); at = Math.max(at, o.z1); }
+    if (at < z1) parts.push([a, c, at, z1]);
+  }
+  return <>{parts.filter(([a, c, d, e]) => c - a > 0.001 && e - d > 0.001).map(([a, c, d, e], i) => <mesh key={i} position={[(a + c) / 2, y, (d + e) / 2]} material={mat} receiveShadow castShadow><boxGeometry args={[c - a, h, e - d]} /></mesh>)}</>;
 }
+/** The elevator's shaft inside its walls (where the car goes up and down: no floor crosses it), and the slot up the
+ * back of the building it looks out through (the car's window), in a building's frame. */
+const shaftHole = (minX: number, minZ: number): Rect => ({ x0: minX + SHAFT_WALL, x1: minX + SHAFT - SHAFT_WALL, z0: minZ + SHAFT_WALL, z1: minZ + SHAFT - SHAFT_WALL });
+const SLOT = 0.7;
 /** The roof's ladder: two steel rails from the floor up through the hatch to the roof, rungs between them, held off
  * the wall by brackets; a frame round the hatch under the ceiling. */
 function RoofLadder({ plan, m, ceiling }: { plan: RoofPlan; m: FMats; ceiling: number }) {
@@ -162,11 +186,11 @@ function RoofTop({ b, mat, y }: { b: Building; mat: THREE.Material; y: number })
   const plan = useMemo(() => roofPlan(b), [b]), L = useMemo(() => venueLayout(b), [b]);
   const { bulk: K } = plan, t = K.t, wallH = BULK_H, doorH = 2.05;
   const walls: [number, number, number, number, number, number][] = [
-    [K.x0, K.x1, K.z1 - t, K.z1, 0, wallH], [K.x0, K.x0 + t, K.z0, K.z1 - t, 0, wallH], [K.x1 - t, K.x1, K.z0, K.z1 - t, 0, wallH],
-    [K.x0 + t, K.door[0], K.z0, K.z0 + t, 0, wallH], [K.door[1], K.x1 - t, K.z0, K.z0 + t, 0, wallH], [K.door[0], K.door[1], K.z0, K.z0 + t, doorH, wallH],
+    [K.x0, K.x1, K.z0, K.z0 + t, 0, wallH], [K.x0, K.x0 + t, K.z0 + t, K.z1, 0, wallH], [K.x1 - t, K.x1, K.z0 + t, K.z1, 0, wallH],
+    [K.x0 + t, K.door[0], K.z1 - t, K.z1, 0, wallH], [K.door[1], K.x1 - t, K.z1 - t, K.z1, 0, wallH], [K.door[0], K.door[1], K.z1 - t, K.z1, doorH, wallH],
   ];
   return <group>
-    <HoledSlab x0={-L.width / 2 - 0.2} x1={L.width / 2 + 0.2} z0={-L.depth - 0.2} z1={0.2} y0={y} y1={y + 0.5} hole={plan.hatch} mat={mat} />
+    <HoledSlab x0={-L.width / 2 - 0.2} x1={L.width / 2 + 0.2} z0={-L.depth - 0.2} z1={0.2} y0={y} y1={y + 0.5} holes={[plan.hatch]} mat={mat} />
     {walls.map(([a, c, d, e, y0, y1], i) => <mesh key={i} position={[(a + c) / 2, y + 0.5 + (y0 + y1) / 2, (d + e) / 2]} material={mat} castShadow receiveShadow><boxGeometry args={[c - a, y1 - y0, e - d]} /></mesh>)}
     <mesh position={[(K.x0 + K.x1) / 2, y + 0.5 + wallH + 0.06, (K.z0 + K.z1) / 2]} material={mat} castShadow><boxGeometry args={[K.x1 - K.x0 + 0.1, 0.12, K.z1 - K.z0 + 0.1]} /></mesh>
   </group>;
@@ -317,13 +341,14 @@ function ElevatorDoors({ open, m }: { open: () => number; m: FMats }) {
 }
 
 /** The inside of an elevator shaft where the car isn't: dark walls, so an open door never shows past it. */
-function ShaftInside({ m, h }: { m: FMats; h: number }) {
-  // (A little inside the shaft's walls everywhere: no face shares a plane with a wall, so nothing flickers.)
-  const s = SHAFT - 0.26;
+function ShaftInside({ m, h, y0 = 0, slot = true }: { m: FMats; h: number; y0?: number; slot?: boolean }) {
+  // (A little inside the shaft's walls everywhere: no face shares a plane with a wall, so nothing flickers.) Only its
+  // walls: no floor or ceiling across it (the car goes through); the back open at the window slot.
+  const s = SHAFT - 0.26, hh = h - y0, yc = (h + y0) / 2, side = (s - SLOT) / 2;
   return <group>
-    {[[0, -s / 2, 0], [-s / 2, 0, Math.PI / 2], [s / 2, 0, -Math.PI / 2]].map(([x, z, ry], i) => <mesh key={i} position={[x!, h / 2, z!]} rotation-y={ry!} material={m.shaft}><planeGeometry args={[s, h]} /></mesh>)}
-    <mesh position={[0, 0.006, 0]} rotation-x={-Math.PI / 2} material={m.shaft}><planeGeometry args={[s, s]} /></mesh>
-    <mesh position={[0, h - 0.03, 0]} rotation-x={Math.PI / 2} material={m.shaft}><planeGeometry args={[s, s]} /></mesh>
+    {[[-s / 2, 0, Math.PI / 2], [s / 2, 0, -Math.PI / 2]].map(([x, z, ry], i) => <mesh key={i} position={[x!, yc, z!]} rotation-y={ry!} material={m.shaft}><planeGeometry args={[s, hh]} /></mesh>)}
+    {slot ? [-1, 1].map((k) => <mesh key={`b${k}`} position={[k * (SLOT / 2 + side / 2), yc, -s / 2]} material={m.shaft}><planeGeometry args={[side, hh]} /></mesh>)
+      : <mesh position={[0, yc, -s / 2]} material={m.shaft}><planeGeometry args={[s, hh]} /></mesh>}
   </group>;
 }
 
@@ -353,7 +378,8 @@ export function shownFloor(e: NonNullable<GameState["elevator"]>, now: number) {
 
 /** The car (filling the shaft): steel walls, a lit ceiling, the buttons beside the door with the floor's number on a
  * little screen above them, a handrail. Its own floor reaches the doorway. */
-function ElevatorCar({ m, state }: { m: FMats; state: GameState }) {
+const carGlass = new THREE.MeshStandardMaterial({ color: "#a9c6dc", roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false });
+function ElevatorCar({ m, state, open }: { m: FMats; state: GameState; open: () => number }) {
   // (Clear of the shaft's walls by a few centimetres: its walls never share a plane with them.)
   const s = SHAFT - 0.3;
   const screen = useMemo(() => { const [c, g] = canvas(128, 64); const t = tex(c); return { c, g, t, mat: new THREE.MeshBasicMaterial({ map: t, toneMapped: false }), shown: "" }; }, []);
@@ -375,7 +401,20 @@ function ElevatorCar({ m, state }: { m: FMats; state: GameState }) {
     <mesh position={[0, 0.01, 0.06]} rotation-x={-Math.PI / 2} material={m.s("#3a3d44", 0.8)}><planeGeometry args={[s, s + 0.12]} /></mesh>
     <mesh position={[0, 2.38, 0]} rotation-x={Math.PI / 2} material={m.lamp}><planeGeometry args={[s * 0.7, s * 0.7]} /></mesh>
     <mesh position={[0, 2.42, 0]} rotation-x={Math.PI / 2} material={m.steel}><planeGeometry args={[s, s]} /></mesh>
-    {[[0, -s / 2, 0], [-s / 2, 0, Math.PI / 2], [s / 2, 0, -Math.PI / 2]].map(([x, z, ry], i) => <mesh key={i} position={[x!, 1.21, z!]} rotation-y={ry!} material={m.steel}><planeGeometry args={[s, 2.42]} /></mesh>)}
+    {[[-s / 2, 0, Math.PI / 2], [s / 2, 0, -Math.PI / 2]].map(([x, z, ry], i) => <mesh key={i} position={[x!, 1.21, z!]} rotation-y={ry!} material={m.steel}><planeGeometry args={[s, 2.42]} /></mesh>)}
+    {/* The back wall, with a window (looking out of the building, through the slot up its back). */}
+    {[-1, 1].map((k) => <mesh key={`w${k}`} position={[k * (SLOT / 2 + (s - SLOT) / 4), 1.21, -s / 2]} material={m.steel}><planeGeometry args={[(s - SLOT) / 2, 2.42]} /></mesh>)}
+    <mesh position={[0, 0.5, -s / 2]} material={m.steel}><planeGeometry args={[SLOT, 1.0]} /></mesh>
+    <mesh position={[0, 2.21, -s / 2]} material={m.steel}><planeGeometry args={[SLOT, 0.42]} /></mesh>
+    <mesh position={[0, 1.5, -s / 2 - 0.01]} material={carGlass}><planeGeometry args={[SLOT, 1.0]} /></mesh>
+    {[[0, 1.0, SLOT + 0.06, 0.04], [0, 2.0, SLOT + 0.06, 0.04], [-SLOT / 2, 1.5, 0.04, 1.04], [SLOT / 2, 1.5, 0.04, 1.04]].map(([x, y, w, h], i) => <mesh key={`f${i}`} position={[x!, y!, -s / 2 + 0.01]} material={m.black}>{B([w!, h!, 0.03])}</mesh>)}
+    {/* Its underside and top (solid: nothing shows through from the shaft). */}
+    <mesh position={[0, -0.08, 0]} material={m.shaft}>{B([s, 0.15, s])}</mesh>
+    <mesh position={[0, 2.5, 0]} material={m.shaft}>{B([s, 0.14, s])}</mesh>
+    {/* Its front: the wall either side of its own doors, which travel with it (shut while it moves). */}
+    {[-1, 1].map((k) => <mesh key={`fr${k}`} position={[k * (LIFT_DOOR / 2 + (s - LIFT_DOOR) / 4 + 0.02), 1.21, s / 2]} material={m.steel}>{B([(s - LIFT_DOOR) / 2 - 0.04, 2.42, 0.04])}</mesh>)}
+    <mesh position={[0, 2.36, s / 2]} material={m.steel}>{B([LIFT_DOOR + 0.04, 0.12, 0.04])}</mesh>
+    <group position={[0, 0, s / 2 + 0.03]}><ElevatorDoors open={open} m={m} /></group>
     {/* The panel of buttons on the wall beside the door, the floor screen above it. */}
     <group position={[-s / 2 + 0.012, 0, s / 2 - 0.35]} rotation-y={Math.PI / 2}>
       <mesh position={[0, 1.25, 0]} material={m.black}>{B([0.24, 0.62, 0.02])}</mesh>
@@ -390,13 +429,13 @@ function ElevatorCar({ m, state }: { m: FMats; state: GameState }) {
 /** A floor's shaft inside (dark), hidden while the elevator's car is at that floor. */
 function ShaftAt({ state, fl, m }: { state: GameState; fl: AptFloor; m: FMats }) {
   const g = useRef<THREE.Group>(null);
-  useFrame(() => { const e = state.elevator; if (g.current) g.current.visible = !(e && e.building === fl.key.split("#")[0] && e.floor === fl.upper); });
-  return <group ref={g} position={[fl.bounds.minX + SHAFT / 2, 0, fl.bounds.minZ + SHAFT / 2 - 0.06]}><ShaftInside m={m} h={FLOOR_CLEAR} /></group>;
+  void state;
+  return <group ref={g} position={[fl.bounds.minX + SHAFT / 2, 0, fl.bounds.minZ + SHAFT / 2 - 0.06]}><ShaftInside m={m} h={STOREY} y0={FLOOR_CLEAR - STOREY} /></group>;
 }
 
 /** The elevator's car, wherever it is: at its building's shaft, at the height of the floor it's at. */
-function CarAt({ state, buildings, m, carY, light }: { state: GameState; buildings: Map<string, Building>; m: FMats; carY: (bkey: string) => number; light: React.RefObject<THREE.PointLight | null> }) {
-  const g = useRef<THREE.Group>(null);
+function CarAt({ state, buildings, m, carY, light, doors }: { state: GameState; buildings: Map<string, Building>; m: FMats; carY: (bkey: string) => number; light: React.RefObject<THREE.PointLight | null>; doors: (bkey: string) => number }) {
+  const g = useRef<THREE.Group>(null), shownKey = useRef<string | null>(null);
   useFrame(() => {
     // The car of the building you're in (the lobby or up on a floor), where it really is: resting, coming, going.
     const bkey = state.level?.building ?? (state.interior?.phase === "inside" ? state.interior.key.split("#")[0] : undefined);
@@ -404,13 +443,14 @@ function CarAt({ state, buildings, m, carY, light }: { state: GameState; buildin
     if (!el) return;
     el.visible = !!b;
     if (light.current) light.current.intensity = b ? 0.9 : 0;
+    shownKey.current = bkey ?? null;
     if (!b || !bkey) return;
     const L = venueLayout(b), [x, z] = toWorld(L.frame, L.bounds.minX + SHAFT / 2, L.bounds.minZ + SHAFT / 2), y = carY(bkey);
     el.position.set(x, y, z); el.rotation.y = L.frame.rot;
     // Its own dim light, just under the ceiling.
     if (light.current) light.current.position.set(x, y + 2.25, z);
   });
-  return <group ref={g} visible={false}><ElevatorCar m={m} state={state} /></group>;
+  return <group ref={g} visible={false}><ElevatorCar m={m} state={state} open={() => (shownKey.current ? doors(shownKey.current) : 0)} /></group>;
 }
 
 /** The fridge's glass shelves (heights) and its door's bins. */
@@ -537,10 +577,9 @@ function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, el
     {/* Both are the same box (a floor's slab is the ceiling of the one below: its underside is the ceiling), so when
         two floors are drawn they coincide exactly, same faces, same materials; and they stop just inside the outside
         walls, so their edges never share a plane with a wall's face. */}
-    <mesh position={[(minX + maxX) / 2, (H - STOREY) / 2, (minZ + maxZ) / 2]} material={m.slabFaces} receiveShadow>{B([maxX - minX + 0.38, STOREY - H, maxZ - minZ + 0.38])}</mesh>
-    {fl.ladder
-      ? <HoledSlab x0={minX - 0.19} x1={maxX + 0.19} z0={minZ - 0.19} z1={maxZ + 0.19} y0={H} y1={STOREY} hole={fl.ladder.hatch} mat={m.slabFaces} />
-      : <mesh position={[(minX + maxX) / 2, (H + STOREY) / 2, (minZ + maxZ) / 2]} material={m.slabFaces}>{B([maxX - minX + 0.38, STOREY - H, maxZ - minZ + 0.38])}</mesh>}
+    {/* (Open over the elevator's shaft: the car goes through.) */}
+    <HoledSlab x0={minX - 0.19} x1={maxX + 0.19} z0={minZ - 0.19} z1={maxZ + 0.19} y0={H - STOREY} y1={0} holes={[shaftHole(minX, minZ)]} mat={m.slabFaces} />
+    <HoledSlab x0={minX - 0.19} x1={maxX + 0.19} z0={minZ - 0.19} z1={maxZ + 0.19} y0={H} y1={STOREY} holes={fl.ladder ? [shaftHole(minX, minZ), fl.ladder.hatch] : [shaftHole(minX, minZ)]} mat={m.slabFaces} />
     {fl.ladder && <RoofLadder plan={fl.ladder} m={m} ceiling={H} />}
     <mesh position={[(minX + maxX) / 2, 0.002, (hallZ[1] + wallZ + INNER_WALL) / 2]} rotation-x={-Math.PI / 2} material={m.carpet}><planeGeometry args={[maxX - minX, INNER_WALL + 0.02]} /></mesh>
     {/* Floors: carpet in the hallway, wood in the apartment (the ceiling is the slab's underside). */}
@@ -550,7 +589,7 @@ function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, el
     <mesh position={[(minX + divX) / 2, 0.004, (inside0 + maxZ) / 2]} rotation-x={-Math.PI / 2} material={m.bedCarpet} geometry={floorGeos.bed} receiveShadow />
     {/* The outside walls (front, both sides, back), the front and the window side with their windows. */}
     {along(wallPieces(minX - T, maxX + T, SH, frontHoles), (a) => [a, maxZ + T / 2], true, frontMats)}
-    {along(wallPieces(minX - T, maxX + T, SH, []), (a) => [a, minZ - T / 2], true, backMats)}
+    {along(wallPieces(minX - T, maxX + T, SH, [{ a0: minX + SHAFT / 2 - SLOT / 2, a1: minX + SHAFT / 2 + SLOT / 2, y0: H - STOREY, y1: SH }]), (a) => [a, minZ - T / 2], true, backMats)}
     {along(wallPieces(minZ, maxZ, SH, sideHoles), (a) => [windowX, a], false, windowMats)}
     {along(wallPieces(minZ, maxZ, SH, []), (a) => [plainX, a], false, plainMats)}
     {fl.front.map((w, i) => <group key={i}>
@@ -1471,7 +1510,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       <LobbyVisitor state={state} layout={layout} />
     </group>)}
     {shown.map((fl) => <FloorInterior key={fl.key} lift={() => carShown(fl.key.split("#")[0]!)} sheet={sheetLink(fl.key)} bath={bathLink(fl.key)} kview={kitchen.current.view} lightsOf={lightsOf} bathDoor={() => (state.level?.floor === fl.upper ? bathAngle.current : 0)} fl={fl} state={state} m={m} door={() => doorAngle.current} bedDoor={() => bedAngle.current} fridgeDoor={() => fridgeAngle.current} closetDoor={() => closetAngle.current} elevatorOpen={elevatorOpen(fl.key.split("#")[0]!, fl.upper)} />)}
-    <CarAt state={state} buildings={byKey} m={m} carY={carY} light={carLight} />
+    <CarAt state={state} buildings={byKey} m={m} carY={carY} light={carLight} doors={(bkey) => { const e = state.elevator; return e && e.building === bkey ? elevatorOpen(bkey, e.floor)() : 0; }} />
     <pointLight ref={bathLight} intensity={0} distance={3.4} decay={1.4} color="#fff4e6" />
     <pointLight ref={hallLight} intensity={0} distance={7} decay={1.4} color="#ffefd6" />
     <pointLight ref={mainLight} intensity={0} distance={7} decay={1.4} color="#fff2df" />
@@ -1575,10 +1614,10 @@ function LobbyCar({ state, bkey, at, m }: { state: GameState; bkey: string; at: 
   const empty = useRef<THREE.Group>(null);
   useFrame(() => {
     const here = state.elevator?.building === bkey && state.elevator.floor === 1;
-    // Without the car, the shaft's dark inside shows behind its doors (never the lobby's floor and ceiling).
-    if (empty.current) empty.current.visible = !here;
+    // The shaft's dark inside (its walls) behind the doors.
+    void here;
   });
-  return <group ref={empty} position={[at[0], 0, at[1] - 0.06]}><ShaftInside m={m} h={CEILING - 0.02} /></group>;
+  return <group ref={empty} position={[at[0], 0, at[1] - 0.06]}><ShaftInside m={m} h={FH} slot={false} /></group>;
 }
 
 /** Now and then someone waits in the lobby's armchair (reading their phone). */

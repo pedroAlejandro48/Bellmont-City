@@ -147,8 +147,12 @@ export function RagdollBody({ subject, color, onMeshes }: { subject: RagdollSubj
         slab.current = world.createRigidBody(rapier.RigidBodyDesc.fixed().setTranslation(subject.pos.x, fy - 0.1, subject.pos.z));
         world.createCollider(rapier.ColliderDesc.cuboid(10, 0.1, 10).setFriction(1.3), slab.current);
       }
-      // (A fall: from where it began.)
+      // (A fall: from where it began — already tipping over, all limbs loose, the way it goes in.)
       const startY = accident.fromY ?? subject.pos.y;
+      const falling = accident.fromY !== undefined;
+      const pre = random(), tumbleAxis = new THREE.Vector3(Math.cos(pre * Math.PI * 2), 0, Math.sin(pre * Math.PI * 2));
+      const tumble = falling ? 2.4 + random() * 1.8 : 0;
+      if (falling) rotation.premultiply(new THREE.Quaternion().setFromAxisAngle(tumbleAxis, 0.35 + random() * 0.5));
       bodies.current = PARTS.map((part, i) => {
         temp.set(part.p[0], part.p[1], part.p[2]).applyQuaternion(rotation).add(subject.pos); temp.y += startY - subject.pos.y;
         const body = world.createRigidBody(rapier.RigidBodyDesc.dynamic().setTranslation(temp.x, temp.y, temp.z).setRotation(rotation).setLinearDamping(1.1).setAngularDamping(1.8).setAdditionalSolverIterations(8).setCcdEnabled(true));
@@ -164,6 +168,12 @@ export function RagdollBody({ subject, color, onMeshes }: { subject: RagdollSubj
         body.setLinvel({ x: accident.direction[0] * accident.launchSpeed + outward.x, y: (flying ? 3 + random() * 0.6 : 0) + outward.y, z: accident.direction[1] * accident.launchSpeed + outward.z }, true);
         const spin = accident.gentle ? 0.3 : 1;
         body.setAngvel({ x: ((random() - 0.5) * (limb ? 9 : 5) + accident.direction[1] * 2) * spin, y: (random() - 0.5) * 1.2 * spin, z: ((random() - 0.5) * (limb ? 9 : 5) - accident.direction[0] * 2) * spin }, true);
+        if (falling) {
+          // The whole body turning over as it drops, each limb flopping its own way.
+          const v = body.angvel();
+          body.setAngvel({ x: v.x + tumbleAxis.x * tumble + (limb ? (random() - 0.5) * 4 : 0), y: v.y, z: v.z + tumbleAxis.z * tumble + (limb ? (random() - 0.5) * 4 : 0) }, true);
+          body.setLinvel({ x: accident.direction[0] * 0.5 + (random() - 0.5) * 0.4, y: -0.5, z: accident.direction[1] * 0.5 + (random() - 0.5) * 0.4 }, true);
+        }
         if (limb) body.setAngularDamping(0.9);
         return body;
       });
