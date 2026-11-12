@@ -38,6 +38,18 @@ describe("life: money", () => {
     expect(life.home).toBeNull();
     expect(life.inventory).not.toContain("key");
   });
+  it("can't move out in the free week; unpaid rent evicts you and everything in the apartment is lost", () => {
+    const life = newLife(1);
+    life.bank = 100;
+    rentApartment(life, "56:-72", 9, 950, 1);
+    moveOut(life, 3);
+    expect(life.home).not.toBeNull();
+    life.fridge = ["Tuna", "Apple"]; life.kitchen.cupboard = ["pot"]; life.kitchen.rack = ["plate"]; life.closet = [{ name: "Tee", part: "upper", color: "#123456" }];
+    dailyBills(life, 8);
+    expect(life.home).toBeNull(); expect(life.inventory).not.toContain("key");
+    expect(life.fridge).toEqual([]); expect(life.kitchen.cupboard).toEqual([]); expect(life.kitchen.rack).toEqual([]); expect(life.closet).toEqual([]);
+    expect(life.ledger.some((t) => t.label.startsWith("Evicted"))).toBe(true);
+  });
 });
 
 describe("life: progress", () => {

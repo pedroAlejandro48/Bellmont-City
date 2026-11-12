@@ -154,7 +154,7 @@ export type GameState = {
   /** The camera held on one view (world: where it is, what it looks at), e.g. the shower while showering. */
   camLock: { pos: [number, number, number]; at: [number, number, number]; /** Put there at once (no easing). */ snap?: boolean; /** A field of view while held. */ fov?: number; /** Whose it is (only they let go of it). */ by?: string } | null;
   /** A kitchen panel's answer: a thing to take from the counter, or the cans to cook. */
-  kitchenAsk: { rack?: import("./pantry").WareKind; cans?: import("./pantry").CanKind[]; burner?: number } | null;
+  kitchenAsk: { rack?: import("./pantry").WareKind; cans?: import("./pantry").CanKind[]; burner?: number; /** Put away the new plates and cups from the bag. */ stow?: boolean } | null;
   /** Eating a home-cooked meal at the table (the fork to the mouth): when it started, how long. */
   meal: { at: number; T: number; bites?: number; left?: [number, number, number] } | null;
   /** Q pressed (for the kitchen, which looks at it after the food and inventory have). */

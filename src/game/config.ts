@@ -346,6 +346,19 @@ export function restaurantOpen(kind: RestaurantKind, hours: number) {
   const { opens, closes } = RESTAURANTS[kind];
   return hours >= opens && hours < closes;
 }
+/** Shops with opening hours (the others are always open). */
+export const VENUE_HOURS: Partial<Record<VenueKind, { opens: number; closes: number }>> = { grocery: { opens: 6, closes: 23 } };
+/** A business's hours (null: always open): a restaurant by its kind, a shop by its venue. */
+export function businessHours(b: { kind: RestaurantKind; venue?: VenueKind | undefined }): { opens: number; closes: number } | null {
+  const h = b.venue ? VENUE_HOURS[b.venue] : RESTAURANTS[b.kind];
+  return h && !(h.opens === 0 && h.closes === 24) ? h : null;
+}
+export function businessOpen(b: { kind: RestaurantKind; venue?: VenueKind | undefined }, hours: number) {
+  const h = businessHours(b);
+  return !h || (hours >= h.opens && hours < h.closes);
+}
+/** "6 AM", "11 PM". */
+export const clockHour = (h: number) => `${h % 12 === 0 ? 12 : h % 12} ${h % 24 < 12 ? "AM" : "PM"}`;
 const blockRandom = (seed: number, i: number, j: number) => rng(i === 0 && j === 0 ? PARK_SEED : seed ^ Math.imul(i + 101, 73856093) ^ Math.imul(j + 101, 19349663));
 /** Every block holds a 2×2 of buildings, listed by column (x) then row (z). */
 const buildingColumns = (_size: number) => [-8, 8];

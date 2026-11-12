@@ -610,7 +610,8 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     // a drink is lifted once and sipped with the head tipped back.
     // (Eating or drinking a thing from the inventory works the same way, over its own time.)
     const invUse = inv && (inv.kind === "eat" || inv.kind === "drink") ? { at: inv.at, drink: inv.kind === "drink", T: USE_SECONDS } : null;
-    const eat = state.eating ? { at: state.eating.at, drink: state.eating.drink, T: EAT_SECONDS } : state.meal ? { at: state.meal.at, drink: false, T: state.meal.T, bites: state.meal.bites } : invUse;
+    const mealEat = state.meal ? { at: state.meal.at, drink: false, T: state.meal.T, bites: state.meal.bites } : null;
+    const eat = state.eating ? { at: state.eating.at, drink: state.eating.drink, T: EAT_SECONDS } : mealEat ?? invUse;
     if (eat && !dead && !incapacitated && root.current && head.current) {
       const t = state.simulationTime - eat.at, T = eat.T;
       let up = 0, tip = 0;
@@ -618,7 +619,8 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       else { const bite = T / ((eat as { bites?: number }).bites ?? 3), u = (t % bite) / bite; up = u < 0.35 ? smoothstep(u / 0.35) : u < 0.6 ? 1 : 1 - smoothstep((u - 0.6) / 0.4); }
       head.current.rotation.x -= 0.32 * tip;
       root.current.updateMatrixWorld(true);
-      const mouth = head.current.localToWorld(new THREE.Vector3(0, -0.06, 0.16 + 0.04 * tip));
+      // (Eating a home meal with a fork or spoon the hand stops in front of the mouth: the utensil's tip goes in.)
+      const mouth = head.current.localToWorld(new THREE.Vector3(0, -0.07, 0.16 + 0.04 * tip + (state.meal && eat === mealEat ? 0.17 : 0)));
       reachArm(armR.current, foreR.current, mouth, POLES.low(-1), up);
       // A home meal: the knife stays down by the plate in the left hand.
       const kl = state.meal?.left;

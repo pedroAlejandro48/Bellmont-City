@@ -14,6 +14,7 @@ import type { GameState } from "./state";
 
 type V3 = [number, number, number];
 const PUFFS = 6;
+const smoothstep = (x: number) => { const c = Math.max(0, Math.min(1, x)); return c * c * (3 - 2 * c); };
 /** A fork, a knife or a spoon (origin at the grip, pointing +z out of the hand). */
 function Utensil({ kind, m }: { kind: "fork" | "knife" | "spoon"; m: { steel: THREE.Material } }) {
   return <group>
@@ -46,7 +47,7 @@ export function KitchenThings({ fl, state, view, m }: { fl: AptFloor; state: Gam
   const doorL = useRef<THREE.Group>(null), doorR = useRef<THREE.Group>(null), lid = useRef<THREE.Group>(null), tap = useRef<THREE.Mesh>(null);
   const puffs = useRef<(THREE.Mesh | null)[]>([]), stream = useRef<THREE.Mesh>(null), chunks = useRef<(THREE.Mesh | null)[]>([]), toss = useRef<THREE.Group>(null);
   const handL = useRef<THREE.Group>(null), handR = useRef<THREE.Group>(null), canG = useRef<THREE.Group>(null), canInner = useRef<THREE.Group>(null), potInner = useRef<THREE.Group>(null);
-  const glows = useRef<(THREE.Mesh | null)[]>([]), splash = useRef<THREE.Mesh>(null), bite = useRef<THREE.Mesh>(null);
+  const glows = useRef<(THREE.Mesh | null)[]>([]), splash = useRef<THREE.Mesh>(null), bite = useRef<THREE.Mesh>(null), utensil = useRef<THREE.Group>(null);
   const [hover, setHover] = useState<number | null>(null);
   const tmp = useMemo(() => ({ a: new THREE.Vector3(), b: new THREE.Vector3(), up: new THREE.Vector3(0, 1, 0), q: new THREE.Quaternion() }), []);
   const local = (w: THREE.Vector3): V3 => { const [x, z] = toLocal(fl.frame, w.x, w.z); return [x, w.y - fl.y, z]; };
@@ -141,7 +142,22 @@ export function KitchenThings({ fl, state, view, m }: { fl: AptFloor; state: Gam
     if (bite.current) {
       const e = view.eat, meal = state.meal;
       bite.current.visible = false;
-      if (e && meal) { const T = e.T, per = T / (meal.bites ?? 3), u = ((t - e.t0) % per) / per; bite.current.visible = (t - e.t0) < T - 0.3 && u < 0.48; }
+      // (Loaded once it's back down at the plate, up to the mouth with it, gone inside — and back down empty.)
+      if (e && meal) { const T = e.T, per = T / (meal.bites ?? 3), u = ((t - e.t0) % per) / per; bite.current.visible = (t - e.t0) < T - 0.3 && u > 0.04 && u < 0.4; }
+    }
+    // The fork (or spoon) points where it's going: down at the plate, and up into the mouth as it comes up.
+    const ut = utensil.current, hr = handR.current, headObj = state.avatar.body[3];
+    if (ut && hr && headObj && view.eat && state.meal) {
+      const e = view.eat, per = e.T / (state.meal.bites ?? 3), u = ((t - e.t0) % per) / per;
+      const up = u < 0.35 ? smoothstep(u / 0.35) : u < 0.6 ? 1 : 1 - smoothstep((u - 0.6) / 0.4);
+      headObj.updateWorldMatrix(true, false);
+      const mouth = headObj.localToWorld(tmp.a.set(0, -0.06, 0.1));
+      const pl = K.places.find((x) => x.chair === e.chair), plate = pl ? toWorld3(fl, new THREE.Vector3(pl.at[0], pl.at[1] + 0.03, pl.at[2])) : mouth.clone();
+      hr.updateWorldMatrix(true, false);
+      const from = hr.getWorldPosition(tmp.b);
+      const dir = plate.sub(from).normalize().lerp(mouth.sub(from).normalize(), up).normalize();
+      const qWorld = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir);
+      ut.quaternion.copy(hr.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(qWorld));
     }
   });
 
@@ -153,8 +169,9 @@ export function KitchenThings({ fl, state, view, m }: { fl: AptFloor; state: Gam
     if (side === "left" && view.washing) return <group position={[0, -0.03, 0.06]}><WareModel kind={view.washing} /></group>;
     // Eating: only the fork (or a spoon, for soup) in the right hand, the knife in the left.
     if (eatingNow) {
-      if (side === "right") return <group rotation-x={-0.4}><Utensil kind={soup ? "spoon" : "fork"} m={m} />{<mesh ref={bite} position={[0, -0.005, 0.105]} material={mats.chunk}><sphereGeometry args={[0.012, 8, 6]} /></mesh>}</group>;
-      return soup ? null : <group rotation-x={-0.6}><Utensil kind="knife" m={m} /></group>;
+      // (Held bigger than life while eating, so they read.)
+      if (side === "right") return <group ref={utensil} scale={1.7}><Utensil kind={soup ? "spoon" : "fork"} m={m} />{<mesh ref={bite} position={[0, soup ? 0.006 : 0.004, soup ? 0.1 : 0.115]} material={mats.chunk}><sphereGeometry args={[0.011, 8, 6]} /></mesh>}</group>;
+      return soup ? null : <group rotation-x={-0.6} scale={1.7}><Utensil kind="knife" m={m} /></group>;
     }
     const shown = side === "left" ? view.holdL : view.holdR;
     const h: Held | null = h0 ?? (shown ? { ware: shown, food: null, dirty: false } : null);

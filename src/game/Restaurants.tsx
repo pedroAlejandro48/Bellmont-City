@@ -2,7 +2,7 @@ import { useFrame } from "@react-three/fiber";
 import { quality } from "./quality";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { BUILDING_ENTRANCE, RESTAURANTS, SIDEWALK_H, restaurantOpen, timeInfo, type Building, type City, type RestaurantKind, openGroundFloor } from "./config";
+import { BUILDING_ENTRANCE, RESTAURANTS, SIDEWALK_H, restaurantOpen, businessOpen, timeInfo, type Building, type City, type RestaurantKind, openGroundFloor } from "./config";
 import { canvas, groundY, makeBlankWall, tex } from "./textures";
 import { Venue } from "./Venues";
 import { CEILING, COUNTER, DINING, DOOR_H, HANDLE, KITCHEN_DOOR, KITCHEN_DOOR_H, LEAF, WALL, WINDOW, furnish, onLeaf, roomLayout, toWorld, type Item, type RoomLayout } from "./restaurantRoom";
@@ -756,7 +756,7 @@ export function Restaurants({ city, state }: { city: City; state: GameState }) {
       if (distance < bestDistance) { best = layout; bestDistance = distance; }
     }
     const spots = best ? lightSpots(best) : [];
-    const on = best ? (best.venue ? true : restaurantOpen(best.kind, hours)) : false;
+    const on = best ? businessOpen(best, hours) : false;
     lights.current.forEach((light, i) => {
       if (!light) return;
       const spot = spots[i];

@@ -54,6 +54,8 @@ export function stepLife(state: GameState, dt: number, moved: { walked: number; 
   const { day } = timeInfo(state.elapsed), life = state.life;
   if (day > life.billedDay) {
     const lines = dailyBills(life, day);
+    const evicted = lines.find((l) => l.label.startsWith("Evicted"));
+    if (evicted) toast(state, "You've been evicted", "warn", "Your rent couldn't be paid from the bank. The key was taken and everything in the apartment is gone.");
     const paid = lines.filter((l) => l.amount < 0).reduce((s, l) => s - l.amount, 0), unpaid = lines.some((l) => l.label.includes("unpaid"));
     if (paid > 0 || unpaid) toast(state, unpaid ? "Some bills went unpaid" : `Bills paid: ${money(paid)}`, unpaid ? "warn" : "money", unpaid ? "They were added to your loan and your credit score dropped." : "Rent, utilities and phone, from your bank.");
   }

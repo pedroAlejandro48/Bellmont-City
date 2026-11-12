@@ -196,8 +196,13 @@ export function dailyBills(life: Life, day: number) {
     if (interest > 0) { life.bank = round(life.bank + interest); lines.push({ day: d, label: "Savings interest", amount: interest }); }
     const charges: [string, number][] = [["Phone plan", BASE_BILL]];
     if (life.insured) charges.push(["Health plan", HEALTH_PLAN]);
-    // The week's rent, every seventh day (the first week was free).
-    if (life.home && d >= life.home.nextRent) { charges.push([`Rent (week, floor ${life.home.floor})`, life.home.weekly]); life.home.nextRent += 7; }
+    // The week's rent, every seventh day (the first week was free) — from the bank only: if it can't be paid, you're
+    // evicted, and everything in the apartment (the fridge's food, the kitchen, the closet) is lost.
+    if (life.home && d >= life.home.nextRent) {
+      const rent = life.home.weekly, floor = life.home.floor;
+      if (life.bank >= rent) { life.bank = round(life.bank - rent); lines.push({ day: d, label: `Rent (week, floor ${floor})`, amount: -rent }); life.home.nextRent += 7; life.home.paid = (life.home.paid ?? 0) + 1; life.credit = Math.min(850, life.credit + 1); }
+      else { evict(life); lines.push({ day: d, label: `Evicted: rent unpaid (floor ${floor})`, amount: 0 }); life.credit = Math.max(300, life.credit - 40); }
+    }
     if (life.loan > 0) charges.push(["Loan interest", round(life.loan * LOAN_RATE)]);
     for (const [label, amount] of charges) {
       if (life.bank >= amount) { life.bank = round(life.bank - amount); lines.push({ day: d, label, amount: -amount }); life.credit = Math.min(850, life.credit + 1); }
@@ -259,9 +264,18 @@ export function rentApartment(life: Life, building: string, floor: number, weekl
   record(life, day, `${HOME_NAME}, floor ${floor}: first week free`, 0);
   return "ok";
 }
+/** Moving out is only possible once a week's rent has been paid (not during the free week). */
+export const canMoveOut = (life: Life) => !!life.home && (life.home.paid ?? 0) >= 1;
+/** Evicted (rent not paid): the key is taken, and everything left in the apartment is lost — the fridge, every
+ * pot, plate and cup, what was cooking or on the table, the clothes in the closet. */
+export function evict(life: Life) {
+  life.home = null; life.fridge = []; life.kitchen = newKitchen(); life.closet = [];
+  const k = life.inventory.indexOf("key");
+  if (k > 0) life.inventory[k] = null;
+}
 /** Moving out: the key is handed back and the fridge is cleared. */
 export function moveOut(life: Life, day: number) {
-  if (!life.home) return;
+  if (!life.home || !canMoveOut(life)) return;
   record(life, day, `Moved out of floor ${life.home.floor}`, 0);
   life.home = null; life.fridge = [];
   const k = life.inventory.indexOf("key");

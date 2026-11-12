@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { timeInfo } from "@/game/config";
 import { isDrinkName } from "@/game/food";
-import { FINE_DAYS, HEALTH_PLAN, HOME_NAME, finesOwed, gainSkill, gainXp, moveOut, payFines, record, rentApartment, spend } from "@/game/life";
+import { FINE_DAYS, HEALTH_PLAN, HOME_NAME, canMoveOut, finesOwed, gainSkill, gainXp, moveOut, payFines, record, rentApartment, spend } from "@/game/life";
 import { APT_FLOORS, freeFloors, rentFor } from "@/game/apartments";
 import { guideDone, lifeEvent, payJob } from "@/game/lifeRuntime";
 import { canConsume, consume } from "@/game/needs";
@@ -185,7 +185,8 @@ function Reception({ state, refresh }: Props) {
       const open = free.includes(f) && !(mineHere && home?.floor === f);
       return <li key={f} className={open ? "" : "taken"}>
         <span>Floor {f}<small>{money(rentFor(f))} a week{mineHere && home?.floor === f ? " · yours" : open ? "" : " · taken"}</small></span>
-        <button type="button" className="phone-btn" disabled={!open} onClick={() => {
+        <button type="button" className="phone-btn" disabled={!open || (!!home && !canMoveOut(life))} onClick={() => {
+          if (home && !canMoveOut(life)) { toast(state, "Not during your free week", "warn", "You can move out once you've paid a week's rent."); return; }
           if (home && !mineHere && !window.confirm(`Move out of your apartment on floor ${home.floor} elsewhere?`)) return;
           if (home) moveOut(life, day);
           const r = rentApartment(life, building, f, rentFor(f), day);
@@ -195,7 +196,9 @@ function Reception({ state, refresh }: Props) {
         }}>Rent</button>
       </li>;
     })}</ul>
-    {mineHere && <button type="button" className="phone-btn ghost" onClick={() => { if (window.confirm("Move out and hand back your key?")) { moveOut(life, day); toast(state, "You moved out", "info"); refresh(); } }}>Move out</button>}
+    {mineHere && (canMoveOut(life)
+      ? <button type="button" className="phone-btn ghost" onClick={() => { if (window.confirm("Move out and hand back your key?")) { moveOut(life, day); toast(state, "You moved out", "info"); refresh(); } }}>Move out</button>
+      : <p className="phone-note">You can move out once you've paid your first week's rent (day {home?.nextRent}). If the rent can't be paid from your bank, you'll be evicted and lose everything in the apartment.</p>)}
   </>;
 }
 

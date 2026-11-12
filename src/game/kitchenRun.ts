@@ -255,8 +255,9 @@ export class KitchenRun {
       const at: [number, number, number] = [K.basin[0], 1.3, K.basin[2]];
       const dirty = dirtyHeld(k), n = k.sink.length + dirty.reduce((a, x) => a + (h[x]!.silver ? 2 : 1), 0);
       if (n > 0) return { at, label: `E  WASH UP (${n})`, act: () => this.washAll(c) };
-      const bagWares = (s.groceryBag ?? []).filter(isWare);
-      if (bagWares.length) return handFree(s, "right") ? { at, label: "E  PUT AWAY THE KITCHENWARE", act: () => this.putAwayBag(c, bagWares) } : { at, label: "YOUR RIGHT HAND IS FULL", act: null };
+      // New pots and pans from the shop go in the cupboard here (plates and the rest go on the counter, beside it).
+      const bagPots = (s.groceryBag ?? []).filter((w): w is WareKind => isWare(w) && isPotLike(w));
+      if (bagPots.length) return handFree(s, "right") ? { at, label: `E  PUT AWAY THE NEW ${bagPots.length > 1 ? "POTS AND PANS" : bagPots[0]!.toUpperCase()}`, act: () => this.putAwayBag(c, bagPots) } : { at, label: "YOUR RIGHT HAND IS FULL", act: null };
       const cleanPot = (["right", "left"] as const).find((x) => !!h[x] && isPotLike(h[x]!.ware) && !h[x]!.dirty && !h[x]!.food);
       if (cleanPot) return { at, label: "E  PUT IT IN THE CUPBOARD", act: () => {
         if (cleanPot === "left") { const r = h.right; h.right = h.left; h.left = r; }
@@ -274,9 +275,13 @@ export class KitchenRun {
     // ---- the counter beside the sink ----
     if (near(K.rackStand, 0.7)) {
       const at: [number, number, number] = [K.rack[0], 1.25, K.rack[2]];
+      // New plates, bowls, cups, glasses and silverware from the shop: with none here yet, E puts them away; with
+      // some, the counter's panel (the same E) has a button for it beside taking one.
+      const bagRack = (s.groceryBag ?? []).filter((w): w is WareKind => isWare(w) && !isPotLike(w));
+      if (!k.rack.length && bagRack.length) return handFree(s, "right") ? { at, label: "E  PUT AWAY THE NEW PLATES AND CUPS", act: () => this.putAwayBag(c, bagRack) } : { at, label: "YOUR RIGHT HAND IS FULL", act: null };
       if (!k.rack.length) return { at, label: "NO PLATES OR CUPS YET", act: null };
       if (!handFree(s, "left") && !handFree(s, "right")) return { at, label: "YOUR HANDS ARE FULL", act: null };
-      return { at, label: "E  PLATE · CUP · GLASS · SILVERWARE", act: () => { s.uiLock = "rack"; s.kitchenAsk = null; s.keys.clear(); } };
+      return { at, label: `E  PLATE · CUP · GLASS · SILVERWARE${bagRack.length ? " · PUT AWAY" : ""}`, act: () => { s.uiLock = "rack"; s.kitchenAsk = null; s.keys.clear(); } };
     }
     void carry;
     return null;
@@ -287,6 +292,12 @@ export class KitchenRun {
     const s = c.state, ask = s.kitchenAsk, k = this.k(s), h = k.hands, from: [number, number] = [c.lx, c.lz];
     if (!ask || this.mv) return;
     s.kitchenAsk = null;
+    if (ask.stow) {
+      const bagRack = (s.groceryBag ?? []).filter((w): w is WareKind => isWare(w) && !isPotLike(w));
+      if (!handFree(s, "right")) { const m = handsFullMessage("right"); toast(s, m.title, "warn", m.body); return; }
+      if (bagRack.length) this.putAwayBag(c, bagRack);
+      return;
+    }
     if (ask.rack) {
       const w = ask.rack, pref = w === "silverware" ? "right" : "left", other = pref === "left" ? "right" : "left";
       const hand = handFree(s, pref) ? pref : handFree(s, other) ? other : null;

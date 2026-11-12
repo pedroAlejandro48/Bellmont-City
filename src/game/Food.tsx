@@ -5,7 +5,9 @@ import { quality } from "./quality";
 import { useFrame } from "@react-three/fiber";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { BENCH_SEATS, BENCH_SEAT_TOP, BIN, PARK_BINS, RESTAURANTS, SIDEWALK_H, floorHeight, generateCity, timeInfo, type RestaurantKind } from "./config";
+import { BENCH_SEATS, BENCH_SEAT_TOP, BIN, GAME_MINUTE, PARK_BINS, RESTAURANTS, SIDEWALK_H, businessHours, floorHeight, generateCity, timeInfo, type RestaurantKind } from "./config";
+import { commutePath, commutePose, shiftAt, shiftWindow } from "./staffShift";
+import { OPENER_PASS } from "./doors";
 import { canConsume, consume } from "./needs";
 import { CharacterBody, useBodyRig, type BodyRig } from "./CharacterBody";
 import { POLES, carryElbow, handWorld, pointArm, reachArm } from "./arms";
@@ -520,6 +522,7 @@ const Staffed = memo(function Staffed({ place, state, live, hands, staffAt }: { 
   const setRunner = useMemo(() => (r: BodyRig) => { runner.current = r; }, []);
   const setWaiter = useMemo(() => (r: BodyRig) => { waiter.current = r; }, []);
   const walk = useRef({ phase: 0, x: 0, z: 0 }), walkW = useRef({ phase: 0, x: 0, z: 0 });
+  const commute = useRef<{ key: string; paths: ReturnType<typeof commutePath>[]; doors: boolean[]; phase: number[] }>({ key: "", paths: [], doors: [], phase: [] });
   const bubble = useRef<THREE.Group>(null);
   const [said, setSaid] = useState<{ text: string; shown: boolean }>({ text: "", shown: false });
   const v = useMemo(() => ({ a: new THREE.Vector3(), b: new THREE.Vector3(), look: new THREE.Vector3() }), []);
@@ -529,6 +532,37 @@ const Staffed = memo(function Staffed({ place, state, live, hands, staffAt }: { 
     const dt = Math.min(raw, 0.05), now = state.simulationTime, L = live.current;
     if (!L) return;
     const view = L.view, session = view.sessions.get(key);
+    // ---- closed: nobody inside — they walk out after closing and back in just before opening ----
+    const shift = shiftAt(businessHours({ kind }), timeInfo(state.elapsed).hours, GAME_MINUTE);
+    const rigs = [cashier.current, runner.current, waiter.current];
+    if (shift.phase !== "working") {
+      const arriving = shift.phase === "arriving", bodies: { x: number; z: number; r: number }[] = [];
+      const posts = [P.cashier, P.kitchen, P.waiter];
+      if (commute.current.key !== shift.phase) commute.current = { key: shift.phase, paths: posts.map((po, i) => commutePath(room, [po.x, po.z], i, arriving)), doors: [false, false, false], phase: [0, 0, 0] };
+      rigs.forEach((r, i) => {
+        if (!r?.root.current) return;
+        if (shift.phase === "off") { r.root.current.visible = false; return; }
+        const cp = commutePose(commute.current.paths[i]!, i, shift.t, arriving, posts[i]!.yaw, shiftWindow(arriving, GAME_MINUTE));
+        r.root.current.visible = cp.visible;
+        if (!cp.visible) return;
+        const [x, z] = toWorld(f, cp.x, cp.z);
+        r.root.current.position.set(x, SIDEWALK_H, z);
+        r.root.current.rotation.set(0, worldYaw(f, cp.yaw), 0);
+        commute.current.phase[i] = (commute.current.phase[i] ?? 0) + dt * (cp.walking ? 1.35 : 0) * 4.2;
+        poseBody(r, commute.current.phase[i]!, cp.walking ? 1 : 0, now + place.seed * (i + 1));
+        bodies.push({ x, z, r: 0.3 });
+        // The door opens for each as they reach it.
+        if (!commute.current.doors[i] && shift.t > cp.doorTime - 0.9) {
+          commute.current.doors[i] = true;
+          const wall = performance.now() / 1000, leaf = arriving ? "right" : "left";
+          state.extraDoorUses = [...state.extraDoorUses.filter((u) => wall - u.start < 30), { key, leaf, mode: "open", start: wall, lead: 0.8, pass: 0.8 + OPENER_PASS[leaf] }];
+        }
+      });
+      staffAt.set(key, bodies);
+      if (said.shown) setSaid({ text: said.text, shown: false });
+      return;
+    }
+    for (const r of rigs) if (r?.root.current && !r.root.current.visible) r.root.current.visible = true;
     // ---- cashier: behind the register, facing the customers ----
     const c = cashier.current;
     if (c?.root.current) {

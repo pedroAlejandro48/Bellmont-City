@@ -51,9 +51,11 @@ export function AptPanels({ state }: { state: GameState }) {
 function RackPanel({ state, onClose }: { state: GameState; onClose: () => void }) {
   const k = state.life.kitchen, count = (w: WareKind) => k.rack.filter((x) => x === w).length;
   const take = (w: WareKind) => { state.kitchenAsk = { rack: w }; onClose(); };
+  const newOnes = (state.groceryBag ?? []).filter((w) => w === "plate" || w === "bowl" || w === "cup" || w === "glass" || w === "silverware").length;
   const opts: [WareKind, string, string][] = [["plate", "🍽️", "Plate"], ["bowl", "🥣", "Bowl"], ["cup", "☕", "Cup"], ["glass", "🥛", "Glass"], ["silverware", "🍴", "Silverware"]];
   return <div className="home-panel" role="dialog" aria-label="Counter">
     <div className="home-panel-head"><b>Counter</b><button type="button" onClick={onClose} aria-label="Close">✕</button></div>
+    {newOnes > 0 && <button type="button" className="phone-btn" onClick={() => { state.kitchenAsk = { stow: true }; onClose(); }}>Put away the new ones from your bag ({newOnes})</button>}
     <div className="kitchen-choices">
       {opts.map(([w, icon, name]) => <button key={w} type="button" className="kitchen-choice" disabled={!count(w)} onClick={() => take(w)}>
         <span className="kitchen-icon">{icon}</span><span>{name}</span><small>{count(w)}</small>

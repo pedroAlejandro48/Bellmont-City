@@ -4,7 +4,8 @@ import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { POLES, handWorld, reachArm } from "./arms";
 import { CharacterBody, useBodyRig, type BodyRig } from "./CharacterBody";
-import { SIDEWALK_H, timeInfo, type City } from "./config";
+import { GAME_MINUTE, SIDEWALK_H, VENUE_HOURS, businessHours, clockHour, timeInfo, type City } from "./config";
+import { commutePath, commutePose, shiftAt, shiftWindow } from "./staffShift";
 import { OPENER_PASS } from "./doors";
 import {
   BASKET_MAX, GROCERY_PRICE, checkoutLength, checkoutSpots, clerkAt, landingSpot, payPlan, pickItem, pileSpot, planAt, returnBasket,
@@ -97,6 +98,8 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
   useMemo(() => setGroceryObstacles(layout.solids, layout.bounds), [layout]);
   const spots = useMemo(() => checkoutSpots(layout), [layout]);
   const clerk = useBodyRig();
+  const clerkOn = useRef(true), clerkLook = useRef({ phase: 0, last: null as [number, number] | null });
+  const commute = useRef<{ key: string; path: ReturnType<typeof commutePath>; doorDone: boolean }>({ key: "", path: { pts: [], door: 0 }, doorDone: false });
 
   // ---- the player's own run ----
   const run = useRef<{ plan: Plan | null; kind: string; t0: number; prev: number; src: Source | null; holding: ItemKind | null; exitAfter: boolean }>({ plan: null, kind: "", t0: 0, prev: -1, src: null, holding: null, exitAfter: false });
@@ -211,6 +214,7 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
         } else if (atTill && n > 0) {
           [p.x, p.z] = world(spots.basket[0], spots.basket[2]); p.y = SIDEWALK_H + 1.5; p.visible = true; p.label = `E  PAY ${money(total)}`;
           action = () => {
+            if (!clerkOn.current) { toast(state, "The store is closed", "warn", `Fresh Market is open from ${clockHour(VENUE_HOURS.grocery!.opens)} to ${clockHour(VENUE_HOURS.grocery!.closes)}.`); return; }
             if (checkout.current) { toast(state, "Wait a moment", "info", "The cashier is serving someone."); return; }
             // The bag is handed over into the left hand (or more go in the bag already held there).
             if (!state.groceryBag && !handFree(state, "left")) { const m = handsFullMessage("left"); toast(state, m.title, "warn", m.body); return; }
@@ -270,7 +274,7 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
     // ---- a shopper now and then (only while the player is about) ----
     const near = Math.hypot(state.pos.x - f.ox, state.pos.z - f.oz) < 60;
     let sh = shopper.current;
-    if (!sh && near) {
+    if (!sh && near && clerkOn.current) {
       nextShopper.current -= dt;
       if (nextShopper.current <= 0) {
         nextShopper.current = 50 + Math.random() * 60;
@@ -364,12 +368,33 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
       const extra: { x: number; z: number; r: number }[] = [];
       const shNow = shopper.current;
       if (shNow && shNow.stage !== "approach" && shNow.stage !== "away") { const [wx, wz] = world(shNow.pose.x, shNow.pose.z); extra.push({ x: wx, z: wz, r: 0.3 }); }
-      const [cx0, cz0] = world(layout.staff.x, layout.staff.z); extra.push({ x: cx0, z: cz0, r: 0.3 });
+      if (clerk.root.current?.visible) { const cr = clerk.root.current.position; extra.push({ x: cr.x, z: cr.z, r: 0.3 }); }
       state.staffBodies = [...state.staffBodies, ...extra];
     }
     // ---- the clerk: idle at the register, or bagging ----
     const s = layout.staff, root = clerk.root.current;
-    if (root && clerk.hips.current) {
+    // The clerk's day: walking in before opening, at the till while open, walking out after closing, gone at night.
+    const shift = shiftAt(businessHours({ kind: layout.kind, venue: layout.venue }), timeInfo(state.elapsed).hours, GAME_MINUTE);
+    clerkOn.current = shift.phase === "working";
+    if (root && clerk.hips.current && shift.phase !== "working") {
+      const arriving = shift.phase === "arriving";
+      if (shift.phase === "off") root.visible = false;
+      else {
+        const pk = `${shift.phase}`;
+        if (commute.current.key !== pk) commute.current = { key: pk, path: commutePath(layout, [s.x, s.z], 0, arriving), doorDone: false };
+        const cp = commutePose(commute.current.path, 0, shift.t, arriving, s.yaw, shiftWindow(arriving, GAME_MINUTE));
+        root.visible = cp.visible;
+        poseBody(clerk, { x: cp.x, z: cp.z, yaw: cp.yaw, crouch: 0, lean: 0.04, left: null, right: null }, world, yawOf, clerkLook.current, dt);
+        // The door swings open for them as they get there.
+        if (!commute.current.doorDone && shift.t > cp.doorTime - 0.9) {
+          commute.current.doorDone = true;
+          const wall = performance.now() / 1000, leaf = arriving ? "right" : "left";
+          state.extraDoorUses = [...state.extraDoorUses.filter((u) => wall - u.start < 30), { key: layout.key, leaf, mode: "open", start: wall, lead: 0.8, pass: 0.8 + OPENER_PASS[leaf] }];
+        }
+      }
+    }
+    if (root && clerk.hips.current && shift.phase === "working") {
+      root.visible = true;
       const [cx, cz] = world(s.x, s.z);
       root.position.set(cx, SIDEWALK_H, cz); root.rotation.y = yawOf(s.yaw);
       clerk.hips.current.position.y = 0.95 + Math.sin(now * 1.6) * 0.005;

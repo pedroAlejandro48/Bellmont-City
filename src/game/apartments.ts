@@ -33,7 +33,7 @@ export function freeFloors(seed: number, building: string, day: number): number[
   return out.sort((a, b) => a - b);
 }
 
-export type ApartmentHome = { kind: "apartment"; building: string; floor: number; since: number; nextRent: number; weekly: number };
+export type ApartmentHome = { kind: "apartment"; building: string; floor: number; since: number; nextRent: number; weekly: number; /** Weeks paid so far (moving out needs one). */ paid?: number };
 
 /** Is this one of the apartment buildings? */
 export const isApartment = (b: Building) => b.venue === "apartments";
