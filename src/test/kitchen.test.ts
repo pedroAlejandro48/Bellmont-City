@@ -43,3 +43,16 @@ describe("pantry and kitchen", () => {
     expect(readKitchen(null)).toEqual(newKitchen());
   });
 });
+
+import { cupboardView } from "@/game/kitchenRun";
+describe("the cupboard close-up", () => {
+  it("fits the cupboard's whole width on an upright phone too", () => {
+    for (const aspect of [16 / 9, 1, 390 / 844, 360 / 740]) {
+      const { back, fov } = cupboardView(aspect);
+      const hHalf = Math.atan(Math.tan(fov / 2 * Math.PI / 180) * aspect);
+      expect(Math.tan(hHalf) * back).toBeGreaterThanOrEqual(0.449);
+      expect(fov).toBeLessThanOrEqual(100);
+    }
+    expect(cupboardView(16 / 9)).toEqual({ back: 0.58, fov: 75 });
+  });
+});

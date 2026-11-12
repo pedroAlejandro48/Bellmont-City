@@ -52,7 +52,8 @@ export function walk(from: [number, number], fromYaw: number, to: [number, numbe
 /** Standing still a moment, holding things. */
 const still = (x: number, z: number, yaw: number, c: Carry, dur: number, end?: string, extra: Partial<KPose> = {}): KSeg => ({ dur, ...(end ? { end } : {}), pose: () => ({ x, z, yaw, crouch: 0, lean: 0, ...carried(x, z, yaw, c), ...extra }) });
 
-/** The cupboard's door handles (left and right door, at the middle where they meet). */
+/** The cupboard's door handles (at the middle where they meet): the −x door's, then the +x door's. Facing the
+ * cupboard (+z) the body's right is −x: the right hand opens the −x door, the left hand the +x one. */
 export const cupboardHandles = (fl: AptFloor): [V3, V3] => { const c = fl.kitchen.cupboard; return [[c.x - 0.05, 0.7, c.z - 0.02], [c.x + 0.05, 0.7, c.z - 0.02]]; };
 /** Where each door's handle is with the doors this open (they swing out on hinges at the cupboard's sides). */
 export function handleAt(fl: AptFloor, side: -1 | 1, open: number): V3 {
@@ -78,9 +79,9 @@ export function openCupboard(fl: AptFloor, from: [number, number], fromYaw: numb
   const bend = (e: number) => ({ crouch: 0.48 * e, lean: 0.42 * e });
   return [
     walk(from, fromYaw, [x, z], 0, c),
-    { dur: 0.8, pose: (k) => { const e = smooth(k); return { x, z, yaw: 0, ...bend(e), left: R(hl, e), right: R(hr, e), door: 0 }; } },
-    { dur: 0.9, end: "open", pose: (k) => { const e = smooth(k); return { x, z, yaw: 0, ...bend(1), left: R(handleAt(fl, -1, e)), right: R(handleAt(fl, 1, e)), door: e }; } },
-    { dur: 0.4, end: "choose", pose: (k) => { const e = smooth(k); return { x, z, yaw: 0, ...bend(1), left: R(handleAt(fl, -1, 1), 1 - e), right: R(handleAt(fl, 1, 1), 1 - e), door: 1 }; } },
+    { dur: 0.8, pose: (k) => { const e = smooth(k); return { x, z, yaw: 0, ...bend(e), left: R(hr, e), right: R(hl, e), door: 0 }; } },
+    { dur: 0.9, end: "open", pose: (k) => { const e = smooth(k); return { x, z, yaw: 0, ...bend(1), left: R(handleAt(fl, 1, e)), right: R(handleAt(fl, -1, e)), door: e }; } },
+    { dur: 0.4, end: "choose", pose: (k) => { const e = smooth(k); return { x, z, yaw: 0, ...bend(1), left: R(handleAt(fl, 1, 1), 1 - e), right: R(handleAt(fl, -1, 1), 1 - e), door: 1 }; } },
   ];
 }
 /** Crouched with the doors open: the right hand reaches in for slot `i`'s pot or pan (event "took"), brings it out,
@@ -91,7 +92,7 @@ export function takeFromCupboard(fl: AptFloor, i: number): KSeg[] {
   return [
     { dur: 0.8, end: "took", pose: (k) => { const e = smooth(k); return { x, z, yaw: 0, ...bend(1), left: null, right: R([slot[0], slot[1] + 0.12, slot[2]], e, "low"), door: 1 }; } },
     { dur: 0.6, pose: (k) => { const e = smooth(k); return { x, z, yaw: 0, ...bend(1), left: null, right: R(lerp3([slot[0], slot[1] + 0.12, slot[2]], mid, e), 1, "low"), door: 1 }; } },
-    { dur: 0.8, end: "shut", pose: (k) => { const e = smooth(k); return { x, z, yaw: 0, ...bend(1), left: R(handleAt(fl, -1, 1 - e)), right: R(mid, 1, "low"), door: 1 - e }; } },
+    { dur: 0.8, end: "shut", pose: (k) => { const e = smooth(k); return { x, z, yaw: 0, ...bend(1), left: R(handleAt(fl, 1, 1 - e)), right: R(mid, 1, "low"), door: 1 - e }; } },
     { dur: 0.6, pose: (k) => { const e = smooth(k); return { x, z, yaw: 0, ...bend(1 - e), left: R(handleAt(fl, 1, 0), 1 - e), right: R(lerp3(mid, hold, e), 1, "low"), door: 0 }; } },
   ];
 }
@@ -105,8 +106,8 @@ export function intoCupboard(fl: AptFloor, from: [number, number], fromYaw: numb
     segs.push({ dur: 0.8, end: "in", pose: (q) => { const e = smooth(q); return { x, z, yaw: 0, ...bend, left: null, right: R(lerp3(hold, [slot[0], slot[1] + 0.12, slot[2]], e), 1, "low"), door: 1, holdR: w }; } });
     segs.push({ dur: 0.45, pose: (q) => { const e = smooth(q); return { x, z, yaw: 0, ...bend, left: null, right: R(lerp3([slot[0], slot[1] + 0.12, slot[2]], hold, e), 1 - 0.5 * e, "low"), door: 1 }; } });
   }
-  segs.push({ dur: 0.8, pose: (q) => { const e = smooth(q); return { x, z, yaw: 0, ...bend, left: R(handleAt(fl, -1, 1 - e)), right: R(handleAt(fl, 1, 1 - e)), door: 1 - e }; } });
-  segs.push({ dur: 0.6, pose: (q) => { const e = smooth(q); return { x, z, yaw: 0, crouch: 0.48 * (1 - e), lean: 0.42 * (1 - e), left: R(handleAt(fl, -1, 0), 1 - e), right: R(handleAt(fl, 1, 0), 1 - e), door: 0 }; } });
+  segs.push({ dur: 0.8, pose: (q) => { const e = smooth(q); return { x, z, yaw: 0, ...bend, left: R(handleAt(fl, 1, 1 - e)), right: R(handleAt(fl, -1, 1 - e)), door: 1 - e }; } });
+  segs.push({ dur: 0.6, pose: (q) => { const e = smooth(q); return { x, z, yaw: 0, crouch: 0.48 * (1 - e), lean: 0.42 * (1 - e), left: R(handleAt(fl, 1, 0), 1 - e), right: R(handleAt(fl, -1, 0), 1 - e), door: 0 }; } });
   return segs;
 }
 

@@ -327,8 +327,11 @@ export class KitchenRun {
     c.state.uiLock = "cupboard";
     // Right in front of the open doors, low (between them and the crouching body), looking in.
     // Fixed (no easing), close to the open doors at the height of the shelf, so all of it shows.
-    const cb = c.fl.kitchen.cupboard, [px, pz] = c.world(cb.x, cb.z - 0.3), [ax, az] = c.world(cb.x, cb.z + 0.32);
-    c.state.camLock = { pos: [px, c.y0 + 0.4, pz], at: [ax, c.y0 + 0.22, az], snap: true, fov: 75, by: "cupboard" };
+    // On a narrow (upright) screen the view widens and steps back until the cupboard's whole width fits across it.
+    const cb = c.fl.kitchen.cupboard, aspect = typeof window !== "undefined" ? window.innerWidth / Math.max(1, window.innerHeight) : 16 / 9;
+    const { back, fov } = cupboardView(aspect);
+    const [px, pz] = c.world(cb.x, cb.z + 0.28 - back), [ax, az] = c.world(cb.x, cb.z + 0.32);
+    c.state.camLock = { pos: [px, c.y0 + 0.4 + Math.max(0, back - 0.58) * 0.25, pz], at: [ax, c.y0 + 0.22, az], snap: true, fov, by: "cupboard" };
   }
   private afterPick(c: Ctx, i: number) {
     const s = c.state, k = this.k(s), h = k.hands;
@@ -384,3 +387,16 @@ export class KitchenRun {
   }
 }
 const ev = (list: string[], name: string) => list.includes(name);
+/**
+ * The cupboard close-up for a screen `aspect` wide: how far back from the pots (m) and the vertical field of view, so
+ * its whole width (with a margin, ~0.9 m) fits across. Wide screens: 0.58 m and 75°; upright phones widen the view
+ * up to 100° and then step back.
+ */
+export function cupboardView(aspect: number): { back: number; fov: number } {
+  const half = 0.45, back0 = 0.58, maxFov = 100;
+  const need = (back: number) => 2 * Math.atan(Math.tan(Math.atan(half / back)) / aspect) * 180 / Math.PI;
+  let fov = Math.max(75, need(back0));
+  if (fov <= maxFov) return { back: back0, fov };
+  fov = maxFov;
+  return { back: half / (Math.tan(maxFov / 2 * Math.PI / 180) * aspect), fov };
+}
