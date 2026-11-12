@@ -10,6 +10,7 @@ import { FOURS_END, getUpPose, STAND_FORWARD, type Joint } from "./getUpPose";
 const SEGMENTS: ([Joint, Joint] | null)[] = [null, null, null, ["hipL", "kneeL"], ["kneeL", "footL"], ["hipR", "kneeR"], ["kneeR", "footR"], ["shL", "elL"], ["elL", "handL"], ["shR", "elR"], ["elR", "handR"]];
 const UP = new THREE.Vector3(0, 1, 0);
 import type { Accident, GameState } from "./state";
+import { toWorld, type Box, type Room } from "./restaurantRoom";
 
 // Body centers and anatomical joint anchors match the animated character.
 const PARTS = [
@@ -46,6 +47,10 @@ export type RagdollSubject = {
   stoodUp: (accident: Accident, yaw: number) => void;
   /** Vehicles' footprints: the body never ends up inside or under one (the one that hit them included). */
   vehicles?: () => readonly SolidBox[];
+  /** Up in a building: the floor under them (world height) — a slab for the body to land on — and the room's walls
+   * (world boxes) that keep it in. */
+  floorY?: () => number | null;
+  walls?: () => readonly SolidBox[];
 };
 
 /** The ragdoll's parts' radii (m), for keeping them clear of vehicles. */
@@ -61,6 +66,20 @@ function outOfBoxes(x: number, z: number, r: number, boxes: readonly SolidBox[])
   return dx || dz ? [dx, dz] : null;
 }
 
+/** The walls of the room the player is in up in a building (world boxes; its outside walls too). */
+function roomWalls(state: GameState): SolidBox[] {
+  const room = state.level && state.interior ? state.rooms.get(state.interior.key) as (Room & { walls?: Box[] }) | undefined : undefined;
+  if (!room) return [];
+  const f = room.frame, b = room.bounds, across = Math.abs(Math.sin(f.rot)) > 0.5;
+  const toW = (w: Box): SolidBox => { const [x, z] = toWorld(f, w.x, w.z); return { x, z, hx: across ? w.hz : w.hx, hz: across ? w.hx : w.hz, yaw: 0 }; };
+  const T = 1;
+  const outer: Box[] = [
+    { x: b.minX - T / 2, z: (b.minZ + b.maxZ) / 2, hx: T / 2, hz: (b.maxZ - b.minZ) / 2 + T }, { x: b.maxX + T / 2, z: (b.minZ + b.maxZ) / 2, hx: T / 2, hz: (b.maxZ - b.minZ) / 2 + T },
+    { x: (b.minX + b.maxX) / 2, z: b.minZ - T / 2, hx: (b.maxX - b.minX) / 2 + T, hz: T / 2 }, { x: (b.minX + b.maxX) / 2, z: b.maxZ + T / 2, hx: (b.maxX - b.minX) / 2 + T, hz: T / 2 },
+  ];
+  return [...(room.walls ?? []), ...((room as { roof?: boolean }).roof ? [] : outer)].map(toW);
+}
+
 /** The player's ragdoll. */
 export function Ragdoll({ state }: { state: GameState }) {
   const color = useCharacterColor(state);
@@ -71,6 +90,8 @@ export function Ragdoll({ state }: { state: GameState }) {
     time: () => state.simulationTime,
     canRise: () => state.health > 0,
     vehicles: () => state.vehicles.map((v) => v.box),
+    floorY: () => (state.level ? state.level.y : null),
+    walls: () => roomWalls(state),
     stoodUp: (accident, yaw) => {
       state.rotY = yaw;
       state.incidents.forEach((incident) => { if (incident.vehicleId === accident.vehicleId) incident.stoodUpAt = state.simulationTime; });
@@ -98,7 +119,10 @@ export function RagdollBody({ subject, color, onMeshes }: { subject: RagdollSubj
   const rotation = useMemo(() => new THREE.Quaternion(), []);
   const temp = useMemo(() => new THREE.Vector3(), []);
 
+  const slab = useRef<ReturnType<typeof world.createRigidBody> | null>(null);
+  const ground = (x: number, z: number) => subject.floorY?.() ?? floorHeight(x, z);
   const dispose = () => {
+    if (slab.current) { try { if (slab.current.isValid()) world.removeRigidBody(slab.current); } catch { /* Parent world already disposed. */ } slab.current = null; }
     for (const joint of joints.current) { try { if (joint.isValid()) world.removeImpulseJoint(joint, true); } catch { /* Parent world already disposed. */ } }
     for (const body of bodies.current) { try { if (body.isValid()) world.removeRigidBody(body); } catch { /* Parent world already disposed. */ } }
     joints.current = []; bodies.current = [];
@@ -117,8 +141,16 @@ export function RagdollBody({ subject, color, onMeshes }: { subject: RagdollSubj
       dispose(); active.current = accident;
       const random = rng(accident.seed);
       rotation.setFromAxisAngle(new THREE.Vector3(0, 1, 0), subject.yaw());
+      // Up in a building: a floor for the body to land on.
+      const fy = subject.floorY?.();
+      if (fy !== null && fy !== undefined) {
+        slab.current = world.createRigidBody(rapier.RigidBodyDesc.fixed().setTranslation(subject.pos.x, fy - 0.1, subject.pos.z));
+        world.createCollider(rapier.ColliderDesc.cuboid(10, 0.1, 10).setFriction(1.3), slab.current);
+      }
+      // (A fall: from where it began.)
+      const startY = accident.fromY ?? subject.pos.y;
       bodies.current = PARTS.map((part, i) => {
-        temp.set(part.p[0], part.p[1], part.p[2]).applyQuaternion(rotation).add(subject.pos);
+        temp.set(part.p[0], part.p[1], part.p[2]).applyQuaternion(rotation).add(subject.pos); temp.y += startY - subject.pos.y;
         const body = world.createRigidBody(rapier.RigidBodyDesc.dynamic().setTranslation(temp.x, temp.y, temp.z).setRotation(rotation).setLinearDamping(1.1).setAngularDamping(1.8).setAdditionalSolverIterations(8).setCcdEnabled(true));
         body.userData = "ragdoll";
         const radius = i === 0 ? 0.115 : i === 1 ? 0.16 : i >= 7 ? 0.06 : 0.075;
@@ -130,7 +162,8 @@ export function RagdollBody({ subject, color, onMeshes }: { subject: RagdollSubj
         const limb = i >= 3;
         const outward = limb && flying ? new THREE.Vector3(Math.sign(part.p[0]) * (2.2 + random() * 1.4), i >= 7 ? 1.6 + random() * 1.2 : (random() - 0.5) * 1.5, (random() - 0.5) * 2.4).applyQuaternion(rotation) : new THREE.Vector3();
         body.setLinvel({ x: accident.direction[0] * accident.launchSpeed + outward.x, y: (flying ? 3 + random() * 0.6 : 0) + outward.y, z: accident.direction[1] * accident.launchSpeed + outward.z }, true);
-        body.setAngvel({ x: (random() - 0.5) * (limb ? 9 : 5) + accident.direction[1] * 2, y: (random() - 0.5) * 1.2, z: (random() - 0.5) * (limb ? 9 : 5) - accident.direction[0] * 2 }, true);
+        const spin = accident.gentle ? 0.3 : 1;
+        body.setAngvel({ x: ((random() - 0.5) * (limb ? 9 : 5) + accident.direction[1] * 2) * spin, y: (random() - 0.5) * 1.2 * spin, z: ((random() - 0.5) * (limb ? 9 : 5) - accident.direction[0] * 2) * spin }, true);
         if (limb) body.setAngularDamping(0.9);
         return body;
       });
@@ -169,8 +202,17 @@ export function RagdollBody({ subject, color, onMeshes }: { subject: RagdollSubj
       const n = Math.hypot(out[0], out[1]), nx = out[0] / n, nz = out[1] / n, v = body.linvel(), into = v.x * nx + v.z * nz;
       if (into < 0) body.setLinvel({ x: v.x - into * nx, y: v.y, z: v.z - into * nz }, true);
     });
+    // Inside a room up in a building, the body stays inside its walls.
+    const walls = accident.phase === "down" ? subject.walls?.() ?? [] : [];
+    if (walls.length) bodies.current.forEach((body, i) => {
+      const p = body.translation(), out = outOfBoxes(p.x, p.z, RADIUS[i] ?? 0.08, walls);
+      if (!out) return;
+      body.setTranslation({ x: p.x + out[0], y: p.y, z: p.z + out[1] }, true);
+      const n = Math.hypot(out[0], out[1]), nx = out[0] / n, nz = out[1] / n, v = body.linvel(), into = v.x * nx + v.z * nz;
+      if (into < 0) body.setLinvel({ x: v.x - into * nx, y: v.y, z: v.z - into * nz }, true);
+    });
     if (accident.phase === "down") {
-      subject.pos.set(position.x, floorHeight(position.x, position.z), position.z);
+      subject.pos.set(position.x, ground(position.x, position.z), position.z);
       if (subject.canRise() && now - accident.startedAt >= KNOCKDOWN_SECONDS) {
         accident.phase = "rising"; accident.riseStartedAt = now;
       }
@@ -181,7 +223,7 @@ export function RagdollBody({ subject, color, onMeshes }: { subject: RagdollSubj
       riseYaw.current = Math.atan2(head.x - position.x, head.z - position.z);
       // Getting up somewhere clear of vehicles (with room for the hands-and-knees pose).
       const clear = outOfBoxes(position.x, position.z, 0.55, subject.vehicles?.() ?? []) ?? [0, 0];
-      standOrigin.current.set(position.x + clear[0], floorHeight(position.x + clear[0], position.z + clear[1]), position.z + clear[1]);
+      standOrigin.current.set(position.x + clear[0], ground(position.x + clear[0], position.z + clear[1]), position.z + clear[1]);
       resting.current = bodies.current.map((body) => { body.sleep(); const p = body.translation(); const q = body.rotation(); return { p: new THREE.Vector3(p.x, p.y, p.z), q: new THREE.Quaternion(q.x, q.y, q.z, q.w) }; });
     }
     const progress = accident.phase === "rising" ? Math.min(1, (now - (accident.riseStartedAt ?? now)) / GET_UP_SECONDS) : 0;

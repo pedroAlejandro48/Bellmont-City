@@ -30,6 +30,7 @@ import { lookSupport } from "./mouseLook";
 import { TouchControls } from "./TouchControls";
 import { LifeWorld } from "./LifeWorld";
 import { Billboards } from "./Billboards";
+import { RoofAccess } from "./Roof";
 import { ShopPanel } from "@/components/ShopPanel";
 import { InventoryButton } from "@/components/Inventory";
 import { InventoryWorld } from "./InventoryWorld";
@@ -158,7 +159,7 @@ const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameS
         <CameraRig state={state} />
         {Extra && <group name="perf:room"><Extra state={state} /></group>}
         <group name="perf:food"><Food state={state} /></group>
-        <group name="perf:life"><LifeWorld state={state} /><InventoryWorld state={state} /><Grocery state={state} city={city} /><Apartments state={state} city={city} /></group>
+        <group name="perf:life"><LifeWorld state={state} /><InventoryWorld state={state} /><Grocery state={state} city={city} /><Apartments state={state} city={city} /><RoofAccess state={state} city={city} /></group>
       </Physics>
     </Suspense>
   </Canvas>;

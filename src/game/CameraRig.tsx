@@ -224,7 +224,9 @@ export function CameraRig({ state }: { state: GameState }) {
       undefined, undefined, undefined, undefined,
       (collider) => !(collider.shape.type === rapier.ShapeType.Cuboid && collider.halfExtents().x <= 0.25 && collider.halfExtents().z <= 0.25 && collider.halfExtents().y >= 2) && !(state.bench && collider.shape.type === rapier.ShapeType.Cuboid && Math.abs(collider.halfExtents().x - 1.3) < 0.01 && Math.abs(collider.halfExtents().z - 0.4) < 0.01) && collider.parent()?.userData !== "ragdoll" && !(state.interior && state.interior.phase !== "inside" && collider.parent()?.userData === "restaurant") && !((state.scooter.riding || state.scooter.action === "mount") && collider.parent()?.userData === "scooter"));
     let allowed = hit ? Math.max(0.08, hit.time_of_impact - 0.08) : state.camDistance;
-    const room = inter ? state.rooms.get(inter.key) : undefined;
+    const room0 = inter ? state.rooms.get(inter.key) : undefined;
+    // (Up on a roof it's outdoors: no walls or ceiling to keep the camera in.)
+    const room = room0 && !(room0 as { roof?: boolean }).roof ? room0 : undefined;
     if (!inter || !room) doorSide.current = null;
     else {
       const f = room.frame;
@@ -273,6 +275,30 @@ export function CameraRig({ state }: { state: GameState }) {
         allowed = Math.min(allowed, Math.max(0.08, reach));
       }
     }
+    // On a roof: inside its little room, the camera stays in it (under its ceiling); outside, it stops in front of
+    // the little room's walls.
+    const roofRoom = room0 as (typeof room0 & { roof?: boolean; bulk?: { x0: number; x1: number; z0: number; z1: number }; bulkH?: number }) | undefined;
+    if (roofRoom?.roof && roofRoom.bulk && state.level) {
+      const f = roofRoom.frame, K = roofRoom.bulk, m = 0.3;
+      const [tx, tz] = toLocal(f, target.x, target.z), [ex, ez] = toLocal(f, target.x + direction.x, target.z + direction.z);
+      const dx = ex - tx, dz = ez - tz, dy = direction.y;
+      let reach = Infinity;
+      const inside = tx > K.x0 && tx < K.x1 && tz > K.z0 && tz < K.z1;
+      if (inside) {
+        const wall = (from: number, d: number, lo: number, hi: number) => { if (d > 1e-6) reach = Math.min(reach, (hi - from) / d); else if (d < -1e-6) reach = Math.min(reach, (lo - from) / d); };
+        wall(tx, dx, K.x0 + m, K.x1 - m); wall(tz, dz, K.z0 + m, K.z1 - m); wall(target.y, dy, state.level.y + 0.2, state.level.y + (roofRoom.bulkH ?? 2.4) - m);
+      } else {
+        let t0 = 0, t1 = Infinity;
+        const slab = (o: number, d: number, lo: number, hi: number) => {
+          if (Math.abs(d) < 1e-6) { if (o < lo || o > hi) t1 = -1; return; }
+          let a = (lo - o) / d, c = (hi - o) / d; if (a > c) [a, c] = [c, a];
+          t0 = Math.max(t0, a); t1 = Math.min(t1, c);
+        };
+        slab(tx, dx, K.x0 - 0.15, K.x1 + 0.15); slab(tz, dz, K.z0 - 0.15, K.z1 + 0.15); slab(target.y, dy, -1e9, state.level.y + (roofRoom.bulkH ?? 2.4) + 0.3);
+        if (t1 >= t0 && t0 > 0) reach = t0;
+      }
+      allowed = Math.min(allowed, Math.max(0.08, reach));
+    }
     // Riding an elevator: close behind, inside the car.
     if (state.elevator && (state.elevator.phase === "choose" || state.elevator.phase === "closing" || state.elevator.phase === "moving" || state.elevator.phase === "opening")) allowed = Math.min(allowed, 0.55);
     distance.current = allowed < distance.current ? allowed : distance.current + (allowed - distance.current) * (1 - Math.exp(-5 * dt));
@@ -280,7 +306,7 @@ export function CameraRig({ state }: { state: GameState }) {
     // Analytic floor safety also covers freshly streamed colliders before their first physics step.
     camera.position.y = Math.max(camera.position.y, groundAt(state, camera.position.x, camera.position.z) + 0.23);
     // Up in an apartment building, the camera stays under the floor's ceiling.
-    if (state.level) camera.position.y = Math.min(camera.position.y, state.level.y + 2.6);
+    if (state.level && !room0?.hasOwnProperty("roof")) camera.position.y = Math.min(camera.position.y, state.level.y + 2.6);
     // Continuous up vector permits full vertical loops without a pole flip.
     up.set(-Math.sin(yaw) * Math.sin(pitch), Math.cos(pitch), -Math.cos(yaw) * Math.sin(pitch));
     camera.up.copy(up); camera.lookAt(target);

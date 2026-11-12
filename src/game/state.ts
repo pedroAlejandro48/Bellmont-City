@@ -20,6 +20,10 @@ export type Accident = {
   vehicleId: number | null;
   direction: [number, number];
   launchSpeed: number;
+  /** A plain fall (not a hit): the body just crumples, no flinging. */
+  gentle?: boolean;
+  /** Falling from up there (world height): the body starts there and drops. */
+  fromY?: number;
   seed: number;
 };
 export type RoadIncident = { vehicleId: number; path: RoadPath; origin: [number, number]; startedAt: number; passed: boolean; stoodUpAt: number | null; scooterCrash?: boolean };
@@ -61,7 +65,9 @@ export type Script = { x: number; z: number; yaw: number; walk: number; sit: num
   /** Getting into bed: sat on its edge (sit), each leg up straight on it (legL, legR), lying back flat (lie); 0..1. */
   bed?: { sit: number; lie: number; legL: number; legR: number };
   /** Each leg set outright (a high step over a shower's curb): thigh forward (negative) and knee bend, radians. */
-  legs?: { hipL: number; kneeL: number; hipR: number; kneeR: number; /** The hips this much lower (negative: higher). */ drop?: number } };
+  legs?: { hipL: number; kneeL: number; hipR: number; kneeR: number; /** The hips this much lower (negative: higher). */ drop?: number };
+  /** Up off the floor (climbing a ladder): the feet's level, world height. */
+  y?: number };
 /** Someone's use of an apartment building's elevator: the car going `from` → `to` (the same: standing there), `at`
  * seconds into that (t0: when it started, on this player's clock), and whether they're using it now. */
 export type LiftUse = { b: string; from: number; to: number; at: number; active: boolean; t0?: number };
@@ -152,6 +158,10 @@ export type GameState = {
   /** Some other panel that needs the mouse (a reception desk, an elevator's buttons…), by name. */
   uiLock: string | null;
   /** The camera held on one view (world: where it is, what it looks at), e.g. the shower while showering. */
+  /** Climbing an apartment building's roof ladder (up or down), since t0. */
+  ladder: { dir: "up" | "down"; t0: number; building: string } | null;
+  /** The ladder's E is showing (nothing else here takes E). */
+  ladderPrompt: boolean;
   camLock: { pos: [number, number, number]; at: [number, number, number]; /** Put there at once (no easing). */ snap?: boolean; /** A field of view while held. */ fov?: number; /** Whose it is (only they let go of it). */ by?: string } | null;
   /** A kitchen panel's answer: a thing to take from the counter, or the cans to cook. */
   kitchenAsk: { rack?: import("./pantry").WareKind; cans?: import("./pantry").CanKind[]; burner?: number; /** Put away the new plates and cups from the bag. */ stow?: boolean } | null;
@@ -301,7 +311,7 @@ export function createState(save: SaveData): GameState {
     level: save.apt && save.apt.floor >= 2 ? { building: save.apt.building, floor: save.apt.floor, y: floorY(save.apt.floor) } : null,
     seatSurface: null,
     elevator: null,
-    uiLock: null, fridgeLoad: [], camLock: null, kitchenAsk: null, meal: null, kitchenQ: false,
+    uiLock: null, fridgeLoad: [], camLock: null, ladder: null, ladderPrompt: false, kitchenAsk: null, meal: null, kitchenQ: false,
     keys: new Set(),
     jumpQueued: false,
     simulationTime: 0,
@@ -398,8 +408,16 @@ function aptSave(s: GameState): import("./config").SavedApt | null {
     const f = lobby.frame, at: [number, number] = [lobby.bounds.minX + LOBBY_SHAFT / 2, lobby.bounds.minZ + LOBBY_SHAFT + 0.9];
     return { building, floor: 1, x: f.ox + at[0] * f.c + at[1] * f.s, z: f.oz - at[0] * f.s + at[1] * f.c, yaw: f.rot, outside, outsideYaw };
   }
-  const floor = lvl?.floor;
+  let floor = lvl?.floor;
   if (!floor || floor < 2) return null;
+  // On the roof or its ladder: back on the top floor, in front of the ladder.
+  if (floor > 15 || s.ladder) {
+    const room = s.rooms.get(`${building}#15`) as (import("./restaurantRoom").Room & { roofSpot?: [number, number] }) | undefined;
+    if (!room?.roofSpot) return null;
+    const f = room.frame, at = room.roofSpot;
+    return { building, floor: 15, x: f.ox + at[0] * f.c + at[1] * f.s, z: f.oz - at[0] * f.s + at[1] * f.c, yaw: f.rot, outside, outsideYaw };
+  }
+  floor = floor as number;
   let x = s.pos.x, z = s.pos.z, yaw = s.rotY;
   if (s.seat) {
     // Sat on a chair: where one sat down from.

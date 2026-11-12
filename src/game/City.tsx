@@ -128,7 +128,7 @@ export function City({ city, far: allFar, state }: { city: CityT; far: FarScener
   const unitPlane = useMemo(() => new THREE.PlaneGeometry(1, 1), []);
   const facadeRefs = useRef<(THREE.InstancedMesh | null)[]>([]);
   const roofRef = useRef<THREE.InstancedMesh>(null);
-  const roofs = useMemo(() => [...city.buildings, ...farBuildings].map((b) => mat4(b.x, SIDEWALK_H + b.h + 0.25, b.z, 0, b.w + 0.4, 0.5, b.d + 0.4)), [city, farBuildings]);
+  const roofs = useMemo(() => [...city.buildings, ...farBuildings].filter((b) => b.venue !== "apartments").map((b) => mat4(b.x, SIDEWALK_H + b.h + 0.25, b.z, 0, b.w + 0.4, 0.5, b.d + 0.4)), [city, farBuildings]);
   useLayoutEffect(() => {
     buildings.forEach((matrices, variant) => { const mesh = facadeRefs.current[variant]; if (!mesh) return; matrices.forEach((matrix, i) => mesh.setMatrixAt(i, matrix)); mesh.count = matrices.length; mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere(); });
   }, [buildings]);

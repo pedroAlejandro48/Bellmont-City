@@ -8,6 +8,8 @@ import type { Building } from "./config";
 import { floorKey, floorY } from "./apartments";
 import { TABLE, type Box, type Item, type Room } from "./restaurantRoom";
 import { SHAFT, shaftSolids, venueLayout } from "./venueRoom";
+import { APT_FLOORS } from "./apartments";
+import { roofPlan, type RoofPlan } from "./roof";
 
 export const HALL = 1.6;
 export const INNER_WALL = 0.14;
@@ -28,6 +30,8 @@ export type AptFloor = Room & {
   hinged: { apartment: DoorFrame; bedroom: DoorFrame; bathroom: DoorFrame };
   /** The elevator doorway's box (solid while the doors are shut). */
   liftDoor: Box;
+  /** The top floor: the ladder up to the roof (on the hallway's back wall), and where one stands in front of it. */
+  ladder?: RoofPlan; roofSpot?: [number, number];
   /**
    * The bathroom, between the living room and the bedroom: from the bedroom's wall (x0) to the TV's wall (x1), from
    * the short wall with its door (z0, its inner face; the door from dx0 to dx1) to the front. In it the shower (the
@@ -79,6 +83,9 @@ export function aptFloor(b: Building, floor: number): AptFloor {
   const shaft = shaftSolids(minX, minZ);
   solids.push(...shaft.walls, shaft.door);
   box(minX + SHAFT, maxX, minZ, hall0);
+  // The top floor: the ladder up to the roof, against the hallway's back wall.
+  const ladder = floor === APT_FLOORS ? roofPlan(b) : undefined;
+  if (ladder) box(ladder.ladX - 0.3, ladder.ladX + 0.3, hall0, hall0 + 0.22);
   // The wall between the hallway and the apartment, either side of the door; the door itself (shut, it's a wall
   // too: going through is a scripted move).
   box(minX, doorX - 1, wallZ, inside0);
@@ -163,6 +170,7 @@ export function aptFloor(b: Building, floor: number): AptFloor {
     // (The bathroom door opens into the bathroom, toward +z, like the apartment's.)
     hinged: { apartment: { ox: doorX, oz: inside0, theta: 0 }, bedroom: { ox: divX - INNER_WALL / 2, oz: bd1, theta: -Math.PI / 2 }, bathroom: { ox: bdx1, oz: sw1, theta: 0 } },
     liftDoor: shaft.door,
+    ...(ladder ? { ladder, roofSpot: [ladder.ladX, hall0 + 0.62] as [number, number] } : {}),
     bath: { x0: bx0, x1: bx1, z0: sw1, z1: maxZ, wallZ: sw0, door: [bdx0, bdx1], shower, toilet, sink },
     bed: { x: bedX, z: bedZ, w: BW, l: BL, edgeX: bedX + BW / 2, sit: [bedX + BW / 2 - 0.22, maxZ - 1.12], lie: [bedX, maxZ - 1.03], stand: [bedX + BW / 2 + 0.48, maxZ - 1.12] },
     spots: { elevator: [minX + SHAFT / 2, hall0 + 0.65], bed: [bedX + BW / 2 + 0.48, maxZ - 1.12], fridge: [maxX - 0.42, maxZ - 1.3] },

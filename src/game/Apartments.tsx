@@ -24,6 +24,7 @@ import { ItemModel, useLooks } from "./InventoryWorld";
 import { ITEMS, type ItemKind } from "./inventory";
 import { isDrinkName } from "./food";
 import { canvas, tex } from "./textures";
+import { BULK_H, ROOF_FLOOR, ROOF_UP, RUNG, roofPlan, rungY, type RoofPlan } from "./roof";
 import { LIFT_DOOR, SHAFT, SHAFT_WALL, setLiftDoor, venueLayout, type VenueLayout } from "./venueRoom";
 import { bodyColor } from "@/platform/account";
 
@@ -99,7 +100,7 @@ function AptExterior({ b, state }: { b: Building; state: GameState }) {
   const [cuts, setCuts] = useState<number[]>([]);
   useFrame(() => {
     const want = new Set<number>();
-    if (state.level?.building === key) want.add(state.level.floor);
+    if (state.level?.building === key) want.add(Math.min(APT_FLOORS, state.level.floor));
     const e = state.elevator;
     if (e?.building === key) { want.add(e.floor); if (e.target !== null) want.add(e.target); }
     const list = [...want].filter((f) => f > 1).sort((a, c) => a - c);
@@ -130,9 +131,44 @@ function AptExterior({ b, state }: { b: Building; state: GameState }) {
         <mesh position={[-ws * (width / 2 + 0.03), y, -depth / 2]} rotation-y={-ws * Math.PI / 2} material={p.blank} castShadow receiveShadow><planeGeometry args={[depth + 0.06, h]} /></mesh>
       </group>;
     })}
-    <mesh position={[0, H(UPPER) + 0.15, -depth / 2]} material={faces.roof} castShadow><boxGeometry args={[width + 0.3, 0.3, depth + 0.3]} /></mesh>
+    <RoofTop b={b} mat={faces.roof} y={H(UPPER)} />
     {/* The slab between the lobby and the first floor (seen from the open band, and from the lobby's windows). */}
     <mesh position={[0, -0.06, -depth / 2]} material={faces.roof}><boxGeometry args={[width - 0.02, 0.12, depth - 0.02]} /></mesh>
+  </group>;
+}
+
+/** A slab (x0..x1, z0..z1) with a square hole in it: the four boxes round the hole. */
+function HoledSlab({ x0, x1, z0, z1, y0, y1, hole, mat }: { x0: number; x1: number; z0: number; z1: number; y0: number; y1: number; hole: { x0: number; x1: number; z0: number; z1: number }; mat: THREE.Material | THREE.Material[] }) {
+  const h = y1 - y0, y = (y0 + y1) / 2;
+  const parts: [number, number, number, number][] = [
+    [x0, x1, z0, hole.z0], [x0, x1, hole.z1, z1], [x0, hole.x0, hole.z0, hole.z1], [hole.x1, x1, hole.z0, hole.z1],
+  ];
+  return <>{parts.filter(([a, b, c, d]) => b - a > 0.001 && d - c > 0.001).map(([a, b, c, d], i) => <mesh key={i} position={[(a + b) / 2, y, (c + d) / 2]} material={mat} receiveShadow castShadow><boxGeometry args={[b - a, h, d - c]} /></mesh>)}</>;
+}
+/** The roof's ladder: two steel rails from the floor up through the hatch to the roof, rungs between them, held off
+ * the wall by brackets; a frame round the hatch under the ceiling. */
+function RoofLadder({ plan, m, ceiling }: { plan: RoofPlan; m: FMats; ceiling: number }) {
+  const z = plan.wallZ + RUNG.out, rail = m.steel, H = plan.hatch;
+  return <group>
+    {[-1, 1].map((s) => <mesh key={s} position={[plan.ladX + s * (RUNG.half + 0.02), ROOF_UP / 2, z]} material={rail} castShadow><boxGeometry args={[0.04, ROOF_UP, 0.06]} /></mesh>)}
+    {Array.from({ length: RUNG.n }, (_, i) => <mesh key={i} position={[plan.ladX, rungY(i), z]} rotation-z={Math.PI / 2} material={rail} castShadow><cylinderGeometry args={[0.017, 0.017, RUNG.half * 2 + 0.04, 10]} /></mesh>)}
+    {[0.5, 1.6, 2.6].flatMap((y) => [-1, 1].map((s) => <mesh key={`${y}${s}`} position={[plan.ladX + s * (RUNG.half + 0.02), y, plan.wallZ + RUNG.out / 2]} material={rail}><boxGeometry args={[0.03, 0.04, RUNG.out]} /></mesh>))}
+    {/* The hatch's trim under the ceiling. */}
+    {[[H.x0 - 0.03, H.x1 + 0.03, H.z1, H.z1 + 0.06], [H.x0 - 0.03, H.x0, H.z0, H.z1], [H.x1, H.x1 + 0.03, H.z0, H.z1]].map(([a, b, c, d], i) => <mesh key={`t${i}`} position={[(a! + b!) / 2, ceiling - 0.015, (c! + d!) / 2]} material={m.white}><boxGeometry args={[b! - a!, 0.03, d! - c!]} /></mesh>)}
+  </group>;
+}
+/** The roof (with the ladder's hatch) and the little room on it round the hatch, open by a doorway. */
+function RoofTop({ b, mat, y }: { b: Building; mat: THREE.Material; y: number }) {
+  const plan = useMemo(() => roofPlan(b), [b]), L = useMemo(() => venueLayout(b), [b]);
+  const { bulk: K } = plan, t = K.t, wallH = BULK_H, doorH = 2.05;
+  const walls: [number, number, number, number, number, number][] = [
+    [K.x0, K.x1, K.z1 - t, K.z1, 0, wallH], [K.x0, K.x0 + t, K.z0, K.z1 - t, 0, wallH], [K.x1 - t, K.x1, K.z0, K.z1 - t, 0, wallH],
+    [K.x0 + t, K.door[0], K.z0, K.z0 + t, 0, wallH], [K.door[1], K.x1 - t, K.z0, K.z0 + t, 0, wallH], [K.door[0], K.door[1], K.z0, K.z0 + t, doorH, wallH],
+  ];
+  return <group>
+    <HoledSlab x0={-L.width / 2 - 0.2} x1={L.width / 2 + 0.2} z0={-L.depth - 0.2} z1={0.2} y0={y} y1={y + 0.5} hole={plan.hatch} mat={mat} />
+    {walls.map(([a, c, d, e, y0, y1], i) => <mesh key={i} position={[(a + c) / 2, y + 0.5 + (y0 + y1) / 2, (d + e) / 2]} material={mat} castShadow receiveShadow><boxGeometry args={[c - a, y1 - y0, e - d]} /></mesh>)}
+    <mesh position={[(K.x0 + K.x1) / 2, y + 0.5 + wallH + 0.06, (K.z0 + K.z1) / 2]} material={mat} castShadow><boxGeometry args={[K.x1 - K.x0 + 0.1, 0.12, K.z1 - K.z0 + 0.1]} /></mesh>
   </group>;
 }
 
@@ -502,7 +538,10 @@ function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, el
         two floors are drawn they coincide exactly, same faces, same materials; and they stop just inside the outside
         walls, so their edges never share a plane with a wall's face. */}
     <mesh position={[(minX + maxX) / 2, (H - STOREY) / 2, (minZ + maxZ) / 2]} material={m.slabFaces} receiveShadow>{B([maxX - minX + 0.38, STOREY - H, maxZ - minZ + 0.38])}</mesh>
-    <mesh position={[(minX + maxX) / 2, (H + STOREY) / 2, (minZ + maxZ) / 2]} material={m.slabFaces}>{B([maxX - minX + 0.38, STOREY - H, maxZ - minZ + 0.38])}</mesh>
+    {fl.ladder
+      ? <HoledSlab x0={minX - 0.19} x1={maxX + 0.19} z0={minZ - 0.19} z1={maxZ + 0.19} y0={H} y1={STOREY} hole={fl.ladder.hatch} mat={m.slabFaces} />
+      : <mesh position={[(minX + maxX) / 2, (H + STOREY) / 2, (minZ + maxZ) / 2]} material={m.slabFaces}>{B([maxX - minX + 0.38, STOREY - H, maxZ - minZ + 0.38])}</mesh>}
+    {fl.ladder && <RoofLadder plan={fl.ladder} m={m} ceiling={H} />}
     <mesh position={[(minX + maxX) / 2, 0.002, (hallZ[1] + wallZ + INNER_WALL) / 2]} rotation-x={-Math.PI / 2} material={m.carpet}><planeGeometry args={[maxX - minX, INNER_WALL + 0.02]} /></mesh>
     {/* Floors: carpet in the hallway, wood in the apartment (the ceiling is the slab's underside). */}
     <mesh position={[(minX + maxX) / 2, 0.004, (hallZ[0] + hallZ[1]) / 2]} rotation-x={-Math.PI / 2} material={m.carpet} receiveShadow><planeGeometry args={[maxX - minX, hallZ[1] - hallZ[0]]} /></mesh>
@@ -824,10 +863,12 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       if (!state.rooms.has(k)) state.rooms.set(k, f);
       return f;
     };
-    const floor = lvl && fb && lvl.floor >= 2 ? floorOf(fb, lvl.floor) : null;
+    const floor = lvl && fb && lvl.floor >= 2 && lvl.floor <= APT_FLOORS ? floorOf(fb, lvl.floor) : null;
     // The floors drawn: the player's, and while the elevator runs the floor it's at and the one it goes to — so the
     // floor it arrives at is already there (nothing pops in, nothing outside shows).
     const want: AptFloor[] = floor ? [floor] : [];
+    // (Up on the roof, or climbing to it: the top floor, seen down the hatch.)
+    if (lvl && fb && lvl.floor === ROOF_FLOOR) want.push(floorOf(fb, APT_FLOORS));
     const e0 = state.elevator, eb = e0 ? byKey.get(e0.building) : undefined;
     if (e0 && eb) for (const n of [e0.floor, e0.target]) if (n !== null && n > 1) { const f = floorOf(eb, n); if (!want.includes(f)) want.push(f); }
     const keys = want.map((f) => f.key).sort().join();
@@ -1258,7 +1299,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
 
     // ---------- E: what can be done here ----------
     const pr = prompt.current; pr.visible = false; pr.label = undefined;
-    if (eRide || move.current || kr.busy || state.accident || state.health <= 0 || sleeping.current) { if (eRide || move.current || kr.busy) state.interactQueued = false; return; }
+    if (eRide || move.current || kr.busy || state.ladder || state.ladderPrompt || state.accident || state.health <= 0 || sleeping.current) { if (eRide || move.current || kr.busy) state.interactQueued = false; return; }
     // Calling the car: where it is now (it comes 2 s a floor); busy with someone else: wait for it.
     const callLift = (bkey: string, here: number) => {
       const c = carOf(bkey), at = carShown(bkey).floor;

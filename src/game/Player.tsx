@@ -1,3 +1,4 @@
+import { fallHurt } from "./roofFall";
 import { skillLevel } from "./life";
 import { USE_SECONDS } from "./invRuntime";
 import { useCharacterColor } from "./characterColor";
@@ -110,6 +111,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     airBlend: 0,
     bikeContact: false,
     airStyle: 0, // 1 if the jump started while running/walking
+    fallTop: null as number | null, // the highest point of this time in the air
     camPos: new THREE.Vector3(),
     camInit: false,
     turnRate: 0,
@@ -158,7 +160,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     const crouch = dropping ? dropReach(dropT) : lowGrab ? grabReach(grabT) : invLow ? dropReach(invT) : 0;
     if (script) {
       s.vel.set(0, 0, 0); s.vy = 0; s.grounded = true;
-      p.x = script.x; p.z = script.z; p.y = groundAt(state, p.x, p.z);
+      p.x = script.x; p.z = script.z; p.y = script.y ?? groundAt(state, p.x, p.z);
       state.rotY = script.yaw;
     } else if (dead || incapacitated || usingBike || sitting) {
       s.vel.set(0, 0, 0);
@@ -181,7 +183,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       // Nobody runs holding a drink, nor anywhere indoors.
       // (Out of energy: no running.)
       // (The joystick runs after a double tap: tap, then press again and push. A plain push always walks.)
-      running = !holdingDrink && !state.interior && state.energy > 0 && (useStick ? state.stickRun && stickPush > 0.3 : shift && fwdKey && !back);
+      running = !holdingDrink && (!state.interior || (state.level?.floor ?? 0) > 15) && state.energy > 0 && (useStick ? state.stickRun && stickPush > 0.3 : shift && fwdKey && !back);
       state.runningNow = running;
       // Fitness (from the gym and running) makes running faster: 2.5% a level.
       const run = RUN * (1 + 0.025 * skillLevel(state.life.skills.fitness));
@@ -278,10 +280,14 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     if (!s.grounded) {
       s.vy -= GRAVITY * dt;
       p.y += s.vy * dt;
+      s.fallTop = Math.max(s.fallTop ?? p.y, p.y);
       if (p.y <= floor && s.vy <= 0) {
         p.y = floor;
         s.vy = 0;
         s.grounded = true;
+        // A long fall hurts: a tenth of your health for a storey's height (off a building's roof, it kills).
+        const drop = (s.fallTop ?? p.y) - p.y; s.fallTop = null;
+        if (drop > 2.5 && !dead) fallHurt(state, drop);
       }
     } else {
       // step up/down curbs
