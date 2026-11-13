@@ -29,6 +29,8 @@ export function RoofAccess({ state, city }: { state: GameState; city: City }) {
   const prompt = useRef<{ visible: boolean; x: number; y: number; z: number; label?: string }>({ visible: false, x: 0, y: 0, z: 0 });
   const from = useRef<{ x: number; z: number; yaw: number } | null>(null);
   const own = useRef(false);
+  /** Falling through the hatch: the camera follows behind and above, down through the hatch after the body. */
+  const fallCam = useRef<{ building: string; fx: number; fz: number; t0: number } | null>(null);
   /** The roof room's light (always there; on while you're up there or on its ladder). */
   const lamp = useRef<THREE.PointLight>(null);
   const of = (b: Building) => {
@@ -111,6 +113,27 @@ export function RoofAccess({ state, city }: { state: GameState; city: City }) {
         if (lb) { const { plan, room } = of(lb), [x, z] = toWorld(room.frame, (plan.bulk.x0 + plan.bulk.x1) / 2, (plan.bulk.z0 + plan.bulk.z1) / 2); el.position.set(x, roofY() + BULK_H - 0.25, z); }
       }
     }
+    // ---------- the camera after a fall down the hatch ----------
+    const fc = fallCam.current;
+    if (fc) {
+      const fb = byKey.get(fc.building), acc = state.accident, pelvis = state.avatar.ragdoll[0];
+      if (!fb || !acc || acc.phase !== "down" || !pelvis || now - fc.t0 > 3.2) {
+        // Back to the usual camera (it eases back from here), behind the way he was going.
+        fallCam.current = null;
+        if (state.camLock?.by === "fall") { state.camLock = null; state.camYaw = Math.atan2(fc.fx, fc.fz) + Math.PI; state.camPitch = 0.45; }
+      } else {
+        const { plan, room } = of(fb), f = room.frame, base = floorY(APT_FLOORS), roof = roofY();
+        const px = pelvis.position.x, py = pelvis.position.y, pz = pelvis.position.z;
+        // Behind him (the way he walked in) and above, looking at him; down the hatch, inside it.
+        let cx = px - fc.fx * 1.5, cz = pz - fc.fz * 1.5, cy = Math.max(base + 2.3, py + 1.5);
+        if (cy < roof + 0.6) {
+          const H = plan.hatch, [lx, lz] = toLocal(f, cx, cz), m = 0.12;
+          const qx = Math.max(H.x0 + m, Math.min(H.x1 - m, lx)), qz = Math.max(H.z0 + m, Math.min(H.z1 - m, lz));
+          [cx, cz] = toWorld(f, qx, qz);
+        }
+        state.camLock = { pos: [cx, cy, cz], at: [px, py, pz], by: "fall" };
+      }
+    }
     if (L || !lvl || !b || state.accident || state.health <= 0 || state.script || state.seat) return;
 
     const { plan, room } = of(b), f = room.frame;
@@ -142,6 +165,9 @@ export function RoofAccess({ state, city }: { state: GameState; city: City }) {
       state.level = { building: lvl.building, floor: APT_FLOORS, y: floorY(APT_FLOORS) };
       if (state.interior) state.interior.key = floorKey(b, APT_FLOORS);
       state.foodScript = null;
+      const fx = Math.sin(state.rotY), fz = Math.cos(state.rotY);
+      fallCam.current = { building: lvl.building, fx, fz, t0: now };
+      // (Starting right where the camera is now, behind him.)
       fallHurt(state, FALL_STOREY, top);
       return;
     }
