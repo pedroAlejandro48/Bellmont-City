@@ -325,18 +325,27 @@ function Furniture({ f, m }: { f: AptFurniture; m: FMats }) {
  * into the steel frame at the sides). Opening, each folds away into its side of the frame, getting narrower until
  * it's gone; closing is the same, reversed. `open` (0..1) eases both ways.
  */
-function ElevatorDoors({ open, m }: { open: () => number; m: FMats }) {
+function ElevatorDoors({ open, m, inside = false }: { open: () => number; m: FMats; inside?: boolean }) {
   const l = useRef<THREE.Group>(null), r = useRef<THREE.Group>(null);
-  const half = LIFT_DOOR / 2 + 0.03;
+  // Two steel panels meeting in the middle (a rubber edge on each, the seam between them), each sliding sideways
+  // into the wall beside the opening (behind its face, so no gap ever shows).
+  const half = LIFT_DOOR / 2 + 0.03, slide = LIFT_DOOR / 2 + 0.02;
   useFrame(() => {
-    const k = open(), w = Math.max(0.0001, 1 - k);
-    if (l.current) { l.current.scale.x = w; l.current.visible = k < 0.999; }
-    if (r.current) { r.current.scale.x = w; r.current.visible = k < 0.999; }
+    const k = open();
+    if (l.current) { l.current.position.x = -half - k * slide; l.current.visible = k < 0.999; }
+    if (r.current) { r.current.position.x = half + k * slide; r.current.visible = k < 0.999; }
   });
+  const face = inside ? 0.021 : -0.021;
+  const panel = (side: number) => <>
+    <mesh position={[side * (half / 2 + 0.005), 1.15, 0]} material={m.liftDoor}>{B([half + 0.01, 2.3, 0.04])}</mesh>
+    {/* The meeting edge: a dark rubber strip, so the panels close on a thin line. */}
+    <mesh position={[side * (half + 0.003), 1.15, 0]} material={m.black}>{B([0.008, 2.3, 0.042])}</mesh>
+    {/* Brushed bands across the panel (both faces). */}
+    {[0.35, 2.0].map((y) => [face, -face].map((zf) => <mesh key={`${y}${zf}`} position={[side * (half / 2 + 0.005), y, zf]} material={m.steel}>{B([half - 0.04, 0.03, 0.004])}</mesh>))}
+  </>;
   return <group>
-    {/* Each door hangs from its outer edge (in the frame), and narrows toward it. */}
-    <group ref={l} position={[-half, 0, -0.06]}><mesh position={[half / 2 + 0.005, 1.15, 0]} material={m.liftDoor}>{B([half + 0.01, 2.3, 0.04])}</mesh><mesh position={[half - 0.01, 1.15, 0.021]} material={m.black}>{B([0.012, 2.3, 0.004])}</mesh></group>
-    <group ref={r} position={[half, 0, -0.06]}><mesh position={[-half / 2 - 0.005, 1.15, 0]} material={m.liftDoor}>{B([half + 0.01, 2.3, 0.04])}</mesh></group>
+    <group ref={l} position={[-half, 0, -0.06]}>{panel(1)}</group>
+    <group ref={r} position={[half, 0, -0.06]}>{panel(-1)}</group>
   </group>;
 }
 
@@ -411,10 +420,15 @@ function ElevatorCar({ m, state, open }: { m: FMats; state: GameState; open: () 
     {/* Its underside and top (solid: nothing shows through from the shaft). */}
     <mesh position={[0, -0.08, 0]} material={m.shaft}>{B([s, 0.15, s])}</mesh>
     <mesh position={[0, 2.5, 0]} material={m.shaft}>{B([s, 0.14, s])}</mesh>
-    {/* Its front: the wall either side of its own doors, which travel with it (shut while it moves). */}
-    {[-1, 1].map((k) => <mesh key={`fr${k}`} position={[k * (LIFT_DOOR / 2 + (s - LIFT_DOOR) / 4 + 0.02), 1.21, s / 2]} material={m.steel}>{B([(s - LIFT_DOOR) / 2 - 0.04, 2.42, 0.04])}</mesh>)}
-    <mesh position={[0, 2.36, s / 2]} material={m.steel}>{B([LIFT_DOOR + 0.04, 0.12, 0.04])}</mesh>
-    <group position={[0, 0, s / 2 + 0.03]}><ElevatorDoors open={open} m={m} /></group>
+    {/* Its front: the wall either side of its own doors (on the inside; they slide away behind it), a steel
+        frame round the opening, the sill; the doors travel with the car (shut while it moves). */}
+    {[-1, 1].map((k) => <mesh key={`fr${k}`} position={[k * (LIFT_DOOR / 2 + (s / 2 - LIFT_DOOR / 2) / 2), 1.21, s / 2 - 0.03]} material={m.steel}>{B([s / 2 - LIFT_DOOR / 2, 2.42, 0.04])}</mesh>)}
+    <mesh position={[0, 2.36, s / 2 - 0.03]} material={m.steel}>{B([LIFT_DOOR + 0.02, 0.14, 0.04])}</mesh>
+    {[-1, 1].map((k) => <mesh key={`jamb${k}`} position={[k * (LIFT_DOOR / 2 + 0.025), 1.15, s / 2 - 0.055]} material={m.liftDoor}>{B([0.05, 2.32, 0.03])}</mesh>)}
+    <mesh position={[0, 2.315, s / 2 - 0.055]} material={m.liftDoor}>{B([LIFT_DOOR + 0.1, 0.04, 0.03])}</mesh>
+    <mesh position={[0, 0.012, s / 2 + 0.01]} material={m.steel}>{B([LIFT_DOOR + 0.06, 0.012, 0.12])}</mesh>
+    <mesh position={[0, 0.019, s / 2 + 0.01]} material={m.black}>{B([LIFT_DOOR, 0.002, 0.012])}</mesh>
+    <group position={[0, 0, s / 2 + 0.07]}><ElevatorDoors open={open} m={m} inside /></group>
     {/* The panel of buttons on the wall beside the door, the floor screen above it. */}
     <group position={[-s / 2 + 0.012, 0, s / 2 - 0.35]} rotation-y={Math.PI / 2}>
       <mesh position={[0, 1.25, 0]} material={m.black}>{B([0.24, 0.62, 0.02])}</mesh>
