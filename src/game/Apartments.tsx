@@ -26,6 +26,7 @@ import { ITEMS, type ItemKind } from "./inventory";
 import { isDrinkName } from "./food";
 import { canvas, tex } from "./textures";
 import { BULK_H, ROOF_FLOOR, ROOF_UP, RUNG, outZ, roofPlan, rungY, type RoofPlan } from "./roof";
+import { riderAt, type RiderNow, type RiderPlaces, type RiderTrip } from "./liftRiders";
 import { LIFT_DOOR, SHAFT, SHAFT_WALL, setLiftDoor, venueLayout, type VenueLayout } from "./venueRoom";
 import { bodyColor } from "@/platform/account";
 
@@ -904,6 +905,18 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   const ownScript = useRef(false);
   const sleeping = useRef(0);
   const lastLift = useRef<string | null>(null);
+  /** Residents using the elevator (one at a time, in the building you're in or near), and when the next comes. */
+  const trip = useRef<{ trip: RiderTrip; places: RiderPlaces; now: RiderNow } | null>(null);
+  const nextTrip = useRef(0);
+  const riderPlaces = (b: Building, fl: number): RiderPlaces => {
+    const L = venueLayout(b), { minX, minZ, maxZ } = L.bounds, cx = minX + SHAFT / 2, front = minZ + SHAFT;
+    const f = floorOf0(b, Math.max(2, Math.min(APT_FLOORS, fl))), hz = f.hallZ[0] + 0.8, dx = f.door.x - 0.5;
+    return {
+      car: [cx, minZ + SHAFT / 2], out: [cx, front + 0.7],
+      lobby: [[0, maxZ - 0.5], [0, front + 1.0], [cx, front + 0.7]],
+      hall: [[dx, f.wallZ - 0.35], [dx, hz], [cx, hz], [cx, front + 0.7]],
+    };
+  };
   /** Doors closing behind someone who has walked on: which, how it was used (pushed open: leave; pulled: enter), when. */
   const closing = useRef<{ which: "apartment" | "bedroom" | "bathroom"; kind: "leave" | "enter"; from: [number, number]; fromYaw: number; start: number }[]>([]);
   /** Each floor's bedsheet and the hand holding its corner. */
@@ -918,6 +931,8 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   const byKey = useMemo(() => new Map(buildings.map((b) => [aptKey(b), b])), [buildings]);
   /** Each building's car: resting at `floor`, or going from `floor` to `to` since t0 (2 s a floor); `busy` someone else's. */
   const cars = useRef(new Map<string, { floor: number; to: number | null; t0: number; busy: boolean }>());
+  const floorCache0 = useRef(new Map<string, AptFloor>());
+  const floorOf0 = (b: Building, n: number) => { const k = floorKey(b, n); let f = floorCache0.current.get(k); if (!f) { f = aptFloor(b, n); floorCache0.current.set(k, f); } return f; };
   const carOf = (bkey: string) => { let c = cars.current.get(bkey); if (!c) { c = { floor: 1, to: null, t0: 0, busy: false }; cars.current.set(bkey, c); } return c; };
   /** The floor the car shows (counting a floor every 2 s while it moves), and which way it's going. */
   const carShown = (bkey: string): { floor: number; dir: number } => {
@@ -939,6 +954,9 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   // Every apartment building's lobby has its elevator's doors (they open while the car is there).
   const elevatorOpen = (bkey: string, fl: number) => () => {
     const e = state.elevator;
+    // (A resident using it: their doors.)
+    const r = trip.current;
+    if ((!e || e.building !== bkey) && r && r.trip.b === bkey) return r.now.car.to === null && r.now.car.floor === fl ? r.now.doors : 0;
     if (!e || e.building !== bkey || e.floor !== fl) return 0;
     const t = state.simulationTime - e.t0;
     if (e.phase === "waiting" || e.phase === "calling" || e.phase === "moving") return 0;
@@ -1017,6 +1035,33 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         state.liftLink?.publish({ b: lastLift.current, from: c.floor, to: c.floor, at: 0, active: false });
       }
       lastLift.current = me ? me.building : lastLift.current;
+      // A resident riding it (the building you're in, or the nearest one): the car busy, moving with them.
+      {
+        const inside = state.level?.building ?? (inter?.phase === "inside" ? inter.key.split("#")[0] : undefined);
+        let near = inside;
+        if (!near) { let best = 90; for (const [k, bb] of byKey) { const d = Math.hypot(bb.x - p.x, bb.z - p.z); if (d < best) { best = d; near = k; } } }
+        const tr = trip.current;
+        if (tr && (tr.trip.b !== near || tr.now.done)) { trip.current = null; nextTrip.current = now + 20 + Math.random() * 40; }
+        const nb = near ? byKey.get(near) : undefined;
+        if (!trip.current && nb && near && now >= nextTrip.current && !(me && me.building === near) && !carOf(near).busy) {
+          // Someone who lives here: to or from a rented floor (not yours).
+          const free = freeFloors(state.worldSeed, near, timeInfo(state.elapsed).day), home = state.life.home;
+          const rented = Array.from({ length: APT_FLOORS - 1 }, (_, i) => i + 2).filter((f) => !free.includes(f) && !(home?.building === near && home.floor === f));
+          if (rented.length) {
+            const f = rented[Math.floor(Math.random() * rented.length)]!, up = Math.random() < 0.5;
+            const t: RiderTrip = { b: near, from: up ? 1 : f, to: up ? f : 1, t0: now, seed: Math.floor(Math.random() * 1e6), car0: carShown(near).floor };
+            const places = riderPlaces(nb, f);
+            trip.current = { trip: t, places, now: riderAt(t, places, 0) };
+          } else nextTrip.current = now + 30;
+        }
+        const cur = trip.current;
+        if (cur) {
+          cur.now = riderAt(cur.trip, cur.places, now - cur.trip.t0);
+          const c = carOf(cur.trip.b), k = cur.now.car;
+          c.floor = k.floor; c.to = k.to; c.t0 = cur.trip.t0 + k.since; c.busy = true;
+          if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") (window as unknown as { __trip?: unknown }).__trip = cur;
+        }
+      }
       // Arrived somewhere with nobody aboard: it rests there.
       for (const c of cars.current.values()) if (!c.busy && c.to !== null && now - c.t0 >= 2 * Math.abs(c.to - c.floor) && !(me && carOf(me.building) === c)) { c.floor = c.to; c.to = null; }
     }
@@ -1577,7 +1622,8 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       <LobbyVisitor state={state} layout={layout} />
     </group>)}
     {shown.map((fl) => <FloorInterior key={fl.key} lift={() => carShown(fl.key.split("#")[0]!)} sheet={sheetLink(fl.key)} bath={bathLink(fl.key)} kview={kitchen.current.view} lightsOf={lightsOf} bathDoor={() => (state.level?.floor === fl.upper ? bathAngle.current : 0)} fl={fl} state={state} m={m} door={() => doorAngle.current} bedDoor={() => bedAngle.current} fridgeDoor={() => fridgeAngle.current} closetDoor={() => closetAngle.current} elevatorOpen={elevatorOpen(fl.key.split("#")[0]!, fl.upper)} />)}
-    <CarAt state={state} buildings={byKey} m={m} carY={carY} light={carLight} doors={(bkey) => { const e = state.elevator; return e && e.building === bkey ? elevatorOpen(bkey, e.floor)() : 0; }} />
+    <CarAt state={state} buildings={byKey} m={m} carY={carY} light={carLight} doors={(bkey) => { const e = state.elevator, r = trip.current; return e && e.building === bkey ? elevatorOpen(bkey, e.floor)() : r && r.trip.b === bkey && r.now.car.to === null ? r.now.doors : 0; }} />
+    <LiftRider state={state} get={() => trip.current} buildings={byKey} carY={carY} />
     <pointLight ref={bathLight} intensity={0} distance={3.4} decay={1.4} color="#fff4e6" />
     <pointLight ref={hallLight} intensity={0} distance={7} decay={1.4} color="#ffefd6" />
     <pointLight ref={mainLight} intensity={0} distance={7} decay={1.4} color="#fff2df" />
@@ -1685,6 +1731,35 @@ function LobbyCar({ state, bkey, at, m }: { state: GameState; bkey: string; at: 
     void here;
   });
   return <group ref={empty} position={[at[0], 0, at[1] - 0.06]}><ShaftInside m={m} h={FH} slot={false} /></group>;
+}
+
+/** A resident using the elevator: walking to it, riding it (at the car's height), walking off. */
+function LiftRider({ state, get, buildings, carY }: { state: GameState; get: () => { trip: RiderTrip; now: RiderNow } | null; buildings: Map<string, Building>; carY: (bkey: string) => number }) {
+  const rig = useBodyRig();
+  const seedRef = useRef(-1);
+  const [color, setColor] = useState(() => bodyColor("male"));
+  const phase = useRef(0);
+  useFrame((_, dt) => {
+    const root = rig.root.current, hips = rig.hips.current, cur = get();
+    if (!root || !hips) return;
+    const r = cur?.now.rider, b = cur ? buildings.get(cur.trip.b) : undefined;
+    root.visible = !!(r && r.visible && b);
+    if (!cur || !r || !b || !root.visible) return;
+    if (seedRef.current !== cur.trip.seed) { seedRef.current = cur.trip.seed; setColor(bodyColor(cur.trip.seed % 2 ? "female" : "male")); }
+    const L = venueLayout(b), [x, z] = toWorld(L.frame, r.x, r.z);
+    root.position.set(x, r.riding ? carY(cur.trip.b) : floorY(r.floor), z); root.rotation.y = worldYaw(L.frame, r.yaw);
+    // An easy walk (legs and arms swinging), or standing.
+    phase.current += Math.min(dt, 0.1) * (r.walking ? 7.5 : 0);
+    const w = r.walking ? 1 : 0, sn = Math.sin(phase.current);
+    hips.position.y = 0.95 - 0.02 * w * Math.abs(Math.cos(phase.current));
+    rig.thighL.current?.rotation.set(-0.45 * sn * w, 0, 0); rig.thighR.current?.rotation.set(0.45 * sn * w, 0, 0);
+    rig.shinL.current?.rotation.set(0.55 * Math.max(0, Math.cos(phase.current)) * w + 0.05, 0, 0); rig.shinR.current?.rotation.set(0.55 * Math.max(0, -Math.cos(phase.current)) * w + 0.05, 0, 0);
+    rig.torso.current?.rotation.set(0.04 * w, 0, 0);
+    rig.armL.current?.rotation.set(0.35 * sn * w, 0, 0.1); rig.armR.current?.rotation.set(-0.35 * sn * w, 0, -0.1);
+    rig.foreL.current?.rotation.set(-0.2, 0, 0); rig.foreR.current?.rotation.set(-0.2, 0, 0);
+    rig.head.current?.rotation.set(0, 0, 0);
+  });
+  return <CharacterBody rig={rig} color={color} />;
 }
 
 /** Now and then someone waits in the lobby's armchair (reading their phone). */
