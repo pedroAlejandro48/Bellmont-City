@@ -18,6 +18,8 @@ export type Fixture = { type: FixtureType; x: number; z: number; rot: number; w:
 export type VenueLayout = RoomLayout & {
   /** Apartments' lobby: the elevator doorway's box (solid while the doors are shut). */
   liftDoor?: Box;
+  /** Apartments' lobby: the shaft's walls (the camera stays in front of them). */
+  walls?: Box[];
   venue: VenueKind;
   fixtures: Fixture[];
   /** Where a customer stands to be served (the counter or the desk), facing `yaw` (local). */
@@ -161,8 +163,8 @@ export function venueLayout(b: Building): VenueLayout {
 
   const solids: Box[] = F.filter((f) => f.solid && f.type !== "shaft").map(fixtureBox);
   // The lobby's elevator shaft: walls you can't pass, a doorway you walk through while the doors are open.
-  let liftDoor: Box | undefined;
-  if (venue === "apartments") { const sh = shaftSolids(minX, minZ); solids.push(...sh.walls, sh.door); liftDoor = sh.door; }
+  let liftDoor: Box | undefined, walls: Box[] | undefined;
+  if (venue === "apartments") { const sh = shaftSolids(minX, minZ); solids.push(...sh.walls, sh.door); liftDoor = sh.door; walls = sh.walls.map((w) => ({ ...w })); }
   const plants: [number, number][] = venue === "gym" || venue === "grocery" ? [[windowSide * (maxX - 0.4), -0.65]] : [[maxX - 0.4, -0.65], [minX + 0.4, -0.65]];
   for (const [x, z] of plants) solids.push({ x, z, hx: 0.28, hz: 0.28 });
   const counterFix = F.find((f) => f.type === "desk" || f.type === "checkout")!;
@@ -172,6 +174,6 @@ export function venueLayout(b: Building): VenueLayout {
   return {
     key: roomKey(b), kind: "cafe", venue, frame, width, depth, bounds, counter: fixtureBox(counterFix), windowSide,
     // No divider: the lights hang over the front and back halves.
-    divider: { z: midZ, doorX: 0 }, frontWindows, sideWindows, solids, plants, fixtures: F, service, staff, ...(liftDoor ? { liftDoor } : {}),
+    divider: { z: midZ, doorX: 0 }, frontWindows, sideWindows, solids, plants, fixtures: F, service, staff, ...(liftDoor ? { liftDoor } : {}), ...(walls ? { walls } : {}),
   };
 }

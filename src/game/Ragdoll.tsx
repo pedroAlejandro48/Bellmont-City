@@ -119,9 +119,11 @@ export function RagdollBody({ subject, color, onMeshes }: { subject: RagdollSubj
   const rotation = useMemo(() => new THREE.Quaternion(), []);
   const temp = useMemo(() => new THREE.Vector3(), []);
 
-  const slab = useRef<ReturnType<typeof world.createRigidBody> | null>(null);
+  const slab = useRef<ReturnType<typeof world.createRigidBody> | null>(null), edges = useRef<ReturnType<typeof world.createRigidBody>[]>([]);
   const ground = (x: number, z: number) => subject.floorY?.() ?? floorHeight(x, z);
   const dispose = () => {
+    for (const e of edges.current) { try { if (e.isValid()) world.removeRigidBody(e); } catch { /* Parent world already disposed. */ } }
+    edges.current = [];
     if (slab.current) { try { if (slab.current.isValid()) world.removeRigidBody(slab.current); } catch { /* Parent world already disposed. */ } slab.current = null; }
     for (const joint of joints.current) { try { if (joint.isValid()) world.removeImpulseJoint(joint, true); } catch { /* Parent world already disposed. */ } }
     for (const body of bodies.current) { try { if (body.isValid()) world.removeRigidBody(body); } catch { /* Parent world already disposed. */ } }
@@ -147,12 +149,21 @@ export function RagdollBody({ subject, color, onMeshes }: { subject: RagdollSubj
         slab.current = world.createRigidBody(rapier.RigidBodyDesc.fixed().setTranslation(subject.pos.x, fy - 0.1, subject.pos.z));
         world.createCollider(rapier.ColliderDesc.cuboid(10, 0.1, 10).setFriction(1.3), slab.current);
       }
+      // The edges of whatever it falls through (a hatch's): solid, so it hits them on the way down.
+      for (const sb of accident.slabs ?? []) {
+        const q = new THREE.Quaternion().setFromAxisAngle(UP, sb.rot);
+        const body = world.createRigidBody(rapier.RigidBodyDesc.fixed().setTranslation(sb.x, sb.y, sb.z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }));
+        world.createCollider(rapier.ColliderDesc.cuboid(sb.hx, sb.hy, sb.hz).setFriction(1.0).setRestitution(0.05), body);
+        edges.current.push(body);
+      }
       // (A fall: from where it began — already tipping over, all limbs loose, the way it goes in.)
       const startY = accident.fromY ?? subject.pos.y;
       const falling = accident.fromY !== undefined;
       const pre = random(), tumbleAxis = new THREE.Vector3(Math.cos(pre * Math.PI * 2), 0, Math.sin(pre * Math.PI * 2));
-      const tumble = falling ? 2.4 + random() * 1.8 : 0;
-      if (falling) rotation.premultiply(new THREE.Quaternion().setFromAxisAngle(tumbleAxis, 0.35 + random() * 0.5));
+      // (Through a narrow hatch: less of a tumble, so it goes in rather than lying across it; it hits the edges.)
+      const narrow = !!accident.slabs?.length;
+      const tumble = falling ? (narrow ? 1.0 + random() * 1.0 : 2.4 + random() * 1.8) : 0;
+      if (falling) rotation.premultiply(new THREE.Quaternion().setFromAxisAngle(tumbleAxis, narrow ? 0.2 + random() * 0.3 : 0.35 + random() * 0.5));
       bodies.current = PARTS.map((part, i) => {
         temp.set(part.p[0], part.p[1], part.p[2]).applyQuaternion(rotation).add(subject.pos); temp.y += startY - subject.pos.y;
         const body = world.createRigidBody(rapier.RigidBodyDesc.dynamic().setTranslation(temp.x, temp.y, temp.z).setRotation(rotation).setLinearDamping(1.1).setAngularDamping(1.8).setAdditionalSolverIterations(8).setCcdEnabled(true));
@@ -172,7 +183,7 @@ export function RagdollBody({ subject, color, onMeshes }: { subject: RagdollSubj
           // The whole body turning over as it drops, each limb flopping its own way.
           const v = body.angvel();
           body.setAngvel({ x: v.x + tumbleAxis.x * tumble + (limb ? (random() - 0.5) * 4 : 0), y: v.y, z: v.z + tumbleAxis.z * tumble + (limb ? (random() - 0.5) * 4 : 0) }, true);
-          body.setLinvel({ x: accident.direction[0] * 0.5 + (random() - 0.5) * 0.4, y: -0.5, z: accident.direction[1] * 0.5 + (random() - 0.5) * 0.4 }, true);
+          body.setLinvel({ x: accident.direction[0] * 0.5 + (random() - 0.5) * 0.4, y: narrow ? -1.4 : -0.5, z: accident.direction[1] * 0.5 + (random() - 0.5) * 0.4 }, true);
         }
         if (limb) body.setAngularDamping(0.9);
         return body;
@@ -198,6 +209,8 @@ export function RagdollBody({ subject, color, onMeshes }: { subject: RagdollSubj
       resting.current = [];
     }
     const now = subject.time();
+    // (Never caught on a hatch's edges for long: after a moment they let go of it.)
+    if (edges.current.length && now - accident.startedAt > 1.3) { for (const e of edges.current) { try { if (e.isValid()) world.removeRigidBody(e); } catch { /* gone */ } } edges.current = []; }
     const pelvis = bodies.current[0];
     if (!pelvis) return;
     const position = pelvis.translation();

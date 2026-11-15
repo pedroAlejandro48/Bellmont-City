@@ -217,7 +217,7 @@ export function City({ city, far: allFar, state }: { city: CityT; far: FarScener
       {groundMats.map((mat, i) => <instancedMesh key={`g${i}`} ref={(mesh) => { groundRefs.current[i] = mesh; }} args={[unitPlane, mat, 1024]} receiveShadow />)}
       <instancedMesh ref={backDoorRef} args={[unitPlane, backDoorMat, 128]} receiveShadow />
       <group name="perf:restaurants"><Restaurants city={city} state={state} /></group>
-      <group name="perf:trees"><Trees trees={city.trees} state={state} /></group>
+      <group name="perf:trees"><Trees trees={city.trees} state={state} buildings={city.buildings} /></group>
       {city.blocks.some((b) => b.x === 0 && b.z === 0) && <group name="perf:parkprops"><Park /></group>}
 
       {/* street lights */}

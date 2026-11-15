@@ -1,7 +1,8 @@
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { rng, floorHeight, type Prop } from "./config";
+import { rng, floorHeight, type Building, type Prop } from "./config";
 import { makeNoise } from "./textures";
 import { isSolidNear, useSolidBlock } from "./nearPhysics";
 import type { GameState } from "./state";
@@ -79,7 +80,7 @@ function TreeBatch({ trees, variant, materials, far = false }: { trees: Prop[]; 
  * The streamed neighbourhood's trees: those within a block of the character in full (seven leaf clusters, stone
  * beds, shadows), the rest as simple far trees, swapped over as the character moves from block to block.
  */
-export function Trees({ trees, state }: { trees: Prop[]; state: GameState }) {
+export function Trees({ trees, state, buildings = [] }: { trees: Prop[]; state: GameState; buildings?: readonly Building[] }) {
   const block = useSolidBlock(state);
   const nearTrees = useMemo(() => trees.filter((t) => isSolidNear(block, t.x, t.z)), [trees, block]);
   const farTrees = useMemo(() => trees.filter((t) => !isSolidNear(block, t.x, t.z)), [trees, block]);
@@ -88,6 +89,23 @@ export function Trees({ trees, state }: { trees: Prop[]; state: GameState }) {
     new THREE.MeshStandardMaterial({ map: makeNoise("#417b42", "#a0b65a", 1), roughness: 0.95 }),
     new THREE.MeshStandardMaterial({ map: makeNoise("#969c95", "#505954", 1), roughness: 1 }),
   ], []);
+  // Inside a building, no part of a tree is ever inside it (the branches reaching over the sidewalk stop at its
+  // walls): its footprint as four planes clipping only what's inside all four. Always four (moved far away when
+  // not inside anything), so the trees' shaders never change.
+  const gl = useThree((t) => t.gl);
+  const clip = useMemo(() => [0, 1, 2, 3].map(() => new THREE.Plane(new THREE.Vector3(1, 0, 0), 1e6)), []);
+  useEffect(() => { gl.localClippingEnabled = true; materials.forEach((m) => { m.clippingPlanes = clip; m.clipIntersection = true; m.clipShadows = true; m.needsUpdate = true; }); }, [gl, materials, clip]);
+  const byKey = useMemo(() => new Map(buildings.map((b) => [`${b.x}:${b.z}`, b])), [buildings]);
+  useFrame(() => {
+    const key = state.interior ? state.interior.key.split("#")[0]! : state.level?.building, b = key ? byKey.get(key) : undefined;
+    // (Up on a roof it's outdoors.)
+    const roof = (state.level?.floor ?? 0) > 15;
+    if (b && !roof) {
+      const e = 0.02;
+      clip[0]!.set(new THREE.Vector3(1, 0, 0), -(b.x + b.w / 2 + e)); clip[1]!.set(new THREE.Vector3(-1, 0, 0), b.x - b.w / 2 - e);
+      clip[2]!.set(new THREE.Vector3(0, 0, 1), -(b.z + b.d / 2 + e)); clip[3]!.set(new THREE.Vector3(0, 0, -1), b.z - b.d / 2 - e);
+    } else for (const pl of clip) pl.set(new THREE.Vector3(1, 0, 0), 1e6);
+  });
   const groups = useMemo(() => { const list = Array.from({ length: 12 }, () => [] as Prop[]); nearTrees.forEach((t) => { const i = Math.abs(Math.floor(t.x * 73 + t.z * 31)) % 12; list[i]?.push(t); }); return list; }, [nearTrees]);
   const soil = useRef<THREE.InstancedMesh>(null);
   const beds = useMemo(() => trees.filter((t) => t.sidewalk), [trees]);

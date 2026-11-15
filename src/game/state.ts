@@ -24,6 +24,8 @@ export type Accident = {
   gentle?: boolean;
   /** Falling from up there (world height): the body starts there and drops. */
   fromY?: number;
+  /** Solid slabs around (the edges of a hatch it falls through): world boxes, turned `rot` about the vertical. */
+  slabs?: { x: number; y: number; z: number; hx: number; hy: number; hz: number; rot: number }[];
   seed: number;
 };
 export type RoadIncident = { vehicleId: number; path: RoadPath; origin: [number, number]; startedAt: number; passed: boolean; stoodUpAt: number | null; scooterCrash?: boolean };

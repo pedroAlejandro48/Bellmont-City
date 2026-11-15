@@ -12,7 +12,7 @@ import type { Building, City } from "./config";
 import { handsBusy, needFreeHands } from "./handsHeld";
 import { InteractionPrompt } from "./InteractionPrompt";
 import { toLocal, toWorld, worldYaw, type Room } from "./restaurantRoom";
-import { BULK_H, CLIMB, climbPose, inHatch, onRoof, ROOF_FLOOR, roofPlan, roofY, type RoofPlan } from "./roof";
+import { BULK_H, CLIMB, climbPose, outZ, inHatch, onRoof, ROOF_FLOOR, roofPlan, roofY, type RoofPlan } from "./roof";
 import { fallHurt, FALL_STOREY } from "./roofFall";
 import type { GameState, Script } from "./state";
 import { venueLayout } from "./venueRoom";
@@ -30,7 +30,7 @@ export function RoofAccess({ state, city }: { state: GameState; city: City }) {
   const from = useRef<{ x: number; z: number; yaw: number } | null>(null);
   const own = useRef(false);
   /** Falling through the hatch: the camera follows behind and above, down through the hatch after the body. */
-  const fallCam = useRef<{ building: string; fx: number; fz: number; t0: number } | null>(null);
+  const fallCam = useRef<{ building: string; fx: number; fz: number; t0: number; yaw: number; pitch: number } | null>(null);
   /** The roof room's light (always there; on while you're up there or on its ladder). */
   const lamp = useRef<THREE.PointLight>(null);
   const of = (b: Building) => {
@@ -58,10 +58,10 @@ export function RoofAccess({ state, city }: { state: GameState; city: City }) {
       if (!bb) { state.ladder = null; return; }
       const { plan, room } = of(bb), f = room.frame, base = floorY(APT_FLOORS), t = now - L.t0, tc = t - APPROACH;
       const W = (x: number, z: number) => toWorld(f, x, z);
-      const yawW = worldYaw(f, Math.PI);
+      const yawW = worldYaw(f, plan.yaw);
       const dur = L.dir === "up" ? CLIMB.up : CLIMB.down;
       const pose = climbPose(L.dir, Math.max(0, Math.min(dur, tc)));
-      const [cx, cz] = W(plan.ladX, plan.wallZ + pose.z);
+      const [cx, cz] = W(plan.ladX, outZ(plan, pose.z));
       if (tc < 0) {
         // Up to the ladder (or the hatch's edge), turning to face the wall (with one's back to the hatch).
         const s0 = from.current ?? { x: state.pos.x, z: state.pos.z, yaw: state.rotY };
@@ -72,7 +72,7 @@ export function RoofAccess({ state, city }: { state: GameState; city: City }) {
       } else {
         const hand = (h: typeof pose.hands.left) => {
           if (!h) return null;
-          const [hx, hz] = W(plan.ladX + h.at[0], plan.wallZ + h.at[2]);
+          const [hx, hz] = W(plan.ladX + plan.n * h.at[0], outZ(plan, h.at[2]));
           return { at: new THREE.Vector3(hx, base + h.at[1], hz), blend: h.blend, pole: "low" as const };
         };
         script = { x: cx, z: cz, yaw: yawW, walk: 0, sit: 0, shuffle: 0, lean: pose.lean, left: hand(pose.hands.left), right: hand(pose.hands.right), legs: pose.legs, y: base + pose.y };
@@ -87,8 +87,8 @@ export function RoofAccess({ state, city }: { state: GameState; city: City }) {
       if (tc < dur - CAM_BACK) {
         const y = pose.y;
         const cam = L.dir === "up"
-          ? { pos: [plan.ladX + 0.3, Math.max(0.5, y + 0.1), plan.wallZ + 0.84] as const, at: [plan.ladX, y + 1.55, plan.wallZ + 0.3] as const }
-          : { pos: [plan.ladX + 0.2, Math.min(y + 2.3, 3.5 + 2.1), plan.wallZ + 0.78] as const, at: [plan.ladX, y + 1.05, plan.wallZ + 0.25] as const };
+          ? { pos: [plan.ladX + 0.3, Math.max(0.5, y + 0.1), outZ(plan, 0.84)] as const, at: [plan.ladX, y + 1.55, outZ(plan, 0.3)] as const }
+          : { pos: [plan.ladX + 0.2, Math.min(y + 2.3, 3.5 + 2.1), outZ(plan, 0.78)] as const, at: [plan.ladX, y + 1.05, outZ(plan, 0.25)] as const };
         const [px, pz] = W(cam.pos[0], cam.pos[2]), [ax, az] = W(cam.at[0], cam.at[2]);
         state.camLock = { pos: [px, base + cam.pos[1], pz], at: [ax, base + cam.at[1], az], by: "ladder" };
       } else if (state.camLock?.by === "ladder") {
@@ -120,17 +120,16 @@ export function RoofAccess({ state, city }: { state: GameState; city: City }) {
       if (!fb || !acc || acc.phase !== "down" || !pelvis || now - fc.t0 > 3.2) {
         // Back to the usual camera (it eases back from here), behind the way he was going.
         fallCam.current = null;
-        if (state.camLock?.by === "fall") { state.camLock = null; state.camYaw = Math.atan2(fc.fx, fc.fz) + Math.PI; state.camPitch = 0.45; }
+        if (state.camLock?.by === "fall") { state.camLock = null; state.camYaw = fc.yaw; state.camPitch = fc.pitch; }
       } else {
-        const { plan, room } = of(fb), f = room.frame, base = floorY(APT_FLOORS), roof = roofY();
+        const { plan, room } = of(fb), base = floorY(APT_FLOORS), roof = roofY(), H = plan.hatch;
         const px = pelvis.position.x, py = pelvis.position.y, pz = pelvis.position.z;
-        // Behind him (the way he walked in) and above, looking at him; down the hatch, inside it.
-        let cx = px - fc.fx * 1.5, cz = pz - fc.fz * 1.5, cy = Math.max(base + 2.3, py + 1.5);
-        if (cy < roof + 0.6) {
-          const H = plan.hatch, [lx, lz] = toLocal(f, cx, cz), m = 0.12;
-          const qx = Math.max(H.x0 + m, Math.min(H.x1 - m, lx)), qz = Math.max(H.z0 + m, Math.min(H.z1 - m, lz));
-          [cx, cz] = toWorld(f, qx, qz);
-        }
+        // Above the hatch, looking down at him as he falls; once he's down, straight down through the hatch
+        // after him (then back to its place).
+        // (A little off the middle, so it never looks exactly straight down.)
+        const [cx, cz] = toWorld(room.frame, (H.x0 + H.x1) / 2 + 0.18, (H.z0 + H.z1) / 2);
+        const down = py < base + 1.0 || now - fc.t0 > 1.4;
+        const cy = down ? base + 2.25 : roof + 2.3;
         state.camLock = { pos: [cx, cy, cz], at: [px, py, pz], by: "fall" };
       }
     }
@@ -152,8 +151,8 @@ export function RoofAccess({ state, city }: { state: GameState; city: City }) {
     };
     if (lvl.floor === APT_FLOORS) {
       // In front of the ladder, facing it.
-      if (Math.hypot(lx - plan.ladX, lz - (plan.wallZ + 0.62)) < 0.8 && facesAt(yaw, lx, lz, plan.ladX, plan.wallZ, 0.9)) {
-        show(plan.ladX, 1.45, plan.wallZ + 0.25, handsBusy(state) ? "HANDS FULL" : "E  CLIMB UP");
+      if (Math.hypot(lx - plan.ladX, lz - outZ(plan, 0.62)) < 0.8 && facesAt(yaw, lx, lz, plan.ladX, plan.wallZ, 0.9)) {
+        show(plan.ladX, 1.45, outZ(plan, 0.25), handsBusy(state) ? "HANDS FULL" : "E  CLIMB UP");
         if (state.interactQueued) { state.interactQueued = false; start("up"); }
       }
       return;
@@ -166,15 +165,19 @@ export function RoofAccess({ state, city }: { state: GameState; city: City }) {
       if (state.interior) state.interior.key = floorKey(b, APT_FLOORS);
       state.foodScript = null;
       const fx = Math.sin(state.rotY), fz = Math.cos(state.rotY);
-      fallCam.current = { building: lvl.building, fx, fz, t0: now };
+      fallCam.current = { building: lvl.building, fx, fz, t0: now, yaw: state.camYaw, pitch: state.camPitch };
       // (Starting right where the camera is now, behind him.)
-      fallHurt(state, FALL_STOREY, top);
+      // The roof's slab round the hatch (and the ceiling under it) is solid to the falling body.
+      const H = plan.hatch, y0 = floorY(APT_FLOORS) + 2.8, y1 = roofY(), M = 1.6, hy = (y1 - y0) / 2, yc = (y0 + y1) / 2;
+      const rects = [[H.x0 - M, H.x1 + M, H.z0 - M, H.z0], [H.x0 - M, H.x1 + M, H.z1, H.z1 + M], [H.x0 - M, H.x0, H.z0, H.z1], [H.x1, H.x1 + M, H.z0, H.z1]];
+      const slabs = rects.map(([a, c, d, e]) => { const [wx, wz] = toWorld(f, (a! + c!) / 2, (d! + e!) / 2); return { x: wx, y: yc, z: wz, hx: (c! - a!) / 2, hy, hz: (e! - d!) / 2, rot: f.rot }; });
+      fallHurt(state, FALL_STOREY, top, slabs);
       return;
     }
     if (!onRoof(plan, lx, lz)) { state.level = null; state.interior = null; return; }
     // At the hatch's edge, facing it: down.
-    if (Math.hypot(lx - plan.ladX, lz - (plan.wallZ - 0.35)) < 0.75 && facesAt(yaw, lx, lz, plan.ladX, plan.wallZ + 0.45, 0.9)) {
-      show(plan.ladX, 0.9, plan.wallZ + 0.1, handsBusy(state) ? "HANDS FULL" : "E  CLIMB DOWN");
+    if (Math.hypot(lx - plan.ladX, lz - outZ(plan, -0.35)) < 0.75 && facesAt(yaw, lx, lz, plan.ladX, outZ(plan, 0.45), 0.9)) {
+      show(plan.ladX, 0.9, outZ(plan, 0.1), handsBusy(state) ? "HANDS FULL" : "E  CLIMB DOWN");
       if (state.interactQueued) { state.interactQueued = false; start("down"); }
     }
   }, -0.67);
