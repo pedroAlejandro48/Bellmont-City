@@ -202,7 +202,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
         state.rotY += angle * (1 - Math.exp(-12 * dt));
         state.camOrbit = state.camYaw - state.rotY - Math.PI;
       }
-      if (state.jumpQueued) {
+      if (state.jumpQueued && !state.noJump) {
         s.vy = JUMP_V;
         s.grounded = false;
         s.airStyle = Math.hypot(s.vel.x, s.vel.z) > 0.8 ? 1 : 0;

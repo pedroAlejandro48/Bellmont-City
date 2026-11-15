@@ -40,10 +40,10 @@ export function roofPlan(b: Building): RoofPlan {
   // On the hallway's front wall (the apartment's), across the hallway from the elevator; facing −z.
   const n = -1 as const, wallZ = minZ + SHAFT + HALL_W, ladX = minX + SHAFT + 0.9;
   const zs = (a: number, b: number) => [Math.min(wallZ + n * a, wallZ + n * b), Math.max(wallZ + n * a, wallZ + n * b)] as const;
-  const [h0, h1] = zs(0, 0.9), [b0, b1] = zs(-0.9, 1.7);
+  const [h0, h1] = zs(0.03, 0.93), [b0, b1] = zs(-0.9, 1.7);
   const hatch = { x0: ladX - 0.45, x1: ladX + 0.45, z0: h0, z1: h1 };
-  // (The little room's doorway on the hallway's side of the hatch.)
-  const doorZ = wallZ + n * 1.7;
+  // (The little room's doorway at its roof end: ahead of you as you climb out.)
+  const doorZ = wallZ - n * 0.9;
   const t = 0.12, bulk = { x0: ladX - 1.3, x1: ladX + 1.3, z0: b0, z1: b1, door: [ladX - 0.45, ladX + 0.45] as [number, number], t, doorZ };
   const box = (x0: number, x1: number, z0: number, z1: number): Box => ({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, hx: (x1 - x0) / 2, hz: (z1 - z0) / 2 });
   const [wz0, wz1] = doorZ === b1 ? [b0, b0 + t] : [b1 - t, b1], [dz0, dz1] = doorZ === b1 ? [b1 - t, b1] : [b0, b0 + t];

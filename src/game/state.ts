@@ -164,6 +164,8 @@ export type GameState = {
   ladder: { dir: "up" | "down"; t0: number; building: string } | null;
   /** The ladder's E is showing (nothing else here takes E). */
   ladderPrompt: boolean;
+  /** In an elevator's car: no jumping there. */
+  noJump: boolean;
   camLock: { pos: [number, number, number]; at: [number, number, number]; /** Put there at once (no easing). */ snap?: boolean; /** A field of view while held. */ fov?: number; /** Whose it is (only they let go of it). */ by?: string } | null;
   /** A kitchen panel's answer: a thing to take from the counter, or the cans to cook. */
   kitchenAsk: { rack?: import("./pantry").WareKind; cans?: import("./pantry").CanKind[]; burner?: number; /** Put away the new plates and cups from the bag. */ stow?: boolean } | null;
@@ -313,7 +315,7 @@ export function createState(save: SaveData): GameState {
     level: save.apt && save.apt.floor >= 2 ? { building: save.apt.building, floor: save.apt.floor, y: floorY(save.apt.floor) } : null,
     seatSurface: null,
     elevator: null,
-    uiLock: null, fridgeLoad: [], camLock: null, ladder: null, ladderPrompt: false, kitchenAsk: null, meal: null, kitchenQ: false,
+    uiLock: null, fridgeLoad: [], camLock: null, ladder: null, ladderPrompt: false, noJump: false, kitchenAsk: null, meal: null, kitchenQ: false,
     keys: new Set(),
     jumpQueued: false,
     simulationTime: 0,
