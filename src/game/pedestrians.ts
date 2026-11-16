@@ -273,3 +273,30 @@ export function parkVisit(corner: number) {
   const front = (seat: (typeof BENCH_SEATS)[number]): [number, number] => [seat.x + Math.sin(seat.yaw) * 0.42, seat.z + Math.cos(seat.yaw) * 0.42];
   return { bench, seats, entry, beside, front };
 }
+
+/** Where a point is along block (i, j)'s sidewalk loop: 0 at corner 0, round through corners 1, 2, 3 (8 R round). */
+function ringS(i: number, j: number, p: [number, number]) {
+  const R = WALK_RING, cx = blockCenter(i), cz = blockCenter(j);
+  const dx = Math.max(-R, Math.min(R, p[0] - cx)), dz = Math.max(-R, Math.min(R, p[1] - cz));
+  if (Math.abs(dx) >= Math.abs(dz)) return dx > 0 ? 6 * R + (dz + R) : 2 * R + (R - dz);
+  return dz > 0 ? R - dx : 4 * R + (dx + R);
+}
+/** The point on block (i, j)'s sidewalk loop nearest `p`. */
+export function ringPoint(i: number, j: number, p: [number, number]): [number, number] {
+  const R = WALK_RING, cx = blockCenter(i), cz = blockCenter(j);
+  const dx = p[0] - cx, dz = p[1] - cz;
+  if (Math.abs(dx) >= Math.abs(dz)) return [cx + Math.sign(dx || 1) * R, cz + Math.max(-R, Math.min(R, dz))];
+  return [cx + Math.max(-R, Math.min(R, dx)), cz + Math.sign(dz || 1) * R];
+}
+/** Along block (i, j)'s sidewalk loop from `from` to `to` (the shorter way round): the corners passed, then `to`. */
+export function ringRoute(i: number, j: number, from: [number, number], to: [number, number]): [number, number][] {
+  const R = WALK_RING, P = 8 * R, a = ringS(i, j, from), b = ringS(i, j, to);
+  const fwd = ((b - a) % P + P) % P, dir = fwd <= P / 2 ? 1 : -1, dist = dir === 1 ? fwd : P - fwd;
+  const out: [number, number][] = [];
+  // Corners at s = 0, 2R, 4R, 6R (corner k at 2R·k).
+  for (let k = 0; k < 4; k++) {
+    const s = 2 * R * k, d = dir === 1 ? ((s - a) % P + P) % P : ((a - s) % P + P) % P;
+    if (d > 1e-6 && d < dist - 1e-6) out.push([d, k] as unknown as [number, number]);
+  }
+  return [...out.sort((x, y) => x[0] - y[0]).map(([, k]) => cornerPoint(i, j, k)), to];
+}

@@ -10,6 +10,11 @@ import { RagdollBody, type RagdollSubject } from "./Ragdoll";
 import type { Accident, GameState, NpcBody } from "./state";
 import { EAT_SECONDS, PACK_SIZE, isDrinkName, type FoodPack, type FoodRequest } from "./food";
 import { POLES, carryElbow, reachArm } from "./arms";
+import { aptKey } from "./apartments";
+import { LOBBY_IN } from "./liftRiders";
+import { toWorld } from "./restaurantRoom";
+import { venueLayout } from "./venueRoom";
+import { ringPoint, ringRoute } from "./pedestrians";
 import { CROSS_SPEED, NPC_APPEAR_DISTANCE, boxObstacles, cornerPoint, detour, parkVisit, NPC_MAX, NPC_RADIUS, WALK_SPEED, npcTarget, legEnd, legFromPosition, type NpcLink, type NpcSnapshot, mayCross, nextLeg, npcGender, spawnBlock, spawnOnRing, steer, type Leg, type Obstacle } from "./pedestrians";
 
 /** Further than this from the player, someone is moved to walk somewhere nearer. */
@@ -63,6 +68,14 @@ type Npc = {
   meal: Meal | null;
   /** A hand reaching for something this frame (shared with the other players for the pose). */
   reach: { side: 1 | -1; blend: number; x: number; y: number; z: number } | null;
+  /** Where they live (an apartment building's key): where they go home to, and come out of again. */
+  home: string;
+  /** On their way home: along the block's sidewalk to the lobby's door. */
+  goHome: { b: string; points: [number, number][] } | null;
+  /** Off home from wherever they are (the next apartment building they get to). */
+  wantsHome: boolean;
+  /** Asked to come out of their building (on their way down). */
+  pendingOut: boolean;
 };
 
 const turn = (from: number, to: number, t: number) => from + Math.atan2(Math.sin(to - from), Math.cos(to - from)) * Math.min(1, t);
@@ -105,6 +118,11 @@ function putAway(npc: Npc, seats: Map<number, string>) {
  * shoved slowly, and when a vehicle hits them they fall (ragdoll), get up and carry on. They never die.
  */
 export function Pedestrians({ state, city }: { state: GameState; city: City }) {
+  /** The apartment buildings: the block each stands on, and its street door (outside it, on the sidewalk). */
+  const apts = useMemo(() => city.buildings.filter((b) => b.venue === "apartments").map((b) => {
+    const L = venueLayout(b), door = toWorld(L.frame, LOBBY_IN[0], LOBBY_IN[1]) as [number, number], i = blockIndex(b.x), j = blockIndex(b.z);
+    return { key: aptKey(b), i, j, door, ring: ringPoint(i, j, door) };
+  }), [city]);
   const npcs = useMemo<Npc[]>(() => {
     const list: Npc[] = [];
     const fi = blockIndex(state.pos.x), fj = blockIndex(state.pos.z);
@@ -114,11 +132,13 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       const npc: Npc = {
         body: { id, x: 0, z: 0, down: false, moving: false, hit: null }, pos: new THREE.Vector3(), yaw: 0,
         color: bodyColor(npcGender(state.worldSeed, id)), leg: { kind: "ring", i: 0, j: 0, from: 0, to: 1 }, crossing: false,
-        mode: random() < 0.75 ? "walk" : "stand", until: 2 + random() * 20, speed: 0, phase: random() * 6, accident: null, random, shownHit: -1, hitSentAt: -Infinity, active: true, around: null, side: 1, park: null, seated: 0, meal: null, reach: null, offset: (() => { const a = random() * Math.PI * 2, d = 0.25 + random() * 0.55; return [Math.cos(a) * d, Math.sin(a) * d] as [number, number]; })(),
+        mode: random() < 0.75 ? "walk" : "stand", until: 2 + random() * 20, speed: 0, phase: random() * 6, accident: null, random, shownHit: -1, hitSentAt: -Infinity, active: true, around: null, side: 1, park: null, seated: 0, meal: null, reach: null, home: "", goHome: null, wantsHome: false, pendingOut: false, offset: (() => { const a = random() * Math.PI * 2, d = 0.25 + random() * 0.55; return [Math.cos(a) * d, Math.sin(a) * d] as [number, number]; })(),
       };
       // At the start everyone the hour calls for is already about (anywhere); the rest are kept aside.
       place(npc, fi, fj, [], state.seatOccupants);
       if (id >= target) putAway(npc, state.seatOccupants);
+      // Everyone lives somewhere (one of the apartment buildings): home is where they go and come out of.
+      npc.home = apts.length ? apts[Math.abs(id * 7 + state.worldSeed) % apts.length]!.key : "";
       list.push(npc);
     }
     return list;
@@ -186,6 +206,15 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
     meal.stage = "bin"; visit.until = now;
   }
 
+  const popTimer = useRef(0);
+  /** The apartment building on the block someone's walking round (if any), and the nearest one to a point. */
+  const aptOn = (m: Npc) => (m.leg.kind === "ring" ? apts.find((a) => a.i === (m.leg as { i: number }).i && a.j === (m.leg as { j: number }).j) : undefined);
+  const nearestApt = (x: number, z: number) => apts.reduce<(typeof apts)[number] | undefined>((best, a) => (!best || Math.hypot(a.door[0] - x, a.door[1] - z) < Math.hypot(best.door[0] - x, best.door[1] - z) ? a : best), undefined);
+  /** Off home: round the block's sidewalk to its apartment building's door (the building takes them from there). */
+  function startHome(m: Npc, a: (typeof apts)[number]) {
+    m.goHome = { b: a.key, points: [...ringRoute(a.i, a.j, [m.pos.x, m.pos.z], a.ring), a.door] };
+    m.mode = "walk"; m.wantsHome = false; m.home = a.key;
+  }
   const role = useRef<"solo" | "host" | "guest">("solo");
   const lastSnapshot = useRef<{ snapshot: NpcSnapshot; at: number } | null>(null);
   const publishTimer = useRef(0);
@@ -205,27 +234,54 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
     const anchor = players[Math.floor(Math.random() * players.length)] ?? p;
     const fi = blockIndex(anchor.x), fj = blockIndex(anchor.z);
     if (link) for (const hit of link.takeHits()) { const n = npcs[hit.id]; if (n && n.active && !n.accident) n.body.hit = { direction: hit.direction }; }
-    // Busier by day, quieter at night: one at a time, people come out or go home, always a block from everyone.
+    // Busier by day, quieter at night: people come out of their apartment buildings (out of the very door, if
+    // anyone's near it) or go home (walking in at the door, if they're on its block; else out of sight). Nobody
+    // just appears or vanishes where they can be seen.
     const target = Math.round(npcTarget(timeInfo(state.elapsed).hours) * quality().npcShare);
-    const out = npcs.filter((n) => n.active).length;
-    if (out < target) {
-      const n = npcs.find((m) => !m.active);
-      if (n && place(n, Math.max(-HALF, Math.min(HALF, fi)), Math.max(-HALF, Math.min(HALF, fj)), players, state.seatOccupants)) { n.active = true; n.mode = "walk"; n.body.down = false; }
-    } else if (out > target) {
-      const n = npcs.find((m) => m.active && !m.accident && !m.meal && outOfSight(m.pos.x, m.pos.z, players));
-      if (n) putAway(n, state.seatOccupants);
+    const bridge = state.liftBridge;
+    if (bridge) for (const o of bridge.takeOut()) {
+      const n = npcs[o.id];
+      if (!n) continue;
+      leavePark(n, state.seatOccupants);
+      n.pendingOut = false; n.goHome = null; n.wantsHome = false;
+      n.pos.set(o.x, floorHeight(o.x, o.z), o.z); n.yaw = o.yaw;
+      n.leg = legFromPosition(o.x, o.z, o.yaw); n.crossing = false; n.around = null;
+      n.active = true; n.mode = "walk"; n.until = now + 20 + n.random() * 40; n.speed = WALK_SPEED * 0.6; n.accident = null; n.body.down = false;
+    }
+    popTimer.current -= dt;
+    if (popTimer.current <= 0) {
+      popTimer.current = 1.2;
+      const out = npcs.filter((n) => n.active || n.pendingOut).length;
+      if (out < target) {
+        const doorNear = (key: string) => { const a = apts.find((x) => x.key === key); return !!a && players.some((o) => Math.hypot(a.door[0] - o.x, a.door[1] - o.z) < 110); };
+        const home = bridge ? npcs.find((m) => !m.active && !m.pendingOut && m.home && doorNear(m.home)) : undefined;
+        if (home && bridge) { home.pendingOut = true; bridge.release(home.body.id, home.home); }
+        else {
+          const n = npcs.find((m) => !m.active && !m.pendingOut);
+          if (n && place(n, Math.max(-HALF, Math.min(HALF, fi)), Math.max(-HALF, Math.min(HALF, fj)), players, state.seatOccupants)) { n.active = true; n.mode = "walk"; n.body.down = false; }
+        }
+      } else if (out > target) {
+        const free = (m: Npc) => m.active && !m.accident && !m.meal && !m.park && !m.goHome;
+        const onApt = npcs.find((m) => free(m) && m.leg.kind === "ring" && aptOn(m));
+        if (onApt) startHome(onApt, aptOn(onApt)!);
+        else {
+          const n = npcs.find((m) => free(m) && outOfSight(m.pos.x, m.pos.z, players));
+          if (n) { n.home = nearestApt(n.pos.x, n.pos.z)?.key ?? n.home; bridge?.arrive(n.body.id, n.home); putAway(n, state.seatOccupants); }
+        }
+      }
     }
     // Customers who bought food to go walk out of the restaurant as one of the street's people, food in hand.
     for (const d of state.npcAdopt.splice(0)) {
       const free = (m: Npc) => !m.meal && !m.accident && !m.park;
       const female = (m: Npc) => (npcGender(state.worldSeed, m.body.id) === "female") === d.female;
-      const n = npcs.find((m) => !m.active && female(m)) ?? npcs.find((m) => m.active && free(m) && female(m) && outOfSight(m.pos.x, m.pos.z, players))
-        ?? npcs.find((m) => !m.active) ?? npcs.find((m) => m.active && free(m) && outOfSight(m.pos.x, m.pos.z, players));
+      const n = npcs.find((m) => !m.active && !m.pendingOut && female(m)) ?? npcs.find((m) => m.active && free(m) && female(m) && outOfSight(m.pos.x, m.pos.z, players))
+        ?? npcs.find((m) => !m.active && !m.pendingOut) ?? npcs.find((m) => m.active && free(m) && outOfSight(m.pos.x, m.pos.z, players));
       if (!n) continue;
       leavePark(n, state.seatOccupants);
       n.pos.set(d.x, floorHeight(d.x, d.z), d.z); n.yaw = d.yaw;
       n.leg = legFromPosition(d.x, d.z, d.yaw); n.crossing = false; n.around = null;
       n.active = true; n.mode = "walk"; n.until = now + 600; n.speed = WALK_SPEED * 0.6; n.accident = null; n.body.down = false;
+      if (d.home) { n.meal = null; n.wantsHome = true; n.until = now + 600; continue; }
       n.meal = { stage: "go", at: now, eat: null, act: null, bin: -1 };
       state.foodTransfer?.(d.holder, `ped:${n.body.id}`);
     }
@@ -257,7 +313,7 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       if (npc.accident) { b.x = npc.pos.x; b.z = npc.pos.z; b.down = true; b.moving = false; continue; }
       b.down = false;
       // Too far away: someone else, somewhere nearer.
-      if (!npc.meal && players.every((o) => Math.hypot(npc.pos.x - o.x, npc.pos.z - o.z) > NPC_RANGE)) place(npc, Math.max(-HALF, Math.min(HALF, fi)), Math.max(-HALF, Math.min(HALF, fj)), players, state.seatOccupants);
+      if (!npc.meal && !npc.goHome && players.every((o) => Math.hypot(npc.pos.x - o.x, npc.pos.z - o.z) > NPC_RANGE)) place(npc, Math.max(-HALF, Math.min(HALF, fi)), Math.max(-HALF, Math.min(HALF, fj)), players, state.seatOccupants);
 
       const visit = npc.park;
       if (visit?.stage === "bench" && visit.bench) {
@@ -306,7 +362,7 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
         }
       }
       // Now and then switch between walking and standing (never in the middle of a road, nor on the way to a bench).
-      if (npc.meal) npc.mode = "walk";
+      if (npc.meal || npc.goHome || npc.wantsHome) npc.mode = "walk";
       else if (now > npc.until && !npc.crossing && !visit) {
         npc.mode = npc.mode === "walk" && npc.random() < 0.45 ? "stand" : "walk";
         npc.until = now + (npc.mode === "walk" ? 6 + npc.random() * 40 : 3 + npc.random() * 18);
@@ -349,7 +405,7 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       }
       if (npc.mode === "wait" && (npc.crossing || npc.leg.kind !== "cross")) npc.mode = "walk";
       // Reached the end of this stretch: choose the next.
-      if (!npc.park && Math.hypot(target[0] - npc.pos.x, target[1] - npc.pos.z) < (taken(target) ? 1.6 : 0.45) && (npc.leg.kind === "ring" || npc.crossing)) {
+      if (!npc.park && !npc.goHome && Math.hypot(target[0] - npc.pos.x, target[1] - npc.pos.z) < (taken(target) ? 1.6 : 0.45) && (npc.leg.kind === "ring" || npc.crossing)) {
         // At a corner of the park's sidewalk: often, down the path to its bench (if a seat is free).
         // With food to eat: always, if that corner's bench has a seat free (else on round to the next corner).
         if (npc.leg.kind === "ring" && npc.leg.i === 0 && npc.leg.j === 0 && npc.meal?.stage !== "bin" && (npc.meal?.stage === "go" || npc.random() < 0.45)) {
@@ -364,6 +420,18 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
           // Empties in hand: on round the park (the same way) to the next bin.
           const { from, to } = npc.leg;
           npc.leg = { kind: "ring", i: 0, j: 0, from: to, to: (to + (to - from === 1 || to - from === -3 ? 1 : 3)) % 4 };
+        } else if (npc.leg.kind === "ring" && npc.wantsHome) {
+          // Off home: on the block of an apartment building, to its door; else the way toward the nearest one.
+          const here = aptOn(npc);
+          if (here) { startHome(npc, here); continue; }
+          const goal = nearestApt(npc.pos.x, npc.pos.z), { i, j, to, from } = npc.leg;
+          let best = nextLeg(i, j, to, from, npc.random), bestD = Infinity;
+          for (let k = 0; k < 8 && goal; k++) {
+            const leg = k === 0 ? best : nextLeg(i, j, to, from, npc.random);
+            const [bi, bj] = leg.kind === "cross" ? leg.toBlock : [i, j], d = Math.abs(bi - goal.i) + Math.abs(bj - goal.j) + (leg.kind === "ring" ? 0.5 : 0);
+            if (d < bestD) { bestD = d; best = leg; }
+          }
+          npc.leg = best;
         } else if (npc.leg.kind === "ring") npc.leg = nextLeg(npc.leg.i, npc.leg.j, npc.leg.to, npc.leg.from, npc.random, npc.meal?.stage === "go");
         else {
           const [i, j] = npc.leg.toBlock, from = npc.leg.toCorner;
@@ -373,6 +441,14 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
         target = mine(npc.leg.kind === "cross" ? npc.leg.from : legEnd(npc.leg));
       }
 
+      // Going home: round the sidewalk and to the lobby's door; there, in they go (the building takes over).
+      if (npc.goHome) {
+        const gh = npc.goHome;
+        let nx = gh.points[0];
+        if (nx && Math.hypot(nx[0] - npc.pos.x, nx[1] - npc.pos.z) < (gh.points.length === 1 ? 0.35 : 0.7)) { gh.points.shift(); nx = gh.points[0]; }
+        if (!nx) { npc.home = gh.b; npc.goHome = null; bridge?.arrive(b.id, gh.b); putAway(npc, state.seatOccupants); continue; }
+        target = nx; npc.mode = "walk";
+      }
       // Things in the way: fixed props nearby, the bike, other people (players and NPCs) and vehicles.
       const near: Obstacle[] = [];
       const x = npc.pos.x, z = npc.pos.z;

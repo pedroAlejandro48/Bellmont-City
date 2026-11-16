@@ -248,8 +248,9 @@ function FixtureModel({ f, m, kind }: { f: Fixture; m: VMats; kind: VenueKind })
         <mesh position={[0, CEILING / 2, -d / 2 + 0.06]} material={wall}>{box([w, CEILING, 0.12])}</mesh>
         {[-1, 1].map((s) => <mesh key={s} position={[s * (w / 2 - 0.06), CEILING / 2, 0]} material={wall}>{box([0.12, CEILING, d])}</mesh>)}
         {[-1, 1].map((s) => <mesh key={s} position={[s * (half + side / 2), CEILING / 2, d / 2 - 0.06]} material={wall}>{box([side, CEILING, 0.12])}</mesh>)}
-        <mesh position={[0, (CEILING + 2.3) / 2, d / 2 - 0.06]} material={wall}>{box([LIFT_DOOR + 0.02, CEILING - 2.3, 0.12])}</mesh>
-        {[-1, 1].map((s) => <mesh key={s} position={[s * (half + 0.04), 1.16, d / 2 - 0.06]} material={m.steel}>{box([0.1, 2.32, 0.18])}</mesh>)}
+        {/* (The wall over the door meets the side walls without overlapping; the frame's posts stop under its header.) */}
+        <mesh position={[0, (CEILING + 2.3) / 2, d / 2 - 0.06]} material={wall}>{box([LIFT_DOOR, CEILING - 2.3, 0.12])}</mesh>
+        {[-1, 1].map((s) => <mesh key={s} position={[s * (half + 0.04), 1.14, d / 2 - 0.06]} material={m.steel}>{box([0.1, 2.28, 0.18])}</mesh>)}
         <mesh position={[0, 2.33, d / 2 - 0.06]} material={m.steel}>{box([LIFT_DOOR + 0.18, 0.1, 0.18])}</mesh>
         <mesh position={[0, 0.006, d / 2 - 0.06]} material={m.steel}>{box([LIFT_DOOR, 0.012, 0.16])}</mesh>
         <mesh position={[0, 2.55, d / 2 + 0.01]} material={m.black}>{box([0.42, 0.18, 0.03])}</mesh>

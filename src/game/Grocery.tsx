@@ -298,7 +298,12 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
         const from: [number, number] = [0, -1.25], total = LEAVE.done + leaveLead(from);
         const pose = leavePose(Math.min(t, total), from, 0);
         sh.pose = { x: pose.x, z: pose.z, yaw: pose.yaw, crouch: 0, lean: pose.lean, left: sh.bag ? sh.pose.left : pose.left, right: pose.right };
-        if (t >= total) next("away", makePlan([walkSeg([sh.pose.x, sh.pose.z], sh.pose.yaw, [-sh.side * 10, 2.6], -sh.side * Math.PI / 2, { basket: false, bag: true })]));
+        if (t >= total) {
+          // Out on the sidewalk: one of the street's people again, off home to an apartment building (never gone).
+          const [wx, wz] = toWorld(layout.frame, sh.pose.x, sh.pose.z);
+          state.npcAdopt.push({ x: wx, z: wz, yaw: worldYaw(layout.frame, sh.pose.yaw), female: sh.color === bodyColor("female"), holder: "", home: true });
+          shopper.current = null; sh = null; bump();
+        }
       } else if (sh.stage === "queue") {
         // Waiting a step back from the register until it's free.
         if (!sh.plan && !checkout.current && !(me.kind === "pay" && me.plan)) {

@@ -5,7 +5,7 @@
 // anyone in it. Up to three people ride at once (players and residents alike).
 import { floorY } from "./apartments";
 
-export const LIFT_SPEED = 1, DOOR_T = 0.8, DWELL = 8, CLEAR = 1, CAPACITY = 3;
+export const LIFT_SPEED = 1, DOOR_T = 0.8, DWELL = 8, CLEAR = 1, CAPACITY = 4;
 export type CarPhase = "idle" | "moving" | "opening" | "open" | "closing";
 export type Car = { y: number; dir: -1 | 0 | 1; stops: number[]; phase: CarPhase; t: number; dwell: number; clear: number };
 export const newCar = (): Car => ({ y: 1, dir: 0, stops: [], phase: "idle", t: 0, dwell: 0, clear: 0 });

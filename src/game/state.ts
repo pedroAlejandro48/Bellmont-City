@@ -74,10 +74,13 @@ export type Script = { x: number; z: number; yaw: number; walk: number; sit: num
  * seconds into that (t0: when it started, on this player's clock), and whether they're using it now. */
 /** Where a player is as far as the elevators care: the building they're in or near, their floor, in a car, in
  * a car's doorway. */
-export type LiftPeer = { b: string | null; floor: number; inCar: boolean; inDoor: boolean };
+export type LiftPeer = { b: string | null; floor: number; inCar: boolean; inDoor: boolean; /** Where, in the building's frame. */ x?: number; z?: number };
 /** Everything the room's elevator runner shares: each building's car, and the residents riding. */
-export type LiftSnap = { cars: Record<string, import("./liftCar").Car>; riders: LiftRiderWire[] };
-export type LiftRiderWire = { id: number; b: string; seed: number; x: number; z: number; yaw: number; floor: number; walking: boolean; inCar: boolean; riding: boolean };
+export type LiftSnap = { cars: Record<string, import("./liftCar").Car>; riders: LiftRiderWire[]; aptDoors?: Record<string, number> };
+/** A resident in a building (the same person as on the street: `id` is their NPC id). Where (building frame), on
+ * which floor, walking or not, in the car, a hand reaching (x, y, z, how far) and the key in it, going through the
+ * lobby's street door (which leaf, how long ago). */
+export type LiftRiderWire = { id: number; b: string; seed: number; x: number; z: number; yaw: number; floor: number; walking: boolean; inCar: boolean; riding: boolean; lean?: number; reach?: [number, number, number, number] | null; key?: boolean; door?: { leaf: "left" | "right"; t: number } | null };
 /** A room's elevators: one player (the longest there) runs them for everyone; the rest send their calls and
  * button presses, and say where they are. */
 export type LiftLink = {
@@ -173,6 +176,8 @@ export type GameState = {
   liftPress: number[];
   /** While riding: the building and the floors to draw (those the car is passing). */
   liftShown: { b: string; floors: number[] } | null;
+  /** The street's people going into apartment buildings and coming out (set by the apartments). */
+  liftBridge: import("./liftRiders").LiftBridge | null;
   /** Seated somewhere that isn't a park bench or a restaurant chair (an apartment's couch, dining chair or desk):
    * where take-out food can be set down (world; the hands' spots are the point ± the sideways step). */
   seatSurface: { x: number; y: number; z: number; yaw: number; lx: number; lz: number } | null;
@@ -284,7 +289,7 @@ export type GameState = {
   /** Customers' door uses, on RestaurantInteraction's clock (so the doors swing for them too). */
   npcDoorUses: import("./doors").DoorUse[];
   /** Customers leaving with food to go, to be taken over by the street NPCs (who go and eat it on a bench). */
-  npcAdopt: { x: number; z: number; yaw: number; female: boolean; holder: string }[];
+  npcAdopt: { x: number; z: number; yaw: number; female: boolean; holder: string; /** Off home (to an apartment building) rather than about town. */ home?: boolean }[];
   /** Running the food: a street NPC's request (`ped:<id>`), handing food over, and which street NPCs hold food. */
   foodHandle: ((by: string, req: import("./food").FoodRequest) => void) | null;
   foodTransfer: ((from: string, to: string) => void) | null;
@@ -335,7 +340,7 @@ export function createState(save: SaveData): GameState {
     extraDoorUses: [],
     level: save.apt && save.apt.floor >= 2 ? { building: save.apt.building, floor: save.apt.floor, y: floorY(save.apt.floor) } : null,
     seatSurface: null,
-    inCar: false, liftView: null, liftPress: [], liftShown: null,
+    inCar: false, liftView: null, liftPress: [], liftShown: null, liftBridge: null,
     uiLock: null, fridgeLoad: [], camLock: null, ladder: null, ladderPrompt: false, noJump: false, kitchenAsk: null, meal: null, kitchenQ: false,
     keys: new Set(),
     jumpQueued: false,

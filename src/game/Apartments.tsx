@@ -26,7 +26,9 @@ import { ITEMS, type ItemKind } from "./inventory";
 import { isDrinkName } from "./food";
 import { canvas, tex } from "./textures";
 import { BULK_H, ROOF_FLOOR, ROOF_UP, RUNG, outZ, roofPlan, rungY, type RoofPlan } from "./roof";
-import { inCarAt, inDoorAt, LiftSystem, shaftOf } from "./liftRiders";
+import { inCarAt, inDoorAt, LiftSystem, OPENER_PASS, shaftOf } from "./liftRiders";
+import { npcGender } from "./pedestrians";
+import { POLES, reachArm } from "./arms";
 import { atFloor, CAPACITY, carDir, carFloor, carWorldY, doorsOf, type Car } from "./liftCar";
 import { LIFT_DOOR, SHAFT, SHAFT_WALL, setLiftDoor, venueLayout, type VenueLayout } from "./venueRoom";
 import { bodyColor } from "@/platform/account";
@@ -474,11 +476,11 @@ function ElevatorCar({ m, state, open, shown }: { m: FMats; state: GameState; op
     {/* Its front: the wall either side of its own doors (on the inside; they slide away behind it), a steel
         frame round the opening, the sill; the doors travel with the car (shut while it moves). */}
     {[-1, 1].map((k) => <mesh key={`fr${k}`} position={[k * (LIFT_DOOR / 2 + (s / 2 - 0.04 - LIFT_DOOR / 2) / 2), 1.21, s / 2 - 0.03]} material={m.steel}>{B([s / 2 - 0.04 - LIFT_DOOR / 2, 2.42, 0.04])}</mesh>)}
-    <mesh position={[0, 2.36, s / 2 - 0.03]} material={m.steel}>{B([LIFT_DOOR, 0.12, 0.04])}</mesh>
-    {[-1, 1].map((k) => <mesh key={`jamb${k}`} position={[k * (LIFT_DOOR / 2 + 0.025), 1.15, s / 2 - 0.055]} material={m.liftDoor}>{B([0.05, 2.32, 0.03])}</mesh>)}
-    <mesh position={[0, 2.315, s / 2 - 0.055]} material={m.liftDoor}>{B([LIFT_DOOR + 0.1, 0.04, 0.03])}</mesh>
+    <mesh position={[0, 2.36, s / 2 - 0.03]} material={m.steel}>{B([LIFT_DOOR + 0.02, 0.12, 0.036])}</mesh>
+    {[-1, 1].map((k) => <mesh key={`jamb${k}`} position={[k * (LIFT_DOOR / 2 + 0.015), 1.145, s / 2 - 0.055]} material={m.liftDoor}>{B([0.05, 2.29, 0.03])}</mesh>)}
+    <mesh position={[0, 2.31, s / 2 - 0.055]} material={m.liftDoor}>{B([LIFT_DOOR + 0.08, 0.03, 0.03])}</mesh>
     <mesh position={[0, 0.012, s / 2 + 0.01]} material={m.steel}>{B([LIFT_DOOR + 0.06, 0.012, 0.12])}</mesh>
-    <mesh position={[0, 0.019, s / 2 + 0.01]} material={m.black}>{B([LIFT_DOOR, 0.002, 0.012])}</mesh>
+    <mesh position={[0, 0.0195, s / 2 + 0.01]} material={m.black}>{B([LIFT_DOOR, 0.002, 0.012])}</mesh>
     <group position={[0, 0, s / 2 + 0.07]}><ElevatorDoors open={open} m={m} inside /></group>
     {/* The panel of buttons on the wall beside the door, the floor screen above it. */}
     <group position={[-s / 2 + 0.05, 0, s / 2 - 0.35]} rotation-y={Math.PI / 2}>
@@ -678,7 +680,8 @@ function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, el
     <mesh position={[minX + SHAFT / 2, (HT + 2.3) / 2, hallZ[0] - 0.06]} material={m.hallWall}>{B([LIFT_DOOR, HT - 2.3, 0.12])}</mesh>
     <group position={[minX + SHAFT / 2, 0, hallZ[0]]}>
       {/* The steel frame lines the doorway right through the wall, overlapping it; a steel sill on the floor. */}
-      {[-1, 1].map((sd) => <mesh key={sd} position={[sd * (LIFT_DOOR / 2 + 0.04), 1.16, -0.06]} material={m.steel}>{B([0.1, 2.32, 0.18])}</mesh>)}
+      {/* (The posts stop where the header starts: no two faces overlap.) */}
+      {[-1, 1].map((sd) => <mesh key={sd} position={[sd * (LIFT_DOOR / 2 + 0.04), 1.14, -0.06]} material={m.steel}>{B([0.1, 2.28, 0.18])}</mesh>)}
       <mesh position={[0, 2.33, -0.06]} material={m.steel}>{B([LIFT_DOOR + 0.18, 0.1, 0.18])}</mesh>
       <mesh position={[0, 0.006, -0.06]} material={m.steel}>{B([LIFT_DOOR, 0.012, 0.16])}</mesh>
       <ElevatorDoors open={elevatorOpen} m={m} />
@@ -908,6 +911,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   /** Every building's elevator (shared in a room), and the floors this player called/pressed this frame. */
   const liftSys = useRef<LiftSystem | null>(null);
   const myCalls = useRef<{ b: string; floor: number }[]>([]);
+  const doorsDone = useRef(new WeakSet<object>());
   /** Doors closing behind someone who has walked on: which, how it was used (pushed open: leave; pulled: enter), when. */
   const closing = useRef<{ which: "apartment" | "bedroom" | "bathroom"; kind: "leave" | "enter"; from: [number, number]; fromYaw: number; start: number }[]>([]);
   /** Each floor's bedsheet and the hand holding its corner. */
@@ -996,12 +1000,21 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       const myFloor = lvl && lvl.floor <= APT_FLOORS ? lvl.floor : 1;
       for (const f of state.liftPress) if (bHere) myCalls.current.push({ b: bHere, floor: f });
       state.liftPress = [];
-      const home = state.life.home;
-      lift().update(dt, now, state.liftLink, { b: near ?? null, floor: myFloor, inCar: insideCar, inDoor }, myCalls.current, (bk) => {
+      const home = state.life.home, ls0 = lift();
+      ls0.rented = (bk) => {
         const free = freeFloors(state.worldSeed, bk, timeInfo(state.elapsed).day);
         return Array.from({ length: APT_FLOORS - 1 }, (_, i) => i + 2).filter((f) => !free.includes(f) && !(home?.building === bk && home.floor === f));
-      });
+      };
+      state.liftBridge = ls0.bridge;
+      ls0.update(dt, now, state.liftLink, { b: near ?? null, floor: myFloor, inCar: insideCar, inDoor, ...(meLocal && bHere ? { x: meLocal[0], z: meLocal[1] } : {}) }, myCalls.current);
       myCalls.current = [];
+      // Residents through a lobby's street door: it swings for them (as for anyone).
+      const wall = performance.now() / 1000;
+      for (const u of ls0.doorUses) {
+        if (doorsDone.current.has(u)) continue;
+        doorsDone.current.add(u);
+        state.extraDoorUses = [...state.extraDoorUses.filter((x) => wall - x.start < 30), { key: u.key, leaf: u.leaf, mode: "open", start: wall - (now - u.at), lead: u.lead, pass: u.lead + OPENER_PASS[u.leaf] }];
+      }
       if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") (window as unknown as { __lift?: unknown }).__lift = lift();
     }
     const car: Car | null = bHere ? lift().car(bHere) : null;
@@ -1525,9 +1538,9 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       <LobbyCar state={state} bkey={aptKey(b)} at={[layout.bounds.minX + SHAFT / 2, layout.bounds.minZ + SHAFT / 2]} m={m} />
       <LobbyVisitor state={state} layout={layout} />
     </group>)}
-    {shown.map((fl) => <FloorInterior key={fl.key} lift={() => carShown(fl.key.split("#")[0]!)} sheet={sheetLink(fl.key)} bath={bathLink(fl.key)} kview={kitchen.current.view} lightsOf={lightsOf} bathDoor={() => (state.level?.floor === fl.upper ? bathAngle.current : 0)} fl={fl} state={state} m={m} door={() => doorAngle.current} bedDoor={() => bedAngle.current} fridgeDoor={() => fridgeAngle.current} closetDoor={() => closetAngle.current} elevatorOpen={elevatorOpen(fl.key.split("#")[0]!, fl.upper)} />)}
+    {shown.map((fl) => <FloorInterior key={fl.key} lift={() => carShown(fl.key.split("#")[0]!)} sheet={sheetLink(fl.key)} bath={bathLink(fl.key)} kview={kitchen.current.view} lightsOf={lightsOf} bathDoor={() => (state.level?.floor === fl.upper ? bathAngle.current : 0)} fl={fl} state={state} m={m} door={() => Math.max(state.level?.floor === fl.upper && state.level?.building === fl.key.split("#")[0] ? doorAngle.current : 0, lift().aptDoors.get(fl.key) ?? 0)} bedDoor={() => bedAngle.current} fridgeDoor={() => fridgeAngle.current} closetDoor={() => closetAngle.current} elevatorOpen={elevatorOpen(fl.key.split("#")[0]!, fl.upper)} />)}
     <CarAt state={state} buildings={byKey} m={m} carY={carY} light={carLight} doors={(bkey) => doorsOf(lift().car(bkey))} shown={carShown} />
-    {[0, 1, 2, 3, 4, 5].map((i) => <LiftRider key={i} state={state} get={() => lift().riders[i] ?? null} buildings={byKey} carY={carY} />)}
+    {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => <LiftRider key={i} state={state} get={() => lift().riders[i] ?? null} buildings={byKey} carY={carY} />)}
     <pointLight ref={bathLight} intensity={0} distance={3.4} decay={1.4} color="#fff4e6" />
     <pointLight ref={hallLight} intensity={0} distance={7} decay={1.4} color="#ffefd6" />
     <pointLight ref={mainLight} intensity={0} distance={7} decay={1.4} color="#fff2df" />
@@ -1639,35 +1652,45 @@ function LobbyCar({ state, bkey, at, m }: { state: GameState; bkey: string; at: 
 /** A resident using the elevator: walking to it, riding it (at the car's height), walking off. */
 function LiftRider({ state, get, buildings, carY }: { state: GameState; get: () => LiftRiderWire | null; buildings: Map<string, Building>; carY: (bkey: string) => number }) {
   const rig = useBodyRig();
-  const seedRef = useRef(-1);
+  const idRef = useRef(-1);
   const [color, setColor] = useState(() => bodyColor("male"));
   const phase = useRef(0), at = useRef<{ id: number; x: number; z: number; yaw: number } | null>(null);
+  const keyRef = useRef<THREE.Mesh>(null), tmp = useMemo(() => new THREE.Vector3(), []);
   useFrame((_, dt) => {
     const root = rig.root.current, hips = rig.hips.current, r = get();
     if (!root || !hips) return;
     const b = r ? buildings.get(r.b) : undefined;
     root.visible = !!(r && b);
+    if (keyRef.current) keyRef.current.visible = !!(r && b && r.key);
     if (!r || !b) { at.current = null; return; }
-    if (seedRef.current !== r.seed) { seedRef.current = r.seed; setColor(bodyColor(r.seed % 2 ? "female" : "male")); }
-    // (Eased toward where they are: in a room they arrive a few times a second.)
+    // The same person as on the street (their look comes from who they are).
+    if (idRef.current !== r.id) { idRef.current = r.id; setColor(bodyColor(npcGender(state.worldSeed, r.id))); }
     const a = at.current && at.current.id === r.id ? at.current : (at.current = { id: r.id, x: r.x, z: r.z, yaw: r.yaw });
     const k = 1 - Math.exp(-10 * Math.min(dt, 0.1));
     a.x += (r.x - a.x) * k; a.z += (r.z - a.z) * k; a.yaw += Math.atan2(Math.sin(r.yaw - a.yaw), Math.cos(r.yaw - a.yaw)) * k;
-    const L = venueLayout(b), [x, z] = toWorld(L.frame, a.x, a.z);
-    root.position.set(x, r.riding || r.inCar ? carY(r.b) : floorY(r.floor), z); root.rotation.y = worldYaw(L.frame, a.yaw);
-    void state;
-    // An easy walk (legs and arms swinging), or standing.
+    const L = venueLayout(b), [x, z] = toWorld(L.frame, a.x, a.z), y0 = r.riding || r.inCar ? carY(r.b) : floorY(r.floor);
+    root.position.set(x, y0, z); root.rotation.y = worldYaw(L.frame, a.yaw);
     phase.current += Math.min(dt, 0.1) * (r.walking ? 7.5 : 0);
     const w = r.walking ? 1 : 0, sn = Math.sin(phase.current);
     hips.position.y = 0.95 - 0.02 * w * Math.abs(Math.cos(phase.current));
     rig.thighL.current?.rotation.set(-0.45 * sn * w, 0, 0); rig.thighR.current?.rotation.set(0.45 * sn * w, 0, 0);
     rig.shinL.current?.rotation.set(0.55 * Math.max(0, Math.cos(phase.current)) * w + 0.05, 0, 0); rig.shinR.current?.rotation.set(0.55 * Math.max(0, -Math.cos(phase.current)) * w + 0.05, 0, 0);
-    rig.torso.current?.rotation.set(0.04 * w, 0, 0);
+    rig.torso.current?.rotation.set(0.04 * w + (r.lean ?? 0), 0, 0);
     rig.armL.current?.rotation.set(0.35 * sn * w, 0, 0.1); rig.armR.current?.rotation.set(-0.35 * sn * w, 0, -0.1);
     rig.foreL.current?.rotation.set(-0.2, 0, 0); rig.foreR.current?.rotation.set(-0.2, 0, 0);
     rig.head.current?.rotation.set(0, 0, 0);
+    // A hand out (the key into the lock, a door pushed or pulled), with the key in it while unlocking.
+    if (r.reach && r.reach[3] > 0.001) {
+      const [hx, hz] = toWorld(L.frame, r.reach[0], r.reach[2]);
+      root.updateMatrixWorld(true);
+      reachArm(rig.armR.current, rig.foreR.current, tmp.set(hx, floorY(r.floor) + r.reach[1], hz), POLES.out(-1), r.reach[3]);
+    }
+    if (keyRef.current && r.key && rig.foreR.current) { root.updateMatrixWorld(true); rig.foreR.current.updateWorldMatrix(true, false); handWorld(rig.foreR.current, keyRef.current.position); keyRef.current.rotation.set(0, root.rotation.y, Math.PI / 2); }
   });
-  return <CharacterBody rig={rig} color={color} />;
+  return <>
+    <CharacterBody rig={rig} color={color} />
+    <mesh ref={keyRef} visible={false}><boxGeometry args={[0.012, 0.07, 0.022]} /><meshStandardMaterial color="#d6b34a" metalness={0.8} roughness={0.3} /></mesh>
+  </>;
 }
 
 /** Now and then someone waits in the lobby's armchair (reading their phone). */
