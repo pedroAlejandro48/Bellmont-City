@@ -26,7 +26,7 @@ import { ITEMS, type ItemKind } from "./inventory";
 import { isDrinkName } from "./food";
 import { canvas, tex } from "./textures";
 import { BULK_H, ROOF_FLOOR, ROOF_UP, RUNG, outZ, roofPlan, rungY, type RoofPlan } from "./roof";
-import { riderAt, type RiderNow, type RiderPlaces, type RiderTrip } from "./liftRiders";
+import { RIDER_SLOT, riderAt, scheduledTrip, type RiderNow, type RiderPlaces, type RiderTrip } from "./liftRiders";
 import { LIFT_DOOR, SHAFT, SHAFT_WALL, setLiftDoor, venueLayout, type VenueLayout } from "./venueRoom";
 import { bodyColor } from "@/platform/account";
 
@@ -906,8 +906,9 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   const sleeping = useRef(0);
   const lastLift = useRef<string | null>(null);
   /** Residents using the elevator (one at a time, in the building you're in or near), and when the next comes. */
-  const trip = useRef<{ trip: RiderTrip; places: RiderPlaces; now: RiderNow } | null>(null);
-  const nextTrip = useRef(0);
+  const trip = useRef<{ id: string; trip: RiderTrip; places: RiderPlaces; now: RiderNow } | null>(null);
+  /** Trips called off because a player was using the car. */
+  const calledOff = useRef(new Set<string>());
   const riderPlaces = (b: Building, fl: number): RiderPlaces => {
     const L = venueLayout(b), { minX, minZ, maxZ } = L.bounds, cx = minX + SHAFT / 2, front = minZ + SHAFT;
     const f = floorOf0(b, Math.max(2, Math.min(APT_FLOORS, fl))), hz = f.hallZ[0] + 0.8, dx = f.door.x - 0.5;
@@ -1035,30 +1036,38 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         state.liftLink?.publish({ b: lastLift.current, from: c.floor, to: c.floor, at: 0, active: false });
       }
       lastLift.current = me ? me.building : lastLift.current;
-      // A resident riding it (the building you're in, or the nearest one): the car busy, moving with them.
+      // A resident riding it (the building you're in, or the nearest one): the car busy, moving with them. Who, when
+      // and where come from the shared clock (riders' schedule), so everyone in a room sees the same one; one is
+      // called off if a player is using the car meanwhile (everyone sees that use too).
       {
         const inside = state.level?.building ?? (inter?.phase === "inside" ? inter.key.split("#")[0] : undefined);
         let near = inside;
         if (!near) { let best = 90; for (const [k, bb] of byKey) { const d = Math.hypot(bb.x - p.x, bb.z - p.z); if (d < best) { best = d; near = k; } } }
-        const tr = trip.current;
-        if (tr && (tr.trip.b !== near || tr.now.done)) { trip.current = null; nextTrip.current = now + 20 + Math.random() * 40; }
-        const nb = near ? byKey.get(near) : undefined;
-        if (!trip.current && nb && near && now >= nextTrip.current && !(me && me.building === near) && !carOf(near).busy) {
-          // Someone who lives here: to or from a rented floor (not yours).
-          const free = freeFloors(state.worldSeed, near, timeInfo(state.elapsed).day), home = state.life.home;
-          const rented = Array.from({ length: APT_FLOORS - 1 }, (_, i) => i + 2).filter((f) => !free.includes(f) && !(home?.building === near && home.floor === f));
-          if (rented.length) {
-            const f = rented[Math.floor(Math.random() * rented.length)]!, up = Math.random() < 0.5;
-            const t: RiderTrip = { b: near, from: up ? 1 : f, to: up ? f : 1, t0: now, seed: Math.floor(Math.random() * 1e6), car0: carShown(near).floor };
-            const places = riderPlaces(nb, f);
-            trip.current = { trip: t, places, now: riderAt(t, places, 0) };
-          } else nextTrip.current = now + 30;
+        const nb = near ? byKey.get(near) : undefined, T = Date.now() / 1000;
+        let cur: typeof trip.current = null;
+        if (nb && near) {
+          // (The same rented floors for everyone in the world; one that turns out to be yours, the rider still rides
+          // to, but isn't seen there.)
+          const free = freeFloors(state.worldSeed, near, timeInfo(state.elapsed).day);
+          const rented = Array.from({ length: APT_FLOORS - 1 }, (_, i) => i + 2).filter((f) => !free.includes(f));
+          const k = Math.floor(T / RIDER_SLOT);
+          for (const kk of [k, k - 1]) {
+            const t = scheduledTrip(near, state.worldSeed, kk, rented), id = t ? `${near}|${kk}` : "";
+            if (!t || T < t.t0 || calledOff.current.has(id)) continue;
+            const places = trip.current?.id === id ? trip.current.places : riderPlaces(nb, t.from > 1 ? t.from : t.to);
+            const nowR = riderAt(t, places, T - t.t0);
+            if (nowR.done) continue;
+            // A player using the car (you, past calling it; or anyone else): this one doesn't happen.
+            const playerOn = (me && me.building === near && me.phase !== "waiting") || others.some((u) => u.b === near && u.active);
+            if (playerOn) { calledOff.current.add(id); continue; }
+            cur = { id, trip: t, places, now: nowR };
+            break;
+          }
         }
-        const cur = trip.current;
+        trip.current = cur;
         if (cur) {
-          cur.now = riderAt(cur.trip, cur.places, now - cur.trip.t0);
-          const c = carOf(cur.trip.b), k = cur.now.car;
-          c.floor = k.floor; c.to = k.to; c.t0 = cur.trip.t0 + k.since; c.busy = true;
+          const c = carOf(cur.trip.b), kc = cur.now.car;
+          c.floor = kc.floor; c.to = kc.to; c.t0 = now - (T - (cur.trip.t0 + kc.since)); c.busy = true;
           if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") (window as unknown as { __trip?: unknown }).__trip = cur;
         }
       }
@@ -1743,7 +1752,8 @@ function LiftRider({ state, get, buildings, carY }: { state: GameState; get: () 
     const root = rig.root.current, hips = rig.hips.current, cur = get();
     if (!root || !hips) return;
     const r = cur?.now.rider, b = cur ? buildings.get(cur.trip.b) : undefined;
-    root.visible = !!(r && r.visible && b);
+    const home = state.life.home, mine = !!cur && !!r && home?.building === cur.trip.b && home.floor === r.floor && !r.riding;
+    root.visible = !!(r && r.visible && b) && !mine;
     if (!cur || !r || !b || !root.visible) return;
     if (seedRef.current !== cur.trip.seed) { seedRef.current = cur.trip.seed; setColor(bodyColor(cur.trip.seed % 2 ? "female" : "male")); }
     const L = venueLayout(b), [x, z] = toWorld(L.frame, r.x, r.z);

@@ -78,3 +78,26 @@ export function riderAt(trip: RiderTrip, pl: RiderPlaces, t: number): RiderNow {
   }
   return { done: t >= tEnd, car, doors, rider };
 }
+
+// ---------- the schedule (the same for everyone in a room: it's all from the clock) ----------
+/** A trip may start once in each slot of this many seconds (of the shared clock), a few seconds into it. */
+export const RIDER_SLOT = 90;
+function hash(n: number) {
+  let h = Math.imul(n ^ 0x5bd1e995, 0x27d4eb2d); h ^= h >>> 15; h = Math.imul(h, 0x165667b1); h ^= h >>> 13;
+  return (h >>> 0) / 4294967296;
+}
+const keyOf = (b: string) => { let h = 7; for (const ch of b) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0; return h; };
+/** The trip in slot `k` at building `b` (or none): who goes from where to where, when (shared-clock seconds), and
+ * where the car was (where the slot before left it). */
+export function scheduledTrip(b: string, worldSeed: number, k: number, rented: number[]): RiderTrip | null {
+  const one = (k: number) => {
+    const base = keyOf(b) * 131 + worldSeed * 977 + k * 7919;
+    if (!rented.length || hash(base + 1) < 0.15) return null;
+    const floor = rented[Math.floor(hash(base + 2) * rented.length)]!, up = hash(base + 3) < 0.5;
+    return { from: up ? 1 : floor, to: up ? floor : 1, t0: k * RIDER_SLOT + 2 + hash(base + 4) * 10, seed: Math.floor(hash(base + 5) * 1e6) };
+  };
+  const t = one(k);
+  if (!t) return null;
+  const prev = one(k - 1);
+  return { b, ...t, car0: prev ? prev.to : 1 };
+}
