@@ -1,3 +1,4 @@
+import { NO_KITCHEN, kitchenAt } from "./aptShare";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -31,7 +32,8 @@ function Utensil({ kind, m }: { kind: "fork" | "knife" | "spoon"; m: { steel: TH
  * in each hand.
  */
 export function KitchenThings({ fl, state, view, m }: { fl: AptFloor; state: GameState; view: KView; m: { white: THREE.Material; steel: THREE.Material; s: (c: string, r?: number, mt?: number) => THREE.MeshStandardMaterial } }) {
-  const K = fl.kitchen, cb = K.cupboard, k = state.life.kitchen;
+  // (Read anew each time it's drawn: yours, the one you're a guest in, or nothing.)
+  const K = fl.kitchen, cb = K.cupboard, k = kitchenAt(state, fl.key) ?? NO_KITCHEN;
   // What's where only changes now and then: redrawn when it does.
   const [, rerender] = useState(0);
   const sig = useRef("");
@@ -55,7 +57,8 @@ export function KitchenThings({ fl, state, view, m }: { fl: AptFloor; state: Gam
 
   useFrame(() => {
     const t = state.simulationTime;
-    const s = `${k.cupboard.join()}|${k.rack.join()}|${k.sink.join()}|${k.stoves.map((b) => (b ? `${b.ware}${b.cans.join()}${b.start}` : "-")).join()}|${k.table.map((x) => `${x.chair}${x.cans.join()}${x.eaten}${x.silver}`).join()}|${JSON.stringify(k.hands)}|${view.drying.join()}|${view.washing}|${view.can}|${view.choosing}|${view.eat?.t0}|${k.stoves.map((_, i) => `${stoveState(k, i, state.elapsed, GAME_MINUTE)}${Math.round(burnLevel(cookedFor(k, i, state.elapsed, GAME_MINUTE)) * 20)}`).join()}|${view.holdL}|${view.holdR}|${view.stream}|${Math.round(view.pourK * 12)}|${view.eat ? Math.round((state.simulationTime - view.eat.t0) * 3) : ""}`;
+    const k = kitchenAt(state, fl.key) ?? NO_KITCHEN;
+    const s = `${k === NO_KITCHEN ? "none" : ""}${k.cupboard.join()}|${k.rack.join()}|${k.sink.join()}|${k.stoves.map((b) => (b ? `${b.ware}${b.cans.join()}${b.start}` : "-")).join()}|${k.table.map((x) => `${x.chair}${x.cans.join()}${x.eaten}${x.silver}`).join()}|${JSON.stringify(k.hands)}|${view.drying.join()}|${view.washing}|${view.can}|${view.choosing}|${view.eat?.t0}|${k.stoves.map((_, i) => `${stoveState(k, i, state.elapsed, GAME_MINUTE)}${Math.round(burnLevel(cookedFor(k, i, state.elapsed, GAME_MINUTE)) * 20)}`).join()}|${view.holdL}|${view.holdR}|${view.stream}|${Math.round(view.pourK * 12)}|${view.eat ? Math.round((state.simulationTime - view.eat.t0) * 3) : ""}`;
     if (s !== sig.current) { sig.current = s; rerender((n) => n + 1); }
     // The doors, the lid, the tap.
     if (doorL.current) doorL.current.rotation.y = view.door * 1.6;

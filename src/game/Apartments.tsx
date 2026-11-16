@@ -1,4 +1,5 @@
 import { handsBusy, needFreeHands } from "./handsHeld";
+import { AptShare, fridgeAt, fridgeOf } from "./aptShare";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -530,9 +531,9 @@ const FOOD_COLORS = ["#c8202a", "#f3d23b", "#f28a1a", "#b5c94a", "#e7d8b0", "#6b
 const DRINK_COLORS = ["#6fb6ff", "#f28a1a", "#5a2d1a", "#ee3333", "#9fd17a"];
 const hashOf = (t: string) => { let h = 0; for (const ch of t) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; };
 /** What's in the fridge, on its shelves: up to 15 things to eat, five a shelf (a shape and colour for each). */
-function FridgeContents({ state, fridge, m }: { state: GameState; fridge: AptFurniture; m: FMats }) {
+function FridgeContents({ state, fridge, m, aptKey: akey }: { state: GameState; fridge: AptFurniture; m: FMats; aptKey: string }) {
   const [list, setList] = useState<string[]>([]);
-  useFrame(() => { const food = fridgeSplit(state.life.fridge).food.slice(0, FRIDGE_FOOD); if (food.join("|") !== list.join("|")) setList(food); });
+  useFrame(() => { const food = fridgeSplit(fridgeAt(state, akey) ?? []).food.slice(0, FRIDGE_FOOD); if (food.join("|") !== list.join("|")) setList(food); });
   const back = -fridge.d / 2 + 0.04;
   return <group>
     {list.map((name, i) => {
@@ -544,9 +545,9 @@ function FridgeContents({ state, fridge, m }: { state: GameState; fridge: AptFur
   </group>;
 }
 /** The drinks in the fridge's door bins: up to 9, three a bin. */
-function DoorDrinks({ state, fridge }: { state: GameState; fridge: AptFurniture }) {
+function DoorDrinks({ state, fridge, aptKey: akey }: { state: GameState; fridge: AptFurniture; aptKey: string }) {
   const [list, setList] = useState<string[]>([]);
-  useFrame(() => { const d = fridgeSplit(state.life.fridge).drinks.slice(0, FRIDGE_DRINKS); if (d.join("|") !== list.join("|")) setList(d); });
+  useFrame(() => { const d = fridgeSplit(fridgeAt(state, akey) ?? []).drinks.slice(0, FRIDGE_DRINKS); if (d.join("|") !== list.join("|")) setList(d); });
   const mats = useMemo(() => DRINK_COLORS.map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.25, transparent: true, opacity: 0.85 })), []);
   const looks = useLooks();
   return <group>
@@ -730,7 +731,8 @@ function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, el
       </group>
     </group>
     <BathroomThings fl={fl} state={state} link={bath} m={m} lightOn={() => lightsOf(fl.key).bathroom} />
-    {state.life.home?.building === fl.key.split("#")[0] && state.life.home?.floor === fl.upper && <KitchenThings fl={fl} state={state} view={kview} m={m} />}
+    {/* (Yours, or one you're a guest in: its kitchen's things; otherwise nothing shows.) */}
+    <KitchenThings fl={fl} state={state} view={kview} m={m} />
     {/* The closet's two doors, hinged at its sides, handles by the middle; inside, your clothes on their hangers. */}
     <group position={[closet.x, 0, closet.z]} rotation-y={closet.rot}>
       {state.life.home?.building === fl.key.split("#")[0] && state.life.home?.floor === fl.upper && <ClosetClothes state={state} closet={closet} m={m} />}
@@ -742,7 +744,7 @@ function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, el
     </group>
     {/* The fridge's door, hinged on its right: the right hand pulls it open by the handle and pushes it shut. */}
     <group position={[fridge.x, 0, fridge.z]} rotation-y={fridge.rot}>
-      {state.life.home?.building === fl.key.split("#")[0] && state.life.home?.floor === fl.upper && <FridgeContents state={state} fridge={fridge} m={m} />}
+      <FridgeContents state={state} fridge={fridge} m={m} aptKey={fl.key} />
       <group position={[fridge.w / 2, 0, fridge.d / 2 - 0.06]}>
         <group ref={fridgeLeaf}>
           {/* The door: white outside, its inside liner lit by the fridge's light; its handle by the left edge. */}
@@ -751,7 +753,7 @@ function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, el
           {[0.7, 1.45].map((y) => <mesh key={y} position={[-(fridge.w - 0.08), y, 0.09]} material={m.steel}>{B([0.03, 0.3, 0.03])}</mesh>)}
           {FRIDGE_BINS.map((y) => <mesh key={y} position={[-fridge.w / 2, y, -0.05]} material={m.s("#eef3f5", 0.4)}>{B([fridge.w - 0.14, 0.04, 0.08])}</mesh>)}
           {FRIDGE_BINS.map((y) => <mesh key={`f${y}`} position={[-fridge.w / 2, y + 0.06, -0.088]} material={m.glass}>{B([fridge.w - 0.14, 0.1, 0.006])}</mesh>)}
-          {state.life.home?.building === fl.key.split("#")[0] && state.life.home?.floor === fl.upper && <DoorDrinks state={state} fridge={fridge} />}
+          <DoorDrinks state={state} fridge={fridge} aptKey={fl.key} />
         </group>
       </group>
     </group>
@@ -912,6 +914,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   const liftSys = useRef<LiftSystem | null>(null);
   const myCalls = useRef<{ b: string; floor: number }[]>([]);
   const doorsDone = useRef(new WeakSet<object>());
+  const aptShare = useRef(new AptShare());
   /** Doors closing behind someone who has walked on: which, how it was used (pushed open: leave; pulled: enter), when. */
   const closing = useRef<{ which: "apartment" | "bedroom" | "bathroom"; kind: "leave" | "enter"; from: [number, number]; fromYaw: number; start: number }[]>([]);
   /** Each floor's bedsheet and the hand holding its corner. */
@@ -1153,7 +1156,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         const fwd: [number, number] = [Math.sin(yaw), Math.cos(yaw)], lft: [number, number] = [Math.cos(yaw), -Math.sin(yaw)];
         const step = smooth(loadStep.current) * 0.28, at: [number, number] = [stand[0] + fwd[0] * step, stand[1] + fwd[1] * step];
         if (!load.current && state.fridgeLoad.length && loadStep.current >= 1) {
-          const next = state.fridgeLoad.shift()!, drink = isDrinkName(next.name), split = fridgeSplit(state.life.fridge);
+          const next = state.fridgeLoad.shift()!, drink = isDrinkName(next.name), split = fridgeSplit(fridgeOf(state));
           if (next.bag && state.groceryBag) { const i = state.groceryBag.indexOf(next.bag); if (i >= 0) state.groceryBag.splice(i, 1); if (!state.groceryBag.length) state.groceryBag = null; }
           let slot: [number, number, number];
           if (drink) {
@@ -1182,7 +1185,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
           const low = L.drink ? 0 : L.slot[1] < 0.7 ? 0.6 : L.slot[1] < 1.0 ? 0.25 : 0;
           crouch = low * smooth((t - 0.2) / 0.5) * (1 - k3);
           lean += (L.drink ? 0.05 : 0.22) * k2 * (1 - k3);
-          if (!L.placed && t >= 0.9) { L.placed = true; state.life.fridge.push(L.name); }
+          if (!L.placed && t >= 0.9) { L.placed = true; fridgeOf(state).push(L.name); }
           if (t >= 1.3) load.current = null;
         }
         if (loadStep.current > 0) script = scriptFrom({ x: at[0], z: at[1], yaw, crouch, lean, left: null, right });
@@ -1322,7 +1325,10 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     kr.watch(state);
     if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") (window as unknown as { __kitchen?: KitchenRun }).__kitchen = kr;
     const ownFloor = !!floor && !!lvl && state.life.home?.building === lvl.building && state.life.home.floor === lvl.floor;
-    const kc: KCtx | null = ownFloor && floor ? (() => { const [klx, klz] = toLocal(floor.frame, p.x, p.z); return { state, fl: floor, now, lx: klx, lz: klz, yaw: state.rotY - floor.frame.rot, world: (x: number, z: number) => toW(x, z), y0: yNow }; })() : null;
+    // (Another player's apartment you're in: its kitchen is shared with you.)
+    const guestKey = floor && lvl && !ownFloor && (state.liftLink?.homes() ?? []).some((h) => h.b === lvl.building && h.floor === lvl.floor) ? floor.key : null;
+    aptShare.current.step(state, dt, now, guestKey, kitchen.current.busy);
+    const kc: KCtx | null = (ownFloor || (!!floor && state.aptHere?.key === floor.key)) && floor ? (() => { const [klx, klz] = toLocal(floor.frame, p.x, p.z); return { state, fl: floor, now, lx: klx, lz: klz, yaw: state.rotY - floor.frame.rot, world: (x: number, z: number) => toW(x, z), y0: yNow }; })() : null;
     if (kc && !eRide && !move.current) {
       if (!kr.busy) kr.answer(kc);
       lastKc.current = kc;
@@ -1420,7 +1426,9 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       const dx = floor.door.x, wz = floor.wallZ;
       const yawL = state.rotY - floor.frame.rot, sees = (tx: number, tz: number, cone?: number) => facesAt(yawL, lx, lz, tx, tz, cone);
       const fridgeAt = floor.furniture.find((f) => f.type === "fridge")!;
-      const kp = mine && kc ? kr.prompt(kc) : null;
+      // (As a guest in someone's apartment, everything but their bed and closet is yours to use.)
+      const use = mine || state.aptHere?.key === floor.key;
+      const kp = use && kc ? kr.prompt(kc) : null;
       if (kp) {
         show(kp.at[0], kp.at[2], kp.at[1], kp.label);
         if (kp.act) act = kp.act;
@@ -1458,7 +1466,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
           move.current = { kind: "pull", which: "apartment", t0: now, plan: null, from: [fx, fz], fromYaw: fyaw };
           state.keys.clear();
         };
-      } else if (mine && switchNear(floor, lx, lz, yawL)) {
+      } else if (use && switchNear(floor, lx, lz, yawL)) {
         const which = switchNear(floor, lx, lz, yawL)!, sw = lightSwitches(floor)[which], lt = lightsOf(floor.key);
         show(sw.x, sw.z, 1.45, lt[which] ? "E  LIGHT OFF" : "E  LIGHT ON");
         act = () => {
@@ -1471,7 +1479,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
           ]), which: which === "bedroom" ? "bedroom" : "bathroom" };
           state.keys.clear();
         };
-      } else if (mine && lz > floor.bath.z0 && lx > floor.bath.x0 && lx < floor.bath.x1 && bathNear(floor, lx, lz, yawL)) {
+      } else if (use && lz > floor.bath.z0 && lx > floor.bath.x0 && lx < floor.bath.x1 && bathNear(floor, lx, lz, yawL)) {
         const what = bathNear(floor, lx, lz, yawL)!, from: [number, number] = [lx, lz], fromYaw = state.rotY - floor.frame.rot, carry = { basket: false, bag: !!state.groceryBag };
         const B = floor.bath;
         if (what === "sink") {
@@ -1484,7 +1492,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
           show((B.shower.x0 + B.shower.x1) / 2, B.shower.curtainZ, 2.2, "E  SHOWER");
           act = () => { if (!needFreeHands(state, "showering")) return; move.current = { kind: "shower", t0: now, plan: makePlan([walkSeg(from, fromYaw, showerSpots(floor).out, 0, carry)]) }; state.keys.clear(); };
         }
-      } else if (mine && doorSide(floor, "bathroom", lx, lz) && sees(floor.hinged.bathroom.ox - 0.5, floor.hinged.bathroom.oz)) {
+      } else if (use && doorSide(floor, "bathroom", lx, lz) && sees(floor.hinged.bathroom.ox - 0.5, floor.hinged.bathroom.oz)) {
         // The bathroom door (kept shut): pushed open going in, pulled open coming out.
         const F = floor.hinged.bathroom, [u, v] = doorSide(floor, "bathroom", lx, lz)!, fyaw = state.rotY - floor.frame.rot - F.theta;
         show(F.ox - 0.5, F.oz + (v < 0 ? -0.35 : 0.25), 2.1, v < 0 ? "E  BATHROOM" : "E  OUT");
@@ -1492,7 +1500,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
           move.current = v < 0 ? { kind: "push", which: "bathroom", t0: now, plan: null, from: [u, v], fromYaw: fyaw } : { kind: "pull", which: "bathroom", t0: now, plan: null, from: [-u, v], fromYaw: -fyaw };
           state.keys.clear();
         };
-      } else if (mine && bedroomSide(floor, lx, lz) && sees(floor.divX, (floor.bedroomDoor[0] + floor.bedroomDoor[1]) / 2)) {
+      } else if (use && bedroomSide(floor, lx, lz) && sees(floor.divX, (floor.bedroomDoor[0] + floor.bedroomDoor[1]) / 2)) {
         // The bedroom door (kept shut): pushed open going in, pulled open coming out.
         const F = floor.hinged.bedroom, [u, v] = bedroomSide(floor, lx, lz)!, fyaw = state.rotY - floor.frame.rot - F.theta;
         const [px, pz] = [F.ox + -0.5 * Math.cos(F.theta) + (v < 0 ? -0.2 : 0.2) * Math.sin(F.theta), F.oz + 0.5 * Math.sin(F.theta) + (v < 0 ? -0.2 : 0.2) * Math.cos(F.theta)];
@@ -1510,7 +1518,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
           move.current = { kind: "bed", phase: "in", t0: now, flap: null, plan: makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, bedSpots(floor).S, -Math.PI / 2, { basket: false, bag: !!state.groceryBag })]) };
           state.keys.clear();
         };
-      } else if (mine && Math.hypot(lx - floor.spots.fridge[0], lz - floor.spots.fridge[1]) < 1.0 && sees(fridgeAt.x, fridgeAt.z)) {
+      } else if (use && Math.hypot(lx - floor.spots.fridge[0], lz - floor.spots.fridge[1]) < 1.0 && sees(fridgeAt.x, fridgeAt.z)) {
         show(floor.spots.fridge[0] + 0.5, floor.spots.fridge[1], 2.0, "E  FRIDGE");
         act = () => {
           const fz = floor.furniture.find((f) => f.type === "fridge")!, stand: [number, number] = [floor.spots.fridge[0], floor.spots.fridge[1] - 0.05];
@@ -1521,14 +1529,14 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         const c = closetNear(floor, lx, lz)!, stand: [number, number] = [c.x + Math.sin(c.rot) * (c.d / 2 + 0.62), c.z + Math.cos(c.rot) * (c.d / 2 + 0.62)];
         show(c.x, c.z + 0.4, 2.2, "E  CLOSET");
         act = () => { if (!needFreeHands(state, "changing your clothes")) return; move.current = { kind: "closet", phase: "open", t0: now, plan: makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, stand, c.rot + Math.PI, { basket: false, bag: !!state.groceryBag })]) }; state.keys.clear(); };
-      } else if (mine && chairNear(floor, lx, lz) !== null && sees(floor.items[chairNear(floor, lx, lz)!]!.x, floor.items[chairNear(floor, lx, lz)!]!.z, 1.3)) {
+      } else if (use && chairNear(floor, lx, lz) !== null && sees(floor.items[chairNear(floor, lx, lz)!]!.x, floor.items[chairNear(floor, lx, lz)!]!.z, 1.3)) {
         const idx = chairNear(floor, lx, lz)!, c = floor.items[idx]!;
         show(c.x - c.f[0] * CHAIR.back, c.z - c.f[1] * CHAIR.back, 1.5, "E  SIT");
         act = () => {
           const plan = planSit(floor, idx, lx, lz, state.rotY - floor.frame.rot);
           if (plan) { state.seat = { room: floor.key, plan, phase: "sit", startedAt: now }; state.keys.clear(); state.jumpQueued = false; }
         };
-      } else if (mine && seatNear(floor, lx, lz) && sees(seatNear(floor, lx, lz)!.x, seatNear(floor, lx, lz)!.z, 1.3)) {
+      } else if (use && seatNear(floor, lx, lz) && sees(seatNear(floor, lx, lz)!.x, seatNear(floor, lx, lz)!.z, 1.3)) {
         const st = seatNear(floor, lx, lz)!;
         show(st.x, st.z, 1.3, "E  SIT");
         act = () => { move.current = { kind: "sit", phase: "down", t0: now, seat: st, plan: makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, st.approach, st.yaw, { basket: false, bag: !!state.groceryBag })]) }; state.keys.clear(); };

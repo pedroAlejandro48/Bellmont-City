@@ -6,6 +6,7 @@ import { lifeEvent } from "@/game/lifeRuntime";
 import { canConsume, consume } from "@/game/needs";
 import { foodValue } from "@/game/shops";
 import { toast, type GameState } from "@/game/state";
+import { fridgeOf } from "@/game/aptShare";
 
 /** The fridge holds 15 things to eat on its shelves and 9 drinks in its door. */
 export const FRIDGE_FOOD = 15, FRIDGE_DRINKS = 9;
@@ -16,10 +17,11 @@ export const fridgeSplit = (list: string[]) => ({ food: list.filter((n) => !isDr
 export function FridgePanel({ state, onClose }: { state: GameState; onClose: () => void }) {
   const [, tick] = useState(0), life = state.life;
   const held = (["left", "right"] as const).map((h) => state.hands[h]).filter((h): h is NonNullable<typeof h> => !!h && (h.items?.length ?? 0) > 0);
-  const { food, drinks } = fridgeSplit(life.fridge);
+  const fridge = fridgeOf(state);
+  const { food, drinks } = fridgeSplit(fridge);
   // Room counts what's already on its way in.
   const room = (name: string) => {
-    const all = [...life.fridge, ...state.fridgeLoad.map((l) => l.name)], split = fridgeSplit(all);
+    const all = [...fridge, ...state.fridgeLoad.map((l) => l.name)], split = fridgeSplit(all);
     return isDrinkName(name) ? split.drinks.length < FRIDGE_DRINKS : split.food.length < FRIDGE_FOOD;
   };
   // Storing: the character puts each thing in by hand (Apartments), food on the shelves, drinks in the door.
@@ -44,7 +46,7 @@ export function FridgePanel({ state, onClose }: { state: GameState; onClose: () 
   const eat = (name: string) => {
     const slot = addItem(life.inventory, kindByName(name));
     if (slot < 0) { toast(state, "Your inventory is full", "warn", "Make room for it first."); return; }
-    life.fridge.splice(life.fridge.indexOf(name), 1);
+    fridge.splice(fridge.indexOf(name), 1);
     toast(state, `${name} → slot ${slot + 1}`, "info", "Hold it (its number), then E to " + (isDrinkName(name) ? "drink" : "eat") + " it.");
     tick((n) => n + 1);
   };

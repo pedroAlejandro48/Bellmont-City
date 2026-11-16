@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { APT_FLOORS } from "@/game/apartments";
 import type { GameState } from "@/game/state";
+import { fridgeOf, kitchenOf } from "@/game/aptShare";
 import { FridgePanel } from "./FridgePanel";
 import { CLOSET_MAX } from "@/game/life";
 import { CANS, CAN_INFO, CAPACITY, mealEffect, type CanKind, type WareKind } from "@/game/pantry";
@@ -49,7 +50,7 @@ export function AptPanels({ state }: { state: GameState }) {
 
 /** The counter beside the sink: take a plate, a bowl, a cup or silverware (one hand each). */
 function RackPanel({ state, onClose }: { state: GameState; onClose: () => void }) {
-  const k = state.life.kitchen, count = (w: WareKind) => k.rack.filter((x) => x === w).length;
+  const k = kitchenOf(state), count = (w: WareKind) => k.rack.filter((x) => x === w).length;
   const take = (w: WareKind) => { state.kitchenAsk = { rack: w }; onClose(); };
   const newOnes = (state.groceryBag ?? []).filter((w) => w === "plate" || w === "bowl" || w === "cup" || w === "glass" || w === "silverware").length;
   const opts: [WareKind, string, string][] = [["plate", "🍽️", "Plate"], ["bowl", "🥣", "Bowl"], ["cup", "☕", "Cup"], ["glass", "🥛", "Glass"], ["silverware", "🍴", "Silverware"]];
@@ -65,8 +66,8 @@ function RackPanel({ state, onClose }: { state: GameState; onClose: () => void }
 }
 /** The stove: which cans go in the pot (up to three) or pan (two), from the fridge; then it cooks. */
 function CookPanel({ state, onClose }: { state: GameState; onClose: () => void }) {
-  const k = state.life.kitchen, burner = state.kitchenAsk?.burner ?? 0, ware = k.stoves[burner]?.ware ?? "pot", cap = CAPACITY[ware];
-  const have = CANS.map((c) => ({ c, n: state.life.fridge.filter((f) => f === CAN_INFO[c].name).length })).filter((x) => x.n > 0);
+  const k = kitchenOf(state), burner = state.kitchenAsk?.burner ?? 0, ware = k.stoves[burner]?.ware ?? "pot", cap = CAPACITY[ware];
+  const have = CANS.map((c) => ({ c, n: fridgeOf(state).filter((f) => f === CAN_INFO[c].name).length })).filter((x) => x.n > 0);
   const [pick, setPick] = useState<CanKind[]>([]);
   const add = (c: CanKind) => { if (pick.length < cap && pick.filter((x) => x === c).length < (have.find((h) => h.c === c)?.n ?? 0)) setPick([...pick, c]); };
   const drop = (i: number) => setPick(pick.filter((_, j) => j !== i));

@@ -1,4 +1,5 @@
 import type { AptClaim, LiftLink, LiftPeer, LiftSnap } from "@/game/state";
+import type { AptDoc } from "@/game/aptShare";
 const isClaim = (v: unknown): v is AptClaim => { const c = v as AptClaim | null; return typeof c === "object" && c !== null && typeof c.b === "string" && typeof c.floor === "number" && typeof c.locked === "boolean"; };
 import type { NamedRoom, Peer } from "@/platform/realtime";
 
@@ -14,7 +15,8 @@ const isPeer = (v: unknown): v is LiftPeer => { const p = v as LiftPeer | null; 
  * building, on which floor, in a car, in a doorway) — which the runner uses for the doors and the car's room.
  */
 export function makeLiftLink(channel: NamedRoom): LiftLink {
-  let seq = 0, reqId = 0, mine: Req[] = [], lastMe = "", lastHome = "";
+  let seq = 0, reqId = 0, mine: Req[] = [], lastMe = "", lastHome = "", lastApts = "";
+  const isDoc = (v: unknown): v is AptDoc => { const d = v as AptDoc | null; return typeof d === "object" && d !== null && typeof d.key === "string" && typeof d.n === "number" && typeof d.j === "string"; };
   const seenReq = new Map<string, number>();
   let last: { stamp: unknown; snap: LiftSnap | null; n: number } | null = null;
   const host = () => {
@@ -65,6 +67,13 @@ export function makeLiftLink(channel: NamedRoom): LiftLink {
       lastHome = key;
       void channel.presence({ aptHome: h }).catch(() => {});
     },
+    setApts: (docs) => {
+      const key = JSON.stringify(docs);
+      if (key === lastApts) return;
+      lastApts = key;
+      void channel.presence({ aptDocs: docs }).catch(() => {});
+    },
+    apts: () => channel.peers().filter((p) => !p.sameTab).flatMap((p) => (Array.isArray(p.presence["aptDocs"]) ? (p.presence["aptDocs"] as unknown[]).filter(isDoc) : [])),
     homes: () => channel.peers().filter((p) => !p.sameTab).map((p) => p.presence["aptHome"]).filter(isClaim),
   };
 }

@@ -94,6 +94,9 @@ export type LiftLink = {
   /** Each player's apartment (building, floor) and whether its door is locked: nobody else can rent it. */
   setHome: (h: AptClaim | null) => void;
   homes: () => AptClaim[];
+  /** Apartments' shared kitchens (see aptShare). */
+  setApts: (docs: import("./aptShare").AptDoc[]) => void;
+  apts: () => import("./aptShare").AptDoc[];
 };
 export type AptClaim = { b: string; floor: number; locked: boolean };
 /** Inside (or going into, or out of) a restaurant. */
@@ -182,6 +185,8 @@ export type GameState = {
   liftShown: { b: string; floors: number[] } | null;
   /** The street's people going into apartment buildings and coming out (set by the apartments). */
   liftBridge: import("./liftRiders").LiftBridge | null;
+  /** Another player's apartment you're in (its kitchen and fridge, shared; your own hands). */
+  aptHere: { key: string; kitchen: import("./kitchen").Kitchen; fridge: string[] } | null;
   /** Seated somewhere that isn't a park bench or a restaurant chair (an apartment's couch, dining chair or desk):
    * where take-out food can be set down (world; the hands' spots are the point ± the sideways step). */
   seatSurface: { x: number; y: number; z: number; yaw: number; lx: number; lz: number } | null;
@@ -344,7 +349,7 @@ export function createState(save: SaveData): GameState {
     extraDoorUses: [],
     level: save.apt && save.apt.floor >= 2 ? { building: save.apt.building, floor: save.apt.floor, y: floorY(save.apt.floor) } : null,
     seatSurface: null,
-    inCar: false, liftView: null, liftPress: [], liftShown: null, liftBridge: null,
+    inCar: false, liftView: null, liftPress: [], liftShown: null, liftBridge: null, aptHere: null,
     uiLock: null, fridgeLoad: [], camLock: null, ladder: null, ladderPrompt: false, noJump: false, kitchenAsk: null, meal: null, kitchenQ: false,
     keys: new Set(),
     jumpQueued: false,

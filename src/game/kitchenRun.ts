@@ -11,6 +11,7 @@ import {
 import { lifeEvent } from "./lifeRuntime";
 import { CAN_INFO, CAPACITY, COOK_MINUTES, canByName, isWare, mealEffect, type CanKind, type WareKind } from "./pantry";
 import { toast, type GameState } from "./state";
+import { fridgeOf, kitchenOf } from "./aptShare";
 
 /** What the kitchen's things show this moment (set by the moves; read by the drawing). */
 export type KView = {
@@ -45,7 +46,7 @@ export class KitchenRun {
   private canTakeRight(s: GameState) { return handFree(s, "right") || (!!this.k(s).hands.right && !holdingOther(s, "right") && handFree(s, "left")); }
   /** Makes the right hand free for taking something (moving its kitchen thing to the left hand). */
   private rightFree(s: GameState) { const h = this.k(s).hands; if (h.right && handFree(s, "left")) { h.left = h.right; h.right = null; } }
-  private k(s: GameState): Kitchen { return s.life.kitchen; }
+  private k(s: GameState): Kitchen { return kitchenOf(s); }
   private carry(s: GameState): Carry { const h = this.k(s).hands; return { left: !!h.left, right: !!h.right }; }
   private go(c: Ctx, segs: KSeg[], on: (ev: string) => void) { this.mv = { plan: kplan(segs), t0: c.now, prev: -1, on, pausedAt: null }; c.state.keys.clear(); }
 
@@ -163,7 +164,8 @@ export class KitchenRun {
     // A full plate: to the table, in front of a free chair.
     const plateHand = (["left", "right"] as const).find((x) => !!h[x] && isDish(h[x]!.ware) && !!h[x]!.food);
     if (plateHand) {
-      const places = c.fl.kitchen.places, chair = freePlace(k, places.map((p) => p.chair));
+      // The place you're facing (whether someone's sitting there or not), else the first free one.
+      const places = c.fl.kitchen.places, faced = this.facedPlace(c), chair = faced?.chair ?? freePlace(k, places.map((p) => p.chair));
       if (chair === null) { toast(s, "No room on the table", "info"); return true; }
       const place = places.find((p) => p.chair === chair)!;
       if (plateHand === "right") { const l = h.left; h.left = h.right; h.right = l; }
@@ -198,9 +200,27 @@ export class KitchenRun {
     return false;
   }
 
+  /** With a full plate in hand: the free place at the table you're facing (within a few steps), if any. */
+  private facedPlace(c: Ctx) {
+    const k = this.k(c.state);
+    let best: (typeof c.fl.kitchen.places)[number] | null = null, ba = 0.6;
+    for (const p of c.fl.kitchen.places) {
+      if (k.table.some((t) => t.chair === p.chair)) continue;
+      const dx = p.at[0] - c.lx, dz = p.at[2] - c.lz, d = Math.hypot(dx, dz);
+      if (d > 2.8) continue;
+      const a = Math.abs(Math.atan2(Math.sin(Math.atan2(dx, dz) - c.yaw), Math.cos(Math.atan2(dx, dz) - c.yaw)));
+      if (a < ba) { ba = a; best = p; }
+    }
+    return best;
+  }
   /** E at one of the kitchen's places: what it does there, and where its prompt shows. */
   prompt(c: Ctx): { at: [number, number, number]; label: string; act: (() => void) | null } | null {
     const s = c.state, k = this.k(s), h = k.hands, fl = c.fl, K = fl.kitchen, from: [number, number] = [c.lx, c.lz], carry = this.carry(s);
+    // A full plate in hand, facing a place at the table: Q puts it down there.
+    if ((["left", "right"] as const).some((x) => !!h[x] && isDish(h[x]!.ware) && !!h[x]!.food)) {
+      const p = this.facedPlace(c);
+      if (p) return { at: [p.at[0], p.at[1] + 0.35, p.at[2]], label: "Q  PUT THE PLATE HERE", act: null };
+    }
     // Near enough, and facing it (E works only on the thing you look at).
     const sees = (t: readonly number[]) => { const dx = t[0]! - c.lx, dz = t[2]! - c.lz, d = Math.hypot(dx, dz); return d < 0.25 || (Math.sin(c.yaw) * dx + Math.cos(c.yaw) * dz) / d >= Math.cos(1.05); };
     const near = (p: [number, number], r = 0.85, at?: readonly number[]) => Math.hypot(c.lx - p[0], c.lz - p[1]) < r && (!at || sees(at));
@@ -245,7 +265,7 @@ export class KitchenRun {
       const cooking = states.map((st2, i) => (st2 === "cooking" ? Math.ceil(COOK_MINUTES - (s.elapsed - k.stoves[i]!.start!) / GAME_MINUTE) : null)).filter((x): x is number => x !== null);
       const cookingLabel = cooking.length ? `COOKING · ${cooking.map((m2) => `${m2} MIN`).join(" / ")} LEFT` : null;
       if (empty >= 0) {
-        const cans = s.life.fridge.filter((n) => canByName(n));
+        const cans = fridgeOf(s).filter((n) => canByName(n));
         if (!cans.length) return { at, label: cookingLabel ?? "NO CANNED FOOD IN THE FRIDGE", act: null };
         if (!handFree(s, "left") || !handFree(s, "right")) return { at, label: "FREE YOUR HANDS TO COOK", act: null };
         return { at, label: `E  COOK IN THE ${k.stoves[empty]!.ware.toUpperCase()} (UP TO ${CAPACITY[k.stoves[empty]!.ware]} CANS)${cookingLabel ? ` · ${cookingLabel}` : ""}`, act: () => { s.uiLock = "cook"; s.kitchenAsk = { burner: empty }; s.keys.clear(); } };
@@ -311,7 +331,7 @@ export class KitchenRun {
     if (ask.cans && ask.cans.length && burner && burner.start === null) {
       const cans = ask.cans.slice(0, CAPACITY[burner.ware]);
       // Out of the fridge.
-      for (const cn of cans) { const i = s.life.fridge.indexOf(CAN_INFO[cn].name); if (i >= 0) s.life.fridge.splice(i, 1); }
+      for (const cn of cans) { const fr = fridgeOf(s), i = fr.indexOf(CAN_INFO[cn].name); if (i >= 0) fr.splice(i, 1); }
       this.view.pourInto = bi;
       this.go(c, cansIn(c.fl, cans.length, bi), (e) => {
         const [what, i] = e.split(":");
