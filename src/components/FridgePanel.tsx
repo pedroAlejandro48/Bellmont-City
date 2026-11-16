@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { isDrinkName } from "@/game/food";
-import { ITEMS } from "@/game/inventory";
+import { ITEMS, addItem, itemInfo, kindByName } from "@/game/inventory";
 import { canByName, isWare } from "@/game/pantry";
 import { lifeEvent } from "@/game/lifeRuntime";
 import { canConsume, consume } from "@/game/needs";
@@ -34,28 +34,29 @@ export function FridgePanel({ state, onClose }: { state: GameState; onClose: () 
     if (state.groceryBag) {
       // Taken out of the bag one at a time as they go in (what doesn't fit stays in it).
       // (Kitchenware isn't food: it stays in the bag, to be put away by the sink.)
-      for (const k of state.groceryBag) { if (isWare(k)) continue; const name = ITEMS[k].name; if (room(name)) state.fridgeLoad.push({ name, bag: k }); else left++; }
+      for (const k of state.groceryBag) { if (isWare(k)) continue; const name = itemInfo(k).name; if (room(name)) state.fridgeLoad.push({ name, bag: k }); else left++; }
     }
     if (left) toast(state, "The fridge is full", "warn", `${left} thing${left > 1 ? "s" : ""} didn't fit.`);
     tick((n) => n + 1);
   };
   const loading = state.fridgeLoad.length > 0;
+  // Taken out: into the inventory (hold it, E to eat or drink it, Q to put it down).
   const eat = (name: string) => {
-    if (!canConsume(state, name)) { toast(state, isDrinkName(name) ? "Not thirsty" : "You're full", "warn"); return; }
-    const after = consume(state, name, foodValue(name));
-    state.hunger = after.hunger; state.thirst = after.thirst; state.energy = after.energy; state.health = after.health;
+    const slot = addItem(life.inventory, kindByName(name));
+    if (slot < 0) { toast(state, "Your inventory is full", "warn", "Make room for it first."); return; }
     life.fridge.splice(life.fridge.indexOf(name), 1);
-    lifeEvent(state, "eat", 1);
+    toast(state, `${name} → slot ${slot + 1}`, "info", "Hold it (its number), then E to " + (isDrinkName(name) ? "drink" : "eat") + " it.");
     tick((n) => n + 1);
   };
+  void canConsume; void consume; void foodValue; void lifeEvent;
   const list = (items: string[], verb: string) => items.length === 0 ? <p className="phone-note">Empty.</p> :
     <ul className="phone-list">{items.map((f, i) => <li key={i}><span>{canByName(f) ? `🥫 ${f}` : f}</span>{canByName(f) ? <span className="phone-note">Cook it on the stove</span> : <button type="button" className="phone-btn" onClick={() => eat(f)}>{verb}</button>}</li>)}</ul>;
   return <div className="home-panel" role="dialog" aria-label="Fridge">
     <div className="home-panel-head"><b>Fridge</b><button type="button" onClick={onClose} aria-label="Close">✕</button></div>
     <p className="phone-label">Shelves · {food.length}/{FRIDGE_FOOD}</p>
-    {list(food, "Eat")}
+    {list(food, "Take")}
     <p className="phone-label">Door · {drinks.length}/{FRIDGE_DRINKS}</p>
-    {list(drinks, "Drink")}
+    {list(drinks, "Take")}
     <button type="button" className="phone-btn ghost" disabled={loading || (!held.length && !state.groceryBag?.some((k) => !isWare(k)))} onClick={store}>{loading ? "Putting it away…" : "Store the food you're carrying"}</button>
   </div>;
 }

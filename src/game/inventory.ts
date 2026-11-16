@@ -3,11 +3,16 @@
 // fridge, the sink's cupboard; candy goes straight into the inventory.)
 import { CANDIES, CANDY_INFO, CANS, CAN_INFO, WARES, WARE_INFO, type CandyKind, type CanKind, type WareKind } from "./pantry";
 
-export type ItemKind = "phone" | "water" | "orangeJuice" | "appleJuice" | "cola" | "lemonSoda" | "energy" | "apple" | "banana" | "orange" | "pear" | "lemon" | "lime" | "grape" | "peach" | "key" | CanKind | CandyKind | WareKind;
+/** A meal or drink from a restaurant kept in the fridge and taken out: `meal:<its name>`. */
+export type MealKind = `meal:${string}`;
+export type ItemKind = MealKind | "phone" | "water" | "orangeJuice" | "appleJuice" | "cola" | "lemonSoda" | "energy" | "apple" | "banana" | "orange" | "pear" | "lemon" | "lime" | "grape" | "peach" | "key" | CanKind | CandyKind | WareKind;
 export type Inventory = (ItemKind | null)[];
 export const SLOTS = 9;
 
-export const ITEMS: Record<ItemKind, { name: string; icon: string; use: "eat" | "drink" | "open" | "hold"; value?: number; trash?: "bottle" | "can" }> = {
+type ItemInfo = { name: string; icon: string; use: "eat" | "drink" | "open" | "hold"; value?: number; trash?: "bottle" | "can" };
+/** The kinds of thing listed (everything but restaurant meals). */
+export type BaseKind = Exclude<ItemKind, MealKind>;
+export const ITEMS: Record<BaseKind, { name: string; icon: string; use: "eat" | "drink" | "open" | "hold"; value?: number; trash?: "bottle" | "can" }> = {
   phone: { name: "Phone", icon: "📱", use: "open" },
   water: { name: "Bottled Water", icon: "💧", use: "drink", trash: "bottle" },
   orangeJuice: { name: "Orange Juice", icon: "🧃", use: "drink", trash: "bottle" },
@@ -27,8 +32,21 @@ export const ITEMS: Record<ItemKind, { name: string; icon: string; use: "eat" | 
   ...Object.fromEntries(CANS.map((k) => [k, { name: CAN_INFO[k].name, icon: "🥫", use: "hold" as const }])),
   ...Object.fromEntries(CANDIES.map((k) => [k, { name: CANDY_INFO[k].name, icon: CANDY_INFO[k].shape === "pop" ? "🍭" : CANDY_INFO[k].shape === "bag" ? "🍬" : "🍫", use: "eat" as const }])),
   ...Object.fromEntries(WARES.map((k) => [k, { name: WARE_INFO[k].name, icon: k === "pot" || k === "pan" ? "🍳" : k === "cup" ? "☕" : k === "glass" ? "🥛" : k === "silverware" ? "🍴" : "🍽️", use: "hold" as const }])),
-} as Record<ItemKind, { name: string; icon: string; use: "eat" | "drink" | "open" | "hold"; value?: number; trash?: "bottle" | "can" }>;
-export const isItemKind = (k: unknown): k is ItemKind => typeof k === "string" && k in ITEMS;
+} as Record<BaseKind, ItemInfo>;
+export const isItemKind = (k: unknown): k is ItemKind => typeof k === "string" && (k in ITEMS || (k.startsWith("meal:") && k.length > 5));
+const DRINK_WORDS = /(water|juice|cola|soda|shake|tea|coffee|lemonade|drink|latte|smoothie|milk)/i;
+/** What a thing is called, its icon and what it's for (restaurant meals and drinks too). */
+export function itemInfo(k: ItemKind): { name: string; icon: string; use: "eat" | "drink" | "open" | "hold"; value?: number; trash?: "bottle" | "can" } {
+  const known = (ITEMS as Partial<Record<string, ItemInfo>>)[k];
+  if (known) return known;
+  const name = k.slice(5), drink = DRINK_WORDS.test(name);
+  return { name, icon: drink ? "🥤" : "🍱", use: drink ? "drink" : "eat" };
+}
+/** The thing in the inventory a name stands for (fruit, drinks, candy; else a restaurant meal). */
+export function kindByName(name: string): ItemKind {
+  const k = (Object.keys(ITEMS) as BaseKind[]).find((x) => ITEMS[x].name === name && x !== "phone");
+  return k ?? (`meal:${name}` as MealKind);
+}
 
 export function newInventory(): Inventory {
   const inv: Inventory = Array(SLOTS).fill(null);

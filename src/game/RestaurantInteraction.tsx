@@ -94,7 +94,8 @@ export function RestaurantInteraction({ state, city }: { state: GameState; city:
         }
       }
     }
-    state.doorPrompt = door !== null || inter !== null;
+    // (Only when the door or a chair is what E would do: otherwise E eats or drinks what's in your hand.)
+    state.doorPrompt = door !== null || inDoor !== null || chair !== null || (!!inter && inter.phase !== "inside");
 
     // Waiting for a door to finish closing: once it is shut, open it (unless the player has walked off).
     const w = waiting.current;

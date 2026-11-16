@@ -174,11 +174,13 @@ function Hospital({ state, refresh }: Props) {
 /** The apartment building's reception: which floors are free today (higher ones cost less), renting one. */
 function Reception({ state, refresh }: Props) {
   const life = state.life, day = today(state), building = state.interior?.key ?? "";
-  const free = freeFloors(state.worldSeed, building, day), home = life.home;
+  // (Free today, and not anyone else's here: one apartment, one tenant, one key.)
+  const theirs = new Set((state.liftLink?.homes() ?? []).filter((h) => h.b === building).map((h) => h.floor));
+  const free = freeFloors(state.worldSeed, building, day).filter((f) => !theirs.has(f)), home = life.home;
   const mineHere = home?.building === building;
   return <>
     {mineHere && home && <div className="bank-card home"><span>You live here</span><b>Floor {home.floor}</b><span>{money(home.weekly)} a week · next payment on day {home.nextRent}</span></div>}
-    {mineHere && <p className="phone-note">Take the elevator (in the corner) to your floor; hold your key (its number) at your door.</p>}
+    {mineHere && <p className="phone-note">Take the elevator (in the corner) to your floor. Your key (its number) locks and unlocks your door; open it with an empty hand. While it's unlocked anyone can come in.</p>}
     <p className="phone-label">{HOME_NAME}s · free floors today</p>
     <p className="phone-note">The first week is free; then the week's rent comes out of your bank every seven days. Higher floors cost less. Which floors are free changes every two days.</p>
     <ul className="phone-list">{Array.from({ length: APT_FLOORS - 1 }, (_, k) => APT_FLOORS - k).map((f) => {

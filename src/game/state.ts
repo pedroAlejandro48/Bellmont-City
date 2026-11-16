@@ -91,7 +91,11 @@ export type LiftLink = {
   takeRequests: () => { b: string; floor: number }[];
   setMe: (p: LiftPeer) => void;
   others: () => LiftPeer[];
+  /** Each player's apartment (building, floor) and whether its door is locked: nobody else can rent it. */
+  setHome: (h: AptClaim | null) => void;
+  homes: () => AptClaim[];
 };
+export type AptClaim = { b: string; floor: number; locked: boolean };
 /** Inside (or going into, or out of) a restaurant. */
 export type Interior = {
   key: string; phase: "entering" | "inside" | "leaving"; startedAt: number;
@@ -159,7 +163,7 @@ export type GameState = {
   /** Trash in the right hand (an emptied bottle): it can't go in the inventory, only be put down (Q). */
   heldTrash: "bottle" | "can" | null;
   /** Doing something with a thing from the inventory: eating or drinking it, putting it down, picking one up. */
-  invAct: { kind: "eat" | "drink" | "drop" | "pickup"; at: number; item: ItemKind | "bottle" | "can" | "groceryBag"; target: THREE.Vector3 | null; done: boolean; ground?: number } | null;
+  invAct: { kind: "eat" | "drink" | "drop" | "pickup"; at: number; item: ItemKind | "bottle" | "can" | "groceryBag"; target: THREE.Vector3 | null; done: boolean; ground?: number; /** Put down from a kitchen hand (an empty pot, plate…), not the inventory. */ kitchenHand?: "left" | "right"; /** Onto a table: the top's height (world). */ topY?: number } | null;
   /** Things from inventories lying on the ground (this player's world only); a grocery bag keeps what's in it. */
   groundItems: { id: number; kind: ItemKind | "bottle" | "can" | "groceryBag"; x: number; z: number; y?: number; yaw: number; at: number; contents?: ItemKind[] }[];
   /** A shopping basket in the right hand (what's in it), or null. */

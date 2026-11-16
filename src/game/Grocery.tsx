@@ -13,7 +13,7 @@ import {
   sources, takeBasket, walkSeg, walkRoute, setGroceryObstacles, plan as makePlan, type GPose, type Plan, type Source,
 } from "./groceryRun";
 import { InteractionPrompt } from "./InteractionPrompt";
-import { ITEMS, addItem, freeSlots, type ItemKind } from "./inventory";
+import { ITEMS, addItem, freeSlots, itemInfo, type ItemKind } from "./inventory";
 import { isCandy } from "./pantry";
 import { GroceryBagModel, ItemModel, useLooks, type Looks } from "./InventoryWorld";
 import { lifeEvent } from "./lifeRuntime";
@@ -230,7 +230,7 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
           const [x, z] = world(src.take[0], src.take[2]); Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: "NO ROOM IN YOUR INVENTORY" });
         } else if (src && n < BASKET_MAX) {
           const [x, z] = world(src.take[0], src.take[2]);
-          Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: `E  ${ITEMS[src.kind].name.toUpperCase()} ${money(GROCERY_PRICE[src.kind] ?? 1)}` });
+          Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: `E  ${itemInfo(src.kind).name.toUpperCase()} ${money(GROCERY_PRICE[src.kind] ?? 1)}` });
           // (The left hand takes it off the shelf: it must be free, or carrying the grocery bag.)
           action = () => { if (heldIn(state, "left") && !state.groceryBag) { const m = handsFullMessage("left"); toast(state, m.title, "warn", m.body); return; } start(pickItem([lx, lz], yaw, src, !!state.groceryBag), "pick", { src }); };
         } else if (src && n >= BASKET_MAX) { const [x, z] = world(src.take[0], src.take[2]); Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: "BASKET FULL" }); }

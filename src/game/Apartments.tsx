@@ -1,4 +1,4 @@
-import { needFreeHands } from "./handsHeld";
+import { handsBusy, needFreeHands } from "./handsHeld";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -22,7 +22,7 @@ import { SHOWER, TOILET, WASH, showerAt, showerSpots, showerView, toiletAt, wash
 import { BedSheet, MATTRESS_TOP, PILLOW_TOP, SHEET_NX, SHEET_NZ, sheetGrips, sheetPoint, type SheetLead, type SheetLink, type SheetShape } from "./BedSheet";
 import { canSleepAt, hoursTo6, sleepEnergy, wakeElapsed } from "./needs";
 import { ItemModel, useLooks } from "./InventoryWorld";
-import { ITEMS, type ItemKind } from "./inventory";
+import { ITEMS, itemInfo, type BaseKind, type ItemKind } from "./inventory";
 import { isDrinkName } from "./food";
 import { canvas, tex } from "./textures";
 import { BULK_H, ROOF_FLOOR, ROOF_UP, RUNG, outZ, roofPlan, rungY, type RoofPlan } from "./roof";
@@ -553,7 +553,7 @@ function DoorDrinks({ state, fridge }: { state: GameState; fridge: AptFurniture 
     {list.map((name, i) => {
       const bin = FRIDGE_BINS[Math.floor(i / 3)]!, k = i % 3;
       // The real thing when it's one of the shop's drinks (a bottle, a can); otherwise a plain bottle.
-      const kind = (Object.keys(ITEMS) as ItemKind[]).find((k2) => ITEMS[k2].name === name && ITEMS[k2].use === "drink");
+      const kind = (Object.keys(ITEMS) as BaseKind[]).find((k2) => ITEMS[k2].name === name && ITEMS[k2].use === "drink");
       return <group key={i} position={[-fridge.w / 2 - 0.2 + k * 0.2, bin + 0.02, -0.05]}>
         {kind ? <group scale={1.15}><ItemModel kind={kind} looks={looks} /></group> : <>
           <mesh position-y={0.1} material={mats[hashOf(name) % mats.length]!}><cylinderGeometry args={[0.032, 0.032, 0.2, 10]} /></mesh>
@@ -791,7 +791,7 @@ function RoomChairs({ fl, m }: { fl: AptFloor; m: FMats }) {
 
 // ---------- moving about: the elevator, the apartment door, bed and fridge ----------
 type Seat = { x: number; z: number; yaw: number; approach: [number, number]; surface: { x: number; z: number; y: number; lx: number; lz: number } };
-type Move = { kind: "board" | "alight" | "keyIn" | "push" | "pull" | "fridge" | "closet" | "sit" | "bed" | "wash" | "toilet" | "shower" | "switch"; plan: Plan | null; t0: number; which?: "apartment" | "bedroom" | "bathroom"; from?: [number, number]; fromYaw?: number; keyT?: number; phase?: "open" | "held" | "close" | "down" | "seated" | "up" | "in" | "asleep" | "out"; seat?: Seat; slept?: number; /** The sheet point a hand lifts it by. */ flap?: [number, number] | null };
+type Move = { kind: "board" | "alight" | "keyIn" | "push" | "pull" | "fridge" | "closet" | "sit" | "bed" | "wash" | "toilet" | "shower" | "switch"; plan: Plan | null; t0: number; which?: "apartment" | "bedroom" | "bathroom"; from?: [number, number]; fromYaw?: number; keyT?: number; /** The key only locks or unlocks (no going in). */ lockOnly?: boolean; phase?: "open" | "held" | "close" | "down" | "seated" | "up" | "in" | "asleep" | "out"; seat?: Seat; slept?: number; /** The sheet point a hand lifts it by. */ flap?: [number, number] | null };
 /**
  * The bed, step by step (seconds). Getting in: beside it facing it, the left hand takes the sheet's top corner and
  * folds it back diagonally (baring the mattress there), let go; turn round and sit on the bare edge; the left hand
@@ -1006,6 +1006,8 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         return Array.from({ length: APT_FLOORS - 1 }, (_, i) => i + 2).filter((f) => !free.includes(f) && !(home?.building === bk && home.floor === f));
       };
       state.liftBridge = ls0.bridge;
+      // Your apartment (and whether it's locked), so nobody else in the room rents it, and they can come in when open.
+      state.liftLink?.setHome(home ? { b: home.building, floor: home.floor, locked: !home.unlocked } : null);
       ls0.update(dt, now, state.liftLink, { b: near ?? null, floor: myFloor, inCar: insideCar, inDoor, ...(meLocal && bHere ? { x: meLocal[0], z: meLocal[1] } : {}) }, myCalls.current);
       myCalls.current = [];
       // Residents through a lobby's street door: it swings for them (as for anyone).
@@ -1090,6 +1092,15 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         }
         script = scriptFrom({ ...sp, right, left: null, lean: 0.05 });
         setAngle(0);
+        // The key turned: locked, or unlocked.
+        if (mv.lockOnly && a > KEY.reach + KEY.turn * 0.5 && mv.phase !== "held") {
+          mv.phase = "held";
+          const h = state.life.home;
+          if (h) { h.unlocked = !h.unlocked; toast(state, h.unlocked ? "Unlocked" : "Locked", "info", h.unlocked ? "Open it with an empty hand (E). Anyone can go in while it's unlocked." : "Only your key opens it now."); }
+        }
+      } else if (mv.kind === "keyIn" && mv.lockOnly) {
+        // (Done: where the body is now, it stays.)
+        move.current = null;
       } else if (mv.kind === "keyIn" || mv.kind === "push") {
         // The door pushed open into the room and walked through (the restaurants' way out).
         const tt = mv.kind === "keyIn" ? t - mv.keyT! : t;
@@ -1417,15 +1428,27 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         show(ex, hz0 + 0.3, 2.2, liftLabel(lvl.building, lvl.floor));
         act = () => callLift(lvl.building, lvl.floor);
       } else if (lx > dx - 1.7 && lx < dx + 0.3 && lz < wz && lz > wz - 1.4 && sees(dx - 0.5, wz)) {
-        // At the apartment's door, in the hallway.
-        const holding = heldKind(state) === "key";
-        show(dx - 0.5, wz - 0.1, 2.1, mine ? (holding ? "E  UNLOCK" : "HOLD YOUR KEY (ITS NUMBER)") : "LOCKED");
-        act = () => {
-          if (!mine) { toast(state, "That's not your apartment", "warn"); return; }
-          if (!holding) { toast(state, "Take out your key first", "info", "Press the key's number (see the inventory)."); return; }
-          const stand: [number, number] = [dx - 0.45, wz + INNER_WALL - 0.72];
-          move.current = { kind: "keyIn", t0: now, keyT: KEY.walk + KEY.reach + KEY.turn + KEY.back, plan: makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, stand, 0, { basket: false, bag: !!state.groceryBag })]) };
-          state.keys.clear();
+        // At the apartment's door, in the hallway. The key (its number) locks or unlocks it; unlocked, an empty hand
+        // opens it — yours, or anyone's whose door is unlocked.
+        const holdingKey = heldKind(state) === "key";
+        const claim = mine ? null : state.liftLink?.homes().find((h) => h.b === lvl.building && h.floor === lvl.floor);
+        const unlocked = mine ? !!state.life.home?.unlocked : !!claim && !claim.locked;
+        const empty = state.heldSlot === null && !handsBusy(state);
+        const stand: [number, number] = [dx - 0.45, wz + INNER_WALL - 0.72];
+        const walkTo = makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, stand, 0, { basket: false, bag: !!state.groceryBag })]);
+        if (mine && holdingKey) {
+          show(dx - 0.5, wz - 0.1, 2.1, unlocked ? "E  LOCK" : "E  UNLOCK");
+          act = () => { move.current = { kind: "keyIn", t0: now, keyT: KEY.walk + KEY.reach + KEY.turn + KEY.back, lockOnly: true, plan: walkTo }; state.keys.clear(); };
+        } else if (unlocked) {
+          show(dx - 0.5, wz - 0.1, 2.1, empty ? "E  OPEN" : "FREE YOUR HANDS TO OPEN");
+          act = () => {
+            if (!empty) { toast(state, "Your hands are full", "warn", "Put away what you're holding to open the door."); return; }
+            // (No key: straight to pushing it open.)
+            move.current = { kind: "keyIn", t0: now, keyT: KEY.walk, plan: walkTo }; state.keys.clear();
+          };
+        } else {
+          show(dx - 0.5, wz - 0.1, 2.1, mine ? "LOCKED · HOLD YOUR KEY TO UNLOCK" : "LOCKED");
+          act = () => toast(state, mine ? "It's locked" : "It's locked", "info", mine ? "Take out your key (its number) and press E to unlock it." : "Whoever lives here has locked it.");
         };
       } else if (lx > dx - 1.6 && lx < dx + 0.3 && lz > wz + INNER_WALL && lz < wz + INNER_WALL + 1.5 && sees(dx - 0.5, wz + INNER_WALL)) {
         show(dx - 0.5, wz + 0.3, 2.1, "E  OUT");
@@ -1512,7 +1535,9 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       }
     }
     if (act && state.interactQueued) { state.interactQueued = false; act(); }
-    if (floor && state.interactQueued) state.interactQueued = false;
+    // (Nothing here wants E: it's kept for eating or drinking what's in your hand.)
+    const hk = heldKind(state), eats = !!hk && (itemInfo(hk).use === "eat" || itemInfo(hk).use === "drink");
+    if (floor && state.interactQueued && !eats) state.interactQueued = false;
   }, -0.66);
 
   useFrame(() => {
