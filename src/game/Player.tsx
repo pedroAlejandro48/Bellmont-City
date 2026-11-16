@@ -280,7 +280,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     const floor = sitting || usingBike || incapacitated ? ground : ground + standOn;
     // In a moving elevator the car carries you even in the air (a jump in it goes up and down with it), and
     // nothing in it is a fall.
-    const riding = !!state.elevator && state.elevator.building === state.level?.building && (state.elevator.phase === "moving" || state.elevator.phase === "open" || state.elevator.phase === "closing" || state.elevator.phase === "opening" || state.elevator.phase === "choose");
+    const riding = state.inCar && !!state.level;
     if (riding && state.level && s.liftY !== null && !s.grounded) { const d = state.level.y - s.liftY; p.y += d; if (s.fallTop !== null) s.fallTop += d; }
     s.liftY = riding && state.level ? state.level.y : null;
     if (riding && !s.grounded && p.y < floor) p.y = Math.max(p.y, floor - 0.05);

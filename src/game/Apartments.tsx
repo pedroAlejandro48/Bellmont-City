@@ -12,7 +12,7 @@ import { InteractionPrompt } from "./InteractionPrompt";
 import { heldKind } from "./invRuntime";
 import { FRIDGE_DRINKS, FRIDGE_FOOD, fridgeSplit } from "@/components/FridgePanel";
 import { CEILING, CHAIR, ENTER, LEAVE, TABLE, enterLead, enterPose, leaveLead, leavePose, planSit, toLocal, toWorld, worldYaw, type Reach } from "./restaurantRoom";
-import { toast, type GameState, type Script } from "./state";
+import { toast, type GameState, type LiftRiderWire, type Script } from "./state";
 import { handWorld } from "./arms";
 import { makeCarpet, makePlanks, scaledPlane } from "./floorTextures";
 import { BathroomThings, newBathLink, type BathLink } from "./Bathroom";
@@ -26,7 +26,8 @@ import { ITEMS, type ItemKind } from "./inventory";
 import { isDrinkName } from "./food";
 import { canvas, tex } from "./textures";
 import { BULK_H, ROOF_FLOOR, ROOF_UP, RUNG, outZ, roofPlan, rungY, type RoofPlan } from "./roof";
-import { RIDER_SLOT, riderAt, scheduledTrip, type RiderNow, type RiderPlaces, type RiderTrip } from "./liftRiders";
+import { inCarAt, inDoorAt, LiftSystem, shaftOf } from "./liftRiders";
+import { atFloor, CAPACITY, carDir, carFloor, carWorldY, doorsOf, type Car } from "./liftCar";
 import { LIFT_DOOR, SHAFT, SHAFT_WALL, setLiftDoor, venueLayout, type VenueLayout } from "./venueRoom";
 import { bodyColor } from "@/platform/account";
 
@@ -112,22 +113,30 @@ function backPieces(W: number, h: number, sx: number) {
 /** The inside of a building's elevator shaft from the second floor to the roof: its sides and its front (with the
  * doorway at each floor open), facing in. */
 function ShaftLining({ cx, cz, top, cuts }: { cx: number; cz: number; top: number; cuts: number[] }) {
-  const r = SHAFT / 2 - 0.11, side = r - LIFT_DOOR / 2 - 0.02, geo = useMemo(() => {
+  // Sides a little in from the slab's hole, the front between the car's doors and the floors' (none of them meet).
+  const r = SHAFT / 2 - 0.06, rf = SHAFT / 2 - 0.1, side = r - LIFT_DOOR / 2 - 0.02, geo = useMemo(() => {
     const parts: THREE.BufferGeometry[] = [];
     const plane = (w: number, h: number, x: number, y: number, z: number, ry: number) => { const g = new THREE.PlaneGeometry(w, h); g.rotateY(ry); g.translate(x, y, z); parts.push(g); };
-    plane(2 * r, top, -r, top / 2, 0, Math.PI / 2); plane(2 * r, top, r, top / 2, 0, -Math.PI / 2);
-    for (const k of [-1, 1]) plane(side, top, k * (LIFT_DOOR / 2 + 0.02 + side / 2), top / 2, r, Math.PI);
-    for (let i = 0; i < UPPER; i++) plane(LIFT_DOOR + 0.04, STOREY - 2.32, 0, i * STOREY + 2.32 + (STOREY - 2.32) / 2, r, Math.PI);
+    // (Sides from the back wall to the front.)
+    const sd = SHAFT / 2 + rf;
+    plane(sd, top, -r, top / 2, (rf - SHAFT / 2) / 2, Math.PI / 2); plane(sd, top, r, top / 2, (rf - SHAFT / 2) / 2, -Math.PI / 2);
+    for (const k of [-1, 1]) plane(side, top, k * (LIFT_DOOR / 2 + 0.02 + side / 2), top / 2, rf, Math.PI);
+    for (let i = 0; i < UPPER; i++) plane(LIFT_DOOR + 0.04, STOREY - 2.32, 0, i * STOREY + 2.32 + (STOREY - 2.32) / 2, rf, Math.PI);
     const g = mergeGeometries(parts); parts.forEach((p) => p.dispose()); return g;
-  }, [r, side, top]);
+  }, [r, rf, side, top]);
   useEffect(() => () => geo.dispose(), [geo]);
-  // Each floor's doorway shut off too, except on the floors drawn inside (their own doors are there).
+  // The back wall's inside beside the window slot (where a floor is drawn inside, its own wall is there).
+  const bw = r - SLOT / 2 - SLOT_J, bz = -SHAFT / 2;
   return <group position={[cx, 0, cz]}>
     <mesh geometry={geo} material={slotMats.lining} />
-    {Array.from({ length: UPPER }, (_, i) => i + 2).filter((f) => !cuts.includes(f)).map((f) => <mesh key={f} position={[0, (f - 2) * STOREY + 1.16, r]} rotation-y={Math.PI} material={slotMats.lining}><planeGeometry args={[LIFT_DOOR + 0.04, 2.32]} /></mesh>)}
+    {Array.from({ length: UPPER }, (_, i) => i + 2).filter((f) => !cuts.includes(f)).map((f) => <group key={f}>
+      <mesh position={[0, (f - 2) * STOREY + 1.16, rf]} rotation-y={Math.PI} material={slotMats.lining}><planeGeometry args={[LIFT_DOOR + 0.04, 2.32]} /></mesh>
+      {[-1, 1].map((k) => <mesh key={k} position={[k * (SLOT / 2 + SLOT_J + bw / 2), (f - 2) * STOREY + STOREY / 2, bz]} material={slotMats.backWall}><planeGeometry args={[bw, STOREY]} /></mesh>)}
+    </group>)}
   </group>;
 }
 const slotMats = {
+  backWall: new THREE.MeshStandardMaterial({ color: "#d8d2c8", roughness: 0.9 }),
   lining: new THREE.MeshStandardMaterial({ color: "#3a3d42", roughness: 0.9 }),
   // (Seen from outside: dark behind the glass; from inside the car both are see-through, facing away.)
   back: new THREE.MeshStandardMaterial({ color: "#14181e", roughness: 0.9 }),
@@ -146,8 +155,8 @@ function AptExterior({ b, state }: { b: Building; state: GameState }) {
   useFrame(() => {
     const want = new Set<number>();
     if (state.level?.building === key) want.add(Math.min(APT_FLOORS, state.level.floor));
-    const e = state.elevator;
-    if (e?.building === key) { want.add(e.floor); if (e.target !== null) want.add(e.target); }
+    const ls = state.liftShown;
+    if (ls?.b === key) for (const f of ls.floors) want.add(f);
     const list = [...want].filter((f) => f > 1).sort((a, c) => a - c);
     if (list.join() !== cuts.join()) setCuts(list);
     if (Math.floor(state.simulationTime * 2) % 6 === 0) { const k = litOf(); if (k !== litKey) setLitKey(k); }
@@ -376,21 +385,19 @@ function Furniture({ f, m }: { f: AptFurniture; m: FMats }) {
  */
 function ElevatorDoors({ open, m, inside = false }: { open: () => number; m: FMats; inside?: boolean }) {
   const l = useRef<THREE.Group>(null), r = useRef<THREE.Group>(null);
-  // Two steel panels meeting in the middle (a rubber edge on each, the seam between them), each sliding sideways
-  // into the wall beside the opening (behind its face, so no gap ever shows).
-  const half = LIFT_DOOR / 2 + 0.03, slide = LIFT_DOOR / 2 + 0.02;
+  // Two steel panels meeting exactly in the middle (a rubber edge on each), each sliding sideways into the wall
+  // beside the opening. (No two faces anywhere here share a plane: the edges and bands stand a few mm proud.)
+  const half = LIFT_DOOR / 2 + 0.03, slide = LIFT_DOOR / 2, T = 0.03;
   useFrame(() => {
     const k = open();
     if (l.current) { l.current.position.x = -half - k * slide; l.current.visible = k < 0.999; }
     if (r.current) { r.current.position.x = half + k * slide; r.current.visible = k < 0.999; }
   });
-  const face = inside ? 0.021 : -0.021;
+  void inside;
   const panel = (side: number) => <>
-    <mesh position={[side * (half / 2 + 0.005), 1.15, 0]} material={m.liftDoor}>{B([half + 0.01, 2.3, 0.04])}</mesh>
-    {/* The meeting edge: a dark rubber strip, so the panels close on a thin line. */}
-    <mesh position={[side * (half + 0.003), 1.15, 0]} material={m.black}>{B([0.008, 2.3, 0.042])}</mesh>
-    {/* Brushed bands across the panel (both faces). */}
-    {[0.35, 2.0].map((y) => [face, -face].map((zf) => <mesh key={`${y}${zf}`} position={[side * (half / 2 + 0.005), y, zf]} material={m.steel}>{B([half - 0.04, 0.03, 0.004])}</mesh>))}
+    <mesh position={[side * half / 2, 1.15, 0]} material={m.liftDoor}>{B([half, 2.3, T])}</mesh>
+    <mesh position={[side * (half - 0.004), 1.15, 0]} material={m.black}>{B([0.008, 2.3, T + 0.012])}</mesh>
+    {[0.35, 2.0].map((y) => [1, -1].map((zf) => <mesh key={`${y}${zf}`} position={[side * half / 2 - side * 0.01, y, zf * (T / 2 + 0.003)]} material={m.steel}>{B([half - 0.06, 0.03, 0.004])}</mesh>))}
   </>;
   return <group>
     <group ref={l} position={[-half, 0, -0.06]}>{panel(1)}</group>
@@ -427,25 +434,19 @@ function LiftDisplay({ shown }: { shown: () => { floor: number; dir: number } })
   return <mesh material={scr.mat}><planeGeometry args={[0.38, 0.16]} /></mesh>;
 }
 
-/** Which floor an elevator shows: where it is, counting a floor every 2 seconds while it moves. */
-export function shownFloor(e: NonNullable<GameState["elevator"]>, now: number) {
-  if (e.phase !== "moving" || e.target === null) return e.floor;
-  const dir = Math.sign(e.target - e.floor), passed = Math.floor((now - e.t0) / 2);
-  return e.floor + dir * Math.min(Math.abs(e.target - e.floor), passed);
-}
-
 /** The car (filling the shaft): steel walls, a lit ceiling, the buttons beside the door with the floor's number on a
  * little screen above them, a handrail. Its own floor reaches the doorway. */
 const carGlass = new THREE.MeshStandardMaterial({ color: "#a9c6dc", roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.18, side: THREE.DoubleSide, depthWrite: false });
-function ElevatorCar({ m, state, open }: { m: FMats; state: GameState; open: () => number }) {
+function ElevatorCar({ m, state, open, shown }: { m: FMats; state: GameState; open: () => number; shown: () => { floor: number; dir: number } | null }) {
   // (Clear of the shaft's walls by a few centimetres: its walls never share a plane with them.)
   const s = SHAFT - 0.3;
   const screen = useMemo(() => { const [c, g] = canvas(128, 64); const t = tex(c); return { c, g, t, mat: new THREE.MeshBasicMaterial({ map: t, toneMapped: false }), shown: "" }; }, []);
   useEffect(() => () => { screen.t.dispose(); screen.mat.dispose(); }, [screen]);
   useFrame(() => {
-    const e = state.elevator;
-    if (!e) return;
-    const f = shownFloor(e, state.simulationTime), dir = e.phase === "moving" && e.target !== null ? Math.sign(e.target - e.floor) : 0;
+    const sw = shown();
+    if (!sw) return;
+    void state;
+    const f = sw.floor, dir = sw.dir;
     const label = `${f === 1 ? "L" : f}${dir > 0 ? " ▲" : dir < 0 ? " ▼" : ""}`;
     if (label === screen.shown) return;
     screen.shown = label;
@@ -498,7 +499,7 @@ function ShaftAt({ state, fl, m }: { state: GameState; fl: AptFloor; m: FMats })
 }
 
 /** The elevator's car, wherever it is: at its building's shaft, at the height of the floor it's at. */
-function CarAt({ state, buildings, m, carY, light, doors }: { state: GameState; buildings: Map<string, Building>; m: FMats; carY: (bkey: string) => number; light: React.RefObject<THREE.PointLight | null>; doors: (bkey: string) => number }) {
+function CarAt({ state, buildings, m, carY, light, doors, shown }: { state: GameState; buildings: Map<string, Building>; m: FMats; carY: (bkey: string) => number; light: React.RefObject<THREE.PointLight | null>; doors: (bkey: string) => number; shown: (bkey: string) => { floor: number; dir: number } }) {
   const g = useRef<THREE.Group>(null), shownKey = useRef<string | null>(null);
   useFrame(() => {
     // The car of the building you're in (the lobby or up on a floor), where it really is: resting, coming, going.
@@ -517,7 +518,7 @@ function CarAt({ state, buildings, m, carY, light, doors }: { state: GameState; 
     // Its own dim light, just under the ceiling.
     if (light.current) light.current.position.set(x, y + 2.25, z);
   });
-  return <group ref={g} visible={false}><ElevatorCar m={m} state={state} open={() => (shownKey.current ? doors(shownKey.current) : 0)} /></group>;
+  return <group ref={g} visible={false}><ElevatorCar m={m} state={state} open={() => (shownKey.current ? doors(shownKey.current) : 0)} shown={() => (shownKey.current ? shown(shownKey.current) : null)} /></group>;
 }
 
 /** The fridge's glass shelves (heights) and its door's bins. */
@@ -904,20 +905,9 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   const prompt = useRef<{ visible: boolean; x: number; y: number; z: number; label?: string | undefined }>({ visible: false, x: 0, y: 0, z: 0 });
   const ownScript = useRef(false);
   const sleeping = useRef(0);
-  const lastLift = useRef<string | null>(null);
-  /** Residents using the elevator (one at a time, in the building you're in or near), and when the next comes. */
-  const trip = useRef<{ id: string; trip: RiderTrip; places: RiderPlaces; now: RiderNow } | null>(null);
-  /** Trips called off because a player was using the car. */
-  const calledOff = useRef(new Set<string>());
-  const riderPlaces = (b: Building, fl: number): RiderPlaces => {
-    const L = venueLayout(b), { minX, minZ, maxZ } = L.bounds, cx = minX + SHAFT / 2, front = minZ + SHAFT;
-    const f = floorOf0(b, Math.max(2, Math.min(APT_FLOORS, fl))), hz = f.hallZ[0] + 0.8, dx = f.door.x - 0.5;
-    return {
-      car: [cx, minZ + SHAFT / 2], out: [cx, front + 0.7],
-      lobby: [[0, maxZ - 0.5], [0, front + 1.0], [cx, front + 0.7]],
-      hall: [[dx, f.wallZ - 0.35], [dx, hz], [cx, hz], [cx, front + 0.7]],
-    };
-  };
+  /** Every building's elevator (shared in a room), and the floors this player called/pressed this frame. */
+  const liftSys = useRef<LiftSystem | null>(null);
+  const myCalls = useRef<{ b: string; floor: number }[]>([]);
   /** Doors closing behind someone who has walked on: which, how it was used (pushed open: leave; pulled: enter), when. */
   const closing = useRef<{ which: "apartment" | "bedroom" | "bathroom"; kind: "leave" | "enter"; from: [number, number]; fromYaw: number; start: number }[]>([]);
   /** Each floor's bedsheet and the hand holding its corner. */
@@ -930,42 +920,14 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   const carryMats = useMemo(() => ({ food: new THREE.MeshStandardMaterial({ color: "#c8202a", roughness: 0.6 }), drink: new THREE.MeshStandardMaterial({ color: "#6fb6ff", roughness: 0.25, transparent: true, opacity: 0.85 }) }), []);
 
   const byKey = useMemo(() => new Map(buildings.map((b) => [aptKey(b), b])), [buildings]);
-  /** Each building's car: resting at `floor`, or going from `floor` to `to` since t0 (2 s a floor); `busy` someone else's. */
-  const cars = useRef(new Map<string, { floor: number; to: number | null; t0: number; busy: boolean }>());
-  const floorCache0 = useRef(new Map<string, AptFloor>());
-  const floorOf0 = (b: Building, n: number) => { const k = floorKey(b, n); let f = floorCache0.current.get(k); if (!f) { f = aptFloor(b, n); floorCache0.current.set(k, f); } return f; };
-  const carOf = (bkey: string) => { let c = cars.current.get(bkey); if (!c) { c = { floor: 1, to: null, t0: 0, busy: false }; cars.current.set(bkey, c); } return c; };
-  /** The floor the car shows (counting a floor every 2 s while it moves), and which way it's going. */
-  const carShown = (bkey: string): { floor: number; dir: number } => {
-    const c = carOf(bkey), now = state.simulationTime;
-    if (c.to === null || c.to === c.floor) return { floor: c.floor, dir: 0 };
-    const dir = Math.sign(c.to - c.floor), passed = Math.floor((now - c.t0) / 2);
-    return { floor: c.floor + dir * Math.min(Math.abs(c.to - c.floor), passed), dir: now - c.t0 >= 2 * Math.abs(c.to - c.floor) ? 0 : dir };
-  };
+  const lift = () => (liftSys.current ??= new LiftSystem(byKey));
+  /** The floor a building's car shows, and which way it's going. */
+  const carShown = (bkey: string): { floor: number; dir: number } => { const c = lift().car(bkey); return { floor: carFloor(c), dir: carDir(c) }; };
   const lobbyOf = (key: string) => { const b = byKey.get(key); return b ? venueLayout(b) : null; };
-  /** The car's height now: resting at a floor, or on its way (eased in and out between them). */
-  const carY = (bkey: string) => {
-    const c = carOf(bkey), me = state.elevator;
-    // (Riding it: exactly where the rider's floor is.)
-    if (me && me.building === bkey && me.phase === "moving" && state.level?.building === bkey) return state.level.y;
-    if (c.to === null || c.to === c.floor) return floorY(c.floor);
-    const k = Math.min(1, (state.simulationTime - c.t0) / (2 * Math.abs(c.to - c.floor))), e2 = k * k * (3 - 2 * k);
-    return floorY(c.floor) + (floorY(c.to) - floorY(c.floor)) * e2;
-  };
-  // Every apartment building's lobby has its elevator's doors (they open while the car is there).
-  const elevatorOpen = (bkey: string, fl: number) => () => {
-    const e = state.elevator;
-    // (A resident using it: their doors.)
-    const r = trip.current;
-    if ((!e || e.building !== bkey) && r && r.trip.b === bkey) return r.now.car.to === null && r.now.car.floor === fl ? r.now.doors : 0;
-    if (!e || e.building !== bkey || e.floor !== fl) return 0;
-    const t = state.simulationTime - e.t0;
-    if (e.phase === "waiting" || e.phase === "calling" || e.phase === "moving") return 0;
-    if (e.phase === "open") return Math.min(1, smooth(t / 0.8) + (e.boarded ? 1 : 0));
-    if (e.phase === "choose") return 1;
-    if (e.phase === "closing" || e.phase === "shutting") return 1 - smooth(t / 0.8);
-    return smooth(t / 0.8);
-  };
+  /** The car's height now (world). */
+  const carY = (bkey: string) => carWorldY(lift().shownY(bkey));
+  // Every floor's (and the lobby's) elevator doors: open while the car is stopped there with its doors open.
+  const elevatorOpen = (bkey: string, fl: number) => () => { const c = lift().car(bkey); return atFloor(c, fl) ? doorsOf(c) : 0; };
 
   useFrame((_, raw) => {
     const dt = Math.min(raw, 0.1), now = state.simulationTime, p = state.pos;
@@ -975,7 +937,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     // Never up in the air: on a floor of a building that isn't there (a changed world), back down outside its door.
     if (lvl && !fb && buildings.length) {
       const out = state.interior?.outside;
-      state.level = null; state.interior = null; state.elevator = null; move.current = null; lvl = null;
+      state.level = null; state.interior = null; state.inCar = false; move.current = null; lvl = null;
       if (out) state.pos.set(out[0], SIDEWALK_H, out[1]); else state.pos.y = SIDEWALK_H;
     }
     // Each floor's room is made once and kept (with the others in state.rooms).
@@ -992,8 +954,9 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     const want: AptFloor[] = floor ? [floor] : [];
     // (Up on the roof, or climbing to it: the top floor, seen down the hatch.)
     if (lvl && fb && lvl.floor === ROOF_FLOOR) want.push(floorOf(fb, APT_FLOORS));
-    const e0 = state.elevator, eb = e0 ? byKey.get(e0.building) : undefined;
-    if (e0 && eb) for (const n of [e0.floor, e0.target]) if (n !== null && n > 1) { const f = floorOf(eb, n); if (!want.includes(f)) want.push(f); }
+    // (Riding: the floors the car is passing, so the one it stops at is already there.)
+    const ls = state.liftShown, lsb = ls ? byKey.get(ls.b) : undefined;
+    if (ls && lsb) for (const n of ls.floors) if (n >= 2 && n <= APT_FLOORS) { const f = floorOf(lsb, n); if (!want.includes(f)) want.push(f); }
     const keys = want.map((f) => f.key).sort().join();
     if (keys !== shownKeys.current) { shownKeys.current = keys; setShown(want); }
 
@@ -1015,123 +978,61 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       return { x, z, yaw: wy, walk: (back ? -1 : 1) * d / Math.max(dt, 1e-3), sit: (pose as { sit?: number }).sit ?? 0, shuffle: 0, lean: pose.lean, left: reachW(pose.left), right: reachW(pose.right), crouch: pose.crouch ?? 0 };
     };
 
-    // ---------- the cars ----------
-    const others = state.liftLink?.others(now) ?? [];
-    for (const [bkey, c] of cars.current) c.busy = false;
-    for (const u of others) {
-      const c = carOf(u.b);
-      if (u.active) { c.floor = u.from; c.to = u.to; c.t0 = u.t0 ?? now; c.busy = true; }
-      else if (c.to === null || c.to === c.floor) c.floor = u.to;
-    }
-    {
-      const me = state.elevator;
-      if (me && me.phase !== "waiting") {
-        const c = carOf(me.building);
-        if (me.phase === "calling") { c.floor = me.from ?? me.floor; c.to = me.floor; c.t0 = me.t0; }
-        else if (me.phase === "moving" && me.target !== null) { c.floor = me.floor; c.to = me.target; c.t0 = me.t0; }
-        else { c.floor = me.floor; c.to = null; }
-        state.liftLink?.publish({ b: me.building, from: c.floor, to: c.to ?? c.floor, at: now - c.t0, active: true });
-      } else if (lastLift.current) {
-        const c = carOf(lastLift.current);
-        state.liftLink?.publish({ b: lastLift.current, from: c.floor, to: c.floor, at: 0, active: false });
-      }
-      lastLift.current = me ? me.building : lastLift.current;
-      // A resident riding it (the building you're in, or the nearest one): the car busy, moving with them. Who, when
-      // and where come from the shared clock (riders' schedule), so everyone in a room sees the same one; one is
-      // called off if a player is using the car meanwhile (everyone sees that use too).
-      {
-        const inside = state.level?.building ?? (inter?.phase === "inside" ? inter.key.split("#")[0] : undefined);
-        let near = inside;
-        if (!near) { let best = 90; for (const [k, bb] of byKey) { const d = Math.hypot(bb.x - p.x, bb.z - p.z); if (d < best) { best = d; near = k; } } }
-        const nb = near ? byKey.get(near) : undefined, T = Date.now() / 1000;
-        let cur: typeof trip.current = null;
-        if (nb && near) {
-          // (The same rented floors for everyone in the world; one that turns out to be yours, the rider still rides
-          // to, but isn't seen there.)
-          const free = freeFloors(state.worldSeed, near, timeInfo(state.elapsed).day);
-          const rented = Array.from({ length: APT_FLOORS - 1 }, (_, i) => i + 2).filter((f) => !free.includes(f));
-          const k = Math.floor(T / RIDER_SLOT);
-          for (const kk of [k, k - 1]) {
-            const t = scheduledTrip(near, state.worldSeed, kk, rented), id = t ? `${near}|${kk}` : "";
-            if (!t || T < t.t0 || calledOff.current.has(id)) continue;
-            const places = trip.current?.id === id ? trip.current.places : riderPlaces(nb, t.from > 1 ? t.from : t.to);
-            const nowR = riderAt(t, places, T - t.t0);
-            if (nowR.done) continue;
-            // A player using the car (you, past calling it; or anyone else): this one doesn't happen.
-            const playerOn = (me && me.building === near && me.phase !== "waiting") || others.some((u) => u.b === near && u.active);
-            if (playerOn) { calledOff.current.add(id); continue; }
-            cur = { id, trip: t, places, now: nowR };
-            break;
-          }
-        }
-        trip.current = cur;
-        if (cur) {
-          const c = carOf(cur.trip.b), kc = cur.now.car;
-          c.floor = kc.floor; c.to = kc.to; c.t0 = now - (T - (cur.trip.t0 + kc.since)); c.busy = true;
-          if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") (window as unknown as { __trip?: unknown }).__trip = cur;
-        }
-      }
-      // Arrived somewhere with nobody aboard: it rests there.
-      for (const c of cars.current.values()) if (!c.busy && c.to !== null && now - c.t0 >= 2 * Math.abs(c.to - c.floor) && !(me && carOf(me.building) === c)) { c.floor = c.to; c.to = null; }
-    }
-
-    // ---------- the elevator ----------
-    const e = state.elevator;
+    // ---------- the elevators ----------
+    // You walk in and out yourself; inside, E for the buttons. The car goes where it's asked (by anyone, residents
+    // too), stopping 8 s at each floor; you ride it if you're in it. Three people at most.
     let script: Script | null = null;
-    // You walk in and out yourself. Called, it comes (you see it come, 2 s a floor) and opens; inside, E for the
-    // buttons; the doors shut, the car goes (you in it, its floor under your feet), opens at the floor, and you walk
-    // out; once you're clear of it the doors close. Someone else using it: you wait for it.
     const L0 = lobby?.layout ?? floor;
-    const inCar = (x: number, z: number) => !!L0 && Math.abs(x - (L0.bounds.minX + SHAFT / 2)) < SHAFT / 2 - SHAFT_WALL && Math.abs(z - (L0.bounds.minZ + SHAFT / 2)) < SHAFT / 2 - SHAFT_WALL;
+    const bHere = lobby ? aptKey(lobby.b) : lvl?.building;
+    const bOb = bHere ? byKey.get(bHere) : undefined, sh = bOb ? shaftOf(bOb) : null;
     const meLocal = L0 ? toLocal(L0.frame, p.x, p.z) : null;
-    // (The car's whole floor, out to its doorway: no jumping in it.)
-    const insideCar = !!meLocal && inCar(meLocal[0], meLocal[1]);
+    const insideCar = !!sh && !!meLocal && inCarAt(sh, meLocal[0], meLocal[1]);
+    const inDoor = !!sh && !!meLocal && inDoorAt(sh, meLocal[0], meLocal[1]);
     state.noJump = !!meLocal && !!L0 && Math.abs(meLocal[0] - (L0.bounds.minX + SHAFT / 2)) < SHAFT / 2 && meLocal[1] < L0.bounds.minZ + SHAFT + 0.1;
-    if (e && e.phase === "waiting") {
-      const c = carOf(e.building);
-      if (!c.busy) { const at = carShown(e.building).floor; if (at === e.floor) { e.phase = "open"; e.t0 = now; } else { e.phase = "calling"; e.from = at; e.t0 = now; } }
-    } else if (e && e.phase === "calling" && now - e.t0 >= 2 * Math.abs((e.from ?? e.floor) - e.floor)) {
-      const c = carOf(e.building); c.floor = e.floor; c.to = null;
-      e.phase = "open"; e.t0 = now;
-    } else if (e && e.phase === "open") {
-      // Stepped in: aboard. Out again (clear of the doorway) after being aboard, or never came in: the doors shut.
-      if (insideCar) e.boarded = true;
-      const clear = !!meLocal && L0 && meLocal[1] > L0.bounds.minZ + SHAFT + 0.45;
-      if ((e.boarded && !insideCar && clear) || (!e.boarded && now - e.t0 > 12) || (state.level?.building !== e.building && !lobby)) { e.phase = "shutting"; e.t0 = now; }
-    } else if (e && e.phase === "choose" && state.uiLock !== "elevator") { e.phase = "open"; e.t0 = now; }
-    else if (e && e.phase === "closing" && now - e.t0 >= 0.8) {
-      if (e.target === null || e.target === e.floor) { e.phase = "open"; e.t0 = now; }
-      else {
-        e.phase = "moving"; e.t0 = now;
-        // Riding: the floor under your feet is the car's (even from the lobby).
-        if (!state.level) state.level = { building: e.building, floor: 1, y: floorY(1) };
-      }
-    } else if (e && e.phase === "moving" && e.target !== null) {
-      const T = 2 * Math.abs(e.target - e.floor), k = Math.min(1, (now - e.t0) / T), ease = k * k * (3 - 2 * k);
-      const y = floorY(e.floor) + (floorY(e.target) - floorY(e.floor)) * ease;
-      if (state.level && insideCar) state.level.y = y;
-      if (k >= 1) {
-        // There: the same spot in the shaft on the new floor (its room the same shape, at this height).
-        const b = byKey.get(e.building)!;
-        if (insideCar) {
-          if (e.target <= 1) { state.level = null; if (state.interior) state.interior.key = aptKey(b); }
-          else { const f = floorOf(b, e.target); state.level = { building: e.building, floor: e.target, y: floorY(e.target) }; if (state.interior) state.interior.key = f.key; }
-          state.pos.y = floorY(e.target);
-        }
-        e.floor = e.target; e.phase = "opening"; e.t0 = now; e.boarded = true;
-      }
-    } else if (e && e.phase === "opening" && now - e.t0 >= 0.8) { e.phase = "open"; e.t0 = now; }
-    else if (e && e.phase === "shutting" && now - e.t0 >= 0.8) state.elevator = null;
-    // The doorways: open to walk through only while the doors are open at that floor.
+    state.inCar = insideCar;
     {
-      const ee = state.elevator, here = state.level?.floor ?? 1;
-      const doorOpen = !!ee && ee.floor === here && (ee.phase === "open" || ee.phase === "choose" || (ee.phase === "opening" && now - ee.t0 > 0.4) || (ee.phase === "closing" && now - ee.t0 < 0.4) || (ee.phase === "shutting" && now - ee.t0 < 0.4));
+      let near = bHere;
+      if (!near) { let best = 90; for (const [k, bb] of byKey) { const d = Math.hypot(bb.x - p.x, bb.z - p.z); if (d < best) { best = d; near = k; } } }
+      const myFloor = lvl && lvl.floor <= APT_FLOORS ? lvl.floor : 1;
+      for (const f of state.liftPress) if (bHere) myCalls.current.push({ b: bHere, floor: f });
+      state.liftPress = [];
+      const home = state.life.home;
+      lift().update(dt, now, state.liftLink, { b: near ?? null, floor: myFloor, inCar: insideCar, inDoor }, myCalls.current, (bk) => {
+        const free = freeFloors(state.worldSeed, bk, timeInfo(state.elapsed).day);
+        return Array.from({ length: APT_FLOORS - 1 }, (_, i) => i + 2).filter((f) => !free.includes(f) && !(home?.building === bk && home.floor === f));
+      });
+      myCalls.current = [];
+      if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") (window as unknown as { __lift?: unknown }).__lift = lift();
+    }
+    const car: Car | null = bHere ? lift().car(bHere) : null;
+    if (car && bHere && bOb) {
+      const cf = carFloor(car), stopped = car.phase !== "moving" && car.phase !== "idle";
+      if (insideCar) {
+        // In it: its floor under your feet (from the lobby too); stopped at a floor, that floor's yours.
+        if (!state.level) state.level = { building: bHere, floor: 1, y: floorY(1) };
+        state.level.y = carY(bHere);
+        if (stopped && state.level.floor !== cf && Math.abs(car.y - cf) < 1e-3) {
+          state.level.floor = cf;
+          if (state.interior) state.interior.key = cf <= 1 ? bHere : floorOf(bOb, cf).key;
+        }
+        const a = Math.floor(lift().shownY(bHere)), c2 = Math.ceil(lift().shownY(bHere));
+        state.liftShown = { b: bHere, floors: [...new Set([a, c2, state.level.floor])] };
+      } else {
+        state.liftShown = null;
+        // (Out of it in the lobby: on the ground again.)
+        if (state.level && state.level.floor <= 1 && lobby) state.level = null;
+      }
+      // The doorway: open while its doors are open at this floor and there's room in it (or you're in it).
+      const myFloor = state.level?.floor ?? 1, full = lift().occupancy(bHere, [{ b: bHere, floor: myFloor, inCar: insideCar, inDoor }, ...(state.liftLink?.others() ?? [])]) - (insideCar ? 1 : 0) >= CAPACITY;
+      const doorOpen = atFloor(car, myFloor) && doorsOf(car) > 0.5 && (insideCar || inDoor || !full);
       if (floor) setLiftDoor(floor.liftDoor, !doorOpen);
-      // (The lobby's room the player walks in is the one in state.rooms.)
       const lr = lobby ? state.rooms.get(aptKey(lobby.b)) as (VenueLayout | undefined) : undefined;
       if (lr?.liftDoor) setLiftDoor(lr.liftDoor, !doorOpen);
-    }
-    const eRide = state.elevator && state.elevator.phase === "moving" && insideCar ? state.elevator : null;
+      // The buttons' view of it.
+      if (state.uiLock === "elevator") state.liftView = { b: bHere, floor: cf, dir: carDir(car), stops: [...car.stops] };
+    } else { state.liftShown = null; state.inCar = false; }
+    if (state.uiLock === "elevator" && !insideCar) { state.uiLock = null; state.liftView = null; }
+    const eRide = insideCar && !!car && car.phase === "moving" ? car : null;
     function here(): { x: number; z: number; yaw: number } { const [x, z] = frameNow ? toLocal(frameNow, p.x, p.z) : [p.x, p.z]; return { x, z, yaw: hereYaw() }; }
     function here2(): [number, number] { const h = here(); return [h.x, h.z]; }
     function hereYaw() { return frameNow ? state.rotY - frameNow.rot : state.rotY; }
@@ -1462,17 +1363,12 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     // ---------- E: what can be done here ----------
     const pr = prompt.current; pr.visible = false; pr.label = undefined;
     if (eRide || move.current || kr.busy || state.ladder || state.ladderPrompt || state.accident || state.health <= 0 || sleeping.current) { if (eRide || move.current || kr.busy) state.interactQueued = false; return; }
-    // Calling the car: where it is now (it comes 2 s a floor); busy with someone else: wait for it.
-    const callLift = (bkey: string, here: number) => {
-      const c = carOf(bkey), at = carShown(bkey).floor;
-      if (c.busy) { state.elevator = { building: bkey, floor: here, target: null, phase: "waiting", t0: now }; return; }
-      state.elevator = at === here && (c.to === null || now - c.t0 >= 2 * Math.abs(c.to - c.floor)) ? { building: bkey, floor: here, target: null, phase: "open", t0: now } : { building: bkey, floor: here, target: null, phase: "calling", t0: now, from: at };
-      move.current = null;
-    };
+    // Calling the car (to this floor); the label says where it is.
+    const callLift = (bkey: string, here: number) => { myCalls.current.push({ b: bkey, floor: here }); };
     const liftLabel = (bkey: string, here: number) => {
-      const w = state.elevator;
-      if (w && w.building === bkey && w.floor === here) return w.phase === "waiting" ? "ELEVATOR IN USE · WAITING" : `ELEVATOR COMING · ${carShown(bkey).floor === 1 ? "L" : carShown(bkey).floor}`;
-      return carOf(bkey).busy ? "E  CALL (IN USE)" : "E  ELEVATOR";
+      const c = lift().car(bkey), at = carFloor(c), name = at === 1 ? "L" : String(at);
+      if (atFloor(c, here) && doorsOf(c) > 0.5) return lift().occupancy(bkey, [...(state.liftLink?.others() ?? [])]) >= CAPACITY ? "ELEVATOR FULL" : "ELEVATOR HERE";
+      return c.stops.includes(here) ? `ELEVATOR COMING · ${name}` : `E  CALL ELEVATOR · ${name}`;
     };
     // On a chair (sitting the restaurants' way): E gets up too, once anything set down is eaten and taken back.
     if (state.seat && floor) {
@@ -1482,18 +1378,17 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     }
     const show = (x: number, z: number, y: number, label: string) => { const [wx, wz] = toW(x, z); Object.assign(pr, { visible: true, x: wx, y: yNow + y, z: wz, label }); };
     let act: (() => void) | null = null;
-    // In the elevator with its doors open: E for the floor buttons.
-    const ev = state.elevator;
-    if (ev && ev.phase === "open" && insideCar && L0) {
+    // In the elevator (doors open or not): E for the floor buttons.
+    if (insideCar && L0 && bHere && state.uiLock !== "elevator") {
       show(L0.bounds.minX + SHAFT_WALL + 0.12, L0.bounds.minZ + SHAFT - 0.35, 1.5, "E  FLOORS");
-      if (state.interactQueued) { state.interactQueued = false; ev.phase = "choose"; ev.t0 = now; state.uiLock = "elevator"; state.keys.clear(); }
+      if (state.interactQueued) { state.interactQueued = false; state.uiLock = "elevator"; const c = lift().car(bHere); state.liftView = { b: bHere, floor: carFloor(c), dir: carDir(c), stops: [...c.stops] }; state.keys.clear(); }
       return;
     }
     if (lobby) {
       const L = lobby.layout, [lx, lz] = toLocal(L.frame, p.x, p.z), ex = L.bounds.minX + SHAFT / 2, ez = L.bounds.minZ + SHAFT;
       if (Math.abs(lx - ex) < 1.1 && lz - ez > 0 && lz - ez < 1.6 && facesAt(state.rotY - L.frame.rot, lx, lz, ex, ez)) {
         show(ex, ez + 0.3, 2.2, liftLabel(aptKey(lobby.b), 1));
-        if (!state.elevator) act = () => callLift(aptKey(lobby.b), 1);
+        act = () => callLift(aptKey(lobby.b), 1);
       }
     } else if (floor && lvl) {
       const [lx, lz] = toLocal(floor.frame, p.x, p.z), ex = floor.bounds.minX + SHAFT / 2, hz0 = floor.hallZ[0];
@@ -1507,7 +1402,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         if (kp.act) act = kp.act;
       } else if (Math.abs(lx - ex) < 1.1 && lz - hz0 > 0 && lz - hz0 < 1.5 && sees(ex, hz0)) {
         show(ex, hz0 + 0.3, 2.2, liftLabel(lvl.building, lvl.floor));
-        if (!state.elevator) act = () => callLift(lvl.building, lvl.floor);
+        act = () => callLift(lvl.building, lvl.floor);
       } else if (lx > dx - 1.7 && lx < dx + 0.3 && lz < wz && lz > wz - 1.4 && sees(dx - 0.5, wz)) {
         // At the apartment's door, in the hallway.
         const holding = heldKind(state) === "key";
@@ -1631,8 +1526,8 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       <LobbyVisitor state={state} layout={layout} />
     </group>)}
     {shown.map((fl) => <FloorInterior key={fl.key} lift={() => carShown(fl.key.split("#")[0]!)} sheet={sheetLink(fl.key)} bath={bathLink(fl.key)} kview={kitchen.current.view} lightsOf={lightsOf} bathDoor={() => (state.level?.floor === fl.upper ? bathAngle.current : 0)} fl={fl} state={state} m={m} door={() => doorAngle.current} bedDoor={() => bedAngle.current} fridgeDoor={() => fridgeAngle.current} closetDoor={() => closetAngle.current} elevatorOpen={elevatorOpen(fl.key.split("#")[0]!, fl.upper)} />)}
-    <CarAt state={state} buildings={byKey} m={m} carY={carY} light={carLight} doors={(bkey) => { const e = state.elevator, r = trip.current; return e && e.building === bkey ? elevatorOpen(bkey, e.floor)() : r && r.trip.b === bkey && r.now.car.to === null ? r.now.doors : 0; }} />
-    <LiftRider state={state} get={() => trip.current} buildings={byKey} carY={carY} />
+    <CarAt state={state} buildings={byKey} m={m} carY={carY} light={carLight} doors={(bkey) => doorsOf(lift().car(bkey))} shown={carShown} />
+    {[0, 1, 2, 3, 4, 5].map((i) => <LiftRider key={i} state={state} get={() => lift().riders[i] ?? null} buildings={byKey} carY={carY} />)}
     <pointLight ref={bathLight} intensity={0} distance={3.4} decay={1.4} color="#fff4e6" />
     <pointLight ref={hallLight} intensity={0} distance={7} decay={1.4} color="#ffefd6" />
     <pointLight ref={mainLight} intensity={0} distance={7} decay={1.4} color="#fff2df" />
@@ -1735,29 +1630,32 @@ function bedroomSide(fl: AptFloor, lx: number, lz: number): [number, number] | n
 function LobbyCar({ state, bkey, at, m }: { state: GameState; bkey: string; at: [number, number]; m: FMats }) {
   const empty = useRef<THREE.Group>(null);
   useFrame(() => {
-    const here = state.elevator?.building === bkey && state.elevator.floor === 1;
-    // The shaft's dark inside (its walls) behind the doors.
-    void here;
+    // (The shaft's dark inside: its walls, behind the doors.)
+    void state; void bkey;
   });
   return <group ref={empty} position={[at[0], 0, at[1] - 0.06]}><ShaftInside m={m} h={FH} slot={false} /></group>;
 }
 
 /** A resident using the elevator: walking to it, riding it (at the car's height), walking off. */
-function LiftRider({ state, get, buildings, carY }: { state: GameState; get: () => { trip: RiderTrip; now: RiderNow } | null; buildings: Map<string, Building>; carY: (bkey: string) => number }) {
+function LiftRider({ state, get, buildings, carY }: { state: GameState; get: () => LiftRiderWire | null; buildings: Map<string, Building>; carY: (bkey: string) => number }) {
   const rig = useBodyRig();
   const seedRef = useRef(-1);
   const [color, setColor] = useState(() => bodyColor("male"));
-  const phase = useRef(0);
+  const phase = useRef(0), at = useRef<{ id: number; x: number; z: number; yaw: number } | null>(null);
   useFrame((_, dt) => {
-    const root = rig.root.current, hips = rig.hips.current, cur = get();
+    const root = rig.root.current, hips = rig.hips.current, r = get();
     if (!root || !hips) return;
-    const r = cur?.now.rider, b = cur ? buildings.get(cur.trip.b) : undefined;
-    const home = state.life.home, mine = !!cur && !!r && home?.building === cur.trip.b && home.floor === r.floor && !r.riding;
-    root.visible = !!(r && r.visible && b) && !mine;
-    if (!cur || !r || !b || !root.visible) return;
-    if (seedRef.current !== cur.trip.seed) { seedRef.current = cur.trip.seed; setColor(bodyColor(cur.trip.seed % 2 ? "female" : "male")); }
-    const L = venueLayout(b), [x, z] = toWorld(L.frame, r.x, r.z);
-    root.position.set(x, r.riding ? carY(cur.trip.b) : floorY(r.floor), z); root.rotation.y = worldYaw(L.frame, r.yaw);
+    const b = r ? buildings.get(r.b) : undefined;
+    root.visible = !!(r && b);
+    if (!r || !b) { at.current = null; return; }
+    if (seedRef.current !== r.seed) { seedRef.current = r.seed; setColor(bodyColor(r.seed % 2 ? "female" : "male")); }
+    // (Eased toward where they are: in a room they arrive a few times a second.)
+    const a = at.current && at.current.id === r.id ? at.current : (at.current = { id: r.id, x: r.x, z: r.z, yaw: r.yaw });
+    const k = 1 - Math.exp(-10 * Math.min(dt, 0.1));
+    a.x += (r.x - a.x) * k; a.z += (r.z - a.z) * k; a.yaw += Math.atan2(Math.sin(r.yaw - a.yaw), Math.cos(r.yaw - a.yaw)) * k;
+    const L = venueLayout(b), [x, z] = toWorld(L.frame, a.x, a.z);
+    root.position.set(x, r.riding || r.inCar ? carY(r.b) : floorY(r.floor), z); root.rotation.y = worldYaw(L.frame, a.yaw);
+    void state;
     // An easy walk (legs and arms swinging), or standing.
     phase.current += Math.min(dt, 0.1) * (r.walking ? 7.5 : 0);
     const w = r.walking ? 1 : 0, sn = Math.sin(phase.current);

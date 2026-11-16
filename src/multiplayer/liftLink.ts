@@ -1,42 +1,62 @@
-import type { LiftLink, LiftUse } from "@/game/state";
-import type { NamedRoom } from "@/platform/realtime";
+import type { LiftLink, LiftPeer, LiftSnap } from "@/game/state";
+import type { NamedRoom, Peer } from "@/platform/realtime";
 
-type Wire = { n: number; b: string; from: number; to: number; at: number; active: boolean };
-const isWire = (v: unknown): v is Wire => {
-  const w = v as Wire | null;
-  return typeof w === "object" && w !== null && typeof w.n === "number" && typeof w.b === "string" && typeof w.from === "number" && typeof w.to === "number" && typeof w.at === "number" && typeof w.active === "boolean";
-};
-/** About how long it takes to reach the others. */
-const LAG = 0.12;
+const joinedAt = (p: Peer) => (typeof p.presence["joinedAt"] === "number" ? p.presence["joinedAt"] : Infinity);
+type Req = { id: number; b: string; floor: number; at: number };
+const isReq = (v: unknown): v is Req => { const r = v as Req | null; return typeof r === "object" && r !== null && typeof r.id === "number" && typeof r.b === "string" && typeof r.floor === "number"; };
+const isPeer = (v: unknown): v is LiftPeer => { const p = v as LiftPeer | null; return typeof p === "object" && p !== null && typeof p.floor === "number" && typeof p.inCar === "boolean"; };
 
 /**
- * Shares the apartment buildings' elevators: each player puts what they're doing with one in presence (`lift`: the
- * building, the car going from one floor to another, how far along, whether they're using it); the others time it
- * from when they first see it, so the car is in the same place (and busy) for everyone.
+ * A room's apartment elevators. Like the traffic, the longest-present player runs them (every car, and the
+ * residents riding) and puts them in presence (`lifts`, numbered); everyone else draws that, sends the floors they
+ * call or press (`liftReqs`, the last few seconds' worth, numbered) and says where they are (`liftMe`: in which
+ * building, on which floor, in a car, in a doorway) — which the runner uses for the doors and the car's room.
  */
 export function makeLiftLink(channel: NamedRoom): LiftLink {
-  let n = 0, last = "";
-  const seen = new Map<string, { n: number; use: LiftUse }>();
+  let seq = 0, reqId = 0, mine: Req[] = [], lastMe = "";
+  const seenReq = new Map<string, number>();
+  let last: { stamp: unknown; snap: LiftSnap | null; n: number } | null = null;
+  const host = () => {
+    let best: Peer | null = null;
+    for (const p of channel.peers()) {
+      if (p.kind !== "viewer") continue;
+      if (!best || joinedAt(p) < joinedAt(best) || (joinedAt(p) === joinedAt(best) && p.peer < best.peer)) best = p;
+    }
+    return best;
+  };
   return {
-    publish: (use) => {
-      const key = `${use.b}|${use.from}|${use.to}|${use.active}`;
-      if (key === last) return;
-      last = key; n += 1;
-      const wire: Wire = { n, b: use.b, from: use.from, to: use.to, at: Math.round(use.at * 100) / 100, active: use.active };
-      void channel.presence({ lift: wire }).catch(() => {});
+    isHost: () => host()?.sameTab ?? true,
+    publish: (snap) => { seq += 1; void channel.presence({ lifts: { ...snap, n: seq } }).catch(() => {}); },
+    latest: () => {
+      const h = host();
+      if (!h || h.sameTab) return null;
+      const v = h.presence["lifts"] as (LiftSnap & { n?: number }) | undefined;
+      if (!v || typeof v !== "object" || typeof v.n !== "number" || typeof v.cars !== "object") return null;
+      if (!last || last.stamp !== v.n) last = { stamp: v.n, snap: { cars: v.cars, riders: Array.isArray(v.riders) ? v.riders : [] }, n: v.n };
+      return last.snap ? { snap: last.snap, n: last.n } : null;
     },
-    others: (now) => {
-      const out: LiftUse[] = [], present = new Set<string>();
+    request: (b, floor) => {
+      const at = Date.now();
+      mine = [...mine.filter((r) => at - r.at < 6000), { id: ++reqId, b, floor, at }];
+      void channel.presence({ liftReqs: mine }).catch(() => {});
+    },
+    takeRequests: () => {
+      const out: { b: string; floor: number }[] = [];
       for (const peer of channel.peers()) {
         if (peer.sameTab) continue;
-        present.add(peer.peer);
-        const w = peer.presence["lift"], had = seen.get(peer.peer);
-        if (isWire(w) && (!had || had.n !== w.n)) seen.set(peer.peer, { n: w.n, use: { b: w.b, from: w.from, to: w.to, at: w.at, active: w.active, t0: had ? now - w.at - LAG : now - w.at - 1000 } });
-        const e = seen.get(peer.peer);
-        if (e) out.push(e.use);
+        const list = Array.isArray(peer.presence["liftReqs"]) ? (peer.presence["liftReqs"] as unknown[]).filter(isReq) : [];
+        const had = seenReq.get(peer.peer) ?? 0;
+        for (const r of list) if (r.id > had) out.push({ b: r.b, floor: r.floor });
+        seenReq.set(peer.peer, Math.max(had, ...list.map((r) => r.id)));
       }
-      for (const id of seen.keys()) if (!present.has(id)) seen.delete(id);
       return out;
     },
+    setMe: (p) => {
+      const key = JSON.stringify(p);
+      if (key === lastMe) return;
+      lastMe = key;
+      void channel.presence({ liftMe: p }).catch(() => {});
+    },
+    others: () => channel.peers().filter((p) => !p.sameTab).map((p) => p.presence["liftMe"]).filter(isPeer),
   };
 }

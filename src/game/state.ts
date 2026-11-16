@@ -72,8 +72,23 @@ export type Script = { x: number; z: number; yaw: number; walk: number; sit: num
   y?: number };
 /** Someone's use of an apartment building's elevator: the car going `from` → `to` (the same: standing there), `at`
  * seconds into that (t0: when it started, on this player's clock), and whether they're using it now. */
-export type LiftUse = { b: string; from: number; to: number; at: number; active: boolean; t0?: number };
-export type LiftLink = { publish: (use: LiftUse) => void; others: (now: number) => LiftUse[] };
+/** Where a player is as far as the elevators care: the building they're in or near, their floor, in a car, in
+ * a car's doorway. */
+export type LiftPeer = { b: string | null; floor: number; inCar: boolean; inDoor: boolean };
+/** Everything the room's elevator runner shares: each building's car, and the residents riding. */
+export type LiftSnap = { cars: Record<string, import("./liftCar").Car>; riders: LiftRiderWire[] };
+export type LiftRiderWire = { id: number; b: string; seed: number; x: number; z: number; yaw: number; floor: number; walking: boolean; inCar: boolean; riding: boolean };
+/** A room's elevators: one player (the longest there) runs them for everyone; the rest send their calls and
+ * button presses, and say where they are. */
+export type LiftLink = {
+  isHost: () => boolean;
+  publish: (snap: LiftSnap) => void;
+  latest: () => { snap: LiftSnap; n: number } | null;
+  request: (b: string, floor: number) => void;
+  takeRequests: () => { b: string; floor: number }[];
+  setMe: (p: LiftPeer) => void;
+  others: () => LiftPeer[];
+};
 /** Inside (or going into, or out of) a restaurant. */
 export type Interior = {
   key: string; phase: "entering" | "inside" | "leaving"; startedAt: number;
@@ -150,8 +165,14 @@ export type GameState = {
   groceryBag: ItemKind[] | null;
   /** On an upper floor of an apartment building (its floor's height): the ground is that floor. */
   level: { building: string; floor: number; y: number } | null;
-  /** Riding an apartment building's elevator: where, from which floor to which, and how far along. */
-  elevator: { building: string; floor: number; target: number | null; phase: "open" | "choose" | "closing" | "moving" | "opening" | "shutting" | "waiting" | "calling"; t0: number; /** Been inside the car (with the doors open: going out again closes them). */ boarded?: boolean; /** Calling: the floor the car comes from. */ from?: number; /** Leaving: when the rider was fully out (the doors close only then). */ outAt?: number } | null;
+  /** In an apartment building's elevator car (riding, or standing in it). */
+  inCar: boolean;
+  /** The elevator's buttons open: that car (its floor, way, the floors asked for). */
+  liftView: { b: string; floor: number; dir: number; stops: number[] } | null;
+  /** Floors pressed on those buttons, for the elevator to take. */
+  liftPress: number[];
+  /** While riding: the building and the floors to draw (those the car is passing). */
+  liftShown: { b: string; floors: number[] } | null;
   /** Seated somewhere that isn't a park bench or a restaurant chair (an apartment's couch, dining chair or desk):
    * where take-out food can be set down (world; the hands' spots are the point ± the sideways step). */
   seatSurface: { x: number; y: number; z: number; yaw: number; lx: number; lz: number } | null;
@@ -314,7 +335,7 @@ export function createState(save: SaveData): GameState {
     extraDoorUses: [],
     level: save.apt && save.apt.floor >= 2 ? { building: save.apt.building, floor: save.apt.floor, y: floorY(save.apt.floor) } : null,
     seatSurface: null,
-    elevator: null,
+    inCar: false, liftView: null, liftPress: [], liftShown: null,
     uiLock: null, fridgeLoad: [], camLock: null, ladder: null, ladderPrompt: false, noJump: false, kitchenAsk: null, meal: null, kitchenQ: false,
     keys: new Set(),
     jumpQueued: false,
@@ -400,11 +421,11 @@ export function toSave(s: GameState): SaveData {
  * is at or going to, out in the hallway in front of it). */
 function aptSave(s: GameState): import("./config").SavedApt | null {
   if (!s.interior || s.interior.phase !== "inside") return null;
-  const e = s.elevator, lvl = s.level;
-  const building = e?.building ?? lvl?.building;
+  const lvl = s.level;
+  const building = lvl?.building ?? (s.inCar ? s.interior.key.split("#")[0] : undefined);
   if (!building) return null;
   const outside = s.interior.outside, outsideYaw = s.interior.outsideYaw;
-  if (e && (e.phase === "choose" || e.phase === "closing" || e.phase === "moving")) {
+  if (s.inCar) {
     // In the elevator (going up, down, or waiting in it): back on the ground floor, in the lobby in front of its
     // doors — never somewhere up a shaft.
     const lobby = s.rooms.get(building);
