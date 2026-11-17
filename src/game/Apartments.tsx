@@ -30,6 +30,7 @@ import { ItemModel, useLooks } from "./InventoryWorld";
 import { ITEMS, itemInfo, type BaseKind, type ItemKind } from "./inventory";
 import { isDrinkName } from "./food";
 import { canvas, tex } from "./textures";
+import { rayProps, roomProps } from "./props";
 import { BULK_H, ROOF_FLOOR, ROOF_UP, RUNG, outZ, roofPlan, rungY, type RoofPlan } from "./roof";
 import { inCarAt, inDoorAt, LiftSystem, OPENER_PASS, shaftOf } from "./liftRiders";
 import { npcGender } from "./pedestrians";
@@ -1086,12 +1087,22 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       // The door's frame: origin at the doorway's edge, +z into the room the door opens into (the opening is local
       // x −1..0, like the restaurants' left leaf); going in pushes it open, coming out (mirrored) pulls it.
       const fr = (u: number, v: number): [number, number] => [F.ox + u * c + v * sn, F.oz - u * sn + v * c];
+      // How far past the doorway he can walk (into the room going in; out of it, mirrored, coming out): clear of the
+      // shutting door's leaf if there's room, a body's width short of anything in the way.
+      const clearAhead = (mirror: boolean) => {
+        const sgn = mirror ? -1 : 1, [ox, oz] = fr(sgn * -0.45, sgn * 0.05), [ex, ez] = fr(sgn * -0.45, sgn * 1.05);
+        const hit = rayProps(roomProps(floor), ox, oz, ex - ox, ez - oz, 3);
+        return Math.max(0.6, Math.min(1.25, (hit?.t ?? 3) - 0.42));
+      };
       const toRoom = (pose: { x: number; z: number; yaw: number; lean: number; left: Reach | null; right: Reach | null }, mirror: boolean) => {
         const sx = mirror ? -1 : 1;
         const r = (h: Reach | null): Reach | null => { if (!h) return null; const [x, z] = fr(sx * h.at[0], h.at[2]); return { at: [x, h.at[1], z], blend: h.blend, pole: h.pole }; };
-        // Rooms here are small: past the doorway the walk is shortened (about a metre in, not the restaurants' 2.6 m),
-        // so nobody walks on into the couch or the closet. (The steps shorten with it: legs follow the distance.)
-        const squeeze = (v: number) => (!mirror && v > 0.35 ? 0.35 + (v - 0.35) * 0.35 : mirror && v < -0.35 ? -0.35 + (v + 0.35) * 0.35 : v);
+        // Rooms here are small: past the doorway the walk is shortened (not the restaurants' 2.6 m), but far enough that
+        // the door swings shut behind him without passing through him (its leaf is a metre: about 1.2 m in), and never
+        // into whatever stands ahead (the couch, the closet, the toilet: a body's width short of it). Where he's let go
+        // (the pose's depth at `free`, 1.46 m) maps to that depth. (The steps shorten with it: legs follow the distance.)
+        const depth = clearAhead(mirror), k = Math.max(0, (depth - 0.35) / (1.46 - 0.35));
+        const squeeze = (v: number) => (!mirror && v > 0.35 ? 0.35 + (v - 0.35) * k : mirror && v < -0.35 ? -0.35 + (v + 0.35) * k : v);
         const [x, z] = fr(sx * pose.x, squeeze(pose.z));
         return { x, z, yaw: (mirror ? -pose.yaw : pose.yaw) + F.theta, lean: pose.lean, left: mirror ? r(pose.right) : r(pose.left), right: mirror ? r(pose.left) : r(pose.right), crouch: 0 };
       };
