@@ -31,10 +31,14 @@ export function GuestGame({ onExit }: { onExit: () => void }) {
   useEffect(() => {
     active.current = state;
     const id = window.setInterval(save, 10000);
-    return () => window.clearInterval(id);
+    // (Closing or leaving the tab saves too: nothing put down or picked up just before is lost.)
+    const hidden = () => { if (document.visibilityState === "hidden") save(); };
+    window.addEventListener("pagehide", save); document.addEventListener("visibilitychange", hidden);
+    return () => { window.clearInterval(id); window.removeEventListener("pagehide", save); document.removeEventListener("visibilitychange", hidden); };
   }, [state, save]);
   const reset = useCallback(() => {
-    const fresh = resetProgress(active.current?.worldSeed);
+    // (What was left lying about stays in the world after a death.)
+    const prev = active.current, fresh = { ...resetProgress(prev?.worldSeed), ...(prev ? { ground: toSave(prev).ground ?? [] } : {}) };
     try { localStorage.removeItem(KEY); } catch { /* ignore */ }
     setState(createState(fresh));
     setRound((n) => n + 1);

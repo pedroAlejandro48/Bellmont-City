@@ -15,6 +15,7 @@ import { toast, type GameState } from "./state";
 export const USE_SECONDS = 2.4;
 export { DROP_CONTACT as INV_CONTACT, DROP_TIME as INV_TIME };
 let nextGround = 1;
+import { MAX_GROUND } from "./saves";
 
 /** The phone counts as out while it's open; otherwise whatever slot was taken out. */
 export const heldSlotOf = (state: GameState) => (state.phone.open ? 0 : state.heldSlot);
@@ -158,13 +159,13 @@ export function stepInventory(state: GameState) {
     if (!a.done && t >= DROP_CONTACT && a.target) {
       a.done = true;
       const contents = a.item === "groceryBag" ? state.groceryBag ?? [] : undefined;
-      state.groundItems.push({ id: nextGround++, kind: a.item, x: a.target.x, z: a.target.z, ...(a.topY !== undefined ? { y: a.topY } : state.level ? { y: state.level.y } : {}), yaw: state.rotY, at: state.simulationTime, ...(contents ? { contents } : {}) });
+      state.groundItems.push({ id: Math.max(nextGround++, ...state.groundItems.map((g) => g.id + 1)), kind: a.item, x: a.target.x, z: a.target.z, ...(a.topY !== undefined ? { y: a.topY } : state.level ? { y: state.level.y } : {}), yaw: state.rotY, at: state.simulationTime, ...(contents ? { contents } : {}) });
       if (a.kitchenHand) state.life.kitchen.hands[a.kitchenHand] = null;
       else if (a.item === "bottle" || a.item === "can") state.heldTrash = null;
       else if (a.item === "groceryBag") state.groceryBag = null;
       else if (state.heldSlot !== null) { removeItem(state.life.inventory, state.heldSlot); state.heldSlot = null; }
-      // Old things on the ground fade from the world after a while (and never more than 40).
-      if (state.groundItems.length > 40) state.groundItems.shift();
+      // Things put down stay where they are, for good (only past MAX_GROUND does the oldest go).
+      if (state.groundItems.length > MAX_GROUND) state.groundItems.shift();
     }
   } else if (a.kind === "pickup") {
     if (!a.done && t >= DROP_CONTACT) {

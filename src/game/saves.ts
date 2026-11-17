@@ -1,4 +1,4 @@
-import { BENCH_SEATS, DEFAULT_SAVE, type SaveData, type SavedApt } from "./config";
+import { BENCH_SEATS, DEFAULT_SAVE, type SaveData, type SavedApt, type SavedGround, type SavedHeld, type SavedPack } from "./config";
 
 export function saveRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -23,7 +23,38 @@ export function readSave(value: unknown): SaveData {
     pos: [...pos], rotY: number("rotY", DEFAULT_SAVE.rotY), camYaw: number("camYaw", DEFAULT_SAVE.camYaw),
     ...(data['accident'] ? { accident: readAccident(data['accident']) } : {}),
     ...(data['apt'] ? { apt: readApt(data['apt']) } : {}),
+    ...(Array.isArray(data['ground']) ? { ground: readGround(data['ground']) } : {}),
+    ...(data['held'] ? { held: readHeld(data['held']) } : {}),
+    ...(Array.isArray(data['food']) ? { food: readFood(data['food']) } : {}),
   };
+}
+
+const fin = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const strs = (v: unknown) => (Array.isArray(v) ? v.filter((s): s is string => typeof s === "string").slice(0, 60) : []);
+/** Things left lying about (at most MAX_GROUND, the newest). */
+export const MAX_GROUND = 500;
+function readGround(list: unknown[]): SavedGround[] {
+  const out: SavedGround[] = [];
+  for (const v of list.slice(-MAX_GROUND)) {
+    const g = saveRecord(v);
+    if (typeof g['kind'] !== "string" || !fin(g['x']) || !fin(g['z'])) continue;
+    out.push({ kind: g['kind'], x: g['x'], z: g['z'], ...(fin(g['y']) ? { y: g['y'] } : {}), yaw: fin(g['yaw']) ? g['yaw'] : 0, ...(Array.isArray(g['contents']) ? { contents: strs(g['contents']) } : {}) });
+  }
+  return out;
+}
+function readHeld(value: unknown): SavedHeld | null {
+  const h = saveRecord(value);
+  return { slot: fin(h['slot']) ? Math.trunc(h['slot']) : null, trash: h['trash'] === "bottle" || h['trash'] === "can" ? h['trash'] : null, bag: Array.isArray(h['bag']) ? strs(h['bag']) : null };
+}
+function readFood(list: unknown[]): SavedPack[] {
+  const out: SavedPack[] = [];
+  for (const v of list.slice(0, 40)) {
+    const p = saveRecord(v);
+    const kind = p['kind'];
+    if ((kind !== "bag" && kind !== "cup" && kind !== "big") || typeof p['key'] !== "string" || !fin(p['x']) || !fin(p['z'])) continue;
+    out.push({ where: p['where'] === "held" ? "held" : "ground", hand: p['hand'] === "left" ? "left" : "right", key: p['key'], kind, bags: fin(p['bags']) ? p['bags'] : 0, cups: fin(p['cups']) ? p['cups'] : 0, items: strs(p['items']), ...(p['bottle'] === true ? { bottle: true } : {}), x: p['x'], y: fin(p['y']) ? p['y'] : 0, z: p['z'], yaw: fin(p['yaw']) ? p['yaw'] : 0 });
+  }
+  return out;
 }
 
 function readApt(value: unknown): SavedApt | null {

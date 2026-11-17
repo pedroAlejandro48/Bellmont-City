@@ -563,7 +563,16 @@ export type SaveData = {
   /** Saved up in an apartment building (floor 2 or higher: the hallway, an apartment, the elevator): the game comes
    * back there (`pos` is then the building's door outside, for anything that can't use this). */
   apt?: SavedApt | null;
+  /** Things put down anywhere (the ground, a floor, a table): they stay where they were left, for good. */
+  ground?: SavedGround[];
+  /** What was in the hands: the inventory slot that was out, trash, a bag of groceries. */
+  held?: SavedHeld | null;
+  /** Restaurant food (to go) in the hands or left lying about: it comes back with you. */
+  food?: SavedPack[];
 };
+export type SavedGround = { kind: string; x: number; z: number; y?: number; yaw: number; contents?: string[] };
+export type SavedHeld = { slot: number | null; trash: "bottle" | "can" | null; bag: string[] | null };
+export type SavedPack = { where: "held" | "ground"; hand: "left" | "right"; key: string; kind: "bag" | "cup" | "big"; bags: number; cups: number; items: string[]; bottle?: boolean; x: number; y: number; z: number; yaw: number };
 export type SavedApt = { building: string; floor: number; x: number; z: number; yaw: number; outside: [number, number]; outsideYaw: number };
 /** Every character starts with this much money. */
 export const STARTING_CASH = 200;

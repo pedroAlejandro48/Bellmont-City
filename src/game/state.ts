@@ -1,6 +1,6 @@
 import type { Weather } from "./weather";
 import type { ShopKind } from "./shops";
-import type { ItemKind } from "./inventory";
+import { isItemKind, type ItemKind } from "./inventory";
 import * as THREE from "three";
 import type { Room, SitPlan } from "./restaurantRoom";
 import { floorY } from "./apartments";
@@ -176,6 +176,8 @@ export type GameState = {
   groceryBasket: ItemKind[] | null;
   /** A bag of groceries in the left hand (what's in it), or null: it can't go in the inventory, only be put down. */
   groceryBag: ItemKind[] | null;
+  /** Restaurant food from the save, still to be handed back to whoever runs the food (Food). */
+  foodRestore: import("./config").SavedPack[] | null;
   /** On an upper floor of an apartment building (its floor's height): the ground is that floor. */
   level: { building: string; floor: number; y: number } | null;
   /** In an apartment building's elevator car (riding, or standing in it). */
@@ -321,7 +323,7 @@ export type GameState = {
 };
 
 export function createState(save: SaveData): GameState {
-  return {
+  const s: GameState = {
     health: Math.max(0, Math.min(100, save.health ?? 100)),
     hunger: Math.max(0, Math.min(100, save.hunger ?? 100)),
     energy: Math.max(0, Math.min(100, save.energy ?? 100)), runningNow: false,
@@ -350,7 +352,7 @@ export function createState(save: SaveData): GameState {
     invAct: null,
     groundItems: [],
     groceryBasket: null,
-    groceryBag: null,
+    groceryBag: null, foodRestore: null,
     extraDoorUses: [],
     level: save.apt && save.apt.floor >= 2 ? { building: save.apt.building, floor: save.apt.floor, y: floorY(save.apt.floor) } : null,
     seatSurface: null,
@@ -389,6 +391,19 @@ export function createState(save: SaveData): GameState {
       braking: false, pushVelocity: new THREE.Vector3(), lean: 0, steering: 0, throwVelocity: new THREE.Vector3(), throwRemaining: 0, fallSide: 1, tip: 0, tipVel: 0,
     },
   };
+  // What was left lying about, and what was in the hands, as it was.
+  s.groundItems = (save.ground ?? []).filter((g) => isItemKind(g.kind) || g.kind === "bottle" || g.kind === "can" || g.kind === "groceryBag").map((g, i) => ({
+    id: i + 1, kind: g.kind as GameState["groundItems"][number]["kind"], x: g.x, z: g.z, ...(g.y !== undefined ? { y: g.y } : {}), yaw: g.yaw, at: 0,
+    ...(g.contents ? { contents: g.contents.filter(isItemKind) } : {}),
+  }));
+  const h = save.held;
+  if (h) {
+    if (h.slot !== null && h.slot > 0 && s.life.inventory[h.slot]) s.heldSlot = h.slot;
+    s.heldTrash = h.trash;
+    if (h.bag) s.groceryBag = h.bag.filter(isItemKind);
+  }
+  s.foodRestore = save.food?.length ? save.food : null;
+  return s;
 }
 
 /** A job in progress: where to collect, where to deliver, and when it began. */
@@ -431,9 +446,28 @@ export function toSave(s: GameState): SaveData {
     worldSeed: s.worldSeed,
     benchSeat: s.bench?.phase === "stand" ? null : s.bench?.seat ?? null,
     apt: aptSave(s),
+    ground: s.groundItems.map((g) => ({ kind: g.kind, x: r3(g.x), z: r3(g.z), ...(g.y !== undefined ? { y: r3(g.y) } : {}), yaw: r3(g.yaw), ...(g.contents ? { contents: g.contents } : {}) })),
+    held: { slot: s.heldSlot, trash: s.heldTrash, bag: s.groceryBag },
+    food: foodSave(s),
     scooter: { pos: [s.scooter.pos.x, s.scooter.pos.y, s.scooter.pos.z], yaw: s.scooter.yaw, fallen: s.scooter.fallen, riding: s.scooter.riding },
     ...(s.accident ? { accident: { phase: s.accident.phase, remaining: Math.max(0, s.accident.phase === "rising" ? GET_UP_SECONDS - (s.simulationTime - (s.accident.riseStartedAt ?? 0)) : KNOCKDOWN_SECONDS - (s.simulationTime - s.accident.startedAt)), direction: s.accident.direction, seed: s.accident.seed } } : { accident: null }),
   };
+}
+
+const r3 = (n: number) => Math.round(n * 1000) / 1000;
+/** This player's restaurant food to go: in the hands (or set beside them on a bench), or left on the ground. */
+function foodSave(s: GameState): import("./config").SavedPack[] {
+  const me = s.foodLink?.me() ?? "me", packs = s.foodView?.().packs ?? [];
+  const out: import("./config").SavedPack[] = [...(s.foodRestore ?? [])];
+  for (const p of packs) {
+    if (p.kind !== "bag" && p.kind !== "cup" && p.kind !== "big") continue;
+    const mine = (p.where === "held" || p.where === "aside") && p.holder === me;
+    if (!mine && !(p.where === "ground" && p.owner === me)) continue;
+    const held = p.where === "held";
+    out.push({ where: held ? "held" : "ground", hand: p.hand, key: p.key, kind: p.kind, bags: p.bags, cups: p.cups, items: [...p.items], ...(p.bottle ? { bottle: true } : {}),
+      x: r3(held ? s.pos.x : p.gx), y: r3(held ? 0 : p.gy), z: r3(held ? s.pos.z : p.gz), yaw: r3(held ? s.rotY : p.gyaw) });
+  }
+  return out.slice(0, 40);
 }
 
 /** Where to come back in an apartment building (floor 2 and up), or null: on the floor (in the elevator, the floor it

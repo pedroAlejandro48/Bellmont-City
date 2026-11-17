@@ -251,9 +251,12 @@ export function InventoryWorld({ state }: { state: GameState }) {
     // Things on the ground: shown where they lie (rebuilt only when the list changes).
     const gr = ground.current;
     if (gr) {
-      const items = state.groundItems;
-      if (gr.userData["count"] !== items.length || gr.userData["first"] !== items[0]?.id) {
-        gr.userData["count"] = items.length; gr.userData["first"] = items[0]?.id;
+      // (Everything put down stays for good; the 40 nearest are drawn, chosen again as you move about.)
+      const all = state.groundItems, px = state.pos.x, pz = state.pos.z;
+      const items = all.length <= 40 ? all : [...all].sort((p, q) => Math.hypot(p.x - px, p.z - pz) - Math.hypot(q.x - px, q.z - pz)).slice(0, 40);
+      const sig = all.length <= 40 ? `${all.length}|${all[0]?.id}` : items.map((g) => g.id).join(",");
+      if (gr.userData["sig"] !== sig || gr.userData["count"] === -1) {
+        gr.userData["sig"] = sig; gr.userData["count"] = items.length;
         gr.children.forEach((c, i) => {
           const it = items[i];
           c.visible = !!it;

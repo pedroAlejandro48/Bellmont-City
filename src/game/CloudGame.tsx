@@ -92,7 +92,8 @@ function useCloudGame(account: Account, world?: WorldSlot) {
   }, [persist]);
 
   const reset = useCallback(() => {
-    const fresh = freshSave(world, activeState.current?.worldSeed);
+    // (What was left lying about stays in the world after a death.)
+    const prev = activeState.current, fresh = { ...freshSave(world, prev?.worldSeed), ...(prev ? { ground: toSave(prev).ground ?? [] } : {}) };
     retained.current = {};
     const newState = createState(fresh);
     newState.bodyColor = bodyColor(account.gender); newState.gender = account.gender ?? null;

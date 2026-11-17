@@ -116,6 +116,8 @@ export function Food({ state }: { state: GameState }) {
       const got = link.latest();
       if (got) live.current = got;
     }
+    // Food to go from the save: handed back (once whoever runs the food is there).
+    if (state.foodRestore && (link.isHost() || link.latest())) { link.send({ type: "restore", packs: state.foodRestore }); state.foodRestore = null; }
     const view = live.current.view;
     state.foodView = () => ({ packs: live.current.view.packs, age: (Date.now() - live.current.at) / 1000 });
     state.staffBodies = [...staffAt.values()].flat();

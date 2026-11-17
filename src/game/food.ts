@@ -414,7 +414,9 @@ export type FoodRequest =
   /** Done with a tray (finished, full, or gone): it is cleared away. */
   | { type: "leave"; pack: number }
   /** An empty thrown in a bin at (x, z). */
-  | { type: "trash"; pack: number; x: number; y: number; z: number };
+  | { type: "trash"; pack: number; x: number; y: number; z: number }
+  /** Food to go brought back from a save: into the hands it was in, or onto the ground where it was left. */
+  | { type: "restore"; packs: import("./config").SavedPack[] };
 
 /** Seconds from paying until the food is ready to come out. */
 export const prepSeconds = (count: number) => Math.min(30, 7 + 1.5 * count);
@@ -497,6 +499,17 @@ export class FoodSim {
     } else if (req.type === "trash") {
       const p = this.packs.find((q) => q.id === req.pack);
       if (p && p.where === "held" && p.holder === by) Object.assign(p, { where: "trash", holder: "", gx: req.x, gy: req.y, gz: req.z, at: now });
+    } else if (req.type === "restore") {
+      for (const r of req.packs.slice(0, 40)) {
+        if (r.kind !== "bag" && r.kind !== "cup" && r.kind !== "big") continue;
+        const items = r.items.slice(0, 60), same = (p: FoodPack) => p.kind === r.kind && p.items.join("|") === items.join("|");
+        // (Still lying there in a room someone kept going: not twice.)
+        if (r.where === "ground" && this.packs.some((p) => p.where === "ground" && same(p) && Math.hypot(p.gx - r.x, p.gz - r.z) < 0.1)) continue;
+        const handFree = r.where === "held" && !this.packs.some((q) => q.where === "held" && q.holder === by && q.hand === r.hand);
+        const id = this.nextId++;
+        this.packs.push({ id, order: id, key: r.key, kind: r.kind, bags: r.bags, cups: r.cups, items, slot: -1, owner: by, sign: 0, eating: null, at: now, done: false, ...(r.bottle ? { bottle: true } : {}),
+          ...(handFree ? { where: "held" as const, holder: by, hand: r.hand, gx: 0, gz: 0, gyaw: 0, gy: 0 } : { where: "ground" as const, holder: "", hand: "right" as const, gx: r.x, gz: r.z, gyaw: r.yaw, gy: r.y }) });
+      }
     } else if (req.type === "drop") {
       for (const d of req.packs) {
         const p = this.packs.find((q) => q.id === d.id);
