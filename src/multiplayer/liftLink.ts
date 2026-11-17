@@ -15,7 +15,7 @@ const isPeer = (v: unknown): v is LiftPeer => { const p = v as LiftPeer | null; 
  * building, on which floor, in a car, in a doorway) — which the runner uses for the doors and the car's room.
  */
 export function makeLiftLink(channel: NamedRoom): LiftLink {
-  let seq = 0, reqId = 0, mine: Req[] = [], lastMe = "", lastHome = "", lastApts = "";
+  let seq = 0, reqId = 0, mine: Req[] = [], lastMe = "", lastHome = "", lastApts = "", lastShow: string | null = null;
   const isDoc = (v: unknown): v is AptDoc => { const d = v as AptDoc | null; return typeof d === "object" && d !== null && typeof d.key === "string" && typeof d.n === "number" && typeof d.j === "string"; };
   const seenReq = new Map<string, number>();
   let last: { stamp: unknown; snap: LiftSnap | null; n: number } | null = null;
@@ -67,6 +67,12 @@ export function makeLiftLink(channel: NamedRoom): LiftLink {
       lastHome = key;
       void channel.presence({ aptHome: h }).catch(() => {});
     },
+    setShow: (json) => {
+      if (json === lastShow) return;
+      lastShow = json;
+      void channel.presence({ kshow: json }).catch(() => {});
+    },
+    shows: () => channel.peers().filter((p) => !p.sameTab && typeof p.presence["kshow"] === "string").map((p) => ({ peer: p.peer, json: p.presence["kshow"] as string })),
     setApts: (docs) => {
       const key = JSON.stringify(docs);
       if (key === lastApts) return;

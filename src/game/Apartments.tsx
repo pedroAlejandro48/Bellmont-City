@@ -18,7 +18,11 @@ import { handWorld } from "./arms";
 import { makeCarpet, makePlanks, scaledPlane } from "./floorTextures";
 import { BathroomThings, newBathLink, type BathLink } from "./Bathroom";
 import { KitchenRun, type KCtx, type KView } from "./kitchenRun";
-import { KitchenThings } from "./KitchenThings";
+import { KitchenThings, type KitchenActor } from "./KitchenThings";
+import { newKView } from "./kitchenRun";
+import type { Held } from "./kitchen";
+/** A player's kitchen doings as sent to the others. */
+type KShowWire = { key: string; at: string[]; hands: { left: Held | null; right: Held | null }; v: Partial<Pick<KView, "door" | "lid" | "canOpen" | "canTilt" | "potTilt" | "water" | "stream" | "can" | "washing" | "drying" | "pourK" | "pourInto" | "holdL" | "holdR">> & { tossAge?: number; eat?: { chair: number; age: number; T: number; bites: number } | null } };
 import { SHOWER, TOILET, WASH, showerAt, showerSpots, showerView, toiletAt, washAt, washStand, type BathPose } from "./bathMoves";
 import { BedSheet, MATTRESS_TOP, PILLOW_TOP, SHEET_NX, SHEET_NZ, sheetGrips, sheetPoint, type SheetLead, type SheetLink, type SheetShape } from "./BedSheet";
 import { canSleepAt, hoursTo6, sleepEnergy, wakeElapsed } from "./needs";
@@ -594,7 +598,7 @@ function DoorCasing({ at, rot, m, white = false }: { at: [number, number]; rot: 
 }
 
 /** The floor the player is on: hallway, apartment (two rooms), the walls with real windows, the doors, the furniture. */
-function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, elevatorOpen, sheet, lift, bathDoor, bath, kview, lightsOf }: { lightsOf: (key: string) => Lights; kview: KView; bathDoor: () => number; bath: BathLink; lift: () => { floor: number; dir: number }; sheet: SheetLink; fl: AptFloor; state: GameState; m: FMats; door: () => number; bedDoor: () => number; fridgeDoor: () => number; closetDoor: () => number; elevatorOpen: () => number }) {
+function FloorInterior({ actorsAt, fl, state, m, door, bedDoor, fridgeDoor, closetDoor, elevatorOpen, sheet, lift, bathDoor, bath, kview, lightsOf }: { actorsAt: (key: string) => KitchenActor[]; lightsOf: (key: string) => Lights; kview: KView; bathDoor: () => number; bath: BathLink; lift: () => { floor: number; dir: number }; sheet: SheetLink; fl: AptFloor; state: GameState; m: FMats; door: () => number; bedDoor: () => number; fridgeDoor: () => number; closetDoor: () => number; elevatorOpen: () => number }) {
   const { frame, bounds, windowSide: ws, hallZ, wallZ, divX, bedroomDoor } = fl;
   const { minX, maxX, minZ, maxZ } = bounds;
   const bathLeaf = useRef<THREE.Group>(null), bedLamp = useRef<THREE.Mesh>(null), bedToggle = useRef<THREE.Mesh>(null), bathToggle = useRef<THREE.Mesh>(null);
@@ -732,7 +736,8 @@ function FloorInterior({ fl, state, m, door, bedDoor, fridgeDoor, closetDoor, el
     </group>
     <BathroomThings fl={fl} state={state} link={bath} m={m} lightOn={() => lightsOf(fl.key).bathroom} />
     {/* (Yours, or one you're a guest in: its kitchen's things; otherwise nothing shows.) */}
-    <KitchenThings fl={fl} state={state} view={kview} m={m} />
+    <KitchenThings fl={fl} state={state} view={kview} m={m} others={() => actorsAt(fl.key).map((a) => a.view)} />
+    {[0, 1, 2].map((i) => <KitchenThings key={`ka${i}`} fl={fl} state={state} view={kview} m={m} actor={() => actorsAt(fl.key)[i] ?? null} />)}
     {/* The closet's two doors, hinged at its sides, handles by the middle; inside, your clothes on their hangers. */}
     <group position={[closet.x, 0, closet.z]} rotation-y={closet.rot}>
       {state.life.home?.building === fl.key.split("#")[0] && state.life.home?.floor === fl.upper && <ClosetClothes state={state} closet={closet} m={m} />}
@@ -915,6 +920,9 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   const myCalls = useRef<{ b: string; floor: number }[]>([]);
   const doorsDone = useRef(new WeakSet<object>());
   const aptShare = useRef(new AptShare());
+  /** The other players at work in kitchens (by peer): what to draw of them, the places they're using. */
+  const actors = useRef(new Map<string, KitchenActor & { key: string; at: string[]; raw: string; target: KView }>());
+  const showTimer = useRef(0);
   /** Doors closing behind someone who has walked on: which, how it was used (pushed open: leave; pulled: enter), when. */
   const closing = useRef<{ which: "apartment" | "bedroom" | "bathroom"; kind: "leave" | "enter"; from: [number, number]; fromYaw: number; start: number }[]>([]);
   /** Each floor's bedsheet and the hand holding its corner. */
@@ -1328,7 +1336,47 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     // (Another player's apartment you're in: its kitchen is shared with you.)
     const guestKey = floor && lvl && !ownFloor && (state.liftLink?.homes() ?? []).some((h) => h.b === lvl.building && h.floor === lvl.floor) ? floor.key : null;
     aptShare.current.step(state, dt, now, guestKey, kitchen.current.busy);
-    const kc: KCtx | null = (ownFloor || (!!floor && state.aptHere?.key === floor.key)) && floor ? (() => { const [klx, klz] = toLocal(floor.frame, p.x, p.z); return { state, fl: floor, now, lx: klx, lz: klz, yaw: state.rotY - floor.frame.rot, world: (x: number, z: number) => toW(x, z), y0: yNow }; })() : null;
+    // The other players' kitchen doings (for drawing them, and so nobody uses a place someone's at).
+    {
+      const seen = new Set<string>(), k2 = 1 - Math.exp(-18 * dt);
+      for (const { peer, json } of state.liftLink?.shows() ?? []) {
+        const rig = state.remoteRigs.get(peer);
+        if (!rig) continue;
+        seen.add(peer);
+        let a = actors.current.get(peer);
+        if (!a) { a = { id: peer, key: "", at: [], raw: "", view: newKView(), target: newKView(), hands: { left: null, right: null }, rig, meal: null }; actors.current.set(peer, a); }
+        a.rig = rig;
+        if (a.raw !== json) {
+          a.raw = json;
+          try {
+            const w = JSON.parse(json) as KShowWire, v = w.v, T = a.target;
+            a.key = w.key; a.at = w.at ?? []; a.hands = { left: w.hands?.left ?? null, right: w.hands?.right ?? null };
+            Object.assign(T, { door: v.door ?? 0, lid: v.lid ?? 0, canOpen: v.canOpen ?? 0, canTilt: v.canTilt ?? 0, potTilt: v.potTilt ?? 0, water: v.water ?? 0, pourK: v.pourK ?? 0 });
+            Object.assign(a.view, { stream: v.stream ?? null, can: v.can ?? null, washing: v.washing ?? null, drying: v.drying ?? [], pourInto: v.pourInto ?? 0, holdL: v.holdL ?? null, holdR: v.holdR ?? null });
+            if ((v.tossAge ?? -1) >= 0) { if (a.view.tossAt < 0 || now - a.view.tossAt > 0.6) a.view.tossAt = now - v.tossAge!; } else a.view.tossAt = -1;
+            if (v.eat) { if (!a.view.eat || a.view.eat.chair !== v.eat.chair) a.view.eat = { chair: v.eat.chair, t0: now - v.eat.age, T: v.eat.T }; a.meal = { bites: v.eat.bites }; } else { a.view.eat = null; a.meal = null; }
+          } catch { /* not a show */ }
+        }
+        // (The turning, tipping and pouring eased between their updates.)
+        for (const f of ["door", "lid", "canOpen", "canTilt", "potTilt", "water", "pourK"] as const) a.view[f] += (a.target[f] - a.view[f]) * k2;
+      }
+      for (const id of actors.current.keys()) if (!seen.has(id)) actors.current.delete(id);
+    }
+    const hereActors = floor ? [...actors.current.values()].filter((a) => a.key === floor.key) : [];
+    const kc: KCtx | null = (ownFloor || (!!floor && state.aptHere?.key === floor.key)) && floor ? (() => {
+      const [klx, klz] = toLocal(floor.frame, p.x, p.z);
+      const others = (state.liftLink?.others() ?? []).filter((o) => o.b === lvl!.building && o.floor === lvl!.floor && o.x !== undefined).map((o) => [o.x!, o.z!] as [number, number]);
+      return { state, fl: floor, now, lx: klx, lz: klz, yaw: state.rotY - floor.frame.rot, world: (x: number, z: number) => toW(x, z), y0: yNow, claims: new Set(hereActors.flatMap((a) => a.at)), others };
+    })() : null;
+    // What you're doing in the kitchen, for the others (ten times a second, when it changes).
+    showTimer.current -= dt;
+    if (state.liftLink && showTimer.current <= 0) {
+      showTimer.current = 0.1;
+      const kr0 = kitchen.current, v = kr0.view, r3 = (x: number) => Math.round(x * 100) / 100;
+      const h = state.life.kitchen.hands, tossAge = v.tossAt >= 0 && now - v.tossAt < 0.6 ? r3(now - v.tossAt) : -1;
+      const wire: KShowWire | null = kc ? { key: kc.fl.key, at: kr0.busy ? kr0.stations : [], hands: h, v: { door: r3(v.door), lid: r3(v.lid), canOpen: r3(v.canOpen), canTilt: r3(v.canTilt), potTilt: r3(v.potTilt), water: r3(v.water), stream: v.stream, can: v.can, washing: v.washing, drying: v.drying, pourK: r3(v.pourK), pourInto: v.pourInto, holdL: v.holdL, holdR: v.holdR, tossAge, eat: v.eat && state.meal ? { chair: v.eat.chair, age: Math.round((now - v.eat.t0) * 2) / 2, T: v.eat.T, bites: state.meal.bites ?? 3 } : null } } : null;
+      state.liftLink.setShow(wire ? JSON.stringify(wire) : null);
+    }
     if (kc && !eRide && !move.current) {
       if (!kr.busy) kr.answer(kc);
       lastKc.current = kc;
@@ -1542,6 +1590,13 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         act = () => { move.current = { kind: "sit", phase: "down", t0: now, seat: st, plan: makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, st.approach, st.yaw, { basket: false, bag: !!state.groceryBag })]) }; state.keys.clear(); };
       }
     }
+    // Nobody takes a place someone else is at (the fridge, the bed, a chair, the couch, the sink, the toilet, the
+    // shower, the closet): with another player right there, it waits.
+    if (act && floor && lvl && pr.visible && !/ELEVATOR|LOCK|OPEN|OUT|LIGHT|PLATE|STOVE|COOK|WASH|POTS|CUPBOARD|SILVERWARE|PUT AWAY|THROW|TAKE IT OFF/.test(pr.label ?? "")) {
+      const [ax, az] = toLocal(floor.frame, pr.x, pr.z);
+      const taken = (state.liftLink?.others() ?? []).some((o) => o.b === lvl.building && o.floor === lvl.floor && o.x !== undefined && Math.hypot(o.x - ax, o.z! - az) < 0.8);
+      if (taken) { pr.label = "SOMEONE'S THERE"; act = null; }
+    }
     if (act && state.interactQueued) { state.interactQueued = false; act(); }
     // (Nothing here wants E: it's kept for eating or drinking what's in your hand.)
     const hk = heldKind(state), eats = !!hk && (itemInfo(hk).use === "eat" || itemInfo(hk).use === "drink");
@@ -1571,7 +1626,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       <LobbyCar state={state} bkey={aptKey(b)} at={[layout.bounds.minX + SHAFT / 2, layout.bounds.minZ + SHAFT / 2]} m={m} />
       <LobbyVisitor state={state} layout={layout} />
     </group>)}
-    {shown.map((fl) => <FloorInterior key={fl.key} lift={() => carShown(fl.key.split("#")[0]!)} sheet={sheetLink(fl.key)} bath={bathLink(fl.key)} kview={kitchen.current.view} lightsOf={lightsOf} bathDoor={() => (state.level?.floor === fl.upper ? bathAngle.current : 0)} fl={fl} state={state} m={m} door={() => Math.max(state.level?.floor === fl.upper && state.level?.building === fl.key.split("#")[0] ? doorAngle.current : 0, lift().aptDoors.get(fl.key) ?? 0)} bedDoor={() => bedAngle.current} fridgeDoor={() => fridgeAngle.current} closetDoor={() => closetAngle.current} elevatorOpen={elevatorOpen(fl.key.split("#")[0]!, fl.upper)} />)}
+    {shown.map((fl) => <FloorInterior key={fl.key} actorsAt={(k3) => [...actors.current.values()].filter((a) => a.key === k3)} lift={() => carShown(fl.key.split("#")[0]!)} sheet={sheetLink(fl.key)} bath={bathLink(fl.key)} kview={kitchen.current.view} lightsOf={lightsOf} bathDoor={() => (state.level?.floor === fl.upper ? bathAngle.current : 0)} fl={fl} state={state} m={m} door={() => Math.max(state.level?.floor === fl.upper && state.level?.building === fl.key.split("#")[0] ? doorAngle.current : 0, lift().aptDoors.get(fl.key) ?? 0)} bedDoor={() => bedAngle.current} fridgeDoor={() => fridgeAngle.current} closetDoor={() => closetAngle.current} elevatorOpen={elevatorOpen(fl.key.split("#")[0]!, fl.upper)} />)}
     <CarAt state={state} buildings={byKey} m={m} carY={carY} light={carLight} doors={(bkey) => doorsOf(lift().car(bkey))} shown={carShown} />
     {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => <LiftRider key={i} state={state} get={() => lift().riders[i] ?? null} buildings={byKey} carY={carY} />)}
     <pointLight ref={bathLight} intensity={0} distance={3.4} decay={1.4} color="#fff4e6" />

@@ -7,7 +7,8 @@ import { handWorld } from "./arms";
 import { GAME_MINUTE } from "./config";
 import { burnLevel, cookedFor, foodColors, isDish, isPotLike, stoveState, type Held } from "./kitchen";
 import { cupboardSlot, rackSpot } from "./kitchenMoves";
-import type { KView } from "./kitchenRun";
+import { newKView, type KView } from "./kitchenRun";
+import type { BodyRig } from "./CharacterBody";
 import { CAN_INFO, CAPACITY, type CanKind, type WareKind } from "./pantry";
 import { CanModel, FoodFill, WareModel } from "./PantryModels";
 import { toLocal } from "./restaurantRoom";
@@ -31,9 +32,14 @@ function Utensil({ kind, m }: { kind: "fork" | "knife" | "spoon"; m: { steel: TH
  * cooks, smoking as it burns), the plates on the table, the bin's lid, the tap's water, what's pouring, and what's
  * in each hand.
  */
-export function KitchenThings({ fl, state, view, m }: { fl: AptFloor; state: GameState; view: KView; m: { white: THREE.Material; steel: THREE.Material; s: (c: string, r?: number, mt?: number) => THREE.MeshStandardMaterial } }) {
+export function KitchenThings({ fl, state, view: ownView, m, actor, others }: { fl: AptFloor; state: GameState; view: KView; actor?: () => KitchenActor | null; others?: () => KView[]; m: { white: THREE.Material; steel: THREE.Material; s: (c: string, r?: number, mt?: number) => THREE.MeshStandardMaterial } }) {
   // (Read anew each time it's drawn: yours, the one you're a guest in, or nothing.)
   const K = fl.kitchen, cb = K.cupboard, k = kitchenAt(state, fl.key) ?? NO_KITCHEN;
+  // Another player's doings here (`actor`): only what's theirs is drawn — what's in their hands, what they pour,
+  // the tap they run — at their body; the kitchen itself is drawn once, by the one without an actor.
+  const remote = !!actor, A0 = actor ? actor() : null;
+  const view = remote ? A0?.view ?? IDLE_VIEW : ownView, hands = remote ? A0?.hands ?? NO_KITCHEN.hands : k.hands, meal = remote ? A0?.meal ?? null : state.meal;
+  const oth = remote ? [] : others?.() ?? [];
   // What's where only changes now and then: redrawn when it does.
   const [, rerender] = useState(0);
   const sig = useRef("");
@@ -53,17 +59,21 @@ export function KitchenThings({ fl, state, view, m }: { fl: AptFloor; state: Gam
   const [hover, setHover] = useState<number | null>(null);
   const tmp = useMemo(() => ({ a: new THREE.Vector3(), b: new THREE.Vector3(), up: new THREE.Vector3(0, 1, 0), q: new THREE.Quaternion() }), []);
   const local = (w: THREE.Vector3): V3 => { const [x, z] = toLocal(fl.frame, w.x, w.z); return [x, w.y - fl.y, z]; };
-  const handAt = (i: 9 | 11, out: THREE.Vector3) => { const fore = state.avatar.body[i]; if (!fore) return null; fore.updateWorldMatrix(true, false); handWorld(fore, out); return out; };
+  const handAt = (i: 9 | 11, out: THREE.Vector3) => { const A = actor ? actor() : null, fore = actor ? (i === 9 ? A?.rig.foreL.current : A?.rig.foreR.current) : state.avatar.body[i]; if (!fore) return null; fore.updateWorldMatrix(true, false); handWorld(fore, out); return out; };
 
   useFrame(() => {
     const t = state.simulationTime;
     const k = kitchenAt(state, fl.key) ?? NO_KITCHEN;
-    const s = `${k === NO_KITCHEN ? "none" : ""}${k.cupboard.join()}|${k.rack.join()}|${k.sink.join()}|${k.stoves.map((b) => (b ? `${b.ware}${b.cans.join()}${b.start}` : "-")).join()}|${k.table.map((x) => `${x.chair}${x.cans.join()}${x.eaten}${x.silver}`).join()}|${JSON.stringify(k.hands)}|${view.drying.join()}|${view.washing}|${view.can}|${view.choosing}|${view.eat?.t0}|${k.stoves.map((_, i) => `${stoveState(k, i, state.elapsed, GAME_MINUTE)}${Math.round(burnLevel(cookedFor(k, i, state.elapsed, GAME_MINUTE)) * 20)}`).join()}|${view.holdL}|${view.holdR}|${view.stream}|${Math.round(view.pourK * 12)}|${view.eat ? Math.round((state.simulationTime - view.eat.t0) * 3) : ""}`;
+    const A = actor ? actor() : null;
+    const view = remote ? A?.view ?? IDLE_VIEW : ownView, hands = remote ? A?.hands ?? NO_KITCHEN.hands : k.hands, meal = remote ? A?.meal ?? null : state.meal;
+    const oth = remote ? [] : others?.() ?? [];
+    const s = `${A?.id ?? ""}${oth.map((v) => `${v.drying.join()}${v.washing}${v.can}${v.holdL}${v.holdR}${v.stream}${Math.round(v.pourK * 12)}${v.eat ? Math.round((state.simulationTime - v.eat.t0) * 3) : ""}`).join("/")}${k === NO_KITCHEN ? "none" : ""}${k.cupboard.join()}|${k.rack.join()}|${k.sink.join()}|${k.stoves.map((b) => (b ? `${b.ware}${b.cans.join()}${b.start}` : "-")).join()}|${k.table.map((x) => `${x.chair}${x.cans.join()}${x.eaten}${x.silver}`).join()}|${JSON.stringify(hands)}|${view.drying.join()}|${view.washing}|${view.can}|${view.choosing}|${view.eat?.t0}|${k.stoves.map((_, i) => `${stoveState(k, i, state.elapsed, GAME_MINUTE)}${Math.round(burnLevel(cookedFor(k, i, state.elapsed, GAME_MINUTE)) * 20)}`).join()}|${view.holdL}|${view.holdR}|${view.stream}|${Math.round(view.pourK * 12)}|${view.eat ? Math.round((state.simulationTime - view.eat.t0) * 3) : ""}`;
     if (s !== sig.current) { sig.current = s; rerender((n) => n + 1); }
     // The doors, the lid, the tap.
-    if (doorL.current) doorL.current.rotation.y = view.door * 1.6;
-    if (doorR.current) doorR.current.rotation.y = -view.door * 1.6;
-    if (lid.current) lid.current.rotation.x = view.lid * 1.35;
+    const door = Math.max(view.door, ...oth.map((v) => v.door)), lidA = Math.max(view.lid, ...oth.map((v) => v.lid));
+    if (doorL.current) doorL.current.rotation.y = door * 1.6;
+    if (doorR.current) doorR.current.rotation.y = -door * 1.6;
+    if (lid.current) lid.current.rotation.x = lidA * 1.35;
     if (tap.current) { tap.current.visible = view.water > 0.02; tap.current.scale.set(1, Math.max(0.01, view.water), 1); }
     // The burner glows under a pot that's cooking; steam rises, or smoke when it's burning.
     K.burners.forEach((B0, bi) => {
@@ -94,7 +104,7 @@ export function KitchenThings({ fl, state, view, m }: { fl: AptFloor; state: Gam
       to = toWorld3(fl, new THREE.Vector3(B0[0], B0[1] + (b2?.ware === "pan" ? 0.012 + 0.035 * lvl : 0.018 + 0.11 * lvl), B0[2]));
       if (view.can) cols = CAN_INFO[view.can].food;
     } else if ((kind === "pot" || kind === "burnt") && potInner.current) {
-      const pot = k.hands.right, pan = pot?.ware === "pan";
+      const pot = hands.right, pan = pot?.ware === "pan";
       potInner.current.updateWorldMatrix(true, false);
       from = potInner.current.localToWorld(tmp.a.set(pan ? -0.13 : -0.11, pan ? 0.05 : 0.148, 0));
       if (kind === "pot") { to = handAt(9, tmp.b); if (to) to.y += 0.03 + 0.012 * view.pourK; if (pot?.food) { const c = foodColors(pot.food); cols = [c.a, c.b]; } }
@@ -130,11 +140,11 @@ export function KitchenThings({ fl, state, view, m }: { fl: AptFloor; state: Gam
       if (lid.current && on2) lid.current.rotation.x = Math.max(lid.current.rotation.x, 1.2 * Math.sin(Math.PI * Math.min(1, d / 0.5 + 0.2)));
     }
     // What's in each hand.
-    const yaw = state.rotY - fl.frame.rot;
+    const yaw = (remote ? A?.rig.root.current?.rotation.y ?? 0 : state.rotY) - fl.frame.rot;
     for (const [g, i] of [[handL.current, 9], [handR.current, 11]] as const) {
       if (!g) continue;
       const w = handAt(i, tmp.a);
-      if (!w || state.uiLock === "cupboard") { g.visible = false; continue; }
+      if (!w || (!remote && state.uiLock === "cupboard")) { g.visible = false; continue; }
       g.visible = true;
       const p = local(w); g.position.set(p[0], p[1], p[2]);
       g.rotation.set(0, yaw, 0, "YXZ");
@@ -143,15 +153,15 @@ export function KitchenThings({ fl, state, view, m }: { fl: AptFloor; state: Gam
     if (canG.current) { canG.current.visible = !!view.can; canG.current.rotation.set(view.canTilt, 0, 0); }
     // Eating: a bit of the food on the fork (or spoon) on its way up, gone once it's at the mouth.
     if (bite.current) {
-      const e = view.eat, meal = state.meal;
+      const e = view.eat;
       bite.current.visible = false;
       // (Loaded once it's back down at the plate, up to the mouth with it, gone inside — and back down empty.)
       if (e && meal) { const T = e.T, per = T / (meal.bites ?? 3), u = ((t - e.t0) % per) / per; bite.current.visible = (t - e.t0) < T - 0.3 && u > 0.04 && u < 0.4; }
     }
     // The fork (or spoon) points where it's going: down at the plate, and up into the mouth as it comes up.
-    const ut = utensil.current, hr = handR.current, headObj = state.avatar.body[3];
-    if (ut && hr && headObj && view.eat && state.meal) {
-      const e = view.eat, per = e.T / (state.meal.bites ?? 3), u = ((t - e.t0) % per) / per;
+    const ut = utensil.current, hr = handR.current, headObj = remote ? A?.rig.head.current : state.avatar.body[3];
+    if (ut && hr && headObj && view.eat && meal) {
+      const e = view.eat, per = e.T / (meal.bites ?? 3), u = ((t - e.t0) % per) / per;
       const up = u < 0.35 ? smoothstep(u / 0.35) : u < 0.6 ? 1 : 1 - smoothstep((u - 0.6) / 0.4);
       headObj.updateWorldMatrix(true, false);
       const mouth = headObj.localToWorld(tmp.a.set(0, -0.06, 0.1));
@@ -165,7 +175,7 @@ export function KitchenThings({ fl, state, view, m }: { fl: AptFloor; state: Gam
   });
 
   const dirtyPlate = (key: string | number, at: V3, w: WareKind) => <group key={key} position={at}><WareModel kind={w} />{(w === "plate" || w === "bowl") && <mesh position={[0.02, w === "plate" ? 0.018 : 0.03, 0.01]} rotation-x={-Math.PI / 2} material={mats.grime}><circleGeometry args={[0.045, 12]} /></mesh>}</group>;
-  const eatingNow = view.eat && state.meal ? view.eat : null;
+  const eatingNow = view.eat && meal ? view.eat : null;
   const mealCans = eatingNow ? k.table.find((x) => x.chair === eatingNow.chair)?.cans ?? [] : [];
   const soup = mealCans.some((c) => c === "chickenSoup" || c === "beefSoup");
   const held = (h0: Held | null, side: "left" | "right") => {
@@ -183,7 +193,7 @@ export function KitchenThings({ fl, state, view, m }: { fl: AptFloor; state: Gam
     const pouring = view.stream === "pot" || view.stream === "burnt" || (view.pourK > 0 && view.pourK < 1);
     const lvl0 = h.food ? h.food.length / (isPotLike(h.ware) ? CAPACITY[h.ware] : 3) : 0;
     const food = h.food ? { ...foodColors(h.food, h.burnt ? 1 : 0), level: isPotLike(h.ware) && pouring ? lvl0 * (1 - view.pourK) : lvl0 } : null;
-    const potFood = k.hands.right?.food, filling = side === "left" && !h.food && isDish(h.ware) && view.stream === "pot" && potFood ? { ...foodColors(potFood), level: Math.max(0.02, view.pourK) * potFood.length / 3 } : null;
+    const potFood = hands.right?.food, filling = side === "left" && !h.food && isDish(h.ware) && view.stream === "pot" && potFood ? { ...foodColors(potFood), level: Math.max(0.02, view.pourK) * potFood.length / 3 } : null;
     // A pot or pan hangs from its handle (the body off toward the middle); a plate is held level; the rest upright.
     if (h.ware === "pot") return <group position={[0.14, -0.118, 0]}><group ref={side === "right" ? potInner : null} rotation-y={Math.PI}><WareModel kind="pot" food={food && food.level > 0.01 ? food : null} /></group></group>;
     if (h.ware === "pan") return <group position={[0.33, -0.07, 0]}><group ref={side === "right" ? potInner : null} rotation-y={Math.PI}><WareModel kind="pan" food={food && food.level > 0.01 ? food : null} /></group></group>;
@@ -192,7 +202,21 @@ export function KitchenThings({ fl, state, view, m }: { fl: AptFloor; state: Gam
     return <group position={[0, -0.05, 0.02]}><WareModel kind={h.ware} /></group>;
   };
   const places = K.places;
-  const eatK = view.eat ? Math.min(1, (state.simulationTime - view.eat.t0) / view.eat.T) : 0;
+  const views = [view, ...oth];
+  const eatOf = (chair: number) => { const v = views.find((x) => x.eat?.chair === chair); return v?.eat ? Math.min(1, (state.simulationTime - v.eat.t0) / v.eat.T) : null; };
+  // (Another player's own things only.)
+  if (remote) return <group>
+    <mesh ref={tap} visible={false} position={[K.basin[0], (K.basin[1] + 1.1) / 2 - 0.02, K.basin[2] + 0.06]} material={mats.water}><cylinderGeometry args={[0.009, 0.012, 1.1 - K.basin[1], 10, 1, true]} /></mesh>
+    <mesh ref={stream} visible={false} material={mats.sauce}><bufferGeometry /></mesh>
+    <mesh ref={splash} visible={false} material={mats.sauce}><sphereGeometry args={[0.02, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2]} /></mesh>
+    {Array.from({ length: 6 }, (_, i) => <mesh key={`c${i}`} ref={(r) => { chunks.current[i] = r; }} visible={false} material={mats.chunk}><sphereGeometry args={[0.009 + (i % 3) * 0.003, 6, 5]} /></mesh>)}
+    <group ref={toss} visible={false}><CanModel kind={"tuna" as CanKind} open={1} /></group>
+    <group ref={handL}>
+      {held(hands.left, "left")}
+      <group ref={canG} position={[0, -0.05, 0.03]}><group ref={canInner}>{view.can && <CanModel kind={view.can} open={view.canOpen} />}</group></group>
+    </group>
+    <group ref={handR}>{held(hands.right, "right")}</group>
+  </group>;
   const B = (a: V3) => <boxGeometry args={a} />;
   return <group>
     {/* The cupboard's doors: hinged at its sides, handles by the middle. */}
@@ -217,7 +241,7 @@ export function KitchenThings({ fl, state, view, m }: { fl: AptFloor; state: Gam
     })}
     {/* On the counter: plates and bowls stacked, cups and glasses in a row, the silverware in a pot. */}
     {(["plate", "bowl", "cup", "glass", "silverware"] as const).map((w) => {
-      const n = k.rack.filter((x) => x === w).length + view.drying.filter((x) => x === w).length - (view.holdL === w ? 1 : 0) - (view.holdR === w ? 1 : 0), at = rackSpot(fl, w);
+      const n = k.rack.filter((x) => x === w).length + views.reduce((a, v) => a + v.drying.filter((x) => x === w).length - (v.holdL === w ? 1 : 0) - (v.holdR === w ? 1 : 0), 0), at = rackSpot(fl, w);
       if (n <= 0) return null;
       if (!n) return null;
       if (w === "plate" || w === "bowl") return Array.from({ length: n }, (_, j) => <group key={`${w}${j}`} position={[at[0], at[1] + j * (w === "plate" ? 0.017 : 0.045), at[2]]}><WareModel kind={w} /></group>);
@@ -232,9 +256,9 @@ export function KitchenThings({ fl, state, view, m }: { fl: AptFloor; state: Gam
     {/* The stove: two burners (glowing while they cook) and what's on each; as cans are poured in it fills bit by bit. */}
     {K.burners.map((B0, bi) => {
       const b2 = k.stoves[bi], burn = burnLevel(cookedFor(k, bi, state.elapsed, GAME_MINUTE));
-      const pouringIn = view.stream === "can" && view.pourInto === bi && view.can ? view.can : null;
+      const pv = views.find((v) => v.stream === "can" && v.pourInto === bi && v.can), pouringIn = pv?.can ?? null;
       const cans = b2 ? (pouringIn ? [...b2.cans, pouringIn] : b2.cans) : [];
-      const lvl = b2 ? (b2.cans.length + (pouringIn ? view.pourK : 0)) / CAPACITY[b2.ware] : 0;
+      const lvl = b2 ? (b2.cans.length + (pouringIn && pv ? pv.pourK : 0)) / CAPACITY[b2.ware] : 0;
       return <group key={`b${bi}`}>
         <mesh ref={(r) => { glows.current[bi] = r; }} position={[B0[0], B0[1] - 0.012, B0[2]]} rotation-x={-Math.PI / 2}><ringGeometry args={[0.04, 0.085, 22]} /><meshStandardMaterial color="#3a0d06" emissive="#ff4a1a" emissiveIntensity={0} roughness={0.6} /></mesh>
         {b2 && <group position={B0}><WareModel kind={b2.ware} food={cans.length && lvl > 0.01 ? { ...foodColors(cans, burn), level: lvl } : null} /></group>}
@@ -245,7 +269,7 @@ export function KitchenThings({ fl, state, view, m }: { fl: AptFloor; state: Gam
     {k.table.map((t, i) => {
       const pl = places.find((p) => p.chair === t.chair);
       if (!pl) return null;
-      const eating = view.eat?.chair === t.chair, level = t.eaten ? 0 : eating ? 1 - eatK : 1;
+      const ek = eatOf(t.chair), level = t.eaten ? 0 : ek !== null ? 1 - ek : 1;
       return <group key={`t${i}`} position={pl.at}>
         <WareModel kind={t.ware} food={level > 0.02 ? { ...foodColors(t.cans), level } : null} />
         {t.eaten && <mesh position={[0.02, 0.018, 0.01]} rotation-x={-Math.PI / 2} material={mats.grime}><circleGeometry args={[0.05, 12]} /></mesh>}
@@ -266,12 +290,15 @@ export function KitchenThings({ fl, state, view, m }: { fl: AptFloor; state: Gam
     <group ref={toss} visible={false}><CanModel kind={"tuna" as CanKind} open={1} /></group>
     {/* In the hands. */}
     <group ref={handL}>
-      {held(k.hands.left, "left")}
+      {held(hands.left, "left")}
       <group ref={canG} position={[0, -0.05, 0.03]}><group ref={canInner}>{view.can && <CanModel kind={view.can} open={view.canOpen} />}</group></group>
     </group>
-    <group ref={handR}>{held(k.hands.right, "right")}</group>
+    <group ref={handR}>{held(hands.right, "right")}</group>
   </group>;
 }
+/** Another player at work in a kitchen: what their moves show, what's in their hands, their body. */
+export type KitchenActor = { id: string; view: KView; hands: { left: Held | null; right: Held | null }; rig: BodyRig; meal: { bites?: number } | null };
+const IDLE_VIEW = newKView();
 /** A point in the floor's frame (height above its floor) to the world. */
 function toWorld3(fl: AptFloor, p: THREE.Vector3) {
   const f = fl.frame, x = f.ox + p.x * f.c + p.z * f.s, z = f.oz - p.x * f.s + p.z * f.c;

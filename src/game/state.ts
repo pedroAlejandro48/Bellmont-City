@@ -94,6 +94,9 @@ export type LiftLink = {
   /** Each player's apartment (building, floor) and whether its door is locked: nobody else can rent it. */
   setHome: (h: AptClaim | null) => void;
   homes: () => AptClaim[];
+  /** What each player is doing in a kitchen, for the others to see (JSON text; see Apartments). */
+  setShow: (json: string | null) => void;
+  shows: () => { peer: string; json: string }[];
   /** Apartments' shared kitchens (see aptShare). */
   setApts: (docs: import("./aptShare").AptDoc[]) => void;
   apts: () => import("./aptShare").AptDoc[];

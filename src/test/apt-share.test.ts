@@ -8,6 +8,7 @@ function pair(): [LiftLink, LiftLink] {
   const docs: AptDoc[][] = [[], []];
   const mk = (me: number): LiftLink => ({
     isHost: () => me === 0, publish: () => {}, latest: () => null, request: () => {}, takeRequests: () => [], setMe: () => {}, others: () => [], setHome: () => {}, homes: () => [],
+    setShow: () => {}, shows: () => [],
     setApts: (d) => { docs[me] = JSON.parse(JSON.stringify(d)); }, apts: () => docs[1 - me]!,
   });
   return [mk(0), mk(1)];
