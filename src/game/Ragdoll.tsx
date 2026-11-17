@@ -10,7 +10,22 @@ import { FOURS_END, getUpPose, STAND_FORWARD, type Joint } from "./getUpPose";
 const SEGMENTS: ([Joint, Joint] | null)[] = [null, null, null, ["hipL", "kneeL"], ["kneeL", "footL"], ["hipR", "kneeR"], ["kneeR", "footR"], ["shL", "elL"], ["elL", "handL"], ["shR", "elR"], ["elR", "handR"]];
 const UP = new THREE.Vector3(0, 1, 0);
 import type { Accident, GameState } from "./state";
-import { toWorld, type Box, type Room } from "./restaurantRoom";
+import { toLocal, toWorld, type Box, type Room } from "./restaurantRoom";
+import { roomItems, roomProps } from "./props";
+import { groundAt } from "./state";
+
+/** The room the player is in (furniture, counters, walls; tables and chairs where they are now) as solid blocks,
+ * leaving out anything they stand in (the chair they sit on). */
+function roomBlocks(state: GameState) {
+  const room = state.interior?.phase === "inside" ? state.rooms.get(state.interior.key) : undefined;
+  if (!room) return [];
+  const f = room.frame, base = state.level ? state.level.y : groundAt(state, state.pos.x, state.pos.z);
+  const [px, pz] = toLocal(f, state.pos.x, state.pos.z);
+  return [...roomProps(room), ...roomItems(room)].filter((b) => b.h > 0.04 && !(Math.abs(px - b.x) < b.hx + 0.2 && Math.abs(pz - b.z) < b.hz + 0.2)).map((b) => {
+    const [x, z] = toWorld(f, b.x, b.z);
+    return { x, y: base + b.h / 2, z, hx: b.hx, hy: b.h / 2, hz: b.hz, rot: f.rot };
+  });
+}
 
 // Body centers and anatomical joint anchors match the animated character.
 const PARTS = [
@@ -51,6 +66,8 @@ export type RagdollSubject = {
    * (world boxes) that keep it in. */
   floorY?: () => number | null;
   walls?: () => readonly SolidBox[];
+  /** The room's furniture and walls as solid blocks (world; turned `rot` about up) the body falls against. */
+  props?: () => readonly { x: number; y: number; z: number; hx: number; hy: number; hz: number; rot: number }[];
 };
 
 /** The ragdoll's parts' radii (m), for keeping them clear of vehicles. */
@@ -92,6 +109,7 @@ export function Ragdoll({ state }: { state: GameState }) {
     vehicles: () => state.vehicles.map((v) => v.box),
     floorY: () => (state.level ? state.level.y : null),
     walls: () => roomWalls(state),
+    props: () => roomBlocks(state),
     stoodUp: (accident, yaw) => {
       state.rotY = yaw;
       state.incidents.forEach((incident) => { if (incident.vehicleId === accident.vehicleId) incident.stoodUpAt = state.simulationTime; });
@@ -120,10 +138,13 @@ export function RagdollBody({ subject, color, onMeshes }: { subject: RagdollSubj
   const temp = useMemo(() => new THREE.Vector3(), []);
 
   const slab = useRef<ReturnType<typeof world.createRigidBody> | null>(null), edges = useRef<ReturnType<typeof world.createRigidBody>[]>([]);
+  const blocks = useRef<ReturnType<typeof world.createRigidBody>[]>([]);
   const ground = (x: number, z: number) => subject.floorY?.() ?? floorHeight(x, z);
   const dispose = () => {
     for (const e of edges.current) { try { if (e.isValid()) world.removeRigidBody(e); } catch { /* Parent world already disposed. */ } }
     edges.current = [];
+    for (const e of blocks.current) { try { if (e.isValid()) world.removeRigidBody(e); } catch { /* Parent world already disposed. */ } }
+    blocks.current = [];
     if (slab.current) { try { if (slab.current.isValid()) world.removeRigidBody(slab.current); } catch { /* Parent world already disposed. */ } slab.current = null; }
     for (const joint of joints.current) { try { if (joint.isValid()) world.removeImpulseJoint(joint, true); } catch { /* Parent world already disposed. */ } }
     for (const body of bodies.current) { try { if (body.isValid()) world.removeRigidBody(body); } catch { /* Parent world already disposed. */ } }
@@ -155,6 +176,13 @@ export function RagdollBody({ subject, color, onMeshes }: { subject: RagdollSubj
         const body = world.createRigidBody(rapier.RigidBodyDesc.fixed().setTranslation(sb.x, sb.y, sb.z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }));
         world.createCollider(rapier.ColliderDesc.cuboid(sb.hx, sb.hy, sb.hz).setFriction(1.0).setRestitution(0.05), body);
         edges.current.push(body);
+      }
+      // The room's furniture and walls: it falls against them, never through.
+      for (const sb of subject.props?.() ?? []) {
+        const q = new THREE.Quaternion().setFromAxisAngle(UP, sb.rot);
+        const body = world.createRigidBody(rapier.RigidBodyDesc.fixed().setTranslation(sb.x, sb.y, sb.z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }));
+        world.createCollider(rapier.ColliderDesc.cuboid(sb.hx, sb.hy, sb.hz).setFriction(1.0).setRestitution(0.05), body);
+        blocks.current.push(body);
       }
       // (A fall: from where it began — already tipping over, all limbs loose, the way it goes in.)
       const startY = accident.fromY ?? subject.pos.y;

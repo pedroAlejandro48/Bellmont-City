@@ -6,8 +6,8 @@ import { MENU_BOARDS, isDrinkName, isWaterName } from "./food";
 /** Thirst runs out over 24 in-game hours, hunger over 48. */
 export const THIRST_PER_MINUTE = 100 / (24 * 60);
 export const HUNGER_PER_MINUTE = 100 / (48 * 60);
-/** With either at zero, health drops 10% an in-game minute; otherwise it heals 10% an in-game day. */
-export const STARVING_PER_MINUTE = 10;
+/** With any of them at zero, health drains over 30 in-game minutes; otherwise it heals 10% an in-game day. */
+export const STARVING_PER_MINUTE = 100 / 30;
 export const HEALING_PER_MINUTE = 10 / (24 * 60);
 
 /**

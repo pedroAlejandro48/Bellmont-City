@@ -115,6 +115,8 @@ export function CameraRig({ state }: { state: GameState }) {
   const lockLook = useRef(new THREE.Vector3());
   /** Let go of a held view: eased from where it was back to following (seconds since, and that view). */
   const unlock = useRef<{ t: number; pos: THREE.Vector3; look: THREE.Vector3 } | null>(null), wasLocked = useRef(false);
+  /** Dead outdoors (off a roof onto the street, say): which way the camera looks at the body from. */
+  const deathView = useRef<number | null>(null);
   const firstPerson = (dt: number) => {
     const head = state.avatar.body[3];
     if (!head) return false;
@@ -160,6 +162,29 @@ export function CameraRig({ state }: { state: GameState }) {
     if (cam.isPerspectiveCamera) {
       const want = state.firstPerson ? (cam.aspect <= 1 ? 90 : Math.max(60, Math.min(90, 2 * Math.atan(Math.tan((110 * Math.PI) / 360) / cam.aspect) * 180 / Math.PI))) : 60;
       if (Math.abs(cam.fov - want) > 0.05) { cam.fov += (want - cam.fov) * (1 - Math.exp(-8 * dt)); if (Math.abs(cam.fov - want) < 0.1) cam.fov = want; cam.updateProjectionMatrix(); }
+    }
+    // Dead outdoors: the camera turns to the body where it lies (the ragdoll), from up and to one side where nothing
+    // is in the way, so the fall's end shows with the "you died" sign.
+    const pelvis = state.avatar.ragdoll[0];
+    if (state.health > 0 || !pelvis?.visible || state.interior) deathView.current = null;
+    else if (!state.camLock) {
+      const at = pelvis.position;
+      if (deathView.current === null) {
+        // The clearest side: of eight, the one a ray from the body to the camera's spot gets furthest along.
+        let best = 0, bestClear = -1;
+        for (let i = 0; i < 8; i++) {
+          const a = state.camYaw + (i * Math.PI) / 4, dir = { x: Math.sin(a) * 0.8, y: 0.6, z: Math.cos(a) * 0.8 };
+          const hit = world.castRay(new rapier.Ray({ x: at.x, y: at.y + 0.4, z: at.z }, dir), 4.5, true, undefined, undefined, undefined, undefined, (c) => c.parent()?.userData !== "ragdoll");
+          const clear = hit ? hit.timeOfImpact : 4.5;
+          if (clear > bestClear + 0.05) { bestClear = clear; best = a; }
+        }
+        deathView.current = best;
+      }
+      const a = deathView.current, k = 1 - Math.exp(-3 * dt);
+      camera.position.lerp(vectors.target.set(at.x + Math.sin(a) * 3.2, at.y + 2.8, at.z + Math.cos(a) * 3.2), k);
+      lockLook.current.lerp(vectors.up.set(at.x, at.y + 0.9, at.z), k); // (Aimed a little above: the body shows below the sign.)
+      camera.up.set(0, 1, 0); camera.lookAt(lockLook.current);
+      return;
     }
     // Held on one view (the shower while showering): eased there, looking at it.
     if (state.camLock) {

@@ -8,8 +8,8 @@ describe("hunger, thirst and health", () => {
     expect(day.thirst).toBeGreaterThan(0); expect(day.hunger).toBeCloseTo(50, 0);
     expect(stepNeeds({ health: 100, hunger: 100, thirst: 100 }, 24 * 60).thirst).toBe(0);
   });
-  it("loses 10% health a minute with either at zero, and heals 10% a day otherwise", () => {
-    expect(stepNeeds({ health: 80, hunger: 0, thirst: 50 }, 1).health).toBeCloseTo(70);
+  it("drains health over 30 minutes with either at zero, and heals 10% a day otherwise", () => {
+    expect(stepNeeds({ health: 80, hunger: 0, thirst: 50 }, 30).health).toBeCloseTo(0);
     expect(stepNeeds({ health: 80, hunger: 100, thirst: 100 }, 12 * 60).health).toBeCloseTo(85);
     expect(stepNeeds({ health: 100, hunger: 50, thirst: 50 }, 5).health).toBe(100);
   });
@@ -70,7 +70,7 @@ describe("sleep energy and the energy drink's cost", () => {
 
 describe("resting", () => {
   it("energy at 0 drains health like starving", () => {
-    expect(stepNeeds({ health: 80, hunger: 50, thirst: 50, energy: 0 }, 1).health).toBe(70);
+    expect(stepNeeds({ health: 80, hunger: 50, thirst: 50, energy: 0 }, 1).health).toBeCloseTo(80 - 100 / 30, 5);
     expect(stepNeeds({ health: 80, hunger: 50, thirst: 50, energy: 5 }, 1).health).toBeGreaterThan(80);
   });
 });

@@ -14,6 +14,7 @@ import type { GameState } from "./state";
 import { BODY_PARTS, CharacterBody, useBodyRig } from "./CharacterBody";
 import { bumpOthers } from "@/multiplayer/bump";
 import { CHAIR, stepPerson, toLocal, toWorld } from "./restaurantRoom";
+import { rayProps, roomItems, roomProps, type Prop } from "./props";
 /** Hip height (above the floor) sat on a bed's edge, and lying on it. */
 export const BED_SIT_HIPS = 0.62, BED_LIE_HIPS = 0.71;
 
@@ -24,6 +25,11 @@ const ACCEL = 12;
 const GRAVITY = 22;
 const JUMP_V = 7.2;
 const RADIUS = 0.35;
+/** Exhausted (hunger, thirst or energy at 0): a slow, struggling walk. */
+const TIRED_WALK = WALK * 0.5;
+/** Hand height leaning on something (above the feet): about the bent-over head's. */
+const LEAN_HAND = 1.42;
+type Plant = { side: 1 | -1; mode: "side" | "front"; at: THREE.Vector3; from: THREE.Vector3 | null; k: number; blend: number; lost: boolean };
 
 const damp = (a: number, b: number, k: number, dt: number) => a + (b - a) * (1 - Math.exp(-k * dt));
 
@@ -92,6 +98,11 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     }),
     [city],
   );
+  // Outdoors, what a hand can be put on: buildings' walls, trees, poles.
+  const outdoorProps = useMemo<Prop[]>(() => [
+    ...colliders.boxes.map((b) => ({ x: (b.minX + b.maxX) / 2, z: (b.minZ + b.maxZ) / 2, hx: (b.maxX - b.minX) / 2, hz: (b.maxZ - b.minZ) / 2, h: 12 })),
+    ...colliders.circles.map((c) => ({ x: c.x, z: c.z, hx: c.r * 0.8, hz: c.r * 0.8, h: 3 })),
+  ], [colliders]);
 
   const rig = useBodyRig();
   const { root, hips, torso, head, thighL, thighR, shinL, shinR, armL, armR, foreL, foreR } = rig;
@@ -121,6 +132,10 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     /** Which bike action is playing (and the facing it started from), so its approach can step from there. */
     actionKey: "",
     actionYaw: 0,
+    /** How exhausted the body looks (eased 0..1), the hand leaning on something, and whether it has collapsed (dead). */
+    tired: 0,
+    plant: null as Plant | null,
+    collapsed: false,
   });
 
   useFrame((_, raw) => {
@@ -128,6 +143,95 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     const s = sim.current;
     const k = state.keys;
     const p = state.pos;
+
+    /** What a hand could be put on: along (dx, dz) from (ox, oz), the nearest thing's side (distance, height). */
+    const probe = (ox: number, oz: number, dx: number, dz: number, max: number) => {
+      const room = state.interior?.phase === "inside" ? state.rooms.get(state.interior.key) : undefined;
+      if (room) {
+        const [lx, lz] = toLocal(room.frame, ox, oz), [ex, ez] = toLocal(room.frame, ox + dx, oz + dz);
+        const hit = rayProps([...roomProps(room), ...roomItems(room)], lx, lz, ex - lx, ez - lz, max);
+        return hit ? { t: hit.t, h: hit.p.h } : null;
+      }
+      const hit = rayProps(outdoorProps, ox, oz, dx, dz, max);
+      return hit ? { t: hit.t, h: hit.p.h } : null;
+    };
+    /**
+     * Exhausted arms: the hands hang at the knees (moving with them), elbows bent; beside (or facing) a wall or
+     * anything tall enough, the hand on that side goes up to about head height and rests on it, held there while
+     * walking on until it's behind the hip (backing up: until it's ahead of the head), then quickly put forward
+     * (back) again. Only one hand at a time; the other stays at its knee.
+     */
+    const tiredArms = (carryL: boolean, carryR: boolean, tk: number, dt: number) => {
+      const yaw = state.rotY, fx = Math.sin(yaw), fz = Math.cos(yaw), lx = Math.cos(yaw), lz = -Math.sin(yaw);
+      const free = (sd: number) => (sd === 1 ? !carryL : !carryR);
+      const spot = (sd: 1 | -1, mode: "side" | "front", off: number) => {
+        // side: from `off` ahead of the body out to that side; front: from `off` to that side, straight ahead.
+        const ox = p.x + (mode === "side" ? fx * off : lx * sd * off), oz = p.z + (mode === "side" ? fz * off : lz * sd * off);
+        const dx = mode === "side" ? lx * sd : fx, dz = mode === "side" ? lz * sd : fz;
+        const hit = probe(ox, oz, dx, dz, 0.85);
+        if (!hit || hit.h < 0.65 || hit.t > (mode === "side" ? 0.72 : 0.7)) return null;
+        return new THREE.Vector3(ox + dx * (hit.t - 0.03), p.y + Math.min(LEAN_HAND, hit.h - 0.03), oz + dz * (hit.t - 0.03));
+      };
+      root.current!.updateMatrixWorld(true);
+      const shoulder = (sd: number) => (sd === 1 ? armL.current : armR.current)!.getWorldPosition(new THREE.Vector3());
+      // The hands at the knees (the reach kept short of straight: the elbows stay bent).
+      for (const sd of [1, -1] as const) {
+        if (!free(sd)) continue;
+        const knee = (sd === 1 ? shinL.current : shinR.current)?.getWorldPosition(new THREE.Vector3());
+        if (!knee) continue;
+        const at = knee.add(new THREE.Vector3(fx * 0.07, 0.12, fz * 0.07)), sh = shoulder(sd), d = at.clone().sub(sh), len = d.length();
+        if (len > 0.5) at.copy(sh).addScaledVector(d, 0.5 / len);
+        reachArm(sd === 1 ? armL.current : armR.current, sd === 1 ? foreL.current : foreR.current, at, POLES.low(sd), tk);
+      }
+      // The hand on the wall.
+      let pl = s.plant;
+      if (!pl) {
+        let best: Plant | null = null, bestD = Infinity;
+        for (const sd of [1, -1] as const) {
+          if (!free(sd)) continue;
+          const at = spot(sd, "side", 0.18);
+          const d = at ? Math.hypot(at.x - p.x, at.z - p.z) : Infinity;
+          if (at && d < bestD) { bestD = d; best = { side: sd, mode: "side", at, from: null, k: 1, blend: 0, lost: false }; }
+        }
+        if (!best) for (const sd of [-1, 1] as const) {
+          if (!free(sd)) continue;
+          const at = spot(sd, "front", 0.18);
+          if (at) { best = { side: sd, mode: "front", at, from: null, k: 1, blend: 0, lost: false }; break; }
+        }
+        pl = s.plant = best;
+      }
+      if (!pl) return;
+      const sh = shoulder(pl.side);
+      // Still something there? (Walked away from it, or the hand's needed: it comes back down.)
+      if (!free(pl.side) || !spot(pl.side, pl.mode, pl.mode === "side" ? 0 : 0.18)) pl.lost = true;
+      pl.blend = Math.max(0, Math.min(1, pl.blend + (pl.lost ? -dt : dt) / 0.3));
+      if (pl.lost && pl.blend <= 0) { s.plant = null; return; }
+      const rel = pl.at.clone().sub(p), going = s.vel.x * fx + s.vel.z * fz;
+      if (!pl.lost && pl.k >= 1) {
+        const reach = pl.at.distanceTo(sh);
+        let off: number | null = null;
+        if (pl.mode === "side") {
+          const a = rel.x * fx + rel.z * fz;
+          if (going > -0.15 && a < -0.12) off = 0.22;          // behind the hip: forward again, by the head
+          else if (going <= -0.15 && a > 0.42) off = -0.05;   // backing up: past the head, back again
+          else if (reach > 0.6) off = going <= -0.15 ? -0.05 : 0.22;
+        } else {
+          const lat = (rel.x * lx + rel.z * lz) * pl.side;
+          // (Never across the head: the hand stays on its own side of it.)
+          if (lat < 0 || lat > 0.55 || reach > 0.6) off = 0.18;
+        }
+        const next = off === null ? null : spot(pl.side, pl.mode, off);
+        if (next) { pl.from = pl.at.clone(); pl.at = next; pl.k = 0; }
+      }
+      const target = pl.at.clone();
+      if (pl.k < 1 && pl.from) {
+        pl.k = Math.min(1, pl.k + dt / 0.22);
+        const u = smoothstep(pl.k), arc = Math.sin(Math.PI * pl.k);
+        const away = pl.mode === "side" ? new THREE.Vector3(-lx * pl.side, 0, -lz * pl.side) : new THREE.Vector3(-fx, 0, -fz);
+        target.lerpVectors(pl.from, pl.at, u).addScaledVector(away, 0.1 * arc).add(new THREE.Vector3(0, 0.05 * arc, 0));
+      }
+      reachArm(pl.side === 1 ? armL.current : armR.current, pl.side === 1 ? foreL.current : foreR.current, target, POLES.low(pl.side), smoothstep(pl.blend) * tk);
+    };
 
     const fwdKey = k.has("KeyW") || k.has("ArrowUp");
     const back = k.has("KeyS") || k.has("ArrowDown");
@@ -140,12 +244,23 @@ export function Player({ state, city }: { state: GameState; city: City }) {
 
     let running = false;
     const dead = state.health === 0;
+    // Dead (whatever of): the body collapses where it stands, against whatever is there (a ragdoll, gently).
+    if (!dead) s.collapsed = false;
+    else if (!state.accident && !s.collapsed) {
+      s.collapsed = true;
+      const b = state.scooter;
+      if (b.riding || b.action) { b.riding = false; b.action = null; b.fallen = true; b.fallenAt = state.simulationTime; b.speed = 0; }
+      state.keys.clear(); state.jumpQueued = false;
+      state.accident = { phase: "down", startedAt: state.simulationTime, riseStartedAt: null, vehicleId: null, direction: [Math.sin(state.rotY), Math.cos(state.rotY)], launchSpeed: 0, seed: Math.floor(Math.random() * 1e9), gentle: true };
+    }
+    // Out of food, water or energy: exhausted — no running, a slow struggling walk.
+    const exhausted = !dead && (state.hunger <= 0 || state.thirst <= 0 || state.energy <= 0);
     const incapacitated = state.accident !== null;
     const bike = state.scooter;
     const usingBike = bike.riding || bike.action !== null;
     const sitting = state.bench !== null;
     // Going through a restaurant door or sitting on a chair: the movement is scripted.
-    const script = state.script;
+    const script = state.accident ? null : state.script;
     s.reverseBlend = damp(s.reverseBlend, bike.riding && !bike.action && !incapacitated && bike.speed < -0.01 ? 1 : 0, 6, dt);
     const fullDrink = (h: typeof state.hands.left) => !!h && h.cups > 0 && (h.items?.length ?? 1) > 0;
     const holdingDrink = fullDrink(state.hands.left) || fullDrink(state.hands.right);
@@ -184,14 +299,14 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       // Nobody runs holding a drink, nor anywhere indoors.
       // (Out of energy: no running.)
       // (The joystick runs after a double tap: tap, then press again and push. A plain push always walks.)
-      running = !holdingDrink && (!state.interior || (state.level?.floor ?? 0) > 15) && state.energy > 0 && (useStick ? state.stickRun && stickPush > 0.3 : shift && fwdKey && !back);
+      running = !holdingDrink && (!state.interior || (state.level?.floor ?? 0) > 15) && !exhausted && (useStick ? state.stickRun && stickPush > 0.3 : shift && fwdKey && !back);
       state.runningNow = running;
       // Fitness (from the gym and running) makes running faster: 2.5% a level.
       const run = RUN * (1 + 0.025 * skillLevel(state.life.skills.fitness));
       // First person: backing up or stepping aside is slower than walking ahead.
       const fpOnFoot = state.firstPerson;
       const fpPace = fpOnFoot ? (direction < -0.1 ? 0.62 : Math.abs(sideways) > Math.abs(direction) ? 0.75 : 1) : 1;
-      const pace = (useStick && !running ? WALK * Math.min(1, 0.35 + stickPush * 0.75) : running ? run : WALK) * fpPace;
+      const pace = Math.min(exhausted ? TIRED_WALK : Infinity, (useStick && !running ? WALK * Math.min(1, 0.35 + stickPush * 0.75) : running ? run : WALK) * fpPace);
       const [vx, vz] = cameraRelativeVelocity(state.camYaw, direction, sideways, pace);
       s.vel.set(damp(s.vel.x, vx, ACCEL, dt), 0, damp(s.vel.z, vz, ACCEL, dt));
       // In first person the body always faces where the view does (the camera turns it); it walks backward or
@@ -312,7 +427,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
 
     // ---------- animation ----------
     const hSpeed = script ? Math.abs(script.walk) : Math.hypot(s.vel.x, s.vel.z);
-    s.moveBlend = damp(s.moveBlend, s.grounded ? Math.min(1, hSpeed / WALK) : 0, 10, dt);
+    s.moveBlend = damp(s.moveBlend, s.grounded ? Math.min(1, hSpeed / (exhausted && !script ? TIRED_WALK : WALK)) : 0, 10, dt);
     s.runBlend = damp(s.runBlend, Math.max(0, Math.min(1, (hSpeed - WALK) / (RUN - WALK))), 8, dt);
     s.airBlend = damp(s.airBlend, s.grounded ? 0 : 1, 14, dt);
     if (s.grounded) s.phase += dt * (script ? script.walk : hSpeed) * (s.runBlend > 0.5 ? 2.4 : 4.2);
@@ -362,6 +477,17 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     elbow = THREE.MathUtils.lerp(elbow, -0.5, air);
     lean = THREE.MathUtils.lerp(lean, s.airStyle ? 0.25 : 0.1, air);
     bob = THREE.MathUtils.lerp(bob, 0.05, air);
+
+    // Exhausted: knees bent all the time, bent forward over them, breathing hard (the back heaving), short slow
+    // steps, the head heavy and loose.
+    s.tired = damp(s.tired, exhausted && !usingBike && !sitting && !script ? 1 : 0, 3, dt);
+    const tk = s.tired * (1 - air), tt = performance.now() / 1000, breath = Math.sin(tt * Math.PI * 2 * 0.95);
+    if (tk > 0.001) {
+      const still = 1 - mv, bend = 0.36 + 0.14 * still;
+      hipL -= bend * tk; hipR -= bend * tk; kneeL += 2 * bend * tk; kneeR += 2 * bend * tk;
+      bob += (-0.92 * (1 - Math.cos(bend)) + 0.014 * breath) * tk;
+      lean = THREE.MathUtils.lerp(lean, 0.62 + 0.3 * still + 0.06 * breath, tk);
+    }
 
     const deathAge = state.deathStartedAt === null ? 0 : (performance.now() - state.deathStartedAt) / 1000;
     const fall = dead ? Math.min(1, deathAge / 1.15) : 0;
@@ -519,7 +645,9 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     // Leaning in over the counter while reaching for food.
     if (grabbing && !script && !usingBike && !lowGrab) lean = Math.max(lean, 0.3 * grabReach(grabT));
     if (torso.current) torso.current.rotation.set(lean, s.reverseBlend * 0.65, 0);
-    if (head.current) head.current.rotation.set(-lean * 0.5, s.reverseBlend * 1.05, 0);
+    if (head.current) head.current.rotation.set(-lean * 0.5 + tk * (0.24 + 0.07 * Math.sin(tt * 1.7) - 0.03 * breath), s.reverseBlend * 1.05 + tk * 0.07 * Math.sin(tt * 0.55), tk * 0.1 * Math.sin(tt * 0.8));
+    // (A little sway from step to step.)
+    if (root.current && tk > 0.001 && !dead) root.current.rotation.z += tk * 0.035 * Math.sin(ph) * mv;
     const splay = bed ? 0.15 : 1;
     const sideL = script || usingBike ? 0 : -sideSwing * (0.5 + 0.5 * Math.sin(ph)), sideR = script || usingBike ? 0 : -sideSwing * (0.5 - 0.5 * Math.sin(ph));
     thighL.current?.rotation.set(hipL, 0, (0.13 + Math.max(0, -legSwing) + Math.max(0, plantSwing) + 0.32 * straddle) * splay + sideL);
@@ -567,7 +695,11 @@ export function Player({ state, city }: { state: GameState; city: City }) {
           else reachArm(armR.current, foreR.current, at, POLES.low(-1), dropReach(dropT));
         }
       }
-    }
+      const carryL = heavy(state.hands.left) || grab?.hand === "left" || !!state.groceryBag || !!kh.left || (invLow && inv?.item === "groceryBag");
+      const carryR = heavy(state.hands.right) || grab?.hand === "right" || state.heldSlot !== null || !!state.heldTrash || !!state.groceryBasket || !!kh.right || state.phone.open || (invLow && inv?.item !== "groceryBag");
+      if (tk > 0.01 && !dropping && root.current) tiredArms(carryL, carryR, tk, dt);
+      else s.plant = null;
+    } else s.plant = null;
     if (usingBike && !incapacitated && root.current && torso.current) {
       const pickup = bike.action === "pickup";
       root.current.updateMatrixWorld(true);
