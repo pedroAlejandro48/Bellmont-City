@@ -37,7 +37,7 @@ export function UsernameForm({ account, password, onComplete, onSignOut }: { acc
   }
 
   useTitleBetweenObeliskAndForm();
-  return <div className="auth-bg flex min-h-screen items-center justify-center px-4">
+  return <div className="auth-bg auth-page flex items-center justify-center px-4">
     <div className="auth-split w-full max-w-sm">
       <div className="auth-titles">
         <h1 className="font-display text-center text-4xl text-foreground">{needsName ? "Choose your username" : "Choose your character"}</h1>

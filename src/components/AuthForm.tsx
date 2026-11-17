@@ -61,7 +61,7 @@ export function AuthForm({ room, onSignedIn, children }: AuthFormProps) {
   useTitleBetweenObeliskAndForm();
   const usingEmail = mode === "up" || method === "email";
   return (
-    <div className="auth-bg flex min-h-screen items-center justify-center px-4">
+    <div className="auth-bg auth-page flex items-center justify-center px-4">
       <QualityPicker />
       <div className="auth-split w-full max-w-sm">
         <div className="auth-titles">

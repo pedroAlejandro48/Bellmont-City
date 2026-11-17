@@ -1,4 +1,5 @@
 import { InstallApp, listenForInstall } from "@/components/InstallApp";
+import { guardBackButton } from "@/lib/backGuard";
 import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Button } from "@/components/ui/button";
@@ -77,6 +78,7 @@ function App() {
 
 startCityBackdrop();
 listenForInstall();
+guardBackButton();
 // Installable as an app (Android browsers need a service worker); only in real builds, so dev never caches.
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => { navigator.serviceWorker.register("/sw.js").catch(() => {}); });
