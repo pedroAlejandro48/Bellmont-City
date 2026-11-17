@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { APT_FLOORS } from "@/game/apartments";
 import type { GameState } from "@/game/state";
@@ -25,6 +26,7 @@ export function AptPanels({ state }: { state: GameState }) {
   const home = state.life.home, here = v?.b;
   return <>
     <div className={`elevator-panel ${lock === "elevator" && v ? "open" : ""}`} role="dialog" aria-label="Elevator" aria-hidden={lock !== "elevator"}>
+      <button type="button" className="phone-close" aria-label="Close" onClick={() => { state.uiLock = null; tick((n) => n + 1); }}><X size={18} /></button>
       <div className="elevator-display"><span>{v ? (v.floor === 1 ? "L" : v.floor) : ""}</span><small>{v?.dir ? (v.dir > 0 ? "▲" : "▼") : ""}</small></div>
       <div className="elevator-buttons">
         {Array.from({ length: APT_FLOORS }, (_, k) => APT_FLOORS - k).map((f) => <button key={f} type="button" className={`elevator-button ${v?.floor === f ? "here" : ""} ${v?.stops.includes(f) ? "lit" : ""} ${home && here && home.building === here && home.floor === f ? "home" : ""}`} onClick={() => press(f)} aria-label={f === 1 ? "Lobby" : `Floor ${f}`}>
@@ -32,7 +34,7 @@ export function AptPanels({ state }: { state: GameState }) {
         </button>)}
       </div>
       <p className="elevator-note">{home && here && home.building === here ? `Your floor is ${home.floor} (lit gold).` : "Choose a floor."}</p>
-      <button type="button" className="phone-btn" onClick={() => { state.uiLock = null; tick((n) => n + 1); }}>Close</button>
+
     </div>
     {lock === "closet" && <div className="fridge-wrap"><div className="home-panel" role="dialog" aria-label="Closet">
       <div className="home-panel-head"><b>Closet <small className="closet-count">{state.life.closet.length}/{CLOSET_MAX}</small></b><button type="button" aria-label="Close" onClick={() => { state.uiLock = null; tick((n) => n + 1); }}>✕</button></div>

@@ -41,7 +41,7 @@ export function ShopPanel({ state }: { state: GameState }) {
       <button type="button" aria-label="Close" onClick={close}><X size={18} /></button>
     </div>
     <div className="shop-wallet"><span>Cash <b>{money(state.cash)}</b></span><span>Bank <b>{money(state.life.bank)}</b></span></div>
-    <div className="phone-body shop-body">
+    <div className={`phone-body shop-body ${kind === "grocery" ? "grocery" : ""}`}>
       {kind === "grocery" && <Grocery state={state} refresh={refresh} />}
       {kind === "clothing" && <Swatches state={state} refresh={refresh} what="outfit" />}
       {kind === "bikes" && <Swatches state={state} refresh={refresh} what="paint" />}
@@ -67,7 +67,7 @@ function Grocery({ state, refresh }: Props) {
   const life = state.life, home = !!life.home, full = life.fridge.length >= 12;
   if (shift) return <ClerkShift state={state} onDone={() => { setShift(false); refresh(); }} />;
   return <>
-    <p className="phone-note">Take what you want from the crates and shelves with your basket (E), then bring it here and press E to pay. Fruit and water go in your inventory from the bag (number keys).</p>
+    <p className="phone-note">To shop, take a basket by the door, fill it (E), and pay here (E).</p>
     <p className="phone-label">Work here</p>
     <div className="phone-job"><div><b>Shop clerk</b> <small>J10</small><p>Restock the shelves for 40 seconds. Paid per shelf filled.</p></div>
       <button type="button" className="phone-btn" disabled={!!state.job} title={state.job ? "Finish your current job first" : ""} onClick={() => setShift(true)}>Work a shift</button></div>

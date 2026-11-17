@@ -235,11 +235,12 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
           action = () => { if (heldIn(state, "left") && !state.groceryBag) { const m = handsFullMessage("left"); toast(state, m.title, "warn", m.body); return; } start(pickItem([lx, lz], yaw, src, !!state.groceryBag), "pick", { src }); };
         } else if (src && n >= BASKET_MAX) { const [x, z] = world(src.take[0], src.take[2]); Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: "BASKET FULL" }); }
         if (state.interactQueued && action) { state.interactQueued = false; action(); }
-        // At the till with an empty basket: the register's panel (the clerk job), once until stepping away.
-        const d = Math.hypot(lx - svc.x, lz - svc.z);
-        if (d < 0.7 && n === 0 && !served.current && !state.shop && !run.current.plan) { served.current = true; state.shop = "grocery"; state.keys.clear(); }
-        if (d > 1.3) served.current = false;
       }
+      // At the counter, on the customer's side, with nothing to pay for (a basket or not): the register's panel (the
+      // clerk job), once until stepping away.
+      const svc = layout.service, d = Math.hypot(lx - svc.x, lz - svc.z), n = state.groceryBasket ? items.current.length : 0;
+      if (d < 0.7 && n === 0 && !served.current && !state.shop && !run.current.plan) { served.current = true; state.shop = "grocery"; state.keys.clear(); }
+      if (d > 1.3) served.current = false;
     }
     if (there && me.plan && state.interactQueued) state.interactQueued = false;
 
