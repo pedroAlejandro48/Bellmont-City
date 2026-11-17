@@ -473,17 +473,17 @@
 .elevator-button.lit { background: radial-gradient(circle at 35% 30%, #fff4d6, #ffbf5e); color: #4a2a00; box-shadow: 0 0 0 2px #ffb547, 0 0 14px rgba(255,181,71,0.75); }
 .elevator-button.home { background: radial-gradient(circle at 35% 30%, #fff3c4, #e2b84a); }
 .elevator-note { margin-top: 0.7rem; font-size: 0.68rem; text-align: center; opacity: 0.8; }
-/* (Always on the screen whole: the buttons shrink with a short screen, three to a row when it's very short.) */
+/* (Always on the screen whole, two to a row: the buttons shrink with a short screen.) */
 .elevator-panel { max-height: calc(100dvh - 1rem); }
 .elevator-panel .phone-close { color: #f2f3f7; }
 .elevator-button { --b: clamp(1.7rem, calc((100dvh - 10.5rem) / 8 - 0.5rem), 2.6rem); width: var(--b); height: var(--b); font-size: clamp(0.7rem, calc(var(--b) * 0.35), 0.9rem); }
 .elevator-buttons { gap: clamp(0.25rem, 1dvh, 0.5rem) 0.7rem; }
 @media (max-height: 560px) {
-  .elevator-panel { width: 13rem; padding: 0.7rem 0.8rem; }
-  .elevator-display { height: 2rem; margin-bottom: 0.5rem; font-size: 1.3rem; }
-  .elevator-buttons { grid-template-columns: repeat(3, 1fr); }
-  .elevator-button { --b: clamp(1.6rem, calc((100dvh - 7.5rem) / 5 - 0.35rem), 2.6rem); }
-  .elevator-note { margin-top: 0.4rem; }
+  .elevator-panel { padding: 0.6rem 0.8rem; }
+  .elevator-display { height: 1.8rem; margin-bottom: 0.4rem; font-size: 1.2rem; }
+  .elevator-buttons { gap: 0.2rem 0.7rem; }
+  .elevator-button { --b: clamp(1.35rem, calc((100dvh - 6.2rem) / 8 - 0.2rem), 2.6rem); }
+  .elevator-note { margin-top: 0.3rem; font-size: 0.62rem; }
 }
 .fridge-wrap .home-panel { position: fixed; z-index: 40; }
 .home-sleep { position: fixed; inset: 0; z-index: 45; }
@@ -576,3 +576,12 @@
 .moon-bye { width: 100%; text-align: center; font-weight: 700; background: rgba(243,238,207,0.18); }
 
 @media (min-width: 701px) { .moon-talk { left: auto; right: 28px; bottom: auto; top: 50%; transform: translateY(-50%); width: 400px; } }
+
+/* The grocery checkout: what's in the basket (it scrolls only itself if it's long), the total, Pay. */
+.checkout-list { display: grid; grid-template-columns: 1fr 1fr; gap: clamp(0.2rem, 0.8dvh, 0.35rem); }
+.checkout-row { display: flex; align-items: center; gap: 0.35rem; height: clamp(1.3rem, calc((100dvh - 14.5rem) / 5 - 0.3rem), 2.4rem); padding: 0 0.3rem 0 0.5rem; border-radius: 0.6rem; background: rgba(255,255,255,0.06); font-size: clamp(0.66rem, 2.2dvh, 0.8rem); }
+.checkout-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.checkout-row b { font-variant-numeric: tabular-nums; }
+.checkout-row button { width: 1.35rem; height: 1.35rem; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,0.1); flex-shrink: 0; }
+.checkout-row button:hover { background: rgba(255,120,120,0.35); }
+.checkout-total { display: flex; justify-content: space-between; padding: 0.2rem 0.6rem; font-size: 0.95rem; border-top: 1px solid rgba(255,255,255,0.12); }

@@ -1454,7 +1454,9 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     const liftLabel = (bkey: string, here: number) => {
       const c = lift().car(bkey), at = carFloor(c), name = at === 1 ? "L" : String(at);
       if (atFloor(c, here) && doorsOf(c) > 0.5) return lift().occupancy(bkey, [...(state.liftLink?.others() ?? [])]) >= CAPACITY ? "ELEVATOR FULL" : "ELEVATOR HERE";
-      return c.stops.includes(here) ? `ELEVATOR COMING · ${name}` : `E  CALL ELEVATOR · ${name}`;
+      // (Which floor it's at shows on the screen by the doors, not on the sign.)
+      void name;
+      return c.stops.includes(here) ? "COMING" : "E  CALL ELEVATOR";
     };
     // On a chair (sitting the restaurants' way): E gets up too, once anything set down is eaten and taken back.
     if (state.seat && floor) {
@@ -1500,16 +1502,16 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         const stand: [number, number] = [dx - 0.45, wz + INNER_WALL - 0.72];
         const walkTo = makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, stand, 0, { basket: false, bag: !!state.groceryBag })]);
         if (mine && holdingKey) {
-          show(dx - 0.5, wz - 0.1, 2.1, unlocked ? "E  LOCK" : "E  UNLOCK");
+          show(dx - 0.5, wz - 0.1, 2.1, unlocked ? "E  UNLOCKED" : "E  LOCKED");
           act = () => { move.current = { kind: "keyIn", t0: now, keyT: KEY.walk + KEY.reach + KEY.turn + KEY.back, lockOnly: true, plan: walkTo }; state.keys.clear(); };
         } else if (unlocked) {
-          show(dx - 0.5, wz - 0.1, 2.1, "E  OPEN");
+          show(dx - 0.5, wz - 0.1, 2.1, "E  UNLOCKED");
           act = () => {
             // (Whatever's in your hands comes with you. No key: straight to pushing it open.)
             move.current = { kind: "keyIn", t0: now, keyT: KEY.walk, plan: walkTo }; state.keys.clear();
           };
         } else {
-          show(dx - 0.5, wz - 0.1, 2.1, mine ? "LOCKED · HOLD YOUR KEY TO UNLOCK" : "LOCKED");
+          show(dx - 0.5, wz - 0.1, 2.1, "LOCKED");
           act = () => toast(state, mine ? "It's locked" : "It's locked", "info", mine ? "Take out your key (its number) and press E to unlock it." : "Whoever lives here has locked it.");
         };
       } else if (lx > dx - 1.6 && lx < dx + 0.3 && lz > wz + INNER_WALL && lz < wz + INNER_WALL + 1.5 && sees(dx - 0.5, wz + INNER_WALL)) {

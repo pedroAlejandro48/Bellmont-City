@@ -10,6 +10,8 @@ import { canConsume, consume } from "@/game/needs";
 import { GROCERIES, OUTFITS, OUTFIT_PRICE, PAINTS, PAINT_PRICE, SHOPS, TREATMENT_PRICE, WORKOUT_PRICE, clerkPay, foodValue, shopPlaces } from "@/game/shops";
 import { toast, type GameState } from "@/game/state";
 import { giveItem } from "@/game/invRuntime";
+import { GROCERY_PRICE } from "@/game/groceryRun";
+import { itemInfo } from "@/game/inventory";
 
 const money = (n: number) => `$${n.toFixed(2)}`;
 
@@ -66,11 +68,25 @@ function Grocery({ state, refresh }: Props) {
   const [shift, setShift] = useState(false);
   const life = state.life, home = !!life.home, full = life.fridge.length >= 12;
   if (shift) return <ClerkShift state={state} onDone={() => { setShift(false); refresh(); }} />;
+  if (state.groceryBasket?.length) return <Checkout state={state} refresh={refresh} />;
   return <>
     <p className="phone-note">To shop, take a basket by the door, fill it (E), and pay here (E).</p>
     <p className="phone-label">Work here</p>
     <div className="phone-job"><div><b>Shop clerk</b> <small>J10</small><p>Restock the shelves for 40 seconds. Paid per shelf filled.</p></div>
       <button type="button" className="phone-btn" disabled={!!state.job} title={state.job ? "Finish your current job first" : ""} onClick={() => setShift(true)}>Work a shift</button></div>
+  </>;
+}
+
+/** At the till with things in the basket: each with its price (✕ puts it back), the total, and Pay. */
+function Checkout({ state, refresh }: Props) {
+  const basket = state.groceryBasket ?? [], total = basket.reduce((a, k) => a + (GROCERY_PRICE[k] ?? 1), 0);
+  return <>
+    <div className="checkout-list">{basket.map((k, i) => <div key={`${i}-${k}`} className="checkout-row">
+      <span>{itemInfo(k).icon} {itemInfo(k).name}</span><b>{money(GROCERY_PRICE[k] ?? 1)}</b>
+      <button type="button" aria-label={`Take the ${itemInfo(k).name} out`} onClick={() => { state.groceryAsk = { remove: i }; window.setTimeout(refresh, 60); }}><X size={14} /></button>
+    </div>)}</div>
+    <div className="checkout-total"><span>Total</span><b>{money(total)}</b></div>
+    <button type="button" className="phone-btn" onClick={() => { state.groceryAsk = { pay: true }; state.shop = null; refresh(); }}>Pay {money(total)}</button>
   </>;
 }
 

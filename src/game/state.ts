@@ -174,6 +174,8 @@ export type GameState = {
   groundItems: { id: number; kind: ItemKind | "bottle" | "can" | "groceryBag"; x: number; z: number; y?: number; yaw: number; at: number; contents?: ItemKind[] }[];
   /** A shopping basket in the right hand (what's in it), or null. */
   groceryBasket: ItemKind[] | null;
+  /** From the checkout tab: pay for the basket, or take one thing (by its place in the basket) out of it. */
+  groceryAsk: { pay: true } | { remove: number } | null;
   /** A bag of groceries in the left hand (what's in it), or null: it can't go in the inventory, only be put down. */
   groceryBag: ItemKind[] | null;
   /** Restaurant food from the save, still to be handed back to whoever runs the food (Food). */
@@ -351,7 +353,7 @@ export function createState(save: SaveData): GameState {
     heldTrash: null,
     invAct: null,
     groundItems: [],
-    groceryBasket: null,
+    groceryBasket: null, groceryAsk: null,
     groceryBag: null, foodRestore: null,
     extraDoorUses: [],
     level: save.apt && save.apt.floor >= 2 ? { building: save.apt.building, floor: save.apt.floor, y: floorY(save.apt.floor) } : null,

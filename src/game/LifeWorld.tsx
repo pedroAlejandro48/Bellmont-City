@@ -151,7 +151,7 @@ export function LifeWorld({ state }: { state: GameState }) {
     <InteractionPrompt sample={() => {
       const p = state.pos, hide = state.accident || state.health <= 0 || state.home || state.bench || state.script && !state.busking;
       const job = state.job;
-      if (!hide && job) { const s = job.stage === "pickup" ? job.from : job.to; if (Math.hypot(s[0] - p.x, s[1] - p.z) < STOP_REACH) return { visible: true, x: s[0], y: 1.9, z: s[1], time: state.simulationTime, label: job.stage === "pickup" ? "E  PICK UP" : "E  DELIVER" }; }
+      if (!hide && job) { const s = job.stage === "pickup" ? job.from : job.to; if (Math.hypot(s[0] - p.x, s[1] - p.z) < STOP_REACH) return { visible: true, x: s[0], y: 1.9, z: s[1], time: state.simulationTime, label: job.stage === "pickup" ? "E  PICK UP" : "E  DROP OFF" }; }
       if (hide || state.scooter.riding) return { visible: false, x: 0, y: 0, z: 0, time: 0 };
       const atm = ATMS.find((a) => near(state, a.x, a.z, ATM_REACH));
       if (atm) return { visible: true, x: atm.x, y: 2.2, z: atm.z, time: state.simulationTime, label: "E  ATM" };

@@ -213,8 +213,19 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
           [p.x, p.z] = world(0, -0.45); p.y = SIDEWALK_H + 2.05; p.visible = true; p.label = n ? "E  LEAVE (PUT ITEMS BACK)" : "E  LEAVE";
           action = () => { if (n) toast(state, "You put everything back", "info"); items.current = []; state.groceryBasket = []; start(returnBasket([lx, lz], yaw, pile, !!state.groceryBag), "return"); };
         } else if (atTill && n > 0) {
-          [p.x, p.z] = world(spots.basket[0], spots.basket[2]); p.y = SIDEWALK_H + 1.5; p.visible = true; p.label = `E  PAY ${money(total)}`;
-          action = () => {
+          [p.x, p.z] = world(spots.basket[0], spots.basket[2]); p.y = SIDEWALK_H + 1.5; p.visible = true; p.label = "E";
+          // E: the checkout tab (what's in the basket, prices, the total): take things out, then pay from there.
+          action = () => { state.shop = "grocery"; state.keys.clear(); };
+        }
+        // From the checkout tab.
+        const ask = state.groceryAsk;
+        if (ask) {
+          state.groceryAsk = null;
+          if ("remove" in ask) { if (ask.remove >= 0 && ask.remove < items.current.length) { items.current = items.current.filter((_, i) => i !== ask.remove); state.groceryBasket = items.current.map((i) => i.kind); bump(); } }
+          else if (atTill && n > 0) payNow();
+        }
+        function payNow() {
+          {
             if (!clerkOn.current) { toast(state, "The store is closed", "warn", `Fresh Market is open from ${clockHour(VENUE_HOURS.grocery!.opens)} to ${clockHour(VENUE_HOURS.grocery!.closes)}.`); return; }
             if (checkout.current) { toast(state, "Wait a moment", "info", "The cashier is serving someone."); return; }
             // The bag is handed over into the left hand (or more go in the bag already held there).
@@ -224,8 +235,9 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
             state.cash = paid.cash;
             toast(state, `Paid ${money(total)}`, "money", `${n} item${n > 1 ? "s" : ""} at Fresh Market.`);
             start(withWalk(payPlan([svc.x, svc.z], svc.yaw, layout, n), [lx, lz], yaw, [svc.x, svc.z], svc.yaw), "pay");
-          };
-        } else if (src && n < BASKET_MAX && isCandy(src.kind) && items.current.filter((i) => isCandy(i.kind)).length >= freeSlots(state.life.inventory)) {
+          }
+        }
+        if (action) { /* (the door, or the till) */ } else if (src && n < BASKET_MAX && isCandy(src.kind) && items.current.filter((i) => isCandy(i.kind)).length >= freeSlots(state.life.inventory)) {
           // Candy goes into the inventory once paid for: no more than there's room for.
           const [x, z] = world(src.take[0], src.take[2]); Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: "NO ROOM IN YOUR INVENTORY" });
         } else if (src && n < BASKET_MAX) {
