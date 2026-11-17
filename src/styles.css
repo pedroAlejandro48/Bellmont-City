@@ -614,3 +614,7 @@ body.has-install .auth-page { padding-bottom: calc(env(safe-area-inset-bottom, 0
 html:has(.auth-page), body:has(.auth-page) { overflow: hidden; height: 100%; }
 .back-note { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 6rem); transform: translate(-50%, 0.5rem); z-index: 80; padding: 0.6rem 1.1rem; border-radius: 999px; background: rgba(20,22,30,0.92); color: #f2f3f7; font: 700 0.85rem/1 Manrope, Arial, sans-serif; box-shadow: 0 8px 24px rgba(0,0,0,0.45); opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; }
 .back-note.on { opacity: 1; transform: translate(-50%, 0); }
+/* On a computer: top-right corner, the device-speed picker to its left. */
+.install-app.pc { top: 0.75rem; right: 0.75rem; bottom: auto; left: auto; transform: none; padding: 0 0.95rem; height: 2.45rem; font-size: 0.82rem; gap: 0.4rem; }
+.install-app.pc:active { transform: scale(0.96); }
+body.has-install-pc .quality-picker { right: 9.6rem; }

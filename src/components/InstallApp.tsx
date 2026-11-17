@@ -28,14 +28,27 @@ function iosBrowser() {
   return "safari";
 }
 
-/** "Install app" at the bottom of the home pages on a phone or tablet (not once it's installed). */
+/** The computer's browser: Safari on a Mac, Firefox, or one built on Chrome (Chrome, Edge, Brave, Opera…). */
+function desktopBrowser() {
+  const u = ua();
+  if (/Firefox\//.test(u)) return "firefox";
+  if (/Edg\//.test(u)) return "edge";
+  if (/Safari\//.test(u) && !/Chrome|Chromium/.test(u)) return "safari";
+  return "chrome";
+}
+
+/** "Install app" on the home pages, in any browser (not once it's installed): at the bottom on a phone or tablet, in
+ * the top-right corner on a computer (the device-speed picker moves left for it). */
 export function InstallApp() {
   const [, tick] = useState(0);
   const [help, setHelp] = useState(false);
   const [copied, setCopied] = useState(false);
   useEffect(() => { const f = () => tick((n) => n + 1); listeners.add(f); return () => { listeners.delete(f); }; }, []);
-  const show = isMobile() && !installed();
-  useEffect(() => { document.body.classList.toggle("has-install", show); return () => document.body.classList.remove("has-install"); }, [show]);
+  const mobile = isMobile(), show = !installed();
+  useEffect(() => {
+    document.body.classList.toggle("has-install", show && mobile); document.body.classList.toggle("has-install-pc", show && !mobile);
+    return () => { document.body.classList.remove("has-install"); document.body.classList.remove("has-install-pc"); };
+  }, [show, mobile]);
   if (!show) return null;
 
   const install = async () => {
@@ -53,12 +66,22 @@ export function InstallApp() {
   const copy = async () => { try { await navigator.clipboard.writeText(window.location.origin); setCopied(true); } catch { /* shown below anyway */ } };
 
   return <>
-    <button type="button" className="install-app" onClick={() => void install()}><SquarePlus size={20} /> Install app</button>
+    <button type="button" className={`install-app ${mobile ? "" : "pc"}`} onClick={() => void install()}><SquarePlus size={mobile ? 20 : 16} /> Install app</button>
     {help && <div className="install-help" role="dialog" aria-label="Install the app" onClick={() => setHelp(false)}>
       <div className="install-card" onClick={(e) => e.stopPropagation()}>
         <button type="button" className="install-x" aria-label="Close" onClick={() => setHelp(false)}><X size={18} /></button>
         <b>Install Bellmont City</b>
-        {ios ? <>
+        {!mobile ? (() => { const b = desktopBrowser(); return b === "safari" ? <ol>
+          <li>In the menu bar, open <b>File</b>.</li>
+          <li>Choose <b>Add to Dock…</b>, then <b>Add</b>. Bellmont opens from the Dock like an app.</li>
+        </ol> : b === "firefox" ? <>
+          <p className="install-note" style={{ marginTop: 0 }}>Firefox can't install websites as apps. Open the game in <b>Chrome</b>, <b>Edge</b> or <b>Brave</b> and press Install app there.</p>
+          <button type="button" className="install-copy" onClick={() => void copy()}>{copied ? "Link copied" : "Copy the link"}</button>
+        </> : <ol>
+          <li>Click the install icon at the right end of the address bar, or open the browser's menu <b>⋮</b> (<b>…</b> in Edge).</li>
+          <li>Choose <b>Install Bellmont City</b> (in some browsers under <b>Cast, save and share</b> or <b>Apps</b>).</li>
+          <li>Click <b>Install</b>.</li>
+        </ol>; })() : ios ? <>
           <ol>
             {browser === "chrome" ? <li>Tap <Share size={16} className="inline" /> <b>Share</b> in the address bar (top right).</li>
               : browser === "edge" || browser === "firefox" ? <li>Tap the menu <b>☰</b> at the bottom, then <Share size={16} className="inline" /> <b>Share</b>.</li>
