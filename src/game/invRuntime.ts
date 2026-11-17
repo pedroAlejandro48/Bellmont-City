@@ -73,6 +73,7 @@ export function pressInventorySlot(state: GameState, slot: number) {
 
 /** E with something to eat or drink out: starts using it. True if it did. */
 export function consumeHeld(state: GameState) {
+  if (state.heldSlot === null) return consumeFromHand(state);
   const slot = state.heldSlot, kind = slot === null ? null : state.life.inventory[slot];
   if (!kind || busy(state)) return false;
   const use = itemInfo(kind).use;
@@ -85,20 +86,37 @@ export function consumeHeld(state: GameState) {
   return true;
 }
 
+/** A thing bought and held (it didn't fit in the inventory): E eats or drinks it, from the right hand (one in the left
+ * moves over to the right first, if that's free). */
+function consumeFromHand(state: GameState) {
+  if (busy(state)) return false;
+  const sh = state.storeHands;
+  if (!sh.right?.paid && sh.left?.paid && !sh.right && handFree(state, "right")) { sh.right = sh.left; sh.left = null; }
+  const side = sh.right?.paid ? "right" : sh.left?.paid ? "left" : null;
+  if (!side) return false;
+  const kind = sh[side]!.kind, use = itemInfo(kind).use, name = itemInfo(kind).name;
+  if (use !== "eat" && use !== "drink") return false;
+  if (!canConsume(state, name)) { toast(state, use === "drink" ? "Not thirsty" : "You're full", "warn"); return true; }
+  state.invAct = { kind: use, at: state.simulationTime, item: kind, target: null, done: false, fromHand: side };
+  return true;
+}
+
 /** Q with something out: put it down on the ground in front. True if it did. */
 export function dropHeld(state: GameState) {
   if (busy(state)) return false;
   const kh = state.life.kitchen.hands, kSide = (["right", "left"] as const).find((h) => kh[h] && !kh[h]!.food);
   // (A pot or plate with food in it isn't put down this way.)
   if (!state.heldTrash && state.heldSlot === null && !kSide && (kh.left || kh.right)) return false;
-  const kind = state.heldTrash ?? (state.heldSlot !== null ? state.life.inventory[state.heldSlot] : null) ?? (kSide ? kh[kSide]!.ware : null) ?? (state.groceryBag && !state.groceryBasket ? "groceryBag" : null);
+  // (Things from the grocery store not paid for yet can't be put down: only back where they came from.)
+  const sh = state.storeHands, hSide = !state.heldTrash && state.heldSlot === null ? (sh.right?.paid ? "right" : sh.left?.paid ? "left" : null) : null;
+  const kind = state.heldTrash ?? (state.heldSlot !== null ? state.life.inventory[state.heldSlot] : null) ?? (hSide ? sh[hSide]!.kind : null) ?? (kSide ? kh[kSide]!.ware : null) ?? (state.groceryBag && !state.groceryBasket ? "groceryBag" : null);
   if (!kind) return false;
   const f = new THREE.Vector3(Math.sin(state.rotY), 0, Math.cos(state.rotY)), l = new THREE.Vector3(Math.cos(state.rotY), 0, -Math.sin(state.rotY));
   let at = state.pos.clone().addScaledVector(f, 0.36).addScaledVector(l, kind === "groceryBag" ? 0.26 : -0.24), topY: number | undefined;
   // A table within reach in front: onto it instead (its near edge, toward you).
   const table = kind !== "groceryBag" ? tableNear(state) : null;
   if (table) { at = new THREE.Vector3(table.x, state.pos.y, table.z); topY = table.y; }
-  state.invAct = { kind: "drop", at: state.simulationTime, item: kind, target: at, done: false, ...(state.heldTrash || state.heldSlot !== null || !kSide ? {} : { kitchenHand: kSide }), ...(topY !== undefined ? { topY } : {}) };
+  state.invAct = { kind: "drop", at: state.simulationTime, item: kind, target: at, done: false, ...(hSide ? { fromHand: hSide } : state.heldTrash || state.heldSlot !== null || !kSide ? {} : { kitchenHand: kSide }), ...(topY !== undefined ? { topY } : {}) };
   return true;
 }
 /** The table in front within reach (a room's tables, the apartment's dining table and desk): where on it. */
@@ -146,7 +164,8 @@ export function stepInventory(state: GameState) {
       const kind = a.item as ItemKind, name = itemInfo(kind).name;
       const after = consume(state, name, itemInfo(kind).value ?? foodValue(name));
       state.hunger = after.hunger; state.thirst = after.thirst; state.energy = after.energy; state.health = after.health;
-      if (state.heldSlot !== null) removeItem(state.life.inventory, state.heldSlot);
+      if (a.fromHand) state.storeHands[a.fromHand] = null;
+      else if (state.heldSlot !== null) removeItem(state.life.inventory, state.heldSlot);
       state.heldSlot = null;
       // The bottle is empty now: trash in the hand, to put down (Q).
       if (a.kind === "drink" && itemInfo(kind).trash) state.heldTrash = itemInfo(kind).trash!;
@@ -160,7 +179,8 @@ export function stepInventory(state: GameState) {
       a.done = true;
       const contents = a.item === "groceryBag" ? state.groceryBag ?? [] : undefined;
       state.groundItems.push({ id: Math.max(nextGround++, ...state.groundItems.map((g) => g.id + 1)), kind: a.item, x: a.target.x, z: a.target.z, ...(a.topY !== undefined ? { y: a.topY } : state.level ? { y: state.level.y } : {}), yaw: state.rotY, at: state.simulationTime, ...(contents ? { contents } : {}) });
-      if (a.kitchenHand) state.life.kitchen.hands[a.kitchenHand] = null;
+      if (a.fromHand) state.storeHands[a.fromHand] = null;
+      else if (a.kitchenHand) state.life.kitchen.hands[a.kitchenHand] = null;
       else if (a.item === "bottle" || a.item === "can") state.heldTrash = null;
       else if (a.item === "groceryBag") state.groceryBag = null;
       else if (state.heldSlot !== null) { removeItem(state.life.inventory, state.heldSlot); state.heldSlot = null; }

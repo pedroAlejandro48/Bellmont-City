@@ -44,7 +44,8 @@ function readGround(list: unknown[]): SavedGround[] {
 }
 function readHeld(value: unknown): SavedHeld | null {
   const h = saveRecord(value);
-  return { slot: fin(h['slot']) ? Math.trunc(h['slot']) : null, trash: h['trash'] === "bottle" || h['trash'] === "can" ? h['trash'] : null, bag: Array.isArray(h['bag']) ? strs(h['bag']) : null };
+  const one = (v: unknown) => (typeof v === "string" ? v : null);
+  return { slot: fin(h['slot']) ? Math.trunc(h['slot']) : null, trash: h['trash'] === "bottle" || h['trash'] === "can" ? h['trash'] : null, bag: Array.isArray(h['bag']) ? strs(h['bag']) : null, left: one(h['left']), right: one(h['right']) };
 }
 function readFood(list: unknown[]): SavedPack[] {
   const out: SavedPack[] = [];

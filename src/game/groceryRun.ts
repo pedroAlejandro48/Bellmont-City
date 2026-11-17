@@ -12,7 +12,7 @@ export const DRINK_SHELF: ItemKind[] = ["water", "orangeJuice", "appleJuice", "c
 export const drinkSection = (w: number, k: number) => -w / 2 + (k + 0.5) * (w / DRINK_SHELF.length);
 /** What the grocery sells off its crates and shelf, and the price of one. */
 export const GROCERY_PRICE: Partial<Record<ItemKind, number>> = {
-  apple: 0.6, banana: 0.4, orange: 0.7, pear: 0.65, lemon: 0.5, lime: 0.45, grape: 2.2, peach: 0.8, water: 0.8, orangeJuice: 1.6, appleJuice: 1.6, cola: 1.2, lemonSoda: 1.2, energy: 2.4,
+  apple: 0.6, banana: 0.4, orange: 0.7, pear: 0.65, kiwi: 0.55, plum: 0.5, grape: 2.2, peach: 0.8, water: 0.8, orangeJuice: 1.6, appleJuice: 1.6, cola: 1.2, lemonSoda: 1.2, energy: 2.4,
   ...Object.fromEntries(CANS.map((k) => [k, CAN_INFO[k].price])), ...Object.fromEntries(CANDIES.map((k) => [k, CANDY_INFO[k].price])), ...Object.fromEntries(WARES.map((k) => [k, WARE_INFO[k].price])),
 };
 export const BASKET_MAX = 10;
@@ -210,6 +210,37 @@ export function pickItem(from: [number, number], fromYaw: number, src: Source, b
     { dur: 0.7, end: "take", pose: (k) => { const e = smooth(k); return { x, z, yaw, crouch: (low ? 0.18 : 0) * e, lean: (low ? 0.34 : 0.12) * e, left: { at: src.take, blend: e, pole: "out" }, right: right() }; } },
     { dur: 0.65, end: "drop", pose: (k) => { const e = smooth(k); return { x, z, yaw, crouch: (low ? 0.18 : 0) * (1 - e), lean: (low ? 0.34 : 0.12) * (1 - e) + 0.06 * e, left: { at: lerp3(src.take, over, e), blend: 1, pole: "out" }, right: right() }; } },
     { dur: 0.45, pose: (k) => { const e = smooth(k); return { x, z, yaw, crouch: 0, lean: 0.06 * (1 - e), left: bag ? bagReach(x, z, yaw, 1) : { at: over, blend: 1 - e, pole: "out" }, right: right() }; } },
+  ]);
+}
+
+/**
+ * Without a basket: taking a thing off a crate or shelf straight into a free hand (`put`: putting one back) — walk up,
+ * reach with that hand, take it (event "take", or "put" letting go), bring the hand back.
+ */
+export function handSegs(from: [number, number], fromYaw: number, src: Source, hand: "left" | "right", bag: boolean, put = false): Seg[] {
+  const [x, z] = src.stand, yaw = src.yaw, low = src.take[1] < 0.8;
+  const other = bag && hand === "right" ? bagReach(x, z, yaw) : null;
+  const reach = (e: number): Reach => ({ at: src.take, blend: e, pole: "out" });
+  const pose = (e: number, r: Reach | null): GPose => ({ x, z, yaw, crouch: (low ? 0.18 : 0) * e, lean: (low ? 0.34 : 0.12) * e, left: hand === "left" ? r : other, right: hand === "right" ? r : null });
+  return [
+    ...walkRoute(from, fromYaw, src.stand, yaw, { basket: false, bag }),
+    { dur: 0.6, end: put ? "put" : "take", pose: (k) => pose(smooth(k), reach(smooth(k))) },
+    { dur: 0.5, pose: (k) => pose(1 - smooth(k), reach(1 - smooth(k))) },
+  ];
+}
+/** Handing the things in one's hands over the counter to the cashier (event "give"), and taking them back paid for
+ * after a moment (event "back"). */
+export function handPay(from: [number, number], fromYaw: number, layout: VenueLayout, bag: boolean): Plan {
+  const s = layout.service, meet = checkoutSpots(layout).meet, [x, z] = [s.x, s.z], yaw = s.yaw;
+  const hold = (side: 1 | -1, e: number): Reach => ({ at: [meet[0], meet[1], meet[2] + side * 0.12], blend: e, pole: "low" });
+  const pose = (e: number): GPose => ({ x, z, yaw, crouch: 0, lean: 0.1 * e, left: bag ? bagReach(x, z, yaw) : hold(1, e), right: hold(-1, e) });
+  return plan([
+    ...walkRoute(from, fromYaw, [x, z], yaw, { basket: false, bag }),
+    { dur: 0.6, end: "give", pose: (k) => pose(smooth(k)) },
+    { dur: 0.5, pose: (k) => pose(1 - smooth(k)) },
+    { dur: 1.4, pose: () => pose(0) },
+    { dur: 0.5, end: "back", pose: (k) => pose(smooth(k)) },
+    { dur: 0.5, pose: (k) => pose(1 - smooth(k)) },
   ]);
 }
 

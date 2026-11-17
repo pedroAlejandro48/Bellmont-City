@@ -9,7 +9,7 @@ import { GAME_MINUTE, SIDEWALK_H, VENUE_HOURS, businessHours, clockHour, timeInf
 import { commutePath, commutePose, shiftAt, shiftWindow } from "./staffShift";
 import { OPENER_PASS } from "./doors";
 import {
-  BASKET_MAX, GROCERY_PRICE, checkoutLength, checkoutSpots, clerkAt, landingSpot, payPlan, pickItem, pileSpot, planAt, returnBasket,
+  BASKET_MAX, GROCERY_PRICE, handPay, handSegs, type Seg, checkoutLength, checkoutSpots, clerkAt, landingSpot, payPlan, pickItem, pileSpot, planAt, returnBasket,
   sources, takeBasket, walkSeg, walkRoute, setGroceryObstacles, plan as makePlan, type GPose, type Plan, type Source,
 } from "./groceryRun";
 import { InteractionPrompt } from "./InteractionPrompt";
@@ -103,7 +103,7 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
   const commute = useRef<{ key: string; path: ReturnType<typeof commutePath>; doorDone: boolean }>({ key: "", path: { pts: [], door: 0 }, doorDone: false });
 
   // ---- the player's own run ----
-  const run = useRef<{ plan: Plan | null; kind: string; t0: number; prev: number; src: Source | null; holding: ItemKind | null; exitAfter: boolean }>({ plan: null, kind: "", t0: 0, prev: -1, src: null, holding: null, exitAfter: false });
+  const run = useRef<{ plan: Plan | null; kind: string; t0: number; prev: number; src: Source | null; holding: ItemKind | null; exitAfter: boolean; hand?: "left" | "right"; given?: ItemKind[] | undefined }>({ plan: null, kind: "", t0: 0, prev: -1, src: null, holding: null, exitAfter: false });
   const items = useRef<InBasket[]>([]);
   const falling = useRef<{ kind: ItemKind; from: THREE.Vector3; spot: InBasket; t0: number } | null>(null);
   const checkout = useRef<Checkout | null>(null);
@@ -132,8 +132,11 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
   useFrame((_, raw) => {
     const dt = Math.min(raw, 0.1), now = state.simulationTime, me = run.current;
     const there = inside();
+    if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") (window as unknown as { __groceryRun?: unknown }).__groceryRun = { srcs, layout, run: run.current, pile: pileSpot(pile) };
     // Out of the store with a basket somehow (no way out but the door, which takes it back): it's gone.
     if (!there && state.groceryBasket && !me.plan && state.interior?.key !== layout.key) { state.groceryBasket = null; items.current = []; bump(); }
+    // Out of the store with things not paid for in the hands: they stay in the store.
+    if (!there && state.interior?.key !== layout.key && !me.plan) for (const side of ["left", "right"] as const) { const h = state.storeHands[side]; if (h && !h.paid) state.storeHands[side] = null; }
 
     // ---- this player's move this frame ----
     let script: Script | null = null;
@@ -142,6 +145,30 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
       me.prev = t;
       for (const ev of r.events) {
         if (ev === "basket") { state.groceryBasket = []; items.current = []; bump(); }
+        if (ev === "take" && me.src && me.kind === "handPick" && me.hand) { state.storeHands[me.hand] = { kind: me.src.kind, paid: false, src: srcs.indexOf(me.src) }; continue; }
+        if (ev === "put:left" || ev === "put:right") { state.storeHands[ev === "put:left" ? "left" : "right"] = null; continue; }
+        if (ev === "give" && me.kind === "handPay") {
+          // Over the counter to the cashier (it rings them up)…
+          me.given = (["left", "right"] as const).flatMap((sd) => { const h = state.storeHands[sd]; if (!h || h.paid) return []; state.storeHands[sd] = null; return [h.kind]; });
+        }
+        if (ev === "back" && me.kind === "handPay" && me.given) {
+          // …and back, paid for: fruit, drinks and candy into the inventory (or, with no room, the hand); cans and
+          // kitchenware into a bag.
+          const keep: ItemKind[] = [], bag: ItemKind[] = [];
+          for (const k of me.given) {
+            const use = itemInfo(k).use;
+            if (use === "eat" || use === "drink") { if (addItem(state.life.inventory, k) < 0) keep.push(k); } else bag.push(k);
+          }
+          if (bag.length) { state.groceryBag = [...(state.groceryBag ?? []), ...bag]; }
+          for (const k of keep) {
+            const side = !state.storeHands.right && handFree(state, "right") ? "right" : !state.storeHands.left && handFree(state, "left") ? "left" : null;
+            if (side) state.storeHands[side] = { kind: k, paid: true };
+            else state.groceryBag = [...(state.groceryBag ?? []), k];
+          }
+          const inv = me.given.length - keep.length - bag.length;
+          if (inv > 0) toast(state, `${inv} in your inventory`, "info");
+          me.given = undefined;
+        }
         if (ev === "take" && me.src) me.holding = me.src.kind;
         if (ev === "drop" && me.holding) {
           const fore = state.avatar.body[9];
@@ -191,18 +218,56 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
       const [lx, lz] = local(), yaw = state.rotY - f.rot;
       // No basket yet: E at the pile by the door takes one (nothing can be picked without one).
       if (!state.groceryBasket) {
-        const ps = pileSpot(pile);
+        const ps = pileSpot(pile), unpaid = (["left", "right"] as const).filter((sd) => state.storeHands[sd] && !state.storeHands[sd]!.paid);
+        const svc = layout.service, atTill = Math.hypot(lx - svc.x, lz - svc.z) < 0.75;
         if (Math.hypot(lx - ps.stand[0], lz - ps.stand[1]) < 1.3 && facesAt(yaw, lx, lz, pile.x, pile.z)) {
           const [x, z] = world(pile.x, pile.z); Object.assign(p, { visible: true, x, y: SIDEWALK_H + 1.0, z, label: "E  TAKE A BASKET" });
           if (state.interactQueued) {
             state.interactQueued = false;
-            // The basket goes in the right hand: it has to be free.
-            if (!handFree(state, "right")) { const m = handsFullMessage("right"); toast(state, m.title, "warn", m.body); }
-            else start(takeBasket([lx, lz], yaw, pile, !!state.groceryBag), "take");
+            // Things taken by hand go back where they came from first (one walk), then the basket; the player picks
+            // them again into it.
+            const segs: Seg[] = [];
+            let at: [number, number] = [lx, lz], ay = yaw;
+            for (const sd of unpaid) {
+              const src = srcs[state.storeHands[sd]!.src ?? -1];
+              if (!src) { state.storeHands[sd] = null; continue; }
+              const part = handSegs(at, ay, src, sd, !!state.groceryBag, true);
+              for (const sg of part) if (sg.end === "put") sg.end = `put:${sd}`;
+              segs.push(...part); at = src.stand; ay = src.yaw;
+            }
+            // The basket goes in the right hand: it has to be free (once the store's things are back).
+            const rightBusy = !!state.storeHands.right?.paid || (heldIn(state, "right") !== null && !(state.storeHands.right && !state.storeHands.right.paid));
+            if (rightBusy) { const m = handsFullMessage("right"); toast(state, m.title, "warn", m.body); }
+            else start(makePlan([...segs, ...takeBasket(at, ay, pile, !!state.groceryBag).segs]), "take");
           }
+        } else if (atTill && unpaid.length) {
+          // At the till with things in the hands: E, the checkout tab (what's in them, prices, the total; pay there).
+          [p.x, p.z] = world(spots.meet[0], spots.meet[2]); p.y = SIDEWALK_H + 1.4; p.visible = true; p.label = "E";
+          if (state.interactQueued) { state.interactQueued = false; state.shop = "grocery"; state.keys.clear(); }
         } else {
           const src = srcs.find((sr) => Math.hypot(lx - sr.stand[0], lz - sr.stand[1]) < 1.25 && facesAt(yaw, lx, lz, sr.take[0], sr.take[2]));
-          if (src) { const [x, z] = world(src.take[0], src.take[2]); Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: "TAKE A BASKET FIRST" }); }
+          // A free hand takes one (no basket): the right first, then the left. Both full: nothing more.
+          const hand = !state.storeHands.right && handFree(state, "right") ? "right" : !state.storeHands.left && handFree(state, "left") ? "left" : null;
+          if (src && hand) {
+            const [x, z] = world(src.take[0], src.take[2]); Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: "E" });
+            if (state.interactQueued) { state.interactQueued = false; start(makePlan(handSegs([lx, lz], yaw, src, hand, !!state.groceryBag)), "handPick", { src, hand }); }
+          }
+        }
+        // From the checkout tab: one taken out (it's put back), or paying for what's in the hands.
+        const ask = state.groceryAsk;
+        if (ask && unpaid.length) {
+          state.groceryAsk = null;
+          if ("remove" in ask) { const sd = unpaid[ask.remove]; if (sd) state.storeHands[sd] = null; }
+          else if (atTill) {
+            const total = unpaid.reduce((a, sd) => a + (GROCERY_PRICE[state.storeHands[sd]!.kind] ?? 1), 0), n = unpaid.length;
+            if (!clerkOn.current) toast(state, "The store is closed", "warn", `Fresh Market is open from ${clockHour(VENUE_HOURS.grocery!.opens)} to ${clockHour(VENUE_HOURS.grocery!.closes)}.`);
+            else if (checkout.current) toast(state, "Wait a moment", "info", "The cashier is serving someone.");
+            else {
+              const day = timeInfo(state.elapsed).day, paid = spend(state.life, state.cash, total, day, "Fresh Market");
+              if (!paid.ok) toast(state, "Not enough money", "warn", `That comes to ${money(total)}.`);
+              else { state.cash = paid.cash; toast(state, `Paid ${money(total)}`, "money", `${n} item${n > 1 ? "s" : ""} at Fresh Market.`); start(handPay([lx, lz], yaw, layout, !!state.groceryBag), "handPay"); }
+            }
+          }
         }
       } else {
         const n = items.current.length, svc = layout.service, atTill = Math.hypot(lx - svc.x, lz - svc.z) < 0.75;
@@ -250,7 +315,7 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
       }
       // At the counter, on the customer's side, with nothing to pay for (a basket or not): the register's panel (the
       // clerk job), once until stepping away.
-      const svc = layout.service, d = Math.hypot(lx - svc.x, lz - svc.z), n = state.groceryBasket ? items.current.length : 0;
+      const svc = layout.service, d = Math.hypot(lx - svc.x, lz - svc.z), n = (state.groceryBasket ? items.current.length : 0) + (["left", "right"] as const).filter((sd) => state.storeHands[sd] && !state.storeHands[sd]!.paid).length;
       if (d < 0.7 && n === 0 && !served.current && !state.shop && !run.current.plan) { served.current = true; state.shop = "grocery"; state.keys.clear(); }
       if (d > 1.3) served.current = false;
     }

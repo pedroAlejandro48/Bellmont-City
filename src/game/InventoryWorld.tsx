@@ -1,5 +1,5 @@
 import { PantryItem } from "./PantryModels";
-import { CANDIES, CANDY_INFO, WARES, isCandy, isWare } from "./pantry";
+import { CANDIES, CANDY_INFO, CANS, WARES, isCandy, isWare } from "./pantry";
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef, useState } from "react";
 import * as THREE from "three";
@@ -12,7 +12,7 @@ import type { GameState } from "./state";
 
 type Thing = ItemKind | "bottle" | "can" | "mealFood" | "mealDrink";
 /** What a thing is drawn as (a restaurant meal from the fridge: a take-out box, or a cup). */
-const shownAs = (k: Thing): Thing => (typeof k === "string" && k.startsWith("meal:") ? (itemInfo(k as ItemKind).use === "drink" ? "mealDrink" : "mealFood") : k);
+const shownAs = (k: Thing): Thing => (typeof k === "string" && k.startsWith("meal:") ? (itemInfo(k as ItemKind).use === "drink" ? "mealDrink" : "mealFood") : (CANS as readonly string[]).includes(k as string) ? "can" : k);
 
 /**
  * A white plastic bag of groceries: a soft pear-shaped body, rounder at the bottom where the shopping sits, gathered
@@ -62,8 +62,8 @@ export function useLooks() {
     orange: new THREE.MeshStandardMaterial({ color: "#f28a1a", roughness: 0.75 }),
     key: new THREE.MeshStandardMaterial({ color: "#d9b44a", roughness: 0.3, metalness: 0.85 }),
     pear: new THREE.MeshStandardMaterial({ color: "#b5c94a", roughness: 0.55 }),
-    lemon: new THREE.MeshStandardMaterial({ color: "#f5e04a", roughness: 0.6 }),
-    lime: new THREE.MeshStandardMaterial({ color: "#6cbf3c", roughness: 0.6 }),
+    kiwi: new THREE.MeshStandardMaterial({ color: "#7a5a33", roughness: 0.95 }),
+    plum: new THREE.MeshStandardMaterial({ color: "#5b2a5e", roughness: 0.35 }),
     grape: new THREE.MeshStandardMaterial({ color: "#6b2d6b", roughness: 0.35 }),
     peach: new THREE.MeshStandardMaterial({ color: "#f6a57a", roughness: 0.7 }),
     bag: new THREE.MeshStandardMaterial({ color: "#f7f7f5", roughness: 0.55, transparent: true, opacity: 0.93, side: THREE.DoubleSide }),
@@ -120,8 +120,12 @@ export function ItemModel({ kind, looks, empty = false }: { kind: Thing; looks: 
       <mesh material={looks.pear} position={[0, 0.08, 0]}><sphereGeometry args={[0.026, 12, 8]} /></mesh>
       <mesh material={looks.stem} position={[0, 0.112, 0]} rotation-z={0.3}><cylinderGeometry args={[0.003, 0.003, 0.02, 5]} /></mesh>
     </group>;
-    case "lemon": case "lime": return <group>
-      <mesh material={kind === "lemon" ? looks.lemon : looks.lime} position={[0, 0.03, 0]} rotation-z={Math.PI / 2} scale={[1.25, 0.9, 0.9]}><sphereGeometry args={[0.032, 14, 10]} /></mesh>
+    case "kiwi": return <group>
+      <mesh material={looks.kiwi} position={[0, 0.03, 0]} rotation-z={Math.PI / 2} scale={[1.2, 0.88, 0.88]}><sphereGeometry args={[0.032, 14, 10]} /></mesh>
+    </group>;
+    case "plum": return <group>
+      <mesh material={looks.plum} position={[0, 0.032, 0]} scale={[1, 1.05, 0.95]}><sphereGeometry args={[0.032, 14, 10]} /></mesh>
+      <mesh material={looks.stem} position={[0, 0.067, 0]} rotation-z={0.2}><cylinderGeometry args={[0.002, 0.002, 0.014, 4]} /></mesh>
     </group>;
     case "grape": return <group>
       {[[0, 0.1, 0], [-0.018, 0.08, 0.01], [0.018, 0.08, -0.008], [0, 0.075, 0.02], [-0.01, 0.055, -0.012], [0.012, 0.052, 0.01], [0, 0.032, 0]].map(([x, y, z], i) => <mesh key={i} material={looks.grape} position={[x!, y!, z!]}><sphereGeometry args={[0.014, 8, 6]} /></mesh>)}
@@ -161,8 +165,10 @@ export function InventoryWorld({ state }: { state: GameState }) {
   const looks = useLooks();
   const held = useRef<THREE.Group>(null);
   const shown = useRef<Thing | null>(null);
-  const kinds = useMemo(() => ["phone", "water", "bottle", "can", "orangeJuice", "appleJuice", "cola", "lemonSoda", "energy", "apple", "banana", "orange", "pear", "lemon", "lime", "grape", "peach", "key", ...CANDIES, ...WARES, "mealFood", "mealDrink"] as Thing[], []);
+  const kinds = useMemo(() => ["phone", "water", "bottle", "can", "orangeJuice", "appleJuice", "cola", "lemonSoda", "energy", "apple", "banana", "orange", "pear", "kiwi", "plum", "grape", "peach", "key", ...CANDIES, ...WARES, "mealFood", "mealDrink"] as Thing[], []);
   const parts = useRef<Map<Thing, THREE.Group>>(new Map());
+  // The left hand: something taken off the grocery store's shelves (or bought, with no room in the inventory).
+  const heldL = useRef<THREE.Group>(null), partsL = useRef<Map<Thing, THREE.Group>>(new Map()), shownL = useRef<Thing | null>(null);
   const ground = useRef<THREE.Group>(null);
   const bagHeld = useRef<THREE.Group>(null), bagCount = useRef(-1);
   const [, rerender] = useState(0);
@@ -187,14 +193,14 @@ export function InventoryWorld({ state }: { state: GameState }) {
     }
     // (The kitchen's own Q — pour, to the sink, to the table — came first; if it did nothing, Q puts it down.)
     const kitchenEmpty = !!((kh.right && !kh.right.food) || (kh.left && !kh.left.food));
-    if (state.dropQueued && (state.heldTrash || state.heldSlot !== null || kitchenEmpty || (state.groceryBag && !state.groceryBasket))) { if (dropHeld(state)) state.dropQueued = false; }
+    if (state.dropQueued && (state.heldTrash || state.heldSlot !== null || kitchenEmpty || state.storeHands.left?.paid || state.storeHands.right?.paid || (state.groceryBag && !state.groceryBasket))) { if (dropHeld(state)) state.dropQueued = false; }
     if (state.interactQueued && !state.scooter.riding && pickUpNear(state)) state.interactQueued = false;
     stepInventory(state);
   }, -0.8);
   // After the places' E (doors, ATMs, shops), before benches and the bike: E eats or drinks what's in the hand
   // when nothing else nearby wants it.
   useFrame(() => {
-    if (!state.interactQueued || state.heldSlot === null || state.doorPrompt) return;
+    if (!state.interactQueued || (state.heldSlot === null && !state.storeHands.right?.paid && !state.storeHands.left?.paid) || state.doorPrompt) return;
     const seat = nearestBenchSeat(state.pos.x, state.pos.z, state.seatOccupants);
     const bike = canInteractScooter([state.pos.x, state.pos.z], [state.scooter.pos.x, state.scooter.pos.z], state.scooter.yaw, state.scooter.fallen, state.scooter.fallSide);
     if (seat || bike) return;
@@ -204,7 +210,7 @@ export function InventoryWorld({ state }: { state: GameState }) {
   useFrame(() => {
     // What the right hand shows: the thing out, or trash, or (while picking up) nothing until it's in hand.
     const act = state.invAct;
-    let kind: Thing | null = state.heldTrash ?? heldKind(state);
+    let kind: Thing | null = state.heldTrash ?? heldKind(state) ?? (state.storeHands.right?.kind ?? null);
     if (kind) kind = shownAs(kind);
     if (act?.kind === "pickup" && act.done && act.item === "bottle") kind = "bottle";
     const fore = state.avatar.body[11];
@@ -236,6 +242,21 @@ export function InventoryWorld({ state }: { state: GameState }) {
         if (kind === "phone") g.position.y += 0.05;
         // Candy: held up in the fingers, the wrapper toward the face (a bar stands on its end).
         if (kind && isCandy(kind)) { g.position.y -= 0.03; if (CANDY_INFO[kind].shape !== "pop" && CANDY_INFO[kind].shape !== "bag") { tmp.e.set(-Math.PI / 2 + 0.35, state.rotY, 0, "YXZ"); g.quaternion.setFromEuler(tmp.e); } }
+      }
+    }
+    {
+      const gl = heldL.current, foreL0 = state.avatar.body[9], k = state.storeHands.left ? shownAs(state.storeHands.left.kind) : null;
+      if (gl) {
+        const vis = !!k && !!foreL0 && !state.home && !state.accident && state.health > 0;
+        gl.visible = vis;
+        if (vis && foreL0 && k) {
+          if (shownL.current !== k) { shownL.current = k; partsL.current.forEach((p, kk) => { p.visible = kk === k; }); }
+          foreL0.updateWorldMatrix(true, false); handWorld(foreL0, gl.position);
+          tmp.e.set(0, state.rotY, 0, "YXZ"); gl.quaternion.setFromEuler(tmp.e);
+          if (k === "water" || k === "orangeJuice" || k === "appleJuice") gl.position.y -= 0.07;
+          if (k === "cola" || k === "lemonSoda" || k === "energy") gl.position.y -= 0.05;
+          if (isCandy(k)) gl.position.y -= 0.03;
+        }
       }
     }
     // A bag of groceries in the left hand (held by its handles).
@@ -275,6 +296,9 @@ export function InventoryWorld({ state }: { state: GameState }) {
   return <>
     <group ref={held} visible={false}>
       {kinds.map((k) => <group key={k} ref={(el) => { if (el) parts.current.set(k, el); }} visible={false}><ItemModel kind={k} looks={looks} empty={k === "bottle"} /></group>)}
+    </group>
+    <group ref={heldL} visible={false}>
+      {kinds.filter((k) => k !== "phone").map((k) => <group key={k} ref={(el) => { if (el) partsL.current.set(k, el); }} visible={false}><ItemModel kind={k} looks={looks} empty={k === "bottle"} /></group>)}
     </group>
     <group ref={bagHeld} visible={false}><GroceryBagModel items={bagCount.current < 0 ? 0 : bagCount.current} looks={looks} /></group>
     <group ref={ground}>

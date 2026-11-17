@@ -6,6 +6,7 @@ import { ATMS } from "./places";
 import { useFrame } from "@react-three/fiber";
 import { POLES, carryElbow, reachArm } from "./arms";
 import { DROP_TIME, EAT_SECONDS, GRAB_TIME, PACK_SIZE, dropReach, grabReach } from "./food";
+import { FOOD_SCALE, biteCount } from "./dishes";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { SIGNAL_POLES, benchJoints, benchPose, floorHeight, cameraRelativeVelocity, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, type City, PARK_SOLIDS, circleBoxPush, bikePushShare, scooterFootprint, scooterSide, SCOOTER_TIP, BENCH_SEATS, BENCH_SIT_SECONDS, BENCH_STAND_SECONDS, benchStandHeight, BENCH_SEAT_TOP, BENCH_BACK_TOP, BENCH_BACKRESTS, FALLEN_BIKE_TOP, fallenBikeStandHeight, PARK_BINS, BIN } from "./config";
@@ -665,9 +666,9 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       // Full packs ride at the waist; an empty one (or a number sign) just hangs from a relaxed arm.
       const heavy = (h: typeof state.hands.left) => !!h && h.kind !== "sign" && (h.items?.length ?? 1) > 0;
       const kh = state.life.kitchen.hands;
-      if (heavy(state.hands.left) || grab?.hand === "left" || state.groceryBag || kh.left) { armL.current?.rotation.set(shL, 0, 0.2); foreL.current?.rotation.set(carryElbow(shL), 0, 0); }
+      if (heavy(state.hands.left) || grab?.hand === "left" || state.groceryBag || kh.left || state.storeHands.left) { armL.current?.rotation.set(shL, 0, 0.2); foreL.current?.rotation.set(carryElbow(shL), 0, 0); }
       // A thing from the inventory (or an emptied bottle) is carried the same way in the right hand.
-      if (heavy(state.hands.right) || grab?.hand === "right" || state.heldSlot !== null || state.heldTrash || state.groceryBasket || kh.right) { armR.current?.rotation.set(shR, 0, -0.2); foreR.current?.rotation.set(carryElbow(shR), 0, 0); }
+      if (heavy(state.hands.right) || grab?.hand === "right" || state.heldSlot !== null || state.heldTrash || state.groceryBasket || kh.right || state.storeHands.right) { armR.current?.rotation.set(shR, 0, -0.2); foreR.current?.rotation.set(carryElbow(shR), 0, 0); }
       // The phone out: held up in front of the chest, the screen toward the face.
       if (state.phone.open && !state.hands.right && root.current) {
         root.current.updateMatrixWorld(true);
@@ -695,8 +696,8 @@ export function Player({ state, city }: { state: GameState; city: City }) {
           else reachArm(armR.current, foreR.current, at, POLES.low(-1), dropReach(dropT));
         }
       }
-      const carryL = heavy(state.hands.left) || grab?.hand === "left" || !!state.groceryBag || !!kh.left || (invLow && inv?.item === "groceryBag");
-      const carryR = heavy(state.hands.right) || grab?.hand === "right" || state.heldSlot !== null || !!state.heldTrash || !!state.groceryBasket || !!kh.right || state.phone.open || (invLow && inv?.item !== "groceryBag");
+      const carryL = heavy(state.hands.left) || grab?.hand === "left" || !!state.groceryBag || !!kh.left || !!state.storeHands.left || (invLow && inv?.item === "groceryBag");
+      const carryR = heavy(state.hands.right) || grab?.hand === "right" || state.heldSlot !== null || !!state.heldTrash || !!state.groceryBasket || !!kh.right || !!state.storeHands.right || state.phone.open || (invLow && inv?.item !== "groceryBag");
       if (tk > 0.01 && !dropping && root.current) tiredArms(carryL, carryR, tk, dt);
       else s.plant = null;
     } else s.plant = null;
@@ -761,7 +762,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     // (Eating or drinking a thing from the inventory works the same way, over its own time.)
     const invUse = inv && (inv.kind === "eat" || inv.kind === "drink") ? { at: inv.at, drink: inv.kind === "drink", T: USE_SECONDS } : null;
     const mealEat = state.meal ? { at: state.meal.at, drink: false, T: state.meal.T, bites: state.meal.bites } : null;
-    const eat = state.eating ? { at: state.eating.at, drink: state.eating.drink, T: EAT_SECONDS } : mealEat ?? invUse;
+    const eat = state.eating ? { at: state.eating.at, drink: state.eating.drink, T: EAT_SECONDS, bites: biteCount(state.eating.item), cup: true } : mealEat ?? invUse;
     if (eat && !dead && !incapacitated && root.current && head.current) {
       const t = state.simulationTime - eat.at, T = eat.T;
       let up = 0, tip = 0;
@@ -771,6 +772,12 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       root.current.updateMatrixWorld(true);
       // (Eating a home meal with a fork or spoon the hand stops in front of the mouth: the utensil's tip goes in.)
       const mouth = head.current.localToWorld(new THREE.Vector3(0, -0.07, 0.16 + 0.04 * tip + (state.meal && eat === mealEat ? 0.17 : 0)));
+      // A restaurant drink (a cup with a lid and straw, a glass…): the hand round the cup's middle, not at its top —
+      // tipped up, the cup reaches forward and down from the lips (Food's EatenFood puts it there).
+      if (eat.drink && (eat as { cup?: boolean }).cup) {
+        const h = 0.15 * FOOD_SCALE, th = 1.15 * tip, fx = Math.sin(state.rotY), fz = Math.cos(state.rotY), k = 0.5;
+        mouth.add(new THREE.Vector3(fx * h * Math.sin(th) * k, -h * (Math.cos(th) * k + (1 - tip) * 0.1), fz * h * Math.sin(th) * k));
+      }
       reachArm(armR.current, foreR.current, mouth, POLES.low(-1), up);
       // A home meal: the knife stays down by the plate in the left hand.
       const kl = state.meal?.left;

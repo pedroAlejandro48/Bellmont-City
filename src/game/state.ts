@@ -169,11 +169,14 @@ export type GameState = {
   /** Trash in the right hand (an emptied bottle): it can't go in the inventory, only be put down (Q). */
   heldTrash: "bottle" | "can" | null;
   /** Doing something with a thing from the inventory: eating or drinking it, putting it down, picking one up. */
-  invAct: { kind: "eat" | "drink" | "drop" | "pickup"; at: number; item: ItemKind | "bottle" | "can" | "groceryBag"; target: THREE.Vector3 | null; done: boolean; ground?: number; /** Put down from a kitchen hand (an empty pot, plate…), not the inventory. */ kitchenHand?: "left" | "right"; /** Onto a table: the top's height (world). */ topY?: number } | null;
+  invAct: { kind: "eat" | "drink" | "drop" | "pickup"; at: number; /** Eaten or put down from a hand (bought, not in the inventory). */ fromHand?: "left" | "right"; item: ItemKind | "bottle" | "can" | "groceryBag"; target: THREE.Vector3 | null; done: boolean; ground?: number; /** Put down from a kitchen hand (an empty pot, plate…), not the inventory. */ kitchenHand?: "left" | "right"; /** Onto a table: the top's height (world). */ topY?: number } | null;
   /** Things from inventories lying on the ground (this player's world only); a grocery bag keeps what's in it. */
   groundItems: { id: number; kind: ItemKind | "bottle" | "can" | "groceryBag"; x: number; z: number; y?: number; yaw: number; at: number; contents?: ItemKind[] }[];
   /** A shopping basket in the right hand (what's in it), or null. */
   groceryBasket: ItemKind[] | null;
+  /** Things taken off the grocery store's crates and shelves by hand (no basket): unpaid until paid at the till
+   * (`src`: which crate or shelf, to put it back); paid ones that didn't fit in the inventory stay in the hand. */
+  storeHands: { left: StoreHeld | null; right: StoreHeld | null };
   /** From the checkout tab: pay for the basket, or take one thing (by its place in the basket) out of it. */
   groceryAsk: { pay: true } | { remove: number } | null;
   /** A bag of groceries in the left hand (what's in it), or null: it can't go in the inventory, only be put down. */
@@ -324,6 +327,8 @@ export type GameState = {
   remoteRigs: Map<string, BodyRig>;
 };
 
+/** A thing from the grocery store in a hand. */
+export type StoreHeld = { kind: ItemKind; paid: boolean; src?: number };
 export function createState(save: SaveData): GameState {
   const s: GameState = {
     health: Math.max(0, Math.min(100, save.health ?? 100)),
@@ -353,7 +358,7 @@ export function createState(save: SaveData): GameState {
     heldTrash: null,
     invAct: null,
     groundItems: [],
-    groceryBasket: null, groceryAsk: null,
+    groceryBasket: null, groceryAsk: null, storeHands: { left: null, right: null },
     groceryBag: null, foodRestore: null,
     extraDoorUses: [],
     level: save.apt && save.apt.floor >= 2 ? { building: save.apt.building, floor: save.apt.floor, y: floorY(save.apt.floor) } : null,
@@ -403,6 +408,7 @@ export function createState(save: SaveData): GameState {
     if (h.slot !== null && h.slot > 0 && s.life.inventory[h.slot]) s.heldSlot = h.slot;
     s.heldTrash = h.trash;
     if (h.bag) s.groceryBag = h.bag.filter(isItemKind);
+    for (const side of ["left", "right"] as const) { const k = side === "left" ? h.left : h.right; if (k && isItemKind(k)) s.storeHands[side] = { kind: k, paid: true }; }
   }
   s.foodRestore = save.food?.length ? save.food : null;
   return s;
@@ -449,7 +455,7 @@ export function toSave(s: GameState): SaveData {
     benchSeat: s.bench?.phase === "stand" ? null : s.bench?.seat ?? null,
     apt: aptSave(s),
     ground: s.groundItems.map((g) => ({ kind: g.kind, x: r3(g.x), z: r3(g.z), ...(g.y !== undefined ? { y: r3(g.y) } : {}), yaw: r3(g.yaw), ...(g.contents ? { contents: g.contents } : {}) })),
-    held: { slot: s.heldSlot, trash: s.heldTrash, bag: s.groceryBag },
+    held: { slot: s.heldSlot, trash: s.heldTrash, bag: s.groceryBag, left: s.storeHands.left?.paid ? s.storeHands.left.kind : null, right: s.storeHands.right?.paid ? s.storeHands.right.kind : null },
     food: foodSave(s),
     scooter: { pos: [s.scooter.pos.x, s.scooter.pos.y, s.scooter.pos.z], yaw: s.scooter.yaw, fallen: s.scooter.fallen, riding: s.scooter.riding },
     ...(s.accident ? { accident: { phase: s.accident.phase, remaining: Math.max(0, s.accident.phase === "rising" ? GET_UP_SECONDS - (s.simulationTime - (s.accident.riseStartedAt ?? 0)) : KNOCKDOWN_SECONDS - (s.simulationTime - s.accident.startedAt)), direction: s.accident.direction, seed: s.accident.seed } } : { accident: null }),

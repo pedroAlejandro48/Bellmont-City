@@ -61,7 +61,7 @@ export function setLiftDoor(door: Box & { home?: [number, number] }, shut: boole
   door.home ??= [door.x, door.z];
   door.x = shut ? door.home[0] : 1e6; door.z = shut ? door.home[1] : 1e6;
 }
-const FRUITS = ["apple", "banana", "orange", "pear", "lemon", "lime", "grape", "peach"];
+const FRUITS = ["apple", "banana", "orange", "pear", "kiwi", "plum", "grape", "peach"];
 const PAINTS = ["#c9281f", "#1f5fbf", "#ffb547", "#2b2d33", "#27877b"];
 
 export function venueLayout(b: Building): VenueLayout {

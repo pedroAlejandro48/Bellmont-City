@@ -11,6 +11,7 @@ describe("signs say only the key", () => {
     expect(signText("E  UNLOCKED")).toBe("E  UNLOCKED");
     expect(signText("E  LOCKED")).toBe("E  LOCKED");
     expect(signText("LOCKED")).toBe("LOCKED");
+    expect(signText("E  LOCK")).toBe("E  LOCK");
     expect(signText("COMING")).toBe("COMING");
     expect(signText("E  PICK UP")).toBe("E  PICK UP");
     expect(signText("E  DROP OFF")).toBe("E  DROP OFF");

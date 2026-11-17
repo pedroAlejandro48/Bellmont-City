@@ -18,7 +18,7 @@ import {
 import { COUNTER, TABLE, roomLayout, toLocal, toWorld, walkTime, walkTo, worldYaw, type RoomLayout } from "./restaurantRoom";
 import { drawBrandIcon } from "./Restaurants";
 import { canvas, tex } from "./textures";
-import { dishModel } from "./dishes";
+import { biteCount, dishModel, eatsPieces } from "./dishes";
 import { DinerSim, POLE_NAMES, type DinerRow } from "./diners";
 import type { DoorUse } from "./doors";
 import { benchJoints } from "./config";
@@ -910,9 +910,10 @@ function biteable(model: THREE.Group): Bitten {
     m.customProgramCacheKey = () => "bitten";
     o.material = m;
   });
-  // Bites come out of one side at mid height, then the other.
+  // Bites come out of the side toward the mouth (the eater's side, local +x as it's held) at mid height, the second
+  // further in than the first, always on that side; the third finishes it.
   const mid = (box.min.y + box.max.y) / 2, w = Math.max(size.x, size.z);
-  return { group: model, bites, local: [new THREE.Vector3(box.max.x, mid, 0), new THREE.Vector3(box.min.x, mid, 0)], radius: w * 0.42, height: size.y };
+  return { group: model, bites, local: [new THREE.Vector3(box.max.x, mid, 0), new THREE.Vector3(box.max.x - w * 0.32, mid, 0)], radius: w * 0.42, height: size.y };
 }
 
 /** Whatever someone is eating or drinking right now, in their right hand (bitten into, or tipped up to drink). */
@@ -932,7 +933,7 @@ export function EatenFood({ state, live, byKey }: { state: GameState; live: Reac
       seen.add(key);
       let it = models.current.get(key);
       // Just the food (or the cup, glass or bottle), lifted off its plate or saucer.
-      if (!it) { it = biteable(dishModel(p.eating.item, "food")); models.current.set(key, it); g.add(it.group); }
+      if (!it) { const dm = dishModel(p.eating.item, "food"); it = eatsPieces(p.eating.item) ? { group: dm, bites: [], local: [], radius: 0, height: 0 } : biteable(dm); models.current.set(key, it); g.add(it.group); }
       const model = it.group;
       const rig = eater === me ? null : state.remoteRigs.get(eater);
       const fore = eater === me ? state.avatar.body[11] : rig?.foreR.current, head = eater === me ? state.avatar.body[3] : rig?.head.current;
@@ -959,8 +960,14 @@ export function EatenFood({ state, live, byKey }: { state: GameState; live: Reac
         model.position.set(v.hand.x + fx * 0.05, v.hand.y - 0.04, v.hand.z + fz * 0.05);
         model.rotation.set(0, yaw + Math.PI / 2, 0);
         model.scale.setScalar(1);
-        // Each bite shows as the food reaches the mouth (halfway through each of the three lifts).
-        const bites = Math.min(2, Math.max(0, Math.floor((age / EAT_SECONDS) * 3 + 0.5)));
+        // Each bite shows as the food reaches the mouth (halfway through each lift).
+        const n = biteCount(p.eating.item), taken = Math.max(0, Math.floor((age / EAT_SECONDS) * n + 0.5));
+        if (eatsPieces(p.eating.item)) {
+          // Nuggets: one goes with each bite (the first with the first), the box is never bitten.
+          let k = 0; model.traverse((o) => { if (o.userData["tag"] === "nugget") { o.visible = k >= taken; k++; } });
+          continue;
+        }
+        const bites = Math.min(2, taken);
         model.updateMatrixWorld(true);
         it.bites.forEach((b, i) => {
           if (i < bites) { const c = model.localToWorld(it!.local[i]!.clone()); b.set(c.x, c.y, c.z, it!.radius); }

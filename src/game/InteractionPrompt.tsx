@@ -12,7 +12,7 @@ export function signText(label: string | undefined): string | null {
   if (label === undefined) return "E";
   const t = label.trim();
   const key = /^([A-Z0-9])(\s+|$)/.exec(t)?.[1] ?? null;
-  const kept = /\b(UNLOCKED|LOCKED|COMING|PICK UP|DROP OFF)$/.exec(t)?.[1];
+  const kept = /\b(UNLOCKED|LOCKED|LOCK|COMING|PICK UP|DROP OFF)$/.exec(t)?.[1];
   if (kept) return key ? `${key}  ${kept}` : kept;
   return key;
 }

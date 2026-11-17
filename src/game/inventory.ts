@@ -5,7 +5,7 @@ import { CANDIES, CANDY_INFO, CANS, CAN_INFO, WARES, WARE_INFO, type CandyKind, 
 
 /** A meal or drink from a restaurant kept in the fridge and taken out: `meal:<its name>`. */
 export type MealKind = `meal:${string}`;
-export type ItemKind = MealKind | "phone" | "water" | "orangeJuice" | "appleJuice" | "cola" | "lemonSoda" | "energy" | "apple" | "banana" | "orange" | "pear" | "lemon" | "lime" | "grape" | "peach" | "key" | CanKind | CandyKind | WareKind;
+export type ItemKind = MealKind | "phone" | "water" | "orangeJuice" | "appleJuice" | "cola" | "lemonSoda" | "energy" | "apple" | "banana" | "orange" | "pear" | "kiwi" | "plum" | "grape" | "peach" | "key" | CanKind | CandyKind | WareKind;
 export type Inventory = (ItemKind | null)[];
 export const SLOTS = 9;
 
@@ -24,8 +24,8 @@ export const ITEMS: Record<BaseKind, { name: string; icon: string; use: "eat" | 
   banana: { name: "Banana", icon: "🍌", use: "eat", value: 3.5 },
   orange: { name: "Orange", icon: "🍊", use: "eat", value: 3 },
   pear: { name: "Pear", icon: "🍐", use: "eat", value: 3 },
-  lemon: { name: "Lemon", icon: "🍋", use: "eat", value: 1.5 },
-  lime: { name: "Lime", icon: "🟢", use: "eat", value: 1.5 },
+  kiwi: { name: "Kiwi", icon: "🥝", use: "eat", value: 2.5 },
+  plum: { name: "Plum", icon: "🟣", use: "eat", value: 2.5 },
   grape: { name: "Grapes", icon: "🍇", use: "eat", value: 4 },
   peach: { name: "Peach", icon: "🍑", use: "eat", value: 3 },
   key: { name: "Apartment key", icon: "🔑", use: "hold" },
@@ -48,6 +48,8 @@ export function kindByName(name: string): ItemKind {
   return k ?? (`meal:${name}` as MealKind);
 }
 
+/** Fruit the store no longer sells, kept as what replaced it (lemons are kiwis now, limes plums). */
+export const oldKind = (k: unknown) => (k === "lemon" ? "kiwi" : k === "lime" ? "plum" : k);
 export function newInventory(): Inventory {
   const inv: Inventory = Array(SLOTS).fill(null);
   inv[0] = "phone";
@@ -57,7 +59,7 @@ export function newInventory(): Inventory {
 export function readInventory(v: unknown): Inventory {
   const inv = newInventory();
   if (!Array.isArray(v)) return inv;
-  for (let i = 1; i < SLOTS; i++) { const k = v[i]; inv[i] = isItemKind(k) && k !== "phone" ? k : null; }
+  for (let i = 1; i < SLOTS; i++) { const k = oldKind(v[i]); inv[i] = isItemKind(k) && k !== "phone" ? k : null; }
   return inv;
 }
 /** Puts a thing in `slot` if given and empty, else the first empty slot; the slot used, or -1 when full. */

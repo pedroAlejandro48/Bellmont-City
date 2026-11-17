@@ -67,7 +67,7 @@ function useVenueMaterials() {
       crate: solid("#b98a55", 0.85), basket: solid("#d62f3a", 0.6),
       fruit: {
         apple: solid("#c8202a", 0.45), banana: solid("#f3d23b", 0.55), orange: solid("#f28a1a", 0.75), pear: solid("#b5c94a", 0.55),
-        lemon: solid("#f5e04a", 0.6), lime: solid("#6cbf3c", 0.6), grape: solid("#6b2d6b", 0.4), peach: solid("#f6a57a", 0.7),
+        kiwi: solid("#7a5a33", 0.95), plum: solid("#5b2a5e", 0.35), grape: solid("#6b2d6b", 0.4), peach: solid("#f6a57a", 0.7),
       } as Record<string, THREE.MeshStandardMaterial>,
       products: ["#d62f3a", "#ffb547", "#3d7bff", "#2e9d5b", "#f2f3f7", "#8a5cd6", "#e07a1f"].map((c) => solid(c, 0.5)),
       flagUs: picture(128, 80, (g) => {
@@ -328,7 +328,7 @@ function Crate({ f, m }: { f: Fixture; m: VMats }) {
       o.position.set(x, 0.42 + y, z);
       if (banana) o.rotation.set(Math.PI / 2, 0, i); else o.rotation.set(0, i, 0);
       const s = grape ? 0.55 : 1;
-      if (f.tag === "lemon" || f.tag === "lime") o.scale.set(1, 0.8, 0.8); else o.scale.setScalar(s);
+      if (f.tag === "kiwi") o.scale.set(0.95, 0.75, 0.75); else if (f.tag === "plum") o.scale.setScalar(0.8); else o.scale.setScalar(s);
       o.updateMatrix(); im.setMatrixAt(i, o.matrix);
     });
     im.castShadow = true;

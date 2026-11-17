@@ -6,6 +6,7 @@ import { toast, type GameState } from "./state";
 /** What's in a hand (a word for it), or null when it's free. */
 export function holding(s: GameState, side: "left" | "right"): string | null {
   const k = s.life.kitchen.hands[side];
+  if (s.storeHands[side]) return "something from the store";
   if (side === "left") {
     if (s.hands.left) return "food";
     if (s.groceryBag) return "the grocery bag";

@@ -801,7 +801,7 @@ function RoomChairs({ fl, m }: { fl: AptFloor; m: FMats }) {
 
 // ---------- moving about: the elevator, the apartment door, bed and fridge ----------
 type Seat = { x: number; z: number; yaw: number; approach: [number, number]; surface: { x: number; z: number; y: number; lx: number; lz: number } };
-type Move = { kind: "board" | "alight" | "keyIn" | "push" | "pull" | "fridge" | "closet" | "sit" | "bed" | "wash" | "toilet" | "shower" | "switch"; plan: Plan | null; t0: number; which?: "apartment" | "bedroom" | "bathroom"; from?: [number, number]; fromYaw?: number; keyT?: number; /** The key only locks or unlocks (no going in). */ lockOnly?: boolean; phase?: "open" | "held" | "close" | "down" | "seated" | "up" | "in" | "asleep" | "out"; seat?: Seat; slept?: number; /** The sheet point a hand lifts it by. */ flap?: [number, number] | null };
+type Move = { kind: "board" | "alight" | "keyIn" | "push" | "pull" | "fridge" | "closet" | "sit" | "bed" | "wash" | "toilet" | "shower" | "switch"; plan: Plan | null; t0: number; which?: "apartment" | "bedroom" | "bathroom"; from?: [number, number]; fromYaw?: number; keyT?: number; /** The key only locks or unlocks (no going in). */ lockOnly?: boolean; /** …from inside the apartment. */ inside?: boolean; phase?: "open" | "held" | "close" | "down" | "seated" | "up" | "in" | "asleep" | "out"; seat?: Seat; slept?: number; /** The sheet point a hand lifts it by. */ flap?: [number, number] | null };
 /**
  * The bed, step by step (seconds). Getting in: beside it facing it, the left hand takes the sheet's top corner and
  * folds it back diagonally (baring the mattress there), let go; turn round and sit on the bare edge; the left hand
@@ -1100,7 +1100,8 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       const release = (kind: "leave" | "enter", from: [number, number], fromYaw: number, start: number) => { closing.current.push({ which, kind, from, fromYaw, start }); finish(); };
       if (mv.kind === "keyIn" && t < mv.keyT!) {
         // Walk up, the key goes into the lock, turns, comes back out (into the pocket).
-        const [lx, lz] = fr(-0.13, -INNER_WALL - 0.05), lock: [number, number, number] = [lx, 1.05, lz];
+        // (The lock's inside knob when locking from inside the apartment.)
+        const [lx, lz] = mv.inside ? fr(-0.13, 0.05) : fr(-0.13, -INNER_WALL - 0.05), lock: [number, number, number] = [lx, 1.05, lz];
         const sp = planAt(mv.plan!, Math.min(t, KEY.walk)).pose;
         let right: Reach | null = null;
         const a = t - KEY.walk;
@@ -1502,7 +1503,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         const stand: [number, number] = [dx - 0.45, wz + INNER_WALL - 0.72];
         const walkTo = makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, stand, 0, { basket: false, bag: !!state.groceryBag })]);
         if (mine && holdingKey) {
-          show(dx - 0.5, wz - 0.1, 2.1, unlocked ? "E  UNLOCKED" : "E  LOCKED");
+          show(dx - 0.5, wz - 0.1, 2.1, unlocked ? "E  LOCK" : "E  LOCKED");
           act = () => { move.current = { kind: "keyIn", t0: now, keyT: KEY.walk + KEY.reach + KEY.turn + KEY.back, lockOnly: true, plan: walkTo }; state.keys.clear(); };
         } else if (unlocked) {
           show(dx - 0.5, wz - 0.1, 2.1, "E  UNLOCKED");
@@ -1514,9 +1515,16 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
           show(dx - 0.5, wz - 0.1, 2.1, "LOCKED");
           act = () => toast(state, mine ? "It's locked" : "It's locked", "info", mine ? "Take out your key (its number) and press E to unlock it." : "Whoever lives here has locked it.");
         };
+      } else if (mine && heldKind(state) === "key" && lx > dx - 1.6 && lx < dx + 0.3 && lz > wz + INNER_WALL && lz < wz + INNER_WALL + 1.5 && sees(dx - 0.5, wz + INNER_WALL)) {
+        // Inside, the key out: it locks (or unlocks) the door from in here — a reach to the knob, a turn.
+        const unlocked = !!state.life.home?.unlocked, stand: [number, number] = [dx - 0.45, wz + INNER_WALL + 0.72];
+        show(dx - 0.5, wz + 0.3, 2.1, unlocked ? "E  LOCK" : "E  LOCKED");
+        act = () => { move.current = { kind: "keyIn", t0: now, keyT: KEY.walk + KEY.reach + KEY.turn + KEY.back, lockOnly: true, inside: true, plan: makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, stand, Math.PI, { basket: false, bag: !!state.groceryBag })]) }; state.keys.clear(); };
       } else if (lx > dx - 1.6 && lx < dx + 0.3 && lz > wz + INNER_WALL && lz < wz + INNER_WALL + 1.5 && sees(dx - 0.5, wz + INNER_WALL)) {
         show(dx - 0.5, wz + 0.3, 2.1, "E  OUT");
         act = () => {
+          // Opening it from inside unlocks it: once out, it stays unlocked until it's locked again with the key.
+          if (mine && state.life.home && !state.life.home.unlocked) { state.life.home.unlocked = true; }
           // In the door's frame, mirrored (its pull-open move uses the other leaf).
           const fx = -(lx - dx), fz = lz - (wz + INNER_WALL), fyaw = -(state.rotY - floor.frame.rot);
           move.current = { kind: "pull", which: "apartment", t0: now, plan: null, from: [fx, fz], fromYaw: fyaw };

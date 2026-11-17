@@ -2,7 +2,7 @@
 // reads as what it is: a burger, fries in their carton, a pizza, nigiri on rice, a latte, a bottle of water.
 import * as THREE from "three";
 
-type Part = { dish?: boolean; geo: THREE.BufferGeometry; color: string; pos?: [number, number, number]; rot?: [number, number, number]; scale?: [number, number, number]; rough?: number; metal?: number; opacity?: number };
+type Part = { tag?: string; dish?: boolean; geo: THREE.BufferGeometry; color: string; pos?: [number, number, number]; rot?: [number, number, number]; scale?: [number, number, number]; rough?: number; metal?: number; opacity?: number };
 
 const geoCache = new Map<string, THREE.BufferGeometry>();
 const g = (key: string, make: () => THREE.BufferGeometry) => { let x = geoCache.get(key); if (!x) { x = make(); geoCache.set(key, x); } return x; };
@@ -31,6 +31,7 @@ function build(parts: Part[]) {
     if (p.rot) mesh.rotation.set(...p.rot);
     if (p.scale) mesh.scale.set(...p.scale);
     mesh.castShadow = true;
+    if (p.tag) mesh.userData["tag"] = p.tag;
     group.add(mesh);
   }
   return group;
@@ -71,11 +72,24 @@ function onionRings() {
   for (let i = 0; i < 5; i++) parts.push({ geo: tor(0.024, 0.008), color: "#d9a44a", pos: [(i - 2) * 0.022, 0.038 + (i % 2) * 0.01, (i % 2) * 0.012], rot: [Math.PI / 2 - 0.4, 0, 0.3 * i] });
   return build(parts);
 }
+/** Nuggets in their open box: a card box with its lid folded back, six nuggets heaped inside (each one eaten whole). */
 function nuggets() {
-  const parts: Part[] = [{ geo: box(0.12, 0.04, 0.08), color: "#c62828", pos: [0, 0.02, 0] }];
-  for (let i = 0; i < 6; i++) parts.push({ geo: sph(0.016), color: "#cf9141", pos: [((i % 3) - 1) * 0.034, 0.048, (Math.floor(i / 3) - 0.5) * 0.03], scale: [1.3, 0.7, 1] });
+  const W = 0.11, D = 0.075, H = 0.045, T = 0.003, RED = "#c62828", IN = "#f3ead8";
+  const parts: Part[] = [
+    { geo: box(W, T, D), color: IN, pos: [0, T / 2, 0] },
+    { geo: box(W, H, T), color: RED, pos: [0, H / 2, D / 2] }, { geo: box(W, H, T), color: RED, pos: [0, H / 2, -D / 2] },
+    { geo: box(T, H, D), color: RED, pos: [W / 2, H / 2, 0] }, { geo: box(T, H, D), color: RED, pos: [-W / 2, H / 2, 0] },
+    // A white band round the top, and the lid folded open behind.
+    { geo: box(W + 0.002, 0.008, D + 0.002), color: "#ffffff", pos: [0, H - 0.006, 0], scale: [1, 1, 1] },
+    { geo: box(W, T, D * 0.9), color: RED, pos: [0, H + 0.03, -D / 2 - 0.008], rot: [-1.2, 0, 0] },
+  ];
+  for (let i = 0; i < 6; i++) parts.push({ tag: "nugget", geo: sph(0.016), color: "#cf9141", pos: [((i % 3) - 1) * 0.032, H - 0.01 + (i >= 3 ? 0.008 : 0), (i >= 3 ? 0.012 : -0.014)], rot: [0, i * 1.3, 0], scale: [1.3, 0.75, 1] });
   return build(parts);
 }
+/** How many bites an item takes: a count of nuggets one at a time; anything else three. */
+export function biteCount(name: string) { const m = /^Nuggets \((\d+)\)$/.exec(name); return m ? Number(m[1]) : 3; }
+/** Eaten piece by piece (nuggets): each bite takes one of its pieces away whole, rather than a round bite. */
+export const eatsPieces = (name: string) => /^Nuggets \(/.test(name);
 function cupWithLid(color: string, h = 0.15, straw = true, dome = false) {
   const parts: Part[] = [
     { geo: cyl(0.044, 0.034, h), color: "#ffffff", pos: [0, h / 2, 0], rough: 0.5 },

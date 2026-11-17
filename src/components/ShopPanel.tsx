@@ -68,7 +68,7 @@ function Grocery({ state, refresh }: Props) {
   const [shift, setShift] = useState(false);
   const life = state.life, home = !!life.home, full = life.fridge.length >= 12;
   if (shift) return <ClerkShift state={state} onDone={() => { setShift(false); refresh(); }} />;
-  if (state.groceryBasket?.length) return <Checkout state={state} refresh={refresh} />;
+  if (state.groceryBasket?.length || handItems(state).length) return <Checkout state={state} refresh={refresh} />;
   return <>
     <p className="phone-note">To shop, take a basket by the door, fill it (E), and pay here (E).</p>
     <p className="phone-label">Work here</p>
@@ -78,8 +78,10 @@ function Grocery({ state, refresh }: Props) {
 }
 
 /** At the till with things in the basket: each with its price (✕ puts it back), the total, and Pay. */
+/** Things taken by hand (no basket) and not paid for yet: left hand, then right. */
+const handItems = (state: GameState) => (["left", "right"] as const).flatMap((sd) => { const h = state.storeHands[sd]; return h && !h.paid ? [h.kind] : []; });
 function Checkout({ state, refresh }: Props) {
-  const basket = state.groceryBasket ?? [], total = basket.reduce((a, k) => a + (GROCERY_PRICE[k] ?? 1), 0);
+  const basket = state.groceryBasket?.length ? state.groceryBasket : handItems(state), total = basket.reduce((a, k) => a + (GROCERY_PRICE[k] ?? 1), 0);
   return <>
     <div className="checkout-list">{basket.map((k, i) => <div key={`${i}-${k}`} className="checkout-row">
       <span>{itemInfo(k).icon} {itemInfo(k).name}</span><b>{money(GROCERY_PRICE[k] ?? 1)}</b>
