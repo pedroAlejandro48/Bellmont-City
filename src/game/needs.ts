@@ -10,9 +10,12 @@ export const HUNGER_PER_MINUTE = 100 / (48 * 60);
 export const STARVING_PER_MINUTE = 10;
 export const HEALING_PER_MINUTE = 10 / (24 * 60);
 
-/** Energy runs down 75% over an in-game day (three times as fast while running); sleep fills it. */
-export const ENERGY_PER_MINUTE = 75 / (24 * 60);
-export const RUN_ENERGY_FACTOR = 3;
+/**
+ * Energy runs down steadily, whatever you do (running or sitting makes no difference): from 100% at 6 AM to about
+ * 60% by 9 PM (40% over 15 in-game hours). Only sleep (or an energy drink) brings it back; stay up all night and it
+ * reaches 20% by about noon and keeps falling. At 0 you're exhausted: health drains as when starving.
+ */
+export const ENERGY_PER_MINUTE = 40 / (15 * 60);
 export type Needs = { health: number; hunger: number; thirst: number; energy?: number };
 /** Candy (by name): half an energy drink's energy and half its harm, a little hunger. */
 const CANDY_NAMES = new Set(CANDIES.map((k) => CANDY_INFO[k].name));
@@ -26,22 +29,19 @@ export const DRINK_EFFECTS: Record<string, { hunger: number; thirst: number; ene
   "Volt Energy": { hunger: 0, thirst: 15, energy: 40, health: -15 },
 };
 /**
- * Energy after sleeping `hours` (in-game): an hour or less gives 20%, eight or more fills it, and in between it
- * grows evenly (20% + 80% × (hours − 1) / 7: 2 h ≈ 31%, 4 h ≈ 54%, 6 h ≈ 77%).
+ * Energy after sleeping `hours` (in-game): an hour or less gives 10%, eight or more fills it, and in between it
+ * grows evenly (10% + 90% × (hours − 1) / 7: 2 h ≈ 23%, 4 h ≈ 49%, 6 h ≈ 74%).
  */
 export function sleepEnergy(energy: number, hours: number) {
   if (hours >= 8) return 100;
-  const gain = hours <= 1 ? 20 : 20 + 80 * (hours - 1) / 7;
+  const gain = hours <= 1 ? 10 : 10 + 90 * (hours - 1) / 7;
   return clamp(energy + gain);
 }
 /** In-game hours from `hours` (time of day) to 6 AM. */
 export const hoursTo6 = (hours: number) => ((6 - hours) % 24 + 24) % 24;
-/** Sitting down rests: energy comes back 1% an in-game minute. */
-export const SIT_ENERGY_PER_MINUTE = 1;
-/** Energy after `minutes` in-game minutes (running uses it faster; sitting gives it back). */
-export function stepEnergy(energy: number, minutes: number, running: boolean, sitting = false) {
-  if (sitting) return clamp(energy + SIT_ENERGY_PER_MINUTE * minutes);
-  return clamp(energy - ENERGY_PER_MINUTE * minutes * (running ? RUN_ENERGY_FACTOR : 1));
+/** Energy after `minutes` in-game minutes awake (the same pace walking, running or sitting). */
+export function stepEnergy(energy: number, minutes: number) {
+  return clamp(energy - ENERGY_PER_MINUTE * minutes);
 }
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
 
@@ -49,7 +49,8 @@ const clamp = (n: number) => Math.max(0, Math.min(100, n));
 export function stepNeeds(n: Needs, minutes: number): Needs {
   const hunger = clamp(n.hunger - HUNGER_PER_MINUTE * minutes), thirst = clamp(n.thirst - THIRST_PER_MINUTE * minutes);
   if (n.health <= 0) return { health: 0, hunger, thirst };
-  const starving = hunger <= 0 || thirst <= 0;
+  // (Out of food, water or energy: health drains.)
+  const starving = hunger <= 0 || thirst <= 0 || (n.energy !== undefined && n.energy <= 0);
   return { health: clamp(n.health + (starving ? -STARVING_PER_MINUTE : HEALING_PER_MINUTE) * minutes), hunger, thirst };
 }
 

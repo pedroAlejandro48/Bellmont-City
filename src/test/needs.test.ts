@@ -37,9 +37,10 @@ describe("hunger, thirst and health", () => {
 import { CYCLE, timeInfo } from "@/game/config";
 import { DRINK_EFFECTS, canSleepAt, stepEnergy, wakeElapsed } from "@/game/needs";
 describe("energy and sleep", () => {
-  it("energy runs down 75% a day, three times as fast running; an energy drink gives 40%", () => {
-    expect(stepEnergy(100, 24 * 60, false)).toBeCloseTo(25, 5);
-    expect(stepEnergy(100, 60, true)).toBeCloseTo(100 - 75 / 24 * 3, 5);
+  it("energy runs down steadily: 100% at 6 AM, 60% by 9 PM, 20% by noon if you stay up; an energy drink gives 40%", () => {
+    expect(stepEnergy(100, 15 * 60)).toBeCloseTo(60, 5);
+    expect(stepEnergy(60, 15 * 60)).toBeCloseTo(20, 5);
+    expect(stepEnergy(20, 15 * 60)).toBe(0);
     expect(DRINK_EFFECTS["Volt Energy"]!.energy).toBe(40);
     expect(consume({ health: 80, hunger: 50, thirst: 50, energy: 30 }, "Volt Energy", 2).energy).toBe(70);
   });
@@ -54,10 +55,10 @@ describe("energy and sleep", () => {
 
 import { hoursTo6, sleepEnergy } from "@/game/needs";
 describe("sleep energy and the energy drink's cost", () => {
-  it("an hour or less gives 20%, eight or more fills it, evenly in between", () => {
-    expect(sleepEnergy(30, 0.5)).toBe(50); expect(sleepEnergy(30, 1)).toBe(50);
+  it("an hour or less gives 10%, eight or more fills it, evenly in between", () => {
+    expect(sleepEnergy(30, 0.5)).toBe(40); expect(sleepEnergy(30, 1)).toBe(40);
     expect(sleepEnergy(10, 8)).toBe(100); expect(sleepEnergy(10, 9)).toBe(100);
-    expect(sleepEnergy(0, 4.5)).toBeCloseTo(60, 5);
+    expect(sleepEnergy(0, 4.5)).toBeCloseTo(55, 5);
     expect(sleepEnergy(90, 3)).toBe(100);
     expect(hoursTo6(22)).toBe(8); expect(hoursTo6(2)).toBe(4); expect(hoursTo6(21)).toBe(9);
   });
@@ -68,9 +69,8 @@ describe("sleep energy and the energy drink's cost", () => {
 });
 
 describe("resting", () => {
-  it("sitting gives back 1% energy an in-game minute (instead of using it)", () => {
-    expect(stepEnergy(50, 10, false, true)).toBe(60);
-    expect(stepEnergy(95, 10, true, true)).toBe(100);
-    expect(stepEnergy(50, 60, false, false)).toBeLessThan(50);
+  it("energy at 0 drains health like starving", () => {
+    expect(stepNeeds({ health: 80, hunger: 50, thirst: 50, energy: 0 }, 1).health).toBe(70);
+    expect(stepNeeds({ health: 80, hunger: 50, thirst: 50, energy: 5 }, 1).health).toBeGreaterThan(80);
   });
 });

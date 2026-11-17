@@ -1276,7 +1276,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
           if (u >= BI.release) {
             // Asleep: the night passes (in a shared room the clock is everyone's, so only rest), energy comes back.
             mv.phase = "asleep"; mv.t0 = now; state.uiLock = "sleep"; state.keys.clear();
-            // Energy by the hours slept (to 6 AM): an hour or less +20%, eight or more full.
+            // Energy by the hours slept (to 6 AM): an hour or less +10%, eight or more full.
             const slept = hoursTo6(timeInfo(state.elapsed).hours);
             if (!state.npcLink) state.elapsed = wakeElapsed(state.elapsed);
             state.energy = sleepEnergy(state.energy, slept); mv.slept = slept;
