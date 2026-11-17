@@ -1,3 +1,4 @@
+import { InstallApp, listenForInstall } from "@/components/InstallApp";
 import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Button } from "@/components/ui/button";
@@ -57,7 +58,7 @@ function App() {
     <Button onClick={() => window.location.reload()}>Try again</Button>
   </div>;
 
-  if (!account) return (
+  if (!account) return (<>
     <AuthForm room={pendingRoom} onSignedIn={(signedIn, typed) => {
       if (!isSignedIn(signedIn.id)) return;
       setAccount(signedIn); setPassword(signedIn.username && signedIn.gender ? null : typed); toMenu();
@@ -65,15 +66,17 @@ function App() {
       <Button type="button" variant="ghost" className="w-full text-muted-foreground" onClick={() => setView({ name: "guest" })}>Play as guest</Button>
       <p className="text-center text-xs text-muted-foreground"><b>WASD</b> move · <b>Shift</b> run · <b>Space</b> jump · <b>E</b> interact · hold mouse to look</p>
     </AuthForm>
-  );
+    <InstallApp />
+  </>);
   if (!account.username || !account.gender) return <UsernameForm account={account} password={password} onSignOut={() => void signOut()} onComplete={(named) => { setAccount(named); setPassword(null); toMenu(); }} />;
 
   if (view.name === "city") return <CloudGame account={account} onExit={() => toMenu()} />;
   if (view.name === "room") return <RoomEntry account={account} request={view.request} onExit={toMenu} />;
-  return <MainMenu username={account.username} message={menuMessage} onSignOut={() => void signOut()} onCity={() => setView({ name: "city" })} onRoom={(request) => { setMenuMessage(undefined); setView({ name: "room", request }); }} />;
+  return <><InstallApp /><MainMenu username={account.username} message={menuMessage} onSignOut={() => void signOut()} onCity={() => setView({ name: "city" })} onRoom={(request) => { setMenuMessage(undefined); setView({ name: "room", request }); }} /></>;
 }
 
 startCityBackdrop();
+listenForInstall();
 // Installable as an app (Android browsers need a service worker); only in real builds, so dev never caches.
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => { navigator.serviceWorker.register("/sw.js").catch(() => {}); });
