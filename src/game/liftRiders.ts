@@ -79,6 +79,8 @@ export class LiftSystem {
   /** Lobby doors to swing (for whoever draws them): a resident going in or out. */
   doorUses: { key: string; leaf: "left" | "right"; at: number; lead: number }[] = [];
   private seenDoor = new Set<string>();
+  /** Floors players have pressed or called the car to (per building), until it stops there. */
+  private asked = new Map<string, Set<number>>();
   rented: (b: string) => number[] = () => [];
   constructor(private byKey: Map<string, Building>) {}
 
@@ -132,14 +134,29 @@ export class LiftSystem {
       this.noteDoors(now);
       return;
     }
-    for (const r of [...mine, ...(link?.takeRequests() ?? [])]) request(this.car(r.b), r.floor);
+    for (const r of [...mine, ...(link?.takeRequests() ?? [])]) {
+      const c = this.car(r.b), f = Math.round(r.floor);
+      request(c, f);
+      if (c.stops.includes(f)) { let a = this.asked.get(r.b); if (!a) this.asked.set(r.b, (a = new Set())); a.add(f); }
+    }
     this.stepPeople(dt, now, peers);
     for (const [b, c] of this.cars) {
       const s = this.byKey.get(b);
       if (!s) continue;
+      // Only floors someone wants stay lit: a player's press or call, a resident waiting there for it, or the
+      // one floor each resident inside it is going to (the lobby, for everyone from upstairs).
+      const asked = this.asked.get(b) ?? new Set<number>();
+      const want = new Set(asked);
+      for (const r of this.sim) {
+        if (r.b !== b) continue;
+        if (r.st === "wait") want.add(r.from);
+        else if (r.st === "enter" || r.st === "ride") want.add(r.to);
+      }
+      c.stops = c.stops.filter((f) => want.has(f));
       const sh = shaftOf(s), f = carFloor(c);
       const blocked = c.phase !== "moving" && (peers.some((p) => p.b === b && p.inDoor && p.floor === f) || this.sim.some((r) => r.b === b && r.floor === f && inDoorAt(sh, r.x, r.z)));
       stepCar(c, dt, blocked);
+      for (const f of asked) if (!c.stops.includes(f)) asked.delete(f);
     }
     this.riders = this.sim.map((r) => ({ id: r.id, b: r.b, seed: r.id, x: r.x + r.off[0], z: r.z + r.off[1], yaw: r.yaw, floor: r.floor, walking: r.walking, inCar: r.st === "enter" || r.st === "ride", riding: r.st === "ride", lean: r.lean, reach: r.reach, key: r.key, door: r.st === "lobbyIn" || r.st === "lobbyOut" ? { leaf: r.st === "lobbyIn" ? "right" : "left", t: now - r.since } : null }));
     this.noteDoors(now);
@@ -230,7 +247,7 @@ export class LiftSystem {
         r.walking = false;
         if (atFloor(c, r.from) && doorsOf(c) > 0.9 && free !== undefined && this.occupancy(r.b, peers) < CAPACITY) {
           r.slot = free; next("enter", [[r.x, r.z], [sh.cx, sh.front - 0.3], slotAt(free)]);
-        } else if (!atFloor(c, r.from) && !c.stops.includes(r.from)) request(c, r.from);
+        } else if (atFloor(c, r.from) ? c.phase === "idle" : !c.stops.includes(r.from)) request(c, r.from);
       } else if (r.st === "enter") {
         if (walk()) { next("ride"); request(c, r.to); }
       } else if (r.st === "ride") {

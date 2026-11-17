@@ -311,6 +311,8 @@ export type GameState = {
   dropQueued: boolean;
   /** Restaurant staff standing or walking about (world), solid to players. */
   staffBodies: { x: number; z: number; r: number }[];
+  /** The apartment buildings' residents near you (by the elevator, in it): solid, like the staff. */
+  liftBodies: { x: number; z: number; r: number }[];
   foodUi: FoodUi;
   /** An order placed from the menu, waiting to be sent. */
   foodOrder: { names: string[]; mode: Mode } | null;
@@ -374,7 +376,7 @@ export function createState(save: SaveData): GameState {
     toasts: [], waypoint: null, phone: { open: false, app: null, atm: false }, job: null, home: null, busking: null,
     npcs: [], npcLink: null,
     trafficLink: null, doorLink: null, liftLink: null, bikePushes: new Map(), takenChairs: new Set(),
-    foodLink: null, hands: { left: null, right: null }, grab: null, drop: null, dropQueued: false, staffBodies: [], put: null, eating: null, foodScript: null, foodSend: null, doorUsesNow: null, npcDoorUses: [], npcAdopt: [], foodHandle: null, foodTransfer: null, pedHolders: new Set(), foodView: null, foodUi: { open: false, key: null, kind: null, note: null }, foodOrder: null, remoteRigs: new Map(),
+    foodLink: null, hands: { left: null, right: null }, grab: null, drop: null, dropQueued: false, staffBodies: [], liftBodies: [], put: null, eating: null, foodScript: null, foodSend: null, doorUsesNow: null, npcDoorUses: [], npcAdopt: [], foodHandle: null, foodTransfer: null, pedHolders: new Set(), foodView: null, foodUi: { open: false, key: null, kind: null, note: null }, foodOrder: null, remoteRigs: new Map(),
     seatOccupants: new Map(save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? [[save.benchSeat, "player"]] : []),
     bench: save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? { seat: save.benchSeat, phase: "seated", startedAt: 0, origin: new THREE.Vector3(...save.pos), originYaw: save.rotY } : null,
     scooter: {

@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { timeInfo } from "@/game/config";
 import { ROUNDS, blushFor, choices, goodbye, greeting, moonFor, say, stageOf, startTalk, type Line, type Mood } from "@/game/moon";
 import { drawMoonFace } from "@/game/moonFace";
+import { ROOF_FLOOR } from "@/game/roof";
 import type { GameState } from "@/game/state";
 
-/** Outside at night, on foot (or sat on a bench), nothing else open: the moon is there to talk to. */
+/** At night, up on a building's roof, nothing else open: the moon is there to talk to. */
 function canTalk(s: GameState) {
   const ti = timeInfo(s.elapsed);
-  return !ti.isDay && ti.darkness > 0.55 && !s.interior && !s.level && !s.scooter.riding && !s.scooter.action && !s.accident && s.health > 0
+  return !ti.isDay && ti.darkness > 0.55 && s.level?.floor === ROOF_FLOOR && !s.ladder && !s.scooter.riding && !s.scooter.action && !s.accident && s.health > 0
     && !s.phone.open && !s.shop && !s.foodUi.open && !s.inventoryOpen && (!s.uiLock || s.uiLock === "moon") && !s.seat;
 }
 
@@ -30,6 +31,8 @@ export function MoonTalk({ state }: { state: GameState }) {
 
   useEffect(() => { const id = window.setInterval(() => tick((n) => n + 1), 250); return () => window.clearInterval(id); }, []);
   const available = canTalk(state);
+  // (Its button only shows while you're looking up at the sky; the camera's pitch is negative looking up.)
+  const lookingUp = Math.asin(Math.sin(state.camPitch)) < (state.firstPerson ? -0.3 : -0.08);
 
   // The camera: from behind and below you, up at her; you turn to face her.
   const frame = () => {
@@ -84,7 +87,7 @@ export function MoonTalk({ state }: { state: GameState }) {
 
   const hearts = Math.round(bond.affection / 20);
   return <>
-    {available && !open && <button type="button" className="moon-button" onClick={start} aria-label={`Talk to ${who.name}`}>🌙 <span>Talk to the moon</span> <kbd>M</kbd></button>}
+    {available && lookingUp && !open && <button type="button" className="moon-button" onClick={start} aria-label={`Talk to ${who.name}`}>🌙 <span>Talk to the moon</span> <kbd>M</kbd></button>}
     {open && <div className="moon-talk" role="dialog" aria-label={`Talking to ${who.name}`}>
       <div className="moon-head">
         <canvas ref={face} width={128} height={128} className="moon-face" />

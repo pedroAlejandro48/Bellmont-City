@@ -216,6 +216,11 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     p.x += s.vel.x * dt;
     p.z += s.vel.z * dt;
     const room = state.interior?.phase === "inside" ? state.rooms.get(state.interior.key) : undefined;
+    // The apartment buildings' residents (by and in the elevator) are solid; the walls have the last word.
+    if (!script) for (const w of state.liftBodies) {
+      const dx = p.x - w.x, dz = p.z - w.z, d = Math.hypot(dx, dz), min = RADIUS + w.r;
+      if (d < min && d > 1e-5) { p.x = w.x + dx / d * min; p.z = w.z + dz / d * min; }
+    }
     if (room && !script) {
       // Inside a restaurant: its walls, counter and furniture (running shoves tables and chairs along).
       const [lx, lz] = toLocal(room.frame, p.x, p.z);

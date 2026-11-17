@@ -1,4 +1,4 @@
-import { handsBusy, needFreeHands } from "./handsHeld";
+import { needFreeHands } from "./handsHeld";
 import { AptShare, fridgeAt, fridgeOf } from "./aptShare";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -198,7 +198,7 @@ function AptExterior({ b, state }: { b: Building; state: GameState }) {
     })}
     <RoofTop b={b} mat={faces.roof} y={H(UPPER)} />
     {/* The slab between the lobby and the first floor (seen from the open band, and from the lobby's windows). */}
-    <HoledSlab x0={-width / 2 + 0.01} x1={width / 2 - 0.01} z0={-depth + 0.01} z1={-0.01} y0={-0.12} y1={0} holes={[shaftHole(layout.bounds.minX, layout.bounds.minZ)]} mat={faces.roof} />
+    <HoledSlab x0={-width / 2 + 0.01} x1={width / 2 - 0.01} z0={-depth + 0.01} z1={-0.01} y0={-0.12} y1={0} holes={[shaftHole(layout.bounds.minX, layout.bounds.minZ), slotHole(layout.bounds.minX, layout.bounds.minZ, -depth + 0.01)]} mat={faces.roof} />
     {/* The elevator's window slot up the back: dark glass, a mullion at every floor. */}
     {(() => { const x = layout.bounds.minX + SHAFT / 2, top = H(UPPER), sx = x; return <group>
       {/* The shaft inside, all the way up (seen through the slot): its sides, and its front with each floor's
@@ -232,6 +232,9 @@ function HoledSlab({ x0, x1, z0, z1, y0, y1, holes, mat }: { x0: number; x1: num
  * back of the building it looks out through (the car's window), in a building's frame. */
 const shaftHole = (minX: number, minZ: number): Rect => ({ x0: minX + 0.03, x1: minX + SHAFT - 0.03, z0: minZ + 0.03, z1: minZ + SHAFT - 0.03 });
 const SLOT = 0.7, SLOT_J = 0.03;
+/** The window slot's way through a floor's slab (from the outside face in to the shaft): no slab edge shows across
+ * the car's window, only the slot's own metal bar at each floor. */
+const slotHole = (minX: number, minZ: number, outer: number): Rect => ({ x0: minX + SHAFT / 2 - SLOT / 2 - SLOT_J - 0.005, x1: minX + SHAFT / 2 + SLOT / 2 + SLOT_J + 0.005, z0: outer - 0.01, z1: minZ + 0.03 });
 /** The roof's ladder: two steel rails from the floor up through the hatch to the roof, rungs between them, held off
  * the wall by brackets; a frame round the hatch under the ceiling. */
 function RoofLadder({ plan, m, ceiling }: { plan: RoofPlan; m: FMats; ceiling: number }) {
@@ -653,8 +656,8 @@ function FloorInterior({ actorsAt, fl, state, m, door, bedDoor, fridgeDoor, clos
         two floors are drawn they coincide exactly, same faces, same materials; and they stop just inside the outside
         walls, so their edges never share a plane with a wall's face. */}
     {/* (Open over the elevator's shaft: the car goes through.) */}
-    <HoledSlab x0={minX - 0.19} x1={maxX + 0.19} z0={minZ - 0.19} z1={maxZ + 0.19} y0={H - STOREY} y1={0} holes={[shaftHole(minX, minZ)]} mat={m.slabFaces} />
-    <HoledSlab x0={minX - 0.19} x1={maxX + 0.19} z0={minZ - 0.19} z1={maxZ + 0.19} y0={H} y1={STOREY} holes={fl.ladder ? [shaftHole(minX, minZ), fl.ladder.hatch] : [shaftHole(minX, minZ)]} mat={m.slabFaces} />
+    <HoledSlab x0={minX - 0.19} x1={maxX + 0.19} z0={minZ - 0.19} z1={maxZ + 0.19} y0={H - STOREY} y1={0} holes={[shaftHole(minX, minZ), slotHole(minX, minZ, minZ - 0.19)]} mat={m.slabFaces} />
+    <HoledSlab x0={minX - 0.19} x1={maxX + 0.19} z0={minZ - 0.19} z1={maxZ + 0.19} y0={H} y1={STOREY} holes={[shaftHole(minX, minZ), slotHole(minX, minZ, minZ - 0.19), ...(fl.ladder ? [fl.ladder.hatch] : [])]} mat={m.slabFaces} />
     {fl.ladder && <RoofLadder plan={fl.ladder} m={m} ceiling={H} />}
     <mesh position={[(minX + maxX) / 2, 0.002, (hallZ[1] + wallZ + INNER_WALL) / 2]} rotation-x={-Math.PI / 2} material={m.carpet}><planeGeometry args={[maxX - minX, INNER_WALL + 0.02]} /></mesh>
     {/* Floors: carpet in the hallway, wood in the apartment (the ceiling is the slab's underside). */}
@@ -1021,6 +1024,11 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       state.liftLink?.setHome(home ? { b: home.building, floor: home.floor, locked: !home.unlocked } : null);
       ls0.update(dt, now, state.liftLink, { b: near ?? null, floor: myFloor, inCar: insideCar, inDoor, ...(meLocal && bHere ? { x: meLocal[0], z: meLocal[1] } : {}) }, myCalls.current);
       myCalls.current = [];
+      // The residents about the elevator (in it, waiting, walking by) are solid: nobody walks through them.
+      state.liftBodies = bHere && L0 ? ls0.riders.filter((r) => r.b === bHere && (r.floor === myFloor || (r.inCar && insideCar))).map((r) => {
+        const [x, z] = toWorld(L0.frame, r.x, r.z);
+        return { x, z, r: 0.24 };
+      }) : [];
       // Residents through a lobby's street door: it swings for them (as for anyone).
       const wall = performance.now() / 1000;
       for (const u of ls0.doorUses) {
@@ -1107,7 +1115,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         if (mv.lockOnly && a > KEY.reach + KEY.turn * 0.5 && mv.phase !== "held") {
           mv.phase = "held";
           const h = state.life.home;
-          if (h) { h.unlocked = !h.unlocked; toast(state, h.unlocked ? "Unlocked" : "Locked", "info", h.unlocked ? "Open it with an empty hand (E). Anyone can go in while it's unlocked." : "Only your key opens it now."); }
+          if (h) { h.unlocked = !h.unlocked; toast(state, h.unlocked ? "Unlocked" : "Locked", "info", h.unlocked ? "Open it with E. Anyone can go in while it's unlocked." : "Only your key opens it now."); }
         }
       } else if (mv.kind === "keyIn" && mv.lockOnly) {
         // (Done: where the body is now, it stays.)
@@ -1484,22 +1492,20 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         show(ex, hz0 + 0.3, 2.2, liftLabel(lvl.building, lvl.floor));
         act = () => callLift(lvl.building, lvl.floor);
       } else if (lx > dx - 1.7 && lx < dx + 0.3 && lz < wz && lz > wz - 1.4 && sees(dx - 0.5, wz)) {
-        // At the apartment's door, in the hallway. The key (its number) locks or unlocks it; unlocked, an empty hand
-        // opens it — yours, or anyone's whose door is unlocked.
+        // At the apartment's door, in the hallway. The key (its number) locks or unlocks it; unlocked, anyone
+        // opens it, whatever they're carrying — yours, or anyone's whose door is unlocked.
         const holdingKey = heldKind(state) === "key";
         const claim = mine ? null : state.liftLink?.homes().find((h) => h.b === lvl.building && h.floor === lvl.floor);
         const unlocked = mine ? !!state.life.home?.unlocked : !!claim && !claim.locked;
-        const empty = state.heldSlot === null && !handsBusy(state);
         const stand: [number, number] = [dx - 0.45, wz + INNER_WALL - 0.72];
         const walkTo = makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, stand, 0, { basket: false, bag: !!state.groceryBag })]);
         if (mine && holdingKey) {
           show(dx - 0.5, wz - 0.1, 2.1, unlocked ? "E  LOCK" : "E  UNLOCK");
           act = () => { move.current = { kind: "keyIn", t0: now, keyT: KEY.walk + KEY.reach + KEY.turn + KEY.back, lockOnly: true, plan: walkTo }; state.keys.clear(); };
         } else if (unlocked) {
-          show(dx - 0.5, wz - 0.1, 2.1, empty ? "E  OPEN" : "FREE YOUR HANDS TO OPEN");
+          show(dx - 0.5, wz - 0.1, 2.1, "E  OPEN");
           act = () => {
-            if (!empty) { toast(state, "Your hands are full", "warn", "Put away what you're holding to open the door."); return; }
-            // (No key: straight to pushing it open.)
+            // (Whatever's in your hands comes with you. No key: straight to pushing it open.)
             move.current = { kind: "keyIn", t0: now, keyT: KEY.walk, plan: walkTo }; state.keys.clear();
           };
         } else {
