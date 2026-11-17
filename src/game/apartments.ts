@@ -13,8 +13,8 @@ export const aptKey = (b: { x: number; z: number }) => `${b.x}:${b.z}`;
 export const floorKey = (b: { x: number; z: number }, floor: number) => `${aptKey(b)}#${floor}`;
 export const parseFloorKey = (key: string) => { const [k, f] = key.split("#"); return f ? { building: k!, floor: Number(f) } : null; };
 
-/** Rent per week: $800 at the top floor, $25 more for each floor further down. */
-export const rentFor = (floor: number) => 800 + (APT_FLOORS - floor) * 25;
+/** Rent per week: $800 on the lowest floor (2), $25 more for each floor up — the top floor costs the most. */
+export const rentFor = (floor: number) => 800 + (Math.max(2, Math.min(APT_FLOORS, floor)) - 2) * 25;
 /** The first week is free; rent is charged every seventh day after moving in. */
 export const FREE_DAYS = 7;
 
