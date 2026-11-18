@@ -1,0 +1,4 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": { "namespace": "android_app", "package_name": "app.bellmont.city", "sha256_cert_fingerprints": ["57:7F:3C:58:9D:9C:DB:60:54:35:5A:41:82:E6:8A:85:87:DB:6C:E3:B1:FA:9A:E7:90:27:DA:9F:38:02:0B:E3"] }
+}]

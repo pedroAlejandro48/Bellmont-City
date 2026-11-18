@@ -1,0 +1,35 @@
+// Bellmont City for Android: a Trusted Web Activity — the installed app opens https://bellmont-city.web.app full
+// screen (in the phone's Chrome engine), so it always runs the latest version of the game; this wrapper rarely
+// needs rebuilding. Built and signed by .github/workflows/apps.yml.
+plugins { id "com.android.application" }
+
+def host = "bellmont-city.web.app"
+android {
+    namespace "app.bellmont.city"
+    compileSdk 34
+    defaultConfig {
+        applicationId "app.bellmont.city"
+        minSdk 21
+        targetSdk 34
+        versionCode Integer.parseInt(System.getenv("VERSION_CODE") ?: "1")
+        versionName System.getenv("VERSION_NAME") ?: "1.0"
+        manifestPlaceholders = [hostName: host, launchUrl: "https://" + host + "/"]
+        resValue "string", "app_name", "Bellmont City"
+        resValue "string", "asset_statements", "[{ \"relation\": [\"delegate_permission/common.handle_all_urls\"], \"target\": { \"namespace\": \"web\", \"site\": \"https://" + host + "\" } }]"
+    }
+    signingConfigs {
+        release {
+            storeFile file(System.getenv("KEYSTORE_FILE") ?: "release.jks")
+            storePassword System.getenv("KEYSTORE_PASSWORD")
+            keyAlias System.getenv("KEY_ALIAS") ?: "bellmont"
+            keyPassword System.getenv("KEY_PASSWORD") ?: System.getenv("KEYSTORE_PASSWORD")
+        }
+    }
+    buildTypes {
+        release { minifyEnabled false; signingConfig signingConfigs.release }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+dependencies {
+    implementation "com.google.androidbrowserhelper:androidbrowserhelper:2.5.0"
+}

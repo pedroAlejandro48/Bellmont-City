@@ -1,0 +1,79 @@
+# Builds the installable apps on every push to main and publishes them on the repository's "latest" release:
+#   Bellmont-City.apk            Android (a Trusted Web Activity, android/)
+#   Bellmont-City-Setup.exe      Windows (Electron, desktop/)
+# Both open https://bellmont-city.web.app, so they always run the newest game; a rebuild only refreshes the shell.
+# Signing the APK the same way every time (so updates install over it, and it opens without an address bar) needs
+# two repository secrets: ANDROID_KEYSTORE_B64 and ANDROID_KEYSTORE_PASSWORD. Without them a throwaway key is used.
+name: Apps
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: apps
+  cancel-in-progress: true
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: "17" }
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: "8.9" }
+      - name: Signing key
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KS_PW: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            echo "$KS_B64" | base64 -d > android/app/release.jks
+            echo "KEYSTORE_PASSWORD=$KS_PW" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No ANDROID_KEYSTORE_B64 secret: signing with a throwaway key."
+            keytool -genkeypair -keystore android/app/release.jks -storetype PKCS12 -alias bellmont -keyalg RSA -keysize 2048 -validity 10000 -storepass temp-pass -keypass temp-pass -dname "CN=Bellmont City"
+            echo "KEYSTORE_PASSWORD=temp-pass" >> "$GITHUB_ENV"
+          fi
+      - name: Build APK
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: 1.0.${{ github.run_number }}
+        run: |
+          gradle -p android assembleRelease --no-daemon
+          mkdir -p out && cp android/app/build/outputs/apk/release/app-release.apk out/Bellmont-City.apk
+      - uses: actions/upload-artifact@v4
+        with: { name: android, path: out/Bellmont-City.apk }
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: Build installer
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          npm install --no-audit --no-fund
+          npx electron-builder --win nsis --publish never
+      - uses: actions/upload-artifact@v4
+        with: { name: windows, path: desktop/dist/Bellmont-City-Setup.exe }
+
+  release:
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: out, merge-multiple: true }
+      - name: Publish the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest out/Bellmont-City.apk out/Bellmont-City-Setup.exe \
+            --title "Bellmont City apps" --latest --target "${{ github.sha }}" \
+            --notes "Install once: the apps open https://bellmont-city.web.app, so they always have the newest version of the game. Android: download Bellmont-City.apk and open it (allow installing from your browser). Windows: run Bellmont-City-Setup.exe (if Windows warns, click More info → Run anyway)."

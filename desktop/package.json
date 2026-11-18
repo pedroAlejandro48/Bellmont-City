@@ -1,0 +1,21 @@
+{
+  "name": "bellmont-city",
+  "productName": "Bellmont City",
+  "version": "1.0.0",
+  "description": "Bellmont City for Windows",
+  "author": "Bellmont City",
+  "main": "main.js",
+  "private": true,
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "app.bellmont.city",
+    "productName": "Bellmont City",
+    "files": ["main.js", "icon.png"],
+    "icon": "icon.png",
+    "win": { "target": "nsis", "artifactName": "Bellmont-City-Setup.exe" },
+    "nsis": { "oneClick": true, "perMachine": false, "createDesktopShortcut": true, "createStartMenuShortcut": true, "shortcutName": "Bellmont City" }
+  }
+}

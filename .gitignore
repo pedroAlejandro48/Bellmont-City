@@ -27,3 +27,9 @@ dist-ssr
 .firebase/
 *-debug.log
 .env.local
+android/.gradle/
+android/app/build/
+android/build/
+android/app/release.jks
+desktop/node_modules/
+desktop/dist/
