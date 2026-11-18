@@ -5,6 +5,7 @@
 //  • while the game is open, the friend lists are also watched here (same tags, so one notification shows).
 import { collection, onSnapshot } from "firebase/firestore";
 import { auth, firestore } from "./firebase";
+import { appKind } from "@/lib/appKind";
 
 const PUSH_SERVER = "https://bellmont-push.bellmont-city.workers.dev";
 /** The sender's public key (VAPID): browsers only accept pushes signed with its private half. */
@@ -12,10 +13,11 @@ const VAPID_PUBLIC = "BOB7fonjss3ZQWb6-u5HpvQPbh-zFXQStPr_z-vuwoXPRqgdQlgY0qLEHj
 const fromB64u = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
 const b64u = (buf: ArrayBuffer | null) => (buf ? btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") : "");
 
-async function callServer(path: string, body: unknown) {
+async function callServer(path: string, body: unknown): Promise<Record<string, unknown> | null> {
   const token = await auth.currentUser?.getIdToken().catch(() => null);
-  if (!token) return;
-  await fetch(`${PUSH_SERVER}${path}`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body), keepalive: true }).catch(() => {});
+  if (!token) return null;
+  const res = await fetch(`${PUSH_SERVER}${path}`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body), keepalive: true }).catch(() => null);
+  return res?.ok ? await res.json().catch(() => null) as Record<string, unknown> | null : null;
 }
 /** This device gets the signed-in player's notifications, even with the game closed (when they're allowed). */
 export async function registerDevice() {
@@ -24,11 +26,21 @@ export async function registerDevice() {
     const reg = await navigator.serviceWorker.getRegistration("/") ?? await navigator.serviceWorker.register("/sw.js");
     await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription() ?? await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromB64u(VAPID_PUBLIC) });
-    await callServer("/subscribe", { endpoint: sub.endpoint, p256dh: b64u(sub.getKey("p256dh")), auth: b64u(sub.getKey("auth")) });
+    await callServer("/subscribe", { endpoint: sub.endpoint, p256dh: b64u(sub.getKey("p256dh")), auth: b64u(sub.getKey("auth")), app: appKind() });
   } catch { /* (Then only while the game is open.) */ }
 }
 /** Tells the other player (the sender checks it really happened). */
 export const notifyPlayer = (type: "request" | "accepted" | "invite", to: string, code?: string) => void callServer("/notify", { type, to, ...(code ? { code } : {}) });
+/**
+ * Whether this page may show notifications: always inside the apps (each opening tells the sender this player has
+ * one); in a browser only if the player has no app (one opened in the last 30 days) — then the app gets them.
+ */
+async function mayNotifyHere(): Promise<boolean> {
+  const app = appKind();
+  if (app) { void callServer("/app", { app }); return true; }
+  const r = await callServer("/status", {});
+  return !(r && r["hasApp"] === true);
+}
 import type { Account } from "./account";
 
 export const pushPermission = (): NotificationPermission | "unsupported" => (typeof Notification === "undefined" || !("serviceWorker" in navigator) ? "unsupported" : Notification.permission);
@@ -41,7 +53,7 @@ export async function enablePush(): Promise<NotificationPermission | "unsupporte
 }
 
 // (The small status-bar icon is the game's badge; the big picture is the friend's.)
-async function show(title: string, body: string, tag: string, link = "/", photo?: unknown) {
+async function showNow(title: string, body: string, tag: string, link = "/", photo?: unknown) {
   if (pushPermission() !== "granted") return;
   const icon = typeof photo === "string" && photo ? photo : "/icon-192.png";
   try {
@@ -57,20 +69,24 @@ async function show(title: string, body: string, tag: string, link = "/", photo?
 /** Watches for new requests, accepted requests and invitations (only ones that arrive from now on). */
 export function watchNotifications(me: Account) {
   const since = Date.now() - 5000;
+  // (Decided once; until the sender answers, nothing is shown — anything arriving in that moment is old anyway.)
+  let allowed = false;
+  void mayNotifyHere().then((ok) => { allowed = ok; });
+  const show = (...a: Parameters<typeof showNow>) => { if (allowed) void showNow(...a); };
   const fresh = (at: unknown) => typeof at === "number" && at > since;
   const base = (name: string) => collection(firestore, "friends", me.id, name);
   const stops = [
     onSnapshot(base("requests"), (s) => s.docChanges().forEach((c) => {
       const d = c.doc.data();
-      if (c.type === "added" && fresh(d["at"])) void show("New friend request", `${d["name"] || "Someone"} wants to be your friend.`, `req-${c.doc.id}`, "/", d["photo"]);
+      if (c.type === "added" && fresh(d["at"])) show("New friend request", `${d["name"] || "Someone"} wants to be your friend.`, `req-${c.doc.id}`, "/", d["photo"]);
     }), () => {}),
     onSnapshot(base("list"), (s) => s.docChanges().forEach((c) => {
       const d = c.doc.data();
-      if (c.type === "added" && fresh(d["at"]) && d["by"] && d["by"] !== me.id) void show("Friend request accepted", `${d["name"] || "Your friend"} accepted your friend request.`, `acc-${c.doc.id}`, "/", d["photo"]);
+      if (c.type === "added" && fresh(d["at"]) && d["by"] && d["by"] !== me.id) show("Friend request accepted", `${d["name"] || "Your friend"} accepted your friend request.`, `acc-${c.doc.id}`, "/", d["photo"]);
     }), () => {}),
     onSnapshot(base("invites"), (s) => s.docChanges().forEach((c) => {
       const d = c.doc.data();
-      if (c.type === "added" && fresh(d["at"])) void show("Room invitation", `${d["name"] || "A friend"} invited you to room ${c.doc.id}.`, `inv-${c.doc.id}`, `/?room=${c.doc.id}`, d["photo"]);
+      if (c.type === "added" && fresh(d["at"])) show("Room invitation", `${d["name"] || "A friend"} invited you to room ${c.doc.id}.`, `inv-${c.doc.id}`, `/?room=${c.doc.id}`, d["photo"]);
     }), () => {}),
   ];
   return () => stops.forEach((f) => f());

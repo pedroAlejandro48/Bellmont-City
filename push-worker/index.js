@@ -5,7 +5,10 @@
 //
 // POST /notify  { type: "request" | "accepted" | "invite", to: <uid>, code?: <room> }
 //   Authorization: Bearer <the sender's Firebase ID token>
-// POST /subscribe { endpoint, p256dh, auth }  (a device registering for its player's notifications)
+// POST /subscribe { endpoint, p256dh, auth, app? }  (a device registering for its player's notifications;
+//   app: "android" | "windows" when it's one of the game's apps)
+// POST /app { app }  (the player opened one of the apps)    POST /status → { hasApp }
+// A player who opened an app in the last 30 days gets pushes only on their app devices, not in browsers.
 // The checks read Firestore as the caller (their own token: the rules let a sender read what they sent), and the
 // devices are kept in Workers KV (binding SUBS) — no Google service account involved.
 // Secrets: VAPID_PUBLIC, VAPID_PRIVATE_JWK.
@@ -53,6 +56,17 @@ async function getDoc(idToken, path) {
 const subsOf = async (env, uid) => { try { return JSON.parse((await env.SUBS.get(`subs:${uid}`)) ?? "[]"); } catch { return []; } };
 const saveSubs = (env, uid, subs) => (subs.length ? env.SUBS.put(`subs:${uid}`, JSON.stringify(subs.slice(-10))) : env.SUBS.delete(`subs:${uid}`));
 
+// Which apps a player has opened, and when ({ android?: ms, windows?: ms }).
+const APP_DAYS = 30;
+const appsOf = async (env, uid) => { try { return JSON.parse((await env.SUBS.get(`app:${uid}`)) ?? "{}"); } catch { return {}; } };
+const hasApp = async (env, uid) => Object.values(await appsOf(env, uid)).some((t) => typeof t === "number" && Date.now() - t < APP_DAYS * 864e5);
+async function markApp(env, uid, app) {
+  if (app !== "android" && app !== "windows") return;
+  const apps = await appsOf(env, uid);
+  if (typeof apps[app] === "number" && Date.now() - apps[app] < 864e5) return; // (once a day is enough)
+  await env.SUBS.put(`app:${uid}`, JSON.stringify({ ...apps, [app]: Date.now() }));
+}
+
 // ---------- Web Push (RFC 8291 aes128gcm, VAPID RFC 8292) ----------
 async function hkdf(salt, ikm, info, length) {
   const key = await crypto.subtle.importKey("raw", ikm, "HKDF", false, ["deriveBits"]);
@@ -83,8 +97,10 @@ async function vapid(env, endpoint) {
 }
 async function push(env, uid, message) {
   const subs = await subsOf(env, uid), dead = new Set();
+  // (With an app, only its devices: no second notification from a browser.)
+  const targets = (await hasApp(env, uid)) ? subs.filter((s) => s.app) : subs;
   let sent = 0;
-  await Promise.all(subs.map(async (s) => {
+  await Promise.all(targets.map(async (s) => {
     if (!s.endpoint || !s.p256dh || !s.auth) return;
     try {
       const res = await fetch(s.endpoint, {
@@ -135,7 +151,7 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(origin) });
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/") return json({ ok: true, service: "bellmont-push" }, 200, origin);
-    if (request.method !== "POST" || (url.pathname !== "/notify" && url.pathname !== "/subscribe")) return json({ error: "not found" }, 404, origin);
+    if (request.method !== "POST" || !["/notify", "/subscribe", "/app", "/status"].includes(url.pathname)) return json({ error: "not found" }, 404, origin);
     const idToken = (request.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
     let from;
     try { from = await verifyIdToken(idToken); } catch { return json({ error: "unauthorized" }, 401, origin); }
@@ -143,12 +159,18 @@ export default {
     try { body = await request.json(); } catch { return json({ error: "bad request" }, 400, origin); }
     if (url.pathname === "/subscribe") {
       const { endpoint, p256dh, auth } = body ?? {};
+      const app = body?.app === "android" || body?.app === "windows" ? body.app : null;
       if (typeof endpoint !== "string" || !/^https:\/\//.test(endpoint) || endpoint.length > 1000 || typeof p256dh !== "string" || typeof auth !== "string") return json({ error: "bad subscription" }, 400, origin);
-      const subs = (await subsOf(env, from)).filter((s) => s.endpoint !== endpoint);
-      subs.push({ endpoint, p256dh, auth, at: Date.now() });
+      const all = await subsOf(env, from), before = all.find((s) => s.endpoint === endpoint);
+      const subs = all.filter((s) => s.endpoint !== endpoint);
+      // (The Android app shares the phone browser's subscription: once it's the app's, it stays the app's.)
+      subs.push({ endpoint, p256dh, auth, at: Date.now(), ...(app || before?.app ? { app: app ?? before.app } : {}) });
       await saveSubs(env, from, subs);
+      if (app) await markApp(env, from, app);
       return json({ ok: true }, 200, origin);
     }
+    if (url.pathname === "/app") { await markApp(env, from, body?.app); return json({ ok: true }, 200, origin); }
+    if (url.pathname === "/status") return json({ hasApp: await hasApp(env, from) }, 200, origin);
     try {
       const m = await message(idToken, from, body);
       if (!m) return json({ sent: 0 }, 200, origin);
