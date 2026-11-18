@@ -30,6 +30,8 @@ function inApp() {
   } catch { return false; }
 }
 const IN_APP = inApp();
+/** Inside the Windows app (where Exit closes the app: it runs full screen, without a title bar). */
+export const inWindowsApp = () => { try { return localStorage.getItem("bellmont-app") === "windows"; } catch { return false; } };
 export const installed = () => IN_APP || window.matchMedia("(display-mode: standalone)").matches || window.matchMedia("(display-mode: fullscreen)").matches || (navigator as { standalone?: boolean }).standalone === true;
 /** Which iPhone browser: Safari (or one that looks like it, such as Brave), Chrome, Firefox, Edge. */
 function iosBrowser() {

@@ -9,10 +9,14 @@ const UA = (ua) => ua.replace(/\s?Electron\/\S+/, "").replace(/\s?bellmont-city\
 function open() {
   const win = new BrowserWindow({
     width: 1280, height: 800, minWidth: 640, minHeight: 400,
-    backgroundColor: "#0b1231", autoHideMenuBar: true, title: "Bellmont City", icon: __dirname + "/icon.png",
+    fullscreen: true, backgroundColor: "#0b1231", autoHideMenuBar: true, title: "Bellmont City", icon: __dirname + "/icon.png",
     webPreferences: { contextIsolation: true, sandbox: true },
   });
   win.webContents.setUserAgent(UA(win.webContents.getUserAgent()));
+  // Always full screen (F11 or Esc can't take it out); Exit in the account menu closes the app.
+  // (Exit: the page closes its window, or — as a fallback — asks for /?app-exit=1, which quits.)
+  win.webContents.on("will-navigate", (e, url) => { if (url.includes("app-exit=1")) { e.preventDefault(); app.quit(); } });
+  win.on("leave-full-screen", () => setTimeout(() => win.setFullScreen(true), 50));
   // The game's own pages and Google's sign-in stay in the app; anything else opens in the normal browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\/(accounts\.google\.com|bellmont-city\.(web\.app|firebaseapp\.com))\//.test(url)) return { action: "allow" };

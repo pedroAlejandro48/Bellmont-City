@@ -9,6 +9,7 @@ import { LANGS, currentLang, setLang } from "@/i18n";
 import { QUALITIES, readQuality, saveQuality, type Quality } from "@/game/quality";
 import { enablePush, pushPermission, registerDevice } from "@/platform/push";
 import type { useFriends } from "@/components/Friends";
+import { inWindowsApp } from "@/components/InstallApp";
 
 /**
  * The player's picture in the top-left corner of the menu: tap it for Profile (picture, username, friends, deleting
@@ -24,6 +25,7 @@ export function AccountMenu({ account, friends, onAccount, onSignOut }: { accoun
       {open && <ul className="hud-panel account-drop">
         <li><button type="button" onClick={() => { setPanel("profile"); setOpen(false); }}>Profile</button></li>
         <li><button type="button" onClick={() => { setPanel("settings"); setOpen(false); }}>Settings</button></li>
+        {inWindowsApp() && <li><button type="button" className="account-exit" onClick={() => { window.close(); setTimeout(() => { location.href = "/?app-exit=1"; }, 300); }}>Exit</button></li>}
       </ul>}
     </div>
     {panel === "profile" && <Profile account={account} friends={friends} onAccount={onAccount} onSignOut={onSignOut} onClose={() => setPanel(null)} />}
