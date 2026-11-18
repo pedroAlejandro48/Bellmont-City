@@ -24,8 +24,10 @@ export type Account = {
   gender: Gender | null;
   /** Signs in with a password (so username sign-in can work), rather than only with Google. */
   usesPassword: boolean;
-  /** The profile picture, from the Google account it signs in with (null: none). */
+  /** The profile picture: one of the game's (AVATARS) if chosen, else the Google account's (null: none). */
   photo: string | null;
+  /** The Google account's own picture, if it signs in with Google (offered last in the picture choice). */
+  google: string | null;
 };
 
 /** A message for the player; anything unexpected is reported generically by the caller. */
@@ -64,10 +66,11 @@ async function toAccount(user: User): Promise<Account> {
     username: profile.username,
     gender: profile.gender,
     usesPassword: user.providerData.some((p) => p.providerId === "password"),
-    // (Google's picture; without Google, the one chosen from the game's ten.)
-    photo: googlePhoto(user) ?? profile.photo,
+    // (One of the game's pictures if chosen; otherwise the Google account's.)
+    photo: isGameAvatar(profile.photo) ? profile.photo : googlePhoto(user) ?? profile.photo,
+    google: googlePhoto(user),
   };
-  if (googlePhoto(user)) syncPhoto(account, profile.photo);
+  if (account.google && !isGameAvatar(profile.photo)) syncPhoto(account, profile.photo);
   return account;
 }
 /** The Google account's picture (a bigger copy than the default thumbnail). */
@@ -124,6 +127,7 @@ export async function deleteAccount(account: Account, password: string | null) {
 /** The ten profile pictures to choose from without a Google account: things from the game. */
 export const AVATARS = ["scooter", "burger", "apple", "moon", "key", "pizza", "building", "tree", "coffee", "basket"].map((n) => `/avatars/${n}.png`);
 /** Sets the chosen picture (accounts without Google). */
+export const isGameAvatar = (url: string | null | undefined): url is string => !!url && url.startsWith("/avatars/");
 export async function chooseAvatar(account: Account, photo: string): Promise<Account> {
   await updateDoc(doc(firestore, "players", account.id), { photo }).catch(() => { throw new AccountError("Could not save your picture. Please try again."); });
   return { ...account, photo };

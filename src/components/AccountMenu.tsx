@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarPicker } from "@/components/Avatar";
+import { Avatar, AvatarPicker, EditableAvatar } from "@/components/Avatar";
 import { AccountError, changeUsername, chooseAvatar, deleteAccount, type Account } from "@/platform/account";
 import { removeFriend } from "@/platform/friends";
 import { usernameSchema } from "@/lib/usernames";
@@ -46,7 +46,6 @@ function Profile({ account, friends, onAccount, onSignOut, onClose }: { account:
   const [newName, setNewName] = useState(""), [pw, setPw] = useState(""), [nameMsg, setNameMsg] = useState<string | null>(null), [busy, setBusy] = useState(false);
   const [unadding, setUnadding] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false), [delPw, setDelPw] = useState(""), [delMsg, setDelMsg] = useState<string | null>(null);
-  const canPick = !account.photo || account.photo.startsWith("/avatars/");
 
   async function rename(e: FormEvent) {
     e.preventDefault();
@@ -66,8 +65,8 @@ function Profile({ account, friends, onAccount, onSignOut, onClose }: { account:
 
   return <Sheet title="Profile" onClose={onClose}>
     <div className="profile-head">
-      {canPick ? <button type="button" aria-label="Change your profile picture" onClick={() => setPicking(true)}><Avatar photo={account.photo} name={account.username ?? ""} size={64} /></button> : <Avatar photo={account.photo} name={account.username ?? ""} size={64} />}
-      <div><b data-no-translate>{account.username}</b>{account.email && <small data-no-translate>{account.email}</small>}{canPick && <button type="button" className="link" onClick={() => setPicking(true)}>Change picture</button>}</div>
+      <EditableAvatar photo={account.photo} name={account.username ?? ""} size={64} onEdit={() => setPicking(true)} />
+      <div><b data-no-translate>{account.username}</b>{account.email && <small data-no-translate>{account.email}</small>}<button type="button" className="link" onClick={() => setPicking(true)}>Change picture</button></div>
     </div>
 
     <p className="sheet-label">Change username</p>
@@ -104,7 +103,7 @@ function Profile({ account, friends, onAccount, onSignOut, onClose }: { account:
       </div>
       {delMsg && <p className="text-center text-xs text-accent">{delMsg}</p>}
     </div>}
-    {picking && <AvatarPicker current={account.photo} onPick={(url) => { void chooseAvatar(account, url).then((a) => { onAccount(a); setPicking(false); }).catch(() => {}); }} onClose={() => setPicking(false)} />}
+    {picking && <AvatarPicker current={account.photo} google={account.google} onPick={(url) => { void chooseAvatar(account, url).then((a) => { onAccount(a); setPicking(false); }).catch(() => {}); }} onClose={() => setPicking(false)} />}
   </Sheet>;
 }
 

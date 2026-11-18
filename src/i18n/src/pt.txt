@@ -1036,3 +1036,4 @@
 1088|nível
 1089|pagar
 1090|pts
+1091|Sua foto do Google

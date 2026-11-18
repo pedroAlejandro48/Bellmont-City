@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { Pencil, X } from "lucide-react";
 import { doc, getDoc } from "firebase/firestore";
 import { firestore } from "@/platform/firebase";
 import { AVATARS } from "@/platform/account";
@@ -31,15 +31,24 @@ export function Avatar({ uid, photo, name, size = 28 }: { uid?: string | undefin
   return <span className="avatar avatar-letter" style={{ ...style, background: `hsl(${hue} 55% 42%)`, fontSize: size * 0.45 }} aria-hidden>{(name[0] ?? "?").toUpperCase()}</span>;
 }
 
-/** Choosing a profile picture (accounts without a Google one): the game's ten things. */
-export function AvatarPicker({ current, onPick, onClose }: { current: string | null; onPick: (url: string) => void; onClose?: (() => void) | undefined }) {
+/** A picture that can be tapped to change it, with a little pencil in its bottom-right corner. */
+export function EditableAvatar({ photo, name, size, onEdit }: { photo: string | null; name: string; size: number; onEdit: () => void }) {
+  return <button type="button" className="avatar-edit" aria-label="Change your profile picture" onClick={onEdit} style={{ width: size, height: size }}>
+    <Avatar photo={photo} name={name} size={size} />
+    <span className="avatar-pencil" aria-hidden><Pencil size={Math.round(size * 0.2)} strokeWidth={2.5} /></span>
+  </button>;
+}
+
+/** Choosing a profile picture: the game's ten things, then the player's own Google picture (if any) last. */
+export function AvatarPicker({ current, google, onPick, onClose }: { current: string | null; google?: string | null | undefined; onPick: (url: string) => void; onClose?: (() => void) | undefined }) {
+  const choices = google ? [...AVATARS, google] : AVATARS;
   return <div className="install-help" role="dialog" aria-label="Choose your profile picture" onClick={onClose}>
     <div className="install-card" onClick={(e) => e.stopPropagation()}>
       {onClose && <button type="button" className="install-x" aria-label="Close" onClick={onClose}><X size={18} /></button>}
       <b>Choose your profile picture</b>
       <div className="avatar-grid">
-        {AVATARS.map((a) => <button key={a} type="button" className={`avatar-choice ${current === a ? "on" : ""}`} onClick={() => onPick(a)} aria-label={a.split("/").pop()!.replace(".png", "")}>
-          <img src={a} alt="" />
+        {choices.map((a) => <button key={a} type="button" className={`avatar-choice ${current === a ? "on" : ""}`} onClick={() => onPick(a)} aria-label={a === google ? "Your Google picture" : a.split("/").pop()!.replace(".png", "")}>
+          <img src={a} alt="" referrerPolicy="no-referrer" />
         </button>)}
       </div>
     </div>

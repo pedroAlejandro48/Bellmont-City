@@ -18,8 +18,7 @@ import { chooseAvatar } from "@/platform/account";
 export function MainMenu({ account, username, message, onCity, onRoom, onSignOut, onAccount }: { account: Account; username: string | null; message?: string | undefined; onCity: () => void; onRoom: (request: RoomRequest) => void; onSignOut: () => void; onAccount: (a: Account) => void }) {
   const [joining, setJoining] = useState(false);
   const friends = useFriends(account);
-  // Without a Google picture: choose one of the game's ten (asked once; tap the picture to change it).
-  const canChoose = !account.photo || account.photo.startsWith("/avatars/");
+  // Without any picture: choose one of the game's ten (asked once; it can be changed from Profile).
   const [picking, setPicking] = useState(!account.photo);
   const pick = (url: string) => { void chooseAvatar(account, url).then((a) => { onAccount(a); setPicking(false); }).catch(() => setMsg("Could not save your picture. Please try again.")); };
   useEffect(() => { publishEmail(account); }, [account]);
@@ -51,7 +50,7 @@ export function MainMenu({ account, username, message, onCity, onRoom, onSignOut
       <QualityPicker />
       <PushPrompt account={account} />
       <AccountMenu account={account} friends={friends} onAccount={onAccount} onSignOut={onSignOut} />
-      {picking && canChoose && <AvatarPicker current={account.photo} onPick={pick} onClose={account.photo ? () => setPicking(false) : undefined} />}
+      {picking && <AvatarPicker current={account.photo} google={account.google} onPick={pick} onClose={account.photo ? () => setPicking(false) : undefined} />}
       <div className="auth-split w-full max-w-sm">
         <div className="auth-titles">
           <h1 className="font-display text-center text-5xl tracking-tight text-foreground">Bellmont city</h1>
