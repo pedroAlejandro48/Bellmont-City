@@ -46,8 +46,11 @@ async function show(title: string, body: string, tag: string, link = "/", photo?
   const icon = typeof photo === "string" && photo ? photo : "/icon-192.png";
   try {
     const reg = await navigator.serviceWorker.getRegistration("/");
-    if (reg) await reg.showNotification(title, { body, tag, icon, badge: "/badge-96.png", data: { link } });
-    else new Notification(title, { body, tag, icon: "/icon-192.png" });
+    if (reg) { await reg.showNotification(title, { body, tag, icon, badge: "/badge-96.png", data: { link } }); return; }
+  } catch { /* (The Windows app has no service-worker notifications: a plain one below.) */ }
+  try {
+    const n = new Notification(title, { body, tag, icon });
+    n.onclick = () => { window.focus(); if (link !== "/") location.href = link; };
   } catch { /* (Nothing shown: the menu's badges still say so.) */ }
 }
 

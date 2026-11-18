@@ -21,7 +21,7 @@ const isMobile = () => isIOS() || /Android|Mobi/i.test(ua());
 /** Running inside the Android or Windows app (they open the site with ?app=…; Android also says so in the
  *  referrer). Remembered for the session (Android's app shares the browser's storage, so not for good there);
  *  the Windows app's storage is its own, so there it's kept. */
-function inApp() {
+function detectApp() {
   try {
     const q = new URLSearchParams(location.search).get("app");
     if (q === "windows") localStorage.setItem("bellmont-app", "windows");
@@ -29,7 +29,9 @@ function inApp() {
     return localStorage.getItem("bellmont-app") === "windows" || sessionStorage.getItem("bellmont-app") === "android";
   } catch { return false; }
 }
-const IN_APP = inApp();
+const IN_APP = detectApp();
+/** Inside the Android or Windows app. */
+export const inApp = () => IN_APP;
 /** Inside the Windows app (where Exit closes the app: it runs full screen, without a title bar). */
 export const inWindowsApp = () => { try { return localStorage.getItem("bellmont-app") === "windows"; } catch { return false; } };
 export const installed = () => IN_APP || window.matchMedia("(display-mode: standalone)").matches || window.matchMedia("(display-mode: fullscreen)").matches || (navigator as { standalone?: boolean }).standalone === true;
