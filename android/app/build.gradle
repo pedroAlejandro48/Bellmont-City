@@ -13,7 +13,7 @@ android {
         targetSdk 34
         versionCode Integer.parseInt(System.getenv("VERSION_CODE") ?: "1")
         versionName System.getenv("VERSION_NAME") ?: "1.0"
-        manifestPlaceholders = [hostName: host, launchUrl: "https://" + host + "/"]
+        manifestPlaceholders = [hostName: host, launchUrl: "https://" + host + "/?app=android"]
         resValue "string", "app_name", "Bellmont City"
         resValue "string", "asset_statements", "[{ \"relation\": [\"delegate_permission/common.handle_all_urls\"], \"target\": { \"namespace\": \"web\", \"site\": \"https://" + host + "\" } }]"
     }

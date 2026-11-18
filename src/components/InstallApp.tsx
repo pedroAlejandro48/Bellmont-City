@@ -18,7 +18,19 @@ export function listenForInstall() {
 const ua = () => navigator.userAgent;
 export const isIOS = () => /iPhone|iPad|iPod/.test(ua()) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const isMobile = () => isIOS() || /Android|Mobi/i.test(ua());
-export const installed = () => window.matchMedia("(display-mode: standalone)").matches || window.matchMedia("(display-mode: fullscreen)").matches || (navigator as { standalone?: boolean }).standalone === true;
+/** Running inside the Android or Windows app (they open the site with ?app=…; Android also says so in the
+ *  referrer). Remembered for the session (Android's app shares the browser's storage, so not for good there);
+ *  the Windows app's storage is its own, so there it's kept. */
+function inApp() {
+  try {
+    const q = new URLSearchParams(location.search).get("app");
+    if (q === "windows") localStorage.setItem("bellmont-app", "windows");
+    if (q === "android" || document.referrer.startsWith("android-app://")) sessionStorage.setItem("bellmont-app", "android");
+    return localStorage.getItem("bellmont-app") === "windows" || sessionStorage.getItem("bellmont-app") === "android";
+  } catch { return false; }
+}
+const IN_APP = inApp();
+export const installed = () => IN_APP || window.matchMedia("(display-mode: standalone)").matches || window.matchMedia("(display-mode: fullscreen)").matches || (navigator as { standalone?: boolean }).standalone === true;
 /** Which iPhone browser: Safari (or one that looks like it, such as Brave), Chrome, Firefox, Edge. */
 function iosBrowser() {
   const u = ua();

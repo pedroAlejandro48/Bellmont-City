@@ -20,7 +20,7 @@ function open() {
     return { action: "deny" };
   });
   win.webContents.on("did-create-window", (child) => child.webContents.setUserAgent(UA(child.webContents.getUserAgent())));
-  win.loadURL(HOME);
+  win.loadURL(HOME + "?app=windows"); // (the game hides "Install app" inside the app)
 }
 
 if (!app.requestSingleInstanceLock()) app.quit();
