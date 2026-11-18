@@ -17,6 +17,8 @@ export const app = initializeApp({
   projectId,
   databaseURL: (!emulators && env["VITE_FIREBASE_DATABASE_URL"]) || `https://${projectId}-default-rtdb.firebaseio.com`,
   appId: (!emulators && env["VITE_FIREBASE_APP_ID"]) || undefined,
+  // (Push notifications need the project's number: it's the second part of the app id, "1:<number>:web:…".)
+  ...(!emulators && String(env["VITE_FIREBASE_APP_ID"] ?? "").split(":")[1] ? { messagingSenderId: String(env["VITE_FIREBASE_APP_ID"]).split(":")[1]! } : {}),
 });
 
 export const auth = getAuth(app);

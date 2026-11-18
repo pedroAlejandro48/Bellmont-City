@@ -635,3 +635,6 @@ body.has-install-pc .quality-picker { right: 9.6rem; }
 .pull-refresh.ready { background: #ffb547; color: #1a1205; }
 .pull-refresh.spin span { animation: pull-spin 0.6s linear infinite; }
 @keyframes pull-spin { to { transform: rotate(360deg); } }
+/* Asking to allow notifications (installed app, menu). */
+.push-prompt { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 4rem); transform: translateX(-50%); z-index: 40; width: min(24rem, calc(100vw - 1.5rem)); display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; padding: 0.75rem 0.9rem; font-size: 0.85rem; color: #f2f3f7; }
+.push-prompt > span { flex: 1; min-width: 12rem; line-height: 1.3; }

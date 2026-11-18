@@ -46,8 +46,9 @@ export function sendRequest(me: Account, to: string) {
 /** Accepting: each is on the other's list; the request is gone. */
 export async function acceptRequest(me: Account, r: FriendRequest) {
   const b = writeBatch(firestore), at = Date.now();
-  b.set(doc(firestore, "friends", me.id, "list", r.uid), { name: r.name, at });
-  b.set(doc(firestore, "friends", r.uid, "list", me.id), { name: me.username ?? "", at });
+  // (`by`: who accepted — the other side gets a "request accepted" notification.)
+  b.set(doc(firestore, "friends", me.id, "list", r.uid), { name: r.name, at, by: me.id });
+  b.set(doc(firestore, "friends", r.uid, "list", me.id), { name: me.username ?? "", at, by: me.id });
   b.delete(doc(firestore, "friends", me.id, "requests", r.uid));
   await b.commit();
 }

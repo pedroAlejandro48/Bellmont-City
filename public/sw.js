@@ -23,3 +23,28 @@ self.addEventListener("fetch", (event) => {
     }
   })());
 });
+
+// Push notifications (sent by the game's Cloud Functions through Firebase Cloud Messaging): shown with the game's
+// icon; tapping one opens the game (or brings it forward) at the menu.
+self.addEventListener("push", (event) => {
+  let msg = {};
+  try { msg = event.data ? event.data.json() : {}; } catch { msg = { data: { body: event.data && event.data.text() } }; }
+  const d = msg.data || {}, n = msg.notification || {};
+  const title = d.title || n.title || "Bellmont City";
+  event.waitUntil(self.registration.showNotification(title, {
+    body: d.body || n.body || "",
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag: d.tag || undefined,
+    data: { link: d.link || "/" },
+  }));
+});
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const link = (event.notification.data && event.notification.data.link) || "/";
+  event.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const w of wins) { if ("focus" in w) { await w.focus(); return; } }
+    await self.clients.openWindow(link);
+  })());
+});

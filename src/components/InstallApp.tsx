@@ -18,7 +18,7 @@ export function listenForInstall() {
 const ua = () => navigator.userAgent;
 export const isIOS = () => /iPhone|iPad|iPod/.test(ua()) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const isMobile = () => isIOS() || /Android|Mobi/i.test(ua());
-const installed = () => window.matchMedia("(display-mode: standalone)").matches || window.matchMedia("(display-mode: fullscreen)").matches || (navigator as { standalone?: boolean }).standalone === true;
+export const installed = () => window.matchMedia("(display-mode: standalone)").matches || window.matchMedia("(display-mode: fullscreen)").matches || (navigator as { standalone?: boolean }).standalone === true;
 /** Which iPhone browser: Safari (or one that looks like it, such as Brave), Chrome, Firefox, Edge. */
 function iosBrowser() {
   const u = ua();

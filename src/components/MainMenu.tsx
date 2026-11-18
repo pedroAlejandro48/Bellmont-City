@@ -9,6 +9,7 @@ import { AccountError, MIN_PASSWORD, addPassword, type Account } from "@/platfor
 import { publishEmail } from "@/platform/friends";
 import { useEffect } from "react";
 import { FriendsMenu, RoomInvites, useFriends } from "@/components/Friends";
+import { PushPrompt } from "@/components/PushPrompt";
 
 /** After signing in: your own city, or a shared room (new, or joined by its code). */
 export function MainMenu({ account, username, message, onCity, onRoom, onSignOut, onAccount }: { account: Account; username: string | null; message?: string | undefined; onCity: () => void; onRoom: (request: RoomRequest) => void; onSignOut: () => void; onAccount: (a: Account) => void }) {
@@ -41,6 +42,7 @@ export function MainMenu({ account, username, message, onCity, onRoom, onSignOut
   return (
     <div className="auth-bg auth-page flex items-center justify-center px-4">
       <QualityPicker />
+      <PushPrompt account={account} />
       <div className="auth-split w-full max-w-sm">
         <div className="auth-titles">
           <h1 className="font-display text-center text-5xl tracking-tight text-foreground">Bellmont city</h1>
