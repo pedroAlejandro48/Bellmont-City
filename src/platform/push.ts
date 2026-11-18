@@ -27,18 +27,21 @@ export async function registerDevice() {
     const reg = await navigator.serviceWorker.getRegistration("/") ?? await navigator.serviceWorker.register("/sw.js");
     await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription() ?? await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromB64u(VAPID_PUBLIC) });
-    await callServer("/subscribe", { endpoint: sub.endpoint, p256dh: b64u(sub.getKey("p256dh")), auth: b64u(sub.getKey("auth")), app: appKind(), lang: currentLang() });
+    await callServer("/subscribe", { endpoint: sub.endpoint, p256dh: b64u(sub.getKey("p256dh")), auth: b64u(sub.getKey("auth")), app: appKind(), lang: currentLang(), os: onWindows() ? "windows" : null });
   } catch { /* (Then only while the game is open.) */ }
 }
 /** Tells the other player (the sender checks it really happened). */
 export const notifyPlayer = (type: "request" | "accepted" | "invite", to: string, code?: string) => void callServer("/notify", { type, to, ...(code ? { code } : {}) });
 /**
  * Whether this page may show notifications: always inside the apps (each opening tells the sender this player has
- * one); in a browser only if the player has no app (one opened in the last 30 days) — then the app gets them.
+ * one) and in browsers on Windows; in other browsers only if the player has no Android app (opened in the last 30
+ * days) — then the app gets them.
  */
+const onWindows = () => /Windows/.test(navigator.userAgent);
 async function mayNotifyHere(): Promise<boolean> {
   const app = appKind();
   if (app) { void callServer("/app", { app }); return true; }
+  if (onWindows()) return true; // (Browsers on Windows always: the Windows app only shows them while it's open.)
   const r = await callServer("/status", {});
   return !(r && r["hasApp"] === true);
 }

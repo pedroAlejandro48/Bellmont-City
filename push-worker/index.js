@@ -8,7 +8,7 @@
 // POST /subscribe { endpoint, p256dh, auth, app? }  (a device registering for its player's notifications;
 //   app: "android" | "windows" when it's one of the game's apps)
 // POST /app { app }  (the player opened one of the apps)    POST /status → { hasApp }
-// A player who opened an app in the last 30 days gets pushes only on their app devices, not in browsers.
+// A player who opened the Android app in the last 30 days gets pushes only on it and on browsers on Windows.
 // The checks read Firestore as the caller (their own token: the rules let a sender read what they sent), and the
 // devices are kept in Workers KV (binding SUBS) — no Google service account involved.
 // Broadcasts (a message to every player, in their language): scripts/broadcast.mjs writes KV "broadcast"
@@ -63,7 +63,8 @@ const saveSubs = (env, uid, subs) => (subs.length ? env.SUBS.put(`subs:${uid}`, 
 // Which apps a player has opened, and when ({ android?: ms, windows?: ms }).
 const APP_DAYS = 30;
 const appsOf = async (env, uid) => { try { return JSON.parse((await env.SUBS.get(`app:${uid}`)) ?? "{}"); } catch { return {}; } };
-const hasApp = async (env, uid) => Object.values(await appsOf(env, uid)).some((t) => typeof t === "number" && Date.now() - t < APP_DAYS * 864e5);
+// (Only the Android app counts: the Windows app can't receive pushes, so Windows browsers keep getting them.)
+const hasApp = async (env, uid) => { const t = (await appsOf(env, uid)).android; return typeof t === "number" && Date.now() - t < APP_DAYS * 864e5; };
 async function markApp(env, uid, app) {
   if (app !== "android" && app !== "windows") return;
   const apps = await appsOf(env, uid);
@@ -102,7 +103,7 @@ async function vapid(env, endpoint) {
 async function push(env, uid, message) {
   const subs = await subsOf(env, uid), dead = new Set();
   // (With an app, only its devices: no second notification from a browser.)
-  const targets = (await hasApp(env, uid)) ? subs.filter((s) => s.app) : subs;
+  const targets = (await hasApp(env, uid)) ? subs.filter((s) => s.app || s.os === "windows") : subs;
   let sent = 0;
   await Promise.all(targets.map(async (s) => {
     if (!s.endpoint || !s.p256dh || !s.auth) return;
@@ -192,7 +193,8 @@ export default {
       const all = await subsOf(env, from), before = all.find((s) => s.endpoint === endpoint);
       const subs = all.filter((s) => s.endpoint !== endpoint);
       // (The Android app shares the phone browser's subscription: once it's the app's, it stays the app's.)
-      subs.push({ endpoint, p256dh, auth, lang, at: Date.now(), ...(app || before?.app ? { app: app ?? before.app } : {}) });
+      const os = body?.os === "windows" ? "windows" : null;
+      subs.push({ endpoint, p256dh, auth, lang, at: Date.now(), ...(os ? { os } : {}), ...(app || before?.app ? { app: app ?? before.app } : {}) });
       await saveSubs(env, from, subs);
       if (app) await markApp(env, from, app);
       return json({ ok: true }, 200, origin);

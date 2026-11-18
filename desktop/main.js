@@ -1,6 +1,6 @@
 // Bellmont City for Windows: a window that opens https://bellmont-city.web.app, so it always runs the latest
 // version of the game (this wrapper rarely needs rebuilding). Built by .github/workflows/apps.yml.
-const { app, BrowserWindow, Menu, Tray, dialog, session, shell } = require("electron");
+const { app, BrowserWindow, dialog, session, shell } = require("electron");
 const fs = require("fs"), path = require("path");
 
 // Notifications show as "Bellmont City" with the game's icon (Windows matches this id to the installed shortcut).
@@ -45,31 +45,6 @@ const HOME = "https://bellmont-city.web.app/";
 // (Google's sign-in refuses apps that say they're Electron: it sees an ordinary Chrome.)
 const UA = (ua) => ua.replace(/\s?Electron\/\S+/, "").replace(/\s?bellmont-city\/\S+/i, "");
 
-// The system tray: Exit (or closing the window) hides the app there instead of quitting, so notifications still
-// arrive; the tray icon brings it back, and its menu's Quit really ends it.
-let tray = null, quitting = false;
-function makeTray(win) {
-  if (tray) return;
-  tray = new Tray(path.join(__dirname, "icon.png"));
-  tray.setToolTip("Bellmont City");
-  const menu = () => Menu.buildFromTemplate([
-    { label: w(0), click: () => show(win) },
-    { type: "separator" },
-    { label: w(1), click: () => { quitting = true; app.quit(); } },
-  ]);
-  tray.setContextMenu(menu());
-  tray.on("click", () => show(win));
-  tray.on("right-click", () => { void readLang(win).then(() => tray.setContextMenu(menu())); });
-}
-function show(win) { if (win.isMinimized()) win.restore(); win.show(); win.setFullScreen(true); win.focus(); }
-let toldTray = false;
-function hideToTray(win) {
-  win.hide();
-  // (Back to the menu, so no game keeps running unseen; the menu still watches for notifications.)
-  if (!win.webContents.getURL().endsWith("/?app=windows")) win.loadURL(HOME + "?app=windows");
-  if (!toldTray && tray) { toldTray = true; tray.displayBalloon?.({ title: "Bellmont City", content: w(6), iconType: "info" }); }
-}
-
 function open() {
   const win = new BrowserWindow({
     width: 1280, height: 800, minWidth: 640, minHeight: 400,
@@ -77,15 +52,13 @@ function open() {
     webPreferences: { contextIsolation: true, sandbox: true },
   });
   win.webContents.setUserAgent(UA(win.webContents.getUserAgent()));
-  // Always full screen (F11 or Esc cannot take it out); Exit hides the app to the system tray (see hideToTray).
+  // Always full screen (F11 or Esc cannot take it out); Exit closes the app.
   // (Exit: the page closes its window, or — as a fallback — asks for /?app-exit=1, which quits.)
   win.webContents.on("will-navigate", (e, url) => {
-    if (url.includes("app-exit=1")) { e.preventDefault(); hideToTray(win); }
-    else if (url.includes("app-show=1")) show(win); // (a notification was clicked)
+    if (url.includes("app-exit=1")) { e.preventDefault(); app.quit(); }
+    else if (url.includes("app-show=1")) { win.show(); win.focus(); } // (a notification was clicked)
   });
-  win.on("close", (e) => { if (!quitting) { e.preventDefault(); hideToTray(win); } });
   win.webContents.on("did-finish-load", () => void readLang(win));
-  makeTray(win);
   win.on("leave-full-screen", () => setTimeout(() => win.setFullScreen(true), 50));
   // The game's own pages and Google's sign-in stay in the app; anything else opens in the normal browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -109,8 +82,7 @@ function open() {
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on("second-instance", () => { const win = BrowserWindow.getAllWindows()[0]; if (win) show(win); });
-  app.on("before-quit", () => { quitting = true; });
+  app.on("second-instance", () => { const win = BrowserWindow.getAllWindows()[0]; if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
   app.whenReady().then(open);
-  app.on("window-all-closed", () => { if (quitting) app.quit(); });
+  app.on("window-all-closed", () => app.quit());
 }
