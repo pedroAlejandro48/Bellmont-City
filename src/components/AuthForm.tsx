@@ -1,6 +1,7 @@
 import { usePullToRefresh } from "@/lib/pullRefresh";
 import { useTitleBetweenObeliskAndForm } from "@/lib/fitTitle";
 import { QualityPicker } from "@/components/QualityPicker";
+import { ExitAppButton } from "@/components/InstallApp";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { usernameSchema } from "@/lib/usernames";
@@ -65,6 +66,7 @@ export function AuthForm({ room, onSignedIn, children }: AuthFormProps) {
   return (
     <div className="auth-bg auth-page flex items-center justify-center px-4">
       <QualityPicker />
+      <ExitAppButton />
       <div className="auth-split w-full max-w-sm">
         <div className="auth-titles">
           <h1 className="font-display text-center text-5xl tracking-tight text-foreground">Bellmont city</h1>

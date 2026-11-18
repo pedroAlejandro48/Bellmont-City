@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Share, SquarePlus, X } from "lucide-react";
+import { Share, SquarePlus, X, LogOut } from "lucide-react";
 
 // Installing the game as an app from the browser. Android browsers built on Chrome (Chrome, Brave, Edge, Samsung
 // Internet…) offer it straight away: the button opens their install dialog. iPhones and iPads have no such dialog
@@ -114,4 +114,12 @@ export function InstallApp() {
       {ios && browser === "safari" && <div className="install-arrow" aria-hidden>↓</div>}
     </div>}
   </>;
+}
+
+/** Closes the Windows app (window.close(), or — as a fallback — /?app-exit=1, which the app turns into quitting). */
+export function exitApp() { window.close(); setTimeout(() => { location.href = "/?app-exit=1"; }, 300); }
+/** The Exit button in the top-left corner of the sign-in page — only inside the Windows app (full screen there). */
+export function ExitAppButton() {
+  if (!inWindowsApp()) return null;
+  return <button type="button" className="exit-app" onClick={exitApp}><LogOut size={16} aria-hidden />Exit</button>;
 }
