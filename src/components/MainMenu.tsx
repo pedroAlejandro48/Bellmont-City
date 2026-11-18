@@ -1,3 +1,4 @@
+import { usePullToRefresh } from "@/lib/pullRefresh";
 import { useTitleBetweenObeliskAndForm } from "@/lib/fitTitle";
 import { QualityPicker } from "@/components/QualityPicker";
 import { useState, type FormEvent } from "react";
@@ -36,6 +37,7 @@ export function MainMenu({ account, username, message, onCity, onRoom, onSignOut
   }
 
   useTitleBetweenObeliskAndForm();
+  usePullToRefresh();
   return (
     <div className="auth-bg auth-page flex items-center justify-center px-4">
       <QualityPicker />

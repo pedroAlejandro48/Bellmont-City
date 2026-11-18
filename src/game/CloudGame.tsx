@@ -143,12 +143,15 @@ export function CloudGame({ account, onExit, world, extras }: { account: Account
       key={round}
       state={state}
       saving={saving}
-      exitLabel="Save & exit"
+      exitLabel="Exit"
       extras={extras}
       onDeath={() => { void save().catch(() => {}); }}
       onReset={reset}
-      onSignOut={async () => {
-        try { await save(); onExit(); } catch { setSaveError(true); }
+      onSignOut={() => {
+        // Straight back to the menu: the game is saved on the way out (on this device at once, to the cloud in
+        // the background), with nothing to wait for.
+        void save().catch(() => {});
+        onExit();
       }}
     />{saveError && <div role="alert" className="hud-panel fixed left-4 top-20 z-30 max-w-[calc(100%-2rem)] space-y-2 p-3 text-sm text-foreground">
       <p>Cloud save failed. Retrying; keep this tab open.</p>

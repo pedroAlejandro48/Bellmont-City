@@ -50,7 +50,7 @@ export function GuestGame({ onExit }: { onExit: () => void }) {
       key={round}
       state={state}
       saving={false}
-      exitLabel="Save & exit"
+      exitLabel="Exit"
       onDeath={save}
       onReset={reset}
       onSignOut={() => { save(); onExit(); }}

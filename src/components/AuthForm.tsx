@@ -1,3 +1,4 @@
+import { usePullToRefresh } from "@/lib/pullRefresh";
 import { useTitleBetweenObeliskAndForm } from "@/lib/fitTitle";
 import { QualityPicker } from "@/components/QualityPicker";
 import { useState, type FormEvent, type ReactNode } from "react";
@@ -59,6 +60,7 @@ export function AuthForm({ room, onSignedIn, children }: AuthFormProps) {
   }
 
   useTitleBetweenObeliskAndForm();
+  usePullToRefresh();
   const usingEmail = mode === "up" || method === "email";
   return (
     <div className="auth-bg auth-page flex items-center justify-center px-4">

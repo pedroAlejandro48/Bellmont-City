@@ -630,3 +630,8 @@ body.has-install-pc .quality-picker { right: 9.6rem; }
 .friends-row button.ok { background: #ffb547; color: #1a1205; }
 .friends-row button.join { width: auto; padding: 0 0.8rem; border-radius: 999px; font-weight: 800; font-size: 0.78rem; }
 .friends-empty { padding: 0.5rem; text-align: center; font-size: 0.8rem; opacity: 0.7; }
+/* Pull to refresh (home pages). */
+.pull-refresh { position: fixed; left: 50%; top: 0; z-index: 90; width: 2.6rem; height: 2.6rem; border-radius: 50%; display: grid; place-items: center; background: #171a24; color: #f2f3f7; box-shadow: 0 6px 18px rgba(0,0,0,0.45); font: 800 1.35rem/1 Manrope, Arial, sans-serif; opacity: 0; transform: translate(-50%, -48px); pointer-events: none; }
+.pull-refresh.ready { background: #ffb547; color: #1a1205; }
+.pull-refresh.spin span { animation: pull-spin 0.6s linear infinite; }
+@keyframes pull-spin { to { transform: rotate(360deg); } }

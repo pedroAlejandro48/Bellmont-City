@@ -1,3 +1,4 @@
+import { usePullToRefresh } from "@/lib/pullRefresh";
 import { useTitleBetweenObeliskAndForm } from "@/lib/fitTitle";
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,7 @@ export function UsernameForm({ account, password, onComplete, onSignOut }: { acc
   }
 
   useTitleBetweenObeliskAndForm();
+  usePullToRefresh();
   return <div className="auth-bg auth-page flex items-center justify-center px-4">
     <div className="auth-split w-full max-w-sm">
       <div className="auth-titles">

@@ -318,7 +318,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
         </div>
         <div className="absolute right-4 top-4 flex flex-col items-end gap-1.5">
           <div ref={actionsRow} className="hud-actions relative flex items-center gap-2 sm:gap-3">
-            {saving && <span className="absolute right-0 top-full mt-1 whitespace-nowrap text-xs text-muted-foreground sm:static sm:mt-0">Saving…</span>}
+            {/* (Saving happens on its own, all the time: nothing to show.) */}
             {Actions && <Actions />}
             <Button disabled={dead} onClick={onSignOut} className="pointer-events-auto h-8 px-3 text-xs sm:h-9 sm:px-4 sm:text-sm">
               {exitLabel}
