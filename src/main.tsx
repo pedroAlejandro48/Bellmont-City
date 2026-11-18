@@ -1,5 +1,6 @@
 import { InstallApp, listenForInstall } from "@/components/InstallApp";
 import { guardBackButton } from "@/lib/backGuard";
+import { loadLang } from "@/i18n";
 import { watchNotifications } from "@/platform/push";
 import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -86,4 +87,5 @@ guardBackButton();
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => { navigator.serviceWorker.register("/sw.js").catch(() => {}); });
 }
-createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);
+// (The chosen language's words first, so the page is drawn in it from the start.)
+void loadLang().catch(() => {}).finally(() => createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>));

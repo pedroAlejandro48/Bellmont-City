@@ -1,3 +1,4 @@
+import { KEEP } from "@/i18n";
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
@@ -47,7 +48,7 @@ function drawName(canvas: HTMLCanvasElement, name: string, crown: boolean) {
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "#ffffff";
-  ctx.fillText(name, left + (crown ? crownSize + gap : 0), mid, textWidth);
+  ctx.fillText(KEEP + name, left + (crown ? crownSize + gap : 0), mid, textWidth);
   return width / canvas.height;
 }
 

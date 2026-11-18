@@ -655,3 +655,33 @@ body.has-install-pc .quality-picker { right: 9.6rem; }
 .friends-row .avatar { margin-left: -0.25rem; }
 .welcome-user { display: inline-flex; align-items: center; gap: 0.4rem; vertical-align: middle; }
 .welcome-user button { border-radius: 50%; padding: 0; line-height: 0; }
+/* Pictures are always round (never stretched by a row's layout), centred with the name. */
+.avatar { aspect-ratio: 1 / 1; flex: none !important; align-self: center; }
+.friends-row > span.avatar { flex: none; display: inline-grid; }
+.friend-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin: 0.1rem 0.4rem 0.5rem 2.6rem; font-size: 0.75rem; }
+.friend-actions > span { flex: 1; min-width: 5rem; opacity: 0.8; }
+.friend-actions small { flex-basis: 100%; opacity: 0.75; }
+.friend-actions .pill, .friends-row button.pill { height: 1.7rem; padding: 0 0.7rem; border-radius: 999px; font-size: 0.75rem; font-weight: 800; }
+.friend-actions .pill.red { background: #d93a3a; color: #fff; }
+.friend-actions .pill.grey { background: rgba(255,255,255,0.18); color: #f2f3f7; }
+.friend-actions .pill.ok, .friends-row button.pill.ok { background: #ffb547; color: #1a1205; }
+/* Account menu (top-left of the main menu), Profile and Settings. */
+.account-menu { position: fixed; left: 0.75rem; top: 0.75rem; z-index: 35; }
+.account-pic { border-radius: 50%; padding: 2px; background: rgba(255,255,255,0.15); box-shadow: 0 4px 14px rgba(0,0,0,0.4); line-height: 0; }
+.account-drop { margin-top: 0.45rem; min-width: 9rem; padding: 0.3rem 0; }
+.account-drop button { width: 100%; text-align: left; padding: 0.55rem 0.9rem; font-size: 0.9rem; color: #f2f3f7; }
+.account-drop button:hover { background: rgba(255,255,255,0.07); }
+.install-card.sheet { max-height: calc(100dvh - 2rem); display: flex; flex-direction: column; }
+.sheet-body { overflow-y: auto; display: flex; flex-direction: column; gap: 0.55rem; padding-right: 0.15rem; }
+.sheet-label { margin-top: 0.6rem; font-size: 0.68rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; opacity: 0.6; }
+.sheet-label.danger { color: #ff8a8a; opacity: 1; }
+.profile-head { display: flex; align-items: center; gap: 0.8rem; }
+.profile-head > button { border-radius: 50%; line-height: 0; padding: 0; }
+.profile-head div { display: flex; flex-direction: column; min-width: 0; }
+.profile-head b { font-size: 1.05rem; }
+.profile-head small { font-size: 0.75rem; opacity: 0.7; overflow: hidden; text-overflow: ellipsis; }
+.profile-head .link { align-self: flex-start; margin-top: 0.2rem; font-size: 0.75rem; color: #ffb547; text-decoration: underline; }
+.lang-list { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; }
+.lang-list button { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.5rem 0.65rem; border-radius: 0.6rem; background: rgba(255,255,255,0.06); font-size: 0.9rem; border: 2px solid transparent; }
+.lang-list button.on { border-color: #ffb547; }
+.lang-list img { width: 1.6rem; height: 1.2rem; border-radius: 0.2rem; object-fit: cover; box-shadow: 0 0 0 1px rgba(255,255,255,0.15); }

@@ -8,13 +8,16 @@ service cloud.firestore {
     match /usernames/{name} {
       allow get: if true;
       allow list: if false;
+      // (A new account's name, or a rename: the profile then points at the new name in the same write.)
       allow create: if signedIn() && name.matches('^[a-z0-9_]{3,24}$')
         && request.resource.data.uid == request.auth.uid
-        && !exists(/databases/$(database)/documents/players/$(request.auth.uid));
+        && (!exists(/databases/$(database)/documents/players/$(request.auth.uid))
+            || getAfter(/databases/$(database)/documents/players/$(request.auth.uid)).data.username == name);
       // Only the lock may change (re-locked after a password change), and only by its owner.
       allow update: if signedIn() && resource.data.uid == request.auth.uid
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lock']);
-      allow delete: if false;
+      // Freed by its owner (a rename, or deleting the account).
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
     }
 
     // One username and gender per account, set once: the username matches the claim made in the same write.
@@ -28,8 +31,10 @@ service cloud.firestore {
       allow update: if signedIn() && request.auth.uid == uid && (
         (!('gender' in resource.data) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['gender']) && validGender(request.resource.data.gender))
         || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['photo'])
-            && (request.resource.data.photo == null || (request.resource.data.photo is string && request.resource.data.photo.size() < 600))));
-      allow delete: if false;
+            && (request.resource.data.photo == null || (request.resource.data.photo is string && request.resource.data.photo.size() < 600)))
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['username'])
+            && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.username)).data.uid == uid));
+      allow delete: if signedIn() && request.auth.uid == uid;
     }
 
     // Finding a player by email: each player writes their own address (lower case); it can be looked up one
@@ -39,7 +44,7 @@ service cloud.firestore {
       allow list: if false;
       allow create, update: if signedIn() && request.resource.data.uid == request.auth.uid
         && request.auth.token.email != null && request.auth.token.email.lower() == email;
-      allow delete: if false;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
     }
 
     // Friends. Requests are written by whoever asks (under the other player); accepting writes both lists (the

@@ -5,7 +5,8 @@ import {
   createUserWithEmailAndPassword, EmailAuthProvider, GoogleAuthProvider, linkWithCredential, onAuthStateChanged, reauthenticateWithCredential, reauthenticateWithPopup,
   sendPasswordResetEmail, signInWithEmailAndPassword, signInWithPopup, signOut, type User,
 } from "firebase/auth";
-import { doc, getDoc, runTransaction, setDoc, updateDoc } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDoc, getDocs, runTransaction, setDoc, updateDoc } from "firebase/firestore";
+import { deleteUser } from "firebase/auth";
 import { auth, firestore } from "./firebase";
 import { isEmailLock, lockEmail, unlockEmail } from "./emailLock";
 
@@ -74,6 +75,52 @@ function googlePhoto(user: User) {
   const url = user.providerData.find((p) => p.providerId === "google.com")?.photoURL ?? user.photoURL ?? null;
   return url ? url.replace(/=s\d+-c$/, "=s192-c") : null;
 }
+/** Proves it's really them before a big change: their password, or (Google-only accounts) Google's sign-in. */
+async function confirmIdentity(account: Account, password: string | null) {
+  const user = auth.currentUser;
+  if (!user || user.uid !== account.id) throw new AccountError("Your sign-in expired. Please sign in again.");
+  if (account.usesPassword) {
+    if (!password || !account.email) throw new AccountError("Enter your password.");
+    await reauthenticateWithCredential(user, EmailAuthProvider.credential(account.email, password)).catch(() => { throw new AccountError("Incorrect password."); });
+  } else await attempt(() => reauthenticateWithPopup(user, new GoogleAuthProvider()));
+  return user;
+}
+/** A new username (with the password): the new name is claimed, the old one freed. */
+export async function changeUsername(account: Account, next: string, password: string): Promise<Account> {
+  if (!account.username) throw new AccountError("Choose a username first.");
+  if (!account.usesPassword) throw new AccountError("Add a password first (menu → Add a password).");
+  if (next === account.username) return account;
+  await confirmIdentity(account, password);
+  const lock = account.email ? await lockEmail(account.email, password) : null;
+  const taken = await runTransaction(firestore, async (tx) => {
+    const name = doc(firestore, "usernames", next);
+    if ((await tx.get(name)).exists()) return true;
+    tx.set(name, { uid: account.id, ...(lock ? { lock } : {}) });
+    tx.update(doc(firestore, "players", account.id), { username: next });
+    tx.delete(doc(firestore, "usernames", account.username!));
+    return false;
+  }).catch(() => { throw new AccountError("Could not change your username. Please try again."); });
+  if (taken) throw new AccountError("That username is already taken.");
+  return { ...account, username: next };
+}
+/** Deletes the account for good: friends (on both sides), requests, invitations, saves, the username and profile, then
+ * the sign-in itself. */
+export async function deleteAccount(account: Account, password: string | null) {
+  const user = await confirmIdentity(account, password);
+  const mine = (path: string[]) => getDocs(collection(firestore, ...(path as [string, ...string[]]))).catch(() => null);
+  const list = await mine(["friends", account.id, "list"]);
+  for (const f of list?.docs ?? []) { await deleteDoc(doc(firestore, "friends", f.id, "list", account.id)).catch(() => {}); await deleteDoc(f.ref).catch(() => {}); }
+  for (const sub of ["requests", "sent", "invites"]) for (const d of (await mine(["friends", account.id, sub]))?.docs ?? []) {
+    if (sub === "sent") await deleteDoc(doc(firestore, "friends", d.id, "requests", account.id)).catch(() => {});
+    await deleteDoc(d.ref).catch(() => {});
+  }
+  for (const d of (await mine(["saves", account.id, "slots"]))?.docs ?? []) await deleteDoc(d.ref).catch(() => {});
+  if (account.email) await deleteDoc(doc(firestore, "emails", account.email.trim().toLowerCase())).catch(() => {});
+  if (account.username) await deleteDoc(doc(firestore, "usernames", account.username)).catch(() => {});
+  await deleteDoc(doc(firestore, "players", account.id)).catch(() => {});
+  await deleteUser(user).catch((e: unknown) => { throw new AccountError(authMessage(e)); });
+}
+
 /** The ten profile pictures to choose from without a Google account: things from the game. */
 export const AVATARS = ["scooter", "burger", "apple", "moon", "key", "pizza", "building", "tree", "coffee", "basket"].map((n) => `/avatars/${n}.png`);
 /** Sets the chosen picture (accounts without Google). */

@@ -10,7 +10,8 @@ import { publishEmail } from "@/platform/friends";
 import { useEffect } from "react";
 import { FriendsMenu, RoomInvites, useFriends } from "@/components/Friends";
 import { PushPrompt } from "@/components/PushPrompt";
-import { Avatar, AvatarPicker } from "@/components/Avatar";
+import { AvatarPicker } from "@/components/Avatar";
+import { AccountMenu } from "@/components/AccountMenu";
 import { chooseAvatar } from "@/platform/account";
 
 /** After signing in: your own city, or a shared room (new, or joined by its code). */
@@ -49,11 +50,12 @@ export function MainMenu({ account, username, message, onCity, onRoom, onSignOut
     <div className="auth-bg auth-page flex items-center justify-center px-4">
       <QualityPicker />
       <PushPrompt account={account} />
+      <AccountMenu account={account} friends={friends} onAccount={onAccount} onSignOut={onSignOut} />
       {picking && canChoose && <AvatarPicker current={account.photo} onPick={pick} onClose={account.photo ? () => setPicking(false) : undefined} />}
       <div className="auth-split w-full max-w-sm">
         <div className="auth-titles">
           <h1 className="font-display text-center text-5xl tracking-tight text-foreground">Bellmont city</h1>
-          <p className="mt-2 text-center text-sm text-muted-foreground">{username ? <>Welcome back, <span className="welcome-user text-foreground">{canChoose ? <button type="button" aria-label="Change your profile picture" onClick={() => setPicking(true)}><Avatar photo={account.photo} name={username} size={26} /></button> : <Avatar photo={account.photo} name={username} size={26} />}{username}</span>.</> : "Twenty minutes of sun. Twenty minutes of moon. Real life in a game."}</p>
+          <p className="mt-2 text-center text-sm text-muted-foreground">{username ? <>Welcome back, <span className="text-foreground" data-no-translate>{username}</span>.</> : "Twenty minutes of sun. Twenty minutes of moon. Real life in a game."}</p>
         </div>
         <div className="auth-box hud-panel mt-8 space-y-4 p-6">
           <Button type="button" className="w-full" onClick={onCity}>Go to my city</Button>

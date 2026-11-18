@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Crown, User } from "lucide-react";
+import { Avatar } from "@/components/Avatar";
+import { FriendActions, useFriends } from "@/components/Friends";
 import { CloudGame, type GameExtras, type WorldSlot } from "@/game/CloudGame";
 import { DEFAULT_SAVE } from "@/game/config";
 import type { GameState } from "@/game/state";
@@ -168,6 +170,8 @@ function OnlinePanel({ account, channel, creator }: { account: Account; channel:
   const ids = useMemo(() => people.flatMap((p) => accountOf(p) ?? []), [people]);
   const names = useUsernames(ids);
   const count = Math.max(1, people.length);
+  const [picked, setPicked] = useState<string | null>(null);
+  const friends = useFriends(account);
 
   return <div className="pointer-events-auto absolute left-4 top-4 z-20">
     <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-label={`${count} ${count === 1 ? "person" : "people"} in this room`}
@@ -176,13 +180,19 @@ function OnlinePanel({ account, channel, creator }: { account: Account; channel:
       <span className="font-bold tabular-nums">{count}</span>
       <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
     </button>
-    {open && <ul className="hud-panel mt-2 max-h-72 w-52 overflow-y-auto py-1.5 text-sm text-foreground">
+    {open && <ul className="hud-panel mt-2 max-h-80 w-60 overflow-y-auto py-1.5 text-sm text-foreground">
       {people.map((p) => {
         const id = accountOf(p);
         const name = (id && names[id]) || (p.sameTab ? account.username : null) || "Player";
-        return <li key={p.peer} className="flex items-center gap-1.5 truncate px-3 py-1.5">
-          {id === creator && <Crown className="h-3.5 w-3.5 shrink-0 fill-yellow-400 text-yellow-400" aria-label="Room creator" />}
-          <span className="truncate">{name}{p.sameTab && <span className="text-muted-foreground"> (you)</span>}</span>
+        const mine = p.sameTab || id === account.id;
+        return <li key={p.peer} className="px-1.5">
+          {/* The picture, the name, the creator's crown on the right; tap someone else for friend options. */}
+          <button type="button" disabled={mine || !id} onClick={() => setPicked((v) => (v === p.peer ? null : p.peer))} className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-white/5 disabled:cursor-default disabled:hover:bg-transparent">
+            <Avatar uid={id ?? undefined} photo={mine ? account.photo : undefined} name={name} size={26} />
+            <span className="min-w-0 flex-1 truncate"><span data-no-translate>{name}</span>{mine && <span className="text-muted-foreground"> (you)</span>}</span>
+            {id === creator && <Crown className="h-3.5 w-3.5 shrink-0 fill-yellow-400 text-yellow-400" aria-label="Room creator" />}
+          </button>
+          {picked === p.peer && id && !mine && <FriendActions account={account} uid={id} name={name} data={friends} />}
         </li>;
       })}
     </ul>}
