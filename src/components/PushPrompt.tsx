@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Account } from "@/platform/account";
-import { enablePush, pushPermission } from "@/platform/push";
+import { enablePush, pushPermission, registerDevice } from "@/platform/push";
 import { installed } from "@/components/InstallApp";
 
 const SNOOZE = "bellmont-push-later";
@@ -12,9 +12,11 @@ const snoozed = () => { try { return Date.now() < Number(localStorage.getItem(SN
  * Notifications: in the installed app, if they haven't been allowed or refused yet, a card asks (the browser's own
  * question needs a tap); "Not now" waits a week.
  */
-export function PushPrompt({ account: _account }: { account: Account }) {
+export function PushPrompt({ account }: { account: Account }) {
   const [, tick] = useState(0);
   const perm = pushPermission();
+  // Allowed: this device is registered for notifications that reach it even with the game closed.
+  useEffect(() => { if (perm === "granted") void registerDevice(); }, [account, perm]);
   if (perm !== "default" || !installed() || snoozed()) return null;
   return <div className="push-prompt hud-panel">
     <Bell size={18} aria-hidden />

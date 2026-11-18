@@ -1,0 +1,158 @@
+// Bellmont City's notification sender (a Cloudflare Worker, free plan): the game asks it to tell a player that
+// someone sent them a friend request, accepted theirs, or invited them to a room; it checks that really happened
+// (in Firestore), then sends a Web Push notification to each phone/computer that player registered — so it arrives
+// even with the game closed. Deployed by scripts/deploy-push.sh.
+//
+// POST /notify  { type: "request" | "accepted" | "invite", to: <uid>, code?: <room> }
+//   Authorization: Bearer <the sender's Firebase ID token>
+// POST /subscribe { endpoint, p256dh, auth }  (a device registering for its player's notifications)
+// The checks read Firestore as the caller (their own token: the rules let a sender read what they sent), and the
+// devices are kept in Workers KV (binding SUBS) — no Google service account involved.
+// Secrets: VAPID_PUBLIC, VAPID_PRIVATE_JWK.
+
+const PROJECT = "bellmont-city";
+const ORIGINS = ["https://bellmont-city.web.app", "https://bellmont-city.firebaseapp.com", "http://localhost:5173", "http://127.0.0.1:4181", "http://127.0.0.1:4182"];
+const FS = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents`;
+const enc = new TextEncoder();
+
+const b64u = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const fromB64u = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
+const concat = (...parts) => { const out = new Uint8Array(parts.reduce((a, p) => a + p.length, 0)); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; } return out; };
+const json = (body, status, origin) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...cors(origin) } });
+const cors = (origin) => (ORIGINS.includes(origin) ? { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "Authorization, Content-Type", "Access-Control-Allow-Methods": "POST, OPTIONS", Vary: "Origin" } : {});
+
+// ---------- who's asking: their Firebase ID token ----------
+let jwks = null, jwksAt = 0;
+async function verifyIdToken(token) {
+  const [h, p, s] = token.split(".");
+  if (!h || !p || !s) throw new Error("bad token");
+  const header = JSON.parse(new TextDecoder().decode(fromB64u(h))), payload = JSON.parse(new TextDecoder().decode(fromB64u(p)));
+  if (!jwks || Date.now() - jwksAt > 3600e3) {
+    jwks = (await (await fetch("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com")).json()).keys; jwksAt = Date.now();
+  }
+  const jwk = jwks.find((k) => k.kid === header.kid);
+  if (!jwk || header.alg !== "RS256") throw new Error("unknown key");
+  const key = await crypto.subtle.importKey("jwk", jwk, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
+  const ok = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, fromB64u(s), enc.encode(`${h}.${p}`));
+  const now = Date.now() / 1000;
+  if (!ok || payload.aud !== PROJECT || payload.iss !== `https://securetoken.google.com/${PROJECT}` || payload.exp < now || !payload.sub) throw new Error("invalid token");
+  return payload.sub;
+}
+
+// ---------- reading Firestore as the caller ----------
+const val = (f) => (f ? f.stringValue ?? (f.integerValue !== undefined ? Number(f.integerValue) : f.doubleValue) : undefined);
+async function getDoc(idToken, path) {
+  const res = await fetch(`${FS}/${path}`, { headers: { Authorization: `Bearer ${idToken}` } });
+  if (!res.ok) return null;
+  const d = await res.json(), out = {};
+  for (const [k, v] of Object.entries(d.fields ?? {})) out[k] = val(v);
+  return out;
+}
+
+// ---------- each player's devices (Workers KV) ----------
+const subsOf = async (env, uid) => { try { return JSON.parse((await env.SUBS.get(`subs:${uid}`)) ?? "[]"); } catch { return []; } };
+const saveSubs = (env, uid, subs) => (subs.length ? env.SUBS.put(`subs:${uid}`, JSON.stringify(subs.slice(-10))) : env.SUBS.delete(`subs:${uid}`));
+
+// ---------- Web Push (RFC 8291 aes128gcm, VAPID RFC 8292) ----------
+async function hkdf(salt, ikm, info, length) {
+  const key = await crypto.subtle.importKey("raw", ikm, "HKDF", false, ["deriveBits"]);
+  return new Uint8Array(await crypto.subtle.deriveBits({ name: "HKDF", hash: "SHA-256", salt, info }, key, length * 8));
+}
+async function encrypt(sub, payload) {
+  const uaPublic = fromB64u(sub.p256dh), authSecret = fromB64u(sub.auth);
+  const local = await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, ["deriveBits"]);
+  const asPublic = new Uint8Array(await crypto.subtle.exportKey("raw", local.publicKey));
+  const uaKey = await crypto.subtle.importKey("raw", uaPublic, { name: "ECDH", namedCurve: "P-256" }, false, []);
+  const shared = new Uint8Array(await crypto.subtle.deriveBits({ name: "ECDH", public: uaKey }, local.privateKey, 256));
+  const ikm = await hkdf(authSecret, shared, concat(enc.encode("WebPush: info\0"), uaPublic, asPublic), 32);
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const cek = await hkdf(salt, ikm, enc.encode("Content-Encoding: aes128gcm\0"), 16);
+  const nonce = await hkdf(salt, ikm, enc.encode("Content-Encoding: nonce\0"), 12);
+  const key = await crypto.subtle.importKey("raw", cek, "AES-GCM", false, ["encrypt"]);
+  const cipher = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, key, concat(enc.encode(payload), new Uint8Array([2]))));
+  const rs = new Uint8Array([0, 0, 16, 0]);
+  return concat(salt, rs, new Uint8Array([asPublic.length]), asPublic, cipher);
+}
+async function vapid(env, endpoint) {
+  const aud = new URL(endpoint).origin;
+  const key = await crypto.subtle.importKey("jwk", JSON.parse(env.VAPID_PRIVATE_JWK), { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"]);
+  const head = b64u(enc.encode(JSON.stringify({ typ: "JWT", alg: "ES256" })));
+  const claims = b64u(enc.encode(JSON.stringify({ aud, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: "https://bellmont-city.web.app" })));
+  const sig = b64u(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, enc.encode(`${head}.${claims}`)));
+  return `vapid t=${head}.${claims}.${sig}, k=${env.VAPID_PUBLIC}`;
+}
+async function push(env, uid, message) {
+  const subs = await subsOf(env, uid), dead = new Set();
+  let sent = 0;
+  await Promise.all(subs.map(async (s) => {
+    if (!s.endpoint || !s.p256dh || !s.auth) return;
+    try {
+      const res = await fetch(s.endpoint, {
+        method: "POST",
+        headers: { Authorization: await vapid(env, s.endpoint), "Content-Encoding": "aes128gcm", "Content-Type": "application/octet-stream", TTL: "86400", Urgency: "high" },
+        body: await encrypt(s, JSON.stringify({ data: message })),
+      });
+      if (res.status === 404 || res.status === 410) dead.add(s.endpoint);
+      else if (res.ok) sent++;
+    } catch { /* (one device failing doesn't stop the others) */ }
+  }));
+  if (dead.size) await saveSubs(env, uid, subs.filter((s) => !dead.has(s.endpoint)));
+  return sent;
+}
+
+// ---------- what can be announced (only what really just happened) ----------
+const FRESH_MS = 3 * 60e3;
+const fresh = (at) => typeof at === "number" && Date.now() - at < FRESH_MS;
+async function message(idToken, from, body) {
+  const to = String(body.to ?? ""), type = body.type;
+  if (!/^[A-Za-z0-9]{10,64}$/.test(to) || to === from) return null;
+  if (type === "request") {
+    const r = await getDoc(idToken, `friends/${to}/requests/${from}`);
+    if (!r || !fresh(r.at)) return null;
+    return { to, title: "New friend request", body: `${r.name || "Someone"} wants to be your friend.`, tag: `req-${from}`, link: "/" };
+  }
+  if (type === "accepted") {
+    const f = await getDoc(idToken, `friends/${to}/list/${from}`);
+    if (!f || f.by !== from || !fresh(f.at)) return null;
+    return { to, title: "Friend request accepted", body: `${f.name || "Your friend"} accepted your friend request.`, tag: `acc-${from}`, link: "/" };
+  }
+  if (type === "invite") {
+    const code = String(body.code ?? "");
+    if (!/^[A-Z0-9]{6}$/.test(code)) return null;
+    const i = await getDoc(idToken, `friends/${to}/invites/${code}`);
+    if (!i || i.from !== from || !fresh(i.at)) return null;
+    return { to, title: "Room invitation", body: `${i.name || "A friend"} invited you to room ${code}.`, tag: `inv-${code}`, link: `/?room=${code}` };
+  }
+  return null;
+}
+
+export default {
+  async fetch(request, env) {
+    const origin = request.headers.get("Origin") ?? "";
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(origin) });
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/") return json({ ok: true, service: "bellmont-push" }, 200, origin);
+    if (request.method !== "POST" || (url.pathname !== "/notify" && url.pathname !== "/subscribe")) return json({ error: "not found" }, 404, origin);
+    const idToken = (request.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+    let from;
+    try { from = await verifyIdToken(idToken); } catch { return json({ error: "unauthorized" }, 401, origin); }
+    let body;
+    try { body = await request.json(); } catch { return json({ error: "bad request" }, 400, origin); }
+    if (url.pathname === "/subscribe") {
+      const { endpoint, p256dh, auth } = body ?? {};
+      if (typeof endpoint !== "string" || !/^https:\/\//.test(endpoint) || endpoint.length > 1000 || typeof p256dh !== "string" || typeof auth !== "string") return json({ error: "bad subscription" }, 400, origin);
+      const subs = (await subsOf(env, from)).filter((s) => s.endpoint !== endpoint);
+      subs.push({ endpoint, p256dh, auth, at: Date.now() });
+      await saveSubs(env, from, subs);
+      return json({ ok: true }, 200, origin);
+    }
+    try {
+      const m = await message(idToken, from, body);
+      if (!m) return json({ sent: 0 }, 200, origin);
+      const sent = await push(env, m.to, { title: m.title, body: m.body, tag: m.tag, link: m.link });
+      return json({ sent }, 200, origin);
+    } catch (e) {
+      return json({ error: String(e?.message ?? e) }, 500, origin);
+    }
+  },
+};

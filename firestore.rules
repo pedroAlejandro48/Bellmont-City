@@ -46,19 +46,22 @@ service cloud.firestore {
     // only from friends.
     match /friends/{owner} {
       match /requests/{from} {
-        allow read, delete: if signedIn() && request.auth.uid == owner;
+        // (The one who asked can read their own request: the notification sender checks it with their sign-in.)
+        allow read: if signedIn() && (request.auth.uid == owner || request.auth.uid == from);
+        allow delete: if signedIn() && request.auth.uid == owner;
         allow create, update: if signedIn() && request.auth.uid == from && from != owner
           && request.resource.data.from == from && !exists(/databases/$(database)/documents/friends/$(owner)/list/$(from));
       }
       match /list/{other} {
-        allow read: if signedIn() && request.auth.uid == owner;
+        allow read: if signedIn() && (request.auth.uid == owner || request.auth.uid == other);
         allow create, update: if signedIn() && (
           (request.auth.uid == owner && exists(/databases/$(database)/documents/friends/$(owner)/requests/$(other)))
           || (request.auth.uid == other && exists(/databases/$(database)/documents/friends/$(other)/requests/$(owner))));
         allow delete: if signedIn() && (request.auth.uid == owner || request.auth.uid == other);
       }
       match /invites/{code} {
-        allow read, delete: if signedIn() && request.auth.uid == owner;
+        allow read: if signedIn() && (request.auth.uid == owner || resource.data.from == request.auth.uid);
+        allow delete: if signedIn() && request.auth.uid == owner;
         allow create, update: if signedIn() && request.resource.data.from == request.auth.uid
           && exists(/databases/$(database)/documents/friends/$(owner)/list/$(request.auth.uid));
       }

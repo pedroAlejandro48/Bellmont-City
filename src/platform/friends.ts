@@ -7,6 +7,7 @@
 import { collection, deleteDoc, doc, getDoc, onSnapshot, setDoc, writeBatch } from "firebase/firestore";
 import { firestore } from "./firebase";
 import type { Account } from "./account";
+import { notifyPlayer } from "./push";
 
 export type Friend = { uid: string; name: string; at: number };
 export type FriendRequest = { uid: string; name: string; at: number };
@@ -40,8 +41,9 @@ export async function findPlayer(query: string): Promise<{ uid: string; name: st
 }
 
 /** Asks `to` to be friends (it shows at the top of their list until they accept or discard it). */
-export function sendRequest(me: Account, to: string) {
-  return setDoc(doc(firestore, "friends", to, "requests", me.id), { from: me.id, name: me.username ?? "", at: Date.now() });
+export async function sendRequest(me: Account, to: string) {
+  await setDoc(doc(firestore, "friends", to, "requests", me.id), { from: me.id, name: me.username ?? "", at: Date.now() });
+  notifyPlayer("request", to);
 }
 /** Accepting: each is on the other's list; the request is gone. */
 export async function acceptRequest(me: Account, r: FriendRequest) {
@@ -51,6 +53,7 @@ export async function acceptRequest(me: Account, r: FriendRequest) {
   b.set(doc(firestore, "friends", r.uid, "list", me.id), { name: me.username ?? "", at, by: me.id });
   b.delete(doc(firestore, "friends", me.id, "requests", r.uid));
   await b.commit();
+  notifyPlayer("accepted", r.uid);
 }
 export const discardRequest = (me: Account, uid: string) => deleteDoc(doc(firestore, "friends", me.id, "requests", uid));
 /** No longer friends (on both sides). */
@@ -62,8 +65,9 @@ export async function removeFriend(me: Account, uid: string) {
 }
 
 /** Invites a friend to a room (shown under "Join a room" on their menu). */
-export function inviteToRoom(me: Account, friend: string, code: string) {
-  return setDoc(doc(firestore, "friends", friend, "invites", code), { from: me.id, name: me.username ?? "", code, at: Date.now() });
+export async function inviteToRoom(me: Account, friend: string, code: string) {
+  await setDoc(doc(firestore, "friends", friend, "invites", code), { from: me.id, name: me.username ?? "", code, at: Date.now() });
+  notifyPlayer("invite", friend, code);
 }
 export const discardInvite = (me: Account, code: string) => deleteDoc(doc(firestore, "friends", me.id, "invites", code));
 

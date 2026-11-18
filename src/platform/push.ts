@@ -1,9 +1,34 @@
-// Notifications (friend requests, accepted requests, room invitations), free and without a server: while the game
-// is open — on any page, or still running in the background — this player's friend lists are watched, and anything
-// new pops up as a phone/computer notification (through the site's service worker, which also opens the game when
-// one is tapped). Once the game has been fully closed they can't arrive (that would need a sending server).
+// Notifications (friend requests, accepted requests, room invitations):
+//  • closed or open, by Web Push: each device registers with the game's sender (a free Cloudflare Worker,
+//    push-worker/), and whoever asks, accepts or invites tells the sender, which checks it and pushes to the other
+//    player's devices;
+//  • while the game is open, the friend lists are also watched here (same tags, so one notification shows).
 import { collection, onSnapshot } from "firebase/firestore";
-import { firestore } from "./firebase";
+import { auth, firestore } from "./firebase";
+
+const PUSH_SERVER = "https://bellmont-push.bellmont-city.workers.dev";
+/** The sender's public key (VAPID): browsers only accept pushes signed with its private half. */
+const VAPID_PUBLIC = "BOB7fonjss3ZQWb6-u5HpvQPbh-zFXQStPr_z-vuwoXPRqgdQlgY0qLEHjcPH9qXeEVrfXfVSJtXdiGaNSBG3Sc";
+const fromB64u = (s: string) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
+const b64u = (buf: ArrayBuffer | null) => (buf ? btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") : "");
+
+async function callServer(path: string, body: unknown) {
+  const token = await auth.currentUser?.getIdToken().catch(() => null);
+  if (!token) return;
+  await fetch(`${PUSH_SERVER}${path}`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body), keepalive: true }).catch(() => {});
+}
+/** This device gets the signed-in player's notifications, even with the game closed (when they're allowed). */
+export async function registerDevice() {
+  if (pushPermission() !== "granted" || !("PushManager" in window)) return;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration("/") ?? await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription() ?? await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromB64u(VAPID_PUBLIC) });
+    await callServer("/subscribe", { endpoint: sub.endpoint, p256dh: b64u(sub.getKey("p256dh")), auth: b64u(sub.getKey("auth")) });
+  } catch { /* (Then only while the game is open.) */ }
+}
+/** Tells the other player (the sender checks it really happened). */
+export const notifyPlayer = (type: "request" | "accepted" | "invite", to: string, code?: string) => void callServer("/notify", { type, to, ...(code ? { code } : {}) });
 import type { Account } from "./account";
 
 export const pushPermission = (): NotificationPermission | "unsupported" => (typeof Notification === "undefined" || !("serviceWorker" in navigator) ? "unsupported" : Notification.permission);
