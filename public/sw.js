@@ -24,8 +24,8 @@ self.addEventListener("fetch", (event) => {
   })());
 });
 
-// Push notifications (sent by the game's Cloud Functions through Firebase Cloud Messaging): shown with the game's
-// icon; tapping one opens the game (or brings it forward) at the menu.
+// Notifications (shown by the game while it's open; a push handler too, in case a sending server is added): the
+// game's icon; tapping one brings the game forward (an invitation opens its room).
 self.addEventListener("push", (event) => {
   let msg = {};
   try { msg = event.data ? event.data.json() : {}; } catch { msg = { data: { body: event.data && event.data.text() } }; }
@@ -44,7 +44,7 @@ self.addEventListener("notificationclick", (event) => {
   const link = (event.notification.data && event.notification.data.link) || "/";
   event.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    for (const w of wins) { if ("focus" in w) { await w.focus(); return; } }
+    for (const w of wins) { if ("focus" in w) { await w.focus(); if (link !== "/" && "navigate" in w) await w.navigate(link).catch(() => {}); return; } }
     await self.clients.openWindow(link);
   })());
 });

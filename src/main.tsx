@@ -1,5 +1,6 @@
 import { InstallApp, listenForInstall } from "@/components/InstallApp";
 import { guardBackButton } from "@/lib/backGuard";
+import { watchNotifications } from "@/platform/push";
 import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,8 @@ function App() {
   const [view, setView] = useState<View>({ name: "menu" });
   const [menuMessage, setMenuMessage] = useState<string>();
   const [pendingRoom, setPendingRoom] = useState(linkedRoom);
+  // Friend requests, accepted requests and room invitations pop up as notifications while the game is open.
+  useEffect(() => (account?.username ? watchNotifications(account) : undefined), [account]);
   const toMenu = useCallback((message?: string) => { setMenuMessage(message); setView({ name: "menu" }); }, []);
 
   useEffect(() => watchAccount(
