@@ -2,16 +2,19 @@ import { useState } from "react";
 import { Settings, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { roomLink, ROOM_LIFETIME_DAYS } from "@/platform/rooms";
+import { InviteFriends } from "@/components/Friends";
+import type { Account } from "@/platform/account";
 
 /** The yellow gear left of "Save & exit": share the room's link, and (for its creator) delete the room. */
-export function RoomMenu({ code, canDelete, onDelete }: { code: string; canDelete: boolean; onDelete: () => Promise<void> }) {
+export function RoomMenu({ code, canDelete, onDelete, account }: { code: string; canDelete: boolean; onDelete: () => Promise<void>; account: Account }) {
   const [open, setOpen] = useState(false);
+  const [inviting, setInviting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const toggle = () => { setOpen((v) => !v); setCopied(false); };
+  const toggle = () => { setOpen((v) => !v); setCopied(false); setInviting(false); };
   async function share() {
     try { await navigator.clipboard.writeText(roomLink(code)); setCopied(true); }
     catch { window.prompt("Copy this link to share the room:", roomLink(code)); }
@@ -23,8 +26,10 @@ export function RoomMenu({ code, canDelete, onDelete }: { code: string; canDelet
 
   return <div className="pointer-events-auto relative">
     <Button size="icon" className="h-8 w-8 sm:h-9 sm:w-9" aria-label="Room settings" aria-expanded={open} onClick={toggle}><Settings aria-hidden /></Button>
-    {open && <ul className="hud-panel absolute right-0 top-full z-30 mt-2 w-44 py-1.5 text-sm">
-      <li><button type="button" className="w-full px-3 py-2 text-left text-foreground hover:bg-white/5" onClick={() => void share()}>{copied ? "Link copied!" : "Share"}</button></li>
+    {open && <ul className="hud-panel absolute right-0 top-full z-30 mt-2 w-56 py-1.5 text-sm">
+      <li><button type="button" className="w-full px-3 py-2 text-left text-foreground hover:bg-white/5" onClick={() => void share()}>{copied ? "Link copied!" : "Copy link"}</button></li>
+      <li><button type="button" className="w-full px-3 py-2 text-left text-foreground hover:bg-white/5" aria-expanded={inviting} onClick={() => setInviting((v) => !v)}>Invite friends</button></li>
+      {inviting && <li className="border-t border-white/10"><InviteFriends account={account} code={code} /></li>}
       {canDelete && <li><button type="button" className="w-full px-3 py-2 text-left text-red-500 hover:bg-white/5" onClick={() => { setOpen(false); setConfirming(true); }}>Delete room</button></li>}
     </ul>}
     {confirming && <div role="alertdialog" aria-modal="true" aria-labelledby="delete-room-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">

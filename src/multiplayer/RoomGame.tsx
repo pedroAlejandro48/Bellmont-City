@@ -121,7 +121,7 @@ function RoomGame({ account, session, onExit }: { account: Account; session: Ses
       <RoomBikes state={state} code={room.key} uid={account.id} channel={live} />
     </>,
     Overlay: () => <OnlinePanel account={account} channel={live} creator={room.createdBy} />,
-    Actions: () => <RoomMenu code={room.code} canDelete={room.createdBy === account.id} onDelete={async () => { deletingHere.current = true; await deleteRoom(room); }} />,
+    Actions: () => <RoomMenu account={account} code={room.code} canDelete={room.createdBy === account.id} onDelete={async () => { deletingHere.current = true; await deleteRoom(room); }} />,
     exitNote: `ROOM CODE: ${room.code}`,
   }), [account, live, remotes, room, session.joinedAt]);
 

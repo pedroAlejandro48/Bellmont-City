@@ -73,7 +73,7 @@ function App() {
 
   if (view.name === "city") return <CloudGame account={account} onExit={() => toMenu()} />;
   if (view.name === "room") return <RoomEntry account={account} request={view.request} onExit={toMenu} />;
-  return <><InstallApp /><MainMenu username={account.username} message={menuMessage} onSignOut={() => void signOut()} onCity={() => setView({ name: "city" })} onRoom={(request) => { setMenuMessage(undefined); setView({ name: "room", request }); }} /></>;
+  return <><InstallApp /><MainMenu account={account} onAccount={setAccount} username={account.username} message={menuMessage} onSignOut={() => void signOut()} onCity={() => setView({ name: "city" })} onRoom={(request) => { setMenuMessage(undefined); setView({ name: "room", request }); }} /></>;
 }
 
 startCityBackdrop();

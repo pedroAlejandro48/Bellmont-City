@@ -31,6 +31,39 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Finding a player by email: each player writes their own address (lower case); it can be looked up one
+    // address at a time, never listed.
+    match /emails/{email} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create, update: if signedIn() && request.resource.data.uid == request.auth.uid
+        && request.auth.token.email != null && request.auth.token.email.lower() == email;
+      allow delete: if false;
+    }
+
+    // Friends. Requests are written by whoever asks (under the other player); accepting writes both lists (the
+    // other side's entry only while their request is there); either friend may end it. Invitations to a room come
+    // only from friends.
+    match /friends/{owner} {
+      match /requests/{from} {
+        allow read, delete: if signedIn() && request.auth.uid == owner;
+        allow create, update: if signedIn() && request.auth.uid == from && from != owner
+          && request.resource.data.from == from && !exists(/databases/$(database)/documents/friends/$(owner)/list/$(from));
+      }
+      match /list/{other} {
+        allow read: if signedIn() && request.auth.uid == owner;
+        allow create, update: if signedIn() && (
+          (request.auth.uid == owner && exists(/databases/$(database)/documents/friends/$(owner)/requests/$(other)))
+          || (request.auth.uid == other && exists(/databases/$(database)/documents/friends/$(other)/requests/$(owner))));
+        allow delete: if signedIn() && (request.auth.uid == owner || request.auth.uid == other);
+      }
+      match /invites/{code} {
+        allow read, delete: if signedIn() && request.auth.uid == owner;
+        allow create, update: if signedIn() && request.resource.data.from == request.auth.uid
+          && exists(/databases/$(database)/documents/friends/$(owner)/list/$(request.auth.uid));
+      }
+    }
+
     // Saves: only their owner reads or writes them.
     match /saves/{uid}/slots/{slot} {
       allow read, write: if signedIn() && request.auth.uid == uid;

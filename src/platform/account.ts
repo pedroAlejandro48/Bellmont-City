@@ -2,7 +2,7 @@
 // unique Bellmont username: `usernames/<name>` claims the name (and holds the password-locked email that
 // makes username sign-in work), and `players/<uid>` records the name for that account.
 import {
-  createUserWithEmailAndPassword, EmailAuthProvider, GoogleAuthProvider, onAuthStateChanged, reauthenticateWithCredential,
+  createUserWithEmailAndPassword, EmailAuthProvider, GoogleAuthProvider, linkWithCredential, onAuthStateChanged, reauthenticateWithCredential, reauthenticateWithPopup,
   sendPasswordResetEmail, signInWithEmailAndPassword, signInWithPopup, signOut, type User,
 } from "firebase/auth";
 import { doc, getDoc, runTransaction, setDoc, updateDoc } from "firebase/firestore";
@@ -114,6 +114,33 @@ export function signInWithGoogle() {
 
 export function sendPasswordReset(email: string) {
   return attempt(() => sendPasswordResetEmail(auth, email.trim()));
+}
+
+/** The shortest password allowed when one is added to a Google account. */
+export const MIN_PASSWORD = 8;
+/**
+ * A Google account gets a password too, so it can sign in with its username (or email) and that password: the
+ * password is added to the account (Google may ask to confirm it's you first), and the username record is locked
+ * with it for username sign-in.
+ */
+export async function addPassword(account: Account, password: string): Promise<Account> {
+  const user = auth.currentUser;
+  if (!user || user.uid !== account.id || !account.email) throw new AccountError("Your sign-in expired. Please sign in again.");
+  if (password.length < MIN_PASSWORD) throw new AccountError(`Use a password of at least ${MIN_PASSWORD} characters.`);
+  const cred = EmailAuthProvider.credential(account.email, password);
+  await linkWithCredential(user, cred).catch(async (error: unknown) => {
+    const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+    if (code === "auth/provider-already-linked") return;
+    if (code === "auth/requires-recent-login") {
+      await attempt(() => reauthenticateWithPopup(user, new GoogleAuthProvider()));
+      await attempt(() => linkWithCredential(user, cred));
+      return;
+    }
+    throw new AccountError(authMessage(error));
+  });
+  if (account.username) await updateDoc(doc(firestore, "usernames", account.username), { lock: await lockEmail(account.email, password) })
+    .catch(() => { throw new AccountError("Your password was added, but username sign-in couldn't be set up. Sign in with your email once to finish."); });
+  return { ...account, usesPassword: true };
 }
 
 export function signOutAccount() {
