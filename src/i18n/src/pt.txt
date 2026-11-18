@@ -1,0 +1,1038 @@
+0|Sua conta
+1|Perfil
+2|Configurações
+3|Fechar
+4|Use de 3 a 24 letras, números ou sublinhados.
+5|Nome de usuário alterado.
+6|Não foi possível alterar seu nome de usuário. Tente de novo.
+7|Não foi possível excluir sua conta. Tente de novo.
+8|Mudar sua foto de perfil
+9|Mudar foto
+10|Mudar nome de usuário
+11|Novo nome de usuário
+12|Senha
+13|Sua senha
+14|Primeiro adicione uma senha (no menu: Adicionar uma senha) e depois você poderá mudar seu nome de usuário com ela.
+15|Gerenciar amigos
+16|Tem certeza?
+17|Não
+18|Sim
+19|Remover
+20|Nenhum amigo ainda.
+21|Excluir conta
+22|Excluir minha conta
+23|Isso exclui sua conta, seu progresso, seu nome de usuário e seus amigos, para sempre. Não dá para desfazer.
+24|O Google vai pedir para confirmar que é você.
+25|Sim, excluir
+26|Baixa
+27|Média
+28|Alta
+29|Idioma
+30|Gráficos
+35|Notificações
+36|Ativadas: pedidos de amizade e convites para salas chegam até você, mesmo com o jogo fechado.
+37|Bloqueadas. Ative-as nas configurações do navegador ou do celular para este site.
+38|Este navegador não mostra notificações. No iPhone, adicione o jogo à Tela de Início primeiro.
+39|Ativar notificações
+41|Elevador
+43|Saguão
+44|Andar {0}
+45|Guarda-roupa
+46|Parte de cima
+47|Parte de baixo
+48|Nenhuma roupa aqui ainda.
+49|Armário
+50|Clique em uma panela ou frigideira para pegá-la
+52|Zzz…
+53|Prato
+54|Tigela
+55|Xícara
+56|Copo
+57|Talheres
+58|Bancada
+59|Guardar os novos da sua sacola (
+60|Cozinhar
+61|Cozinhar na
+62|Até
+63|latas. Leva 30 minutos; tire em até 10 minutos depois ou queima.
+64|Adicionar
+65|Na
+66|Nada ainda.
+67|Enche
+68|% de fome, +
+69|% de sede, +
+70|% de energia.
+71|Abrir as latas e cozinhar
+72|Algo deu errado. Tente de novo.
+73|Usuário ou senha incorretos.
+74|Digite seu e-mail acima e toque em “Esqueceu a senha?”.
+75|Veja seu e-mail para redefinir a senha.
+76|Cidade Bellmont
+77|Sala
+78|Vinte minutos de sol. Vinte minutos de lua. A vida real em um jogo.
+80|Entrar
+81|Cadastrar
+82|Forma de entrar
+83|Nome de usuário
+84|E-mail
+85|Entrar na cidade
+86|Criar conta
+87|Esqueceu a senha?
+88|Entrar com o Google
+89|Cadastrar com o Google
+90|Escolha sua foto de perfil
+92|A geladeira está cheia
+93|{0} item(ns) não couberam.
+94|Seu inventário está cheio
+95|Abra espaço primeiro.
+96|{0} → espaço {1}
+97|Segure-o (o número dele) e aperte E para
+98|Cozinhe no fogão
+99|Geladeira
+100|Prateleiras ·
+101|Pegar
+102|Porta ·
+103|Guardando…
+104|Guardar a comida que você carrega
+105|Nenhum jogador com esse usuário ou e-mail.
+106|Esse é você.
+107|{0} já é seu amigo.
+108|Você e {0} agora são amigos.
+109|Pedido de amizade enviado para {0}.
+110|Não foi possível enviar o pedido. Tente de novo.
+112|Amigos
+114|quer ser seu amigo
+115|Aceitar {0}
+116|Não foi possível aceitar. Tente de novo.
+117|Recusar o pedido de {0}
+118|pedido enviado
+119|Cancelar o pedido para {0}
+120|Adicionar um amigo
+121|Usuário ou e-mail
+122|Enviar pedido de amizade
+123|Quer ser seu amigo
+124|Recusar
+125|Pedido enviado
+126|Cancelar
+127|Pedido enviado para {0}.
+128|Adicionar amigo
+129|Entrar
+130|Recusar o convite para a sala {0}
+131|Nenhum amigo ainda. Adicione pelo menu (Amigos +).
+132|Convidado
+133|Convidar
+135|Instalar app
+136|Instalar o app
+137|Instalar Cidade Bellmont
+138|Na barra de menus, abra
+139|Arquivo
+140|Escolha
+141|Adicionar ao Dock…
+142|, depois
+143|. O Bellmont abre pelo Dock como um app.
+144|O Firefox não instala sites como apps. Abra o jogo no
+145|Chrome
+146|Edge
+147|Brave
+148|e aperte Instalar app lá.
+149|Link copiado
+150|Copiar o link
+151|Clique no ícone de instalar no fim da barra de endereço, ou abra o menu do navegador
+152|no Edge).
+153|Transmitir, salvar e compartilhar
+154|Apps
+155|Clique em
+156|Instalar
+157|Toque em
+158|Compartilhar
+159|na barra de endereço (canto superior direito).
+160|Toque no menu
+161|embaixo, depois
+162|na barra na parte de baixo da tela.
+163|Role e toque em
+164|Adicionar à Tela de Início
+165|. O Bellmont abre pela sua tela inicial como um app.
+166|Não tem “Adicionar à Tela de Início” neste navegador? Abra o jogo no
+167|Safari
+168|e faça lá (o Safari sempre tem).
+169|Link copiado — cole no Safari
+170|Copiar o link para o Safari
+171|Toque no menu do navegador
+172|Adicionar à tela inicial
+174|Inventário (I)
+176|Inventário
+178|{0}: vazio
+179|Segurando um(a)
+180|vazio: aperte Q para largar.
+181|Não foi possível salvar sua foto. Tente de novo.
+182|Use uma senha com pelo menos {0} caracteres.
+183|As senhas não coincidem.
+184|Senha adicionada. Agora você pode entrar com seu usuário e senha.
+185|Não foi possível adicionar a senha. Tente de novo.
+186|Códigos de sala têm 6 letras e números.
+187|Bem-vindo de volta,
+188|Ir para minha cidade
+189|Criar uma sala
+190|Entrar em uma sala
+191|Código da sala
+192|Digite o código da sala
+193|Nova senha
+194|Crie uma senha ({0}+ caracteres)
+195|Confirmar senha
+196|Confirme a senha
+197|As senhas não coincidem
+198|Salvar senha
+199|Adicionar uma senha (entre com seu usuário)
+200|Sair
+201|Siga em frente
+202|Vire à direita
+203|Vire à esquerda
+204|Dê meia-volta
+205|Você está no quarteirão
+207|Mapa da rota
+208|Está tarde… venha me ver amanhã à noite.
+209|Falar com {0}
+210|Falar com a lua
+211|Falando com {0}
+212|Laço {0} de 100
+213|Boa noite
+215|Cardápio
+216|Toque em + para adicionar ao pedido
+217|Adicionar {0}
+218|Seu pedido
+219|Tirar um(a) {0}
+220|Total
+221|Dinheiro insuficiente
+223|Para viagem
+224|Comer aqui
+225|Pronto
+226|Banco
+227|Trabalhos
+228|Mapa
+229|Metas
+231|Celular
+232|Dia
+234|Primeiros passos ·
+235|Largar o trabalho
+237|Voltar
+238|Fechar o celular
+239|Banco Bellmont · Conta corrente
+240|Dinheiro com você:
+241|Caixa eletrônico
+242|Depositar todo o dinheiro
+243|Para sacar, use um caixa eletrônico (ficam nas calçadas do parque; veja o Mapa).
+244|Multas
+245|não pagas (vencem em
+246|dias)
+247|Multas pagas
+248|Pagar todas as multas
+249|Crédito e empréstimos
+250|Pontuação de crédito
+251|Empréstimo
+252|Você pode pegar até
+253|Empréstimo aprovado
+254|Pague logo: 2% de juros ao dia.
+255|Pegar $100
+256|Pagar
+257|Recentes
+258|Desbloqueia no nível
+259|Começar
+260|O pagamento vai para o banco após 10% de imposto. As gorjetas são em dinheiro.
+261|Local marcado
+262|Restaurantes
+263|Apartamentos
+264|Música de rua
+265|Lojas
+266|Toque no mapa para traçar uma rota.
+267|Limpar rota
+268|Hoje
+270|· 25 XP
+271|Primeiros passos
+272|Nível
+273|XP para o próximo
+274|Habilidades
+275|Ficha
+276|Ganho trabalhando
+277|Trabalhos feitos
+278|Ficha criminal
+279|Limpa
+280|Plano de saúde
+281|Ativo
+282|Nenhum
+284|Nível {0}
+285|Seja avisado quando amigos adicionarem, aceitarem ou convidarem você para uma sala.
+286|Permitir
+287|Agora não
+288|Baixa: menos resolução e detalhes, para celulares e computadores mais lentos (usa menos memória).
+289|Média: visual bonito que roda bem na maioria dos aparelhos.
+290|Alta: a imagem mais nítida e as sombras mais finas, para aparelhos rápidos.
+291|Velocidade do aparelho
+293|Este navegador não está usando sua placa de vídeo, então o jogo vai ficar lento. No Chrome ou Edge:
+294|Configurações → Sistema → “Usar aceleração gráfica quando disponível”
+295|, depois reinicie o navegador.
+297|Dinheiro
+299|Dinheiro insuficiente
+300|{0} custa {1}.
+301|Para comprar, pegue uma cesta perto da porta, encha (E) e pague aqui (E).
+302|Trabalhe aqui
+303|Atendente
+304|Reponha as prateleiras por 40 segundos. Pago por prateleira cheia.
+305|Termine primeiro o seu trabalho atual
+306|Fazer um turno
+307|Tirar {0}
+308|Pagar
+309|Turno de atendente
+310|Turno encerrado!
+311|Faltam {0} s
+312|prateleiras repostas
+314|Repor esta prateleira
+315|Prateleira cheia
+316|Receber
+317|Toque nas prateleiras vazias para repor.
+318|Cor da roupa
+319|Pintura da bike
+321|Cor {0}
+322|trocar de roupa
+323|Roupa nova
+324|Que estilo!
+325|Pintura nova!
+326|Voltar ao original (grátis)
+327|Sua cor aparece no seu personagem onde você jogar.
+328|A pintura vai na sua própria bike.
+329|Condicionamento
+330|Cada nível de condicionamento faz você correr 2,5% mais rápido.
+332|Treino na academia
+333|Nível {0}!
+334|Ótimo treino!
+335|+60 condicionamento · +20 XP. Agora você está com fome e sede.
+336|Treinando…
+337|Volte amanhã
+338|Treinar · {0}
+339|Um treino por dia. Correr em qualquer lugar também treina.
+340|Saúde
+341|Tratamento no hospital
+342|Tratamento no hospital (coberto)
+343|Você se sente muito melhor
+344|A saúde está cheia.
+345|Ser tratado ·
+346|grátis com seu plano
+347|Plano de saúde (B9)
+348|Você está coberto
+349|Bellmont Saúde
+350|por dia do seu banco. O tratamento é grátis enquanto estiver ativo.
+351|Plano de saúde contratado
+352|Plano de saúde cancelado
+353|Você mora aqui
+354|Andar
+355|por semana · próximo pagamento no dia
+356|Pegue o elevador (no canto) até o seu andar. Sua chave (o número dela) tranca e destranca a porta; abra com a mão livre. Enquanto
+357|s · andares livres hoje
+358|A primeira semana é grátis; depois o aluguel semanal sai do seu banco a cada sete dias. Andares mais altos custam menos. Os andares livres mudam
+359|por semana
+360|· seu
+361|· ocupado
+362|Não durante sua semana grátis
+363|Você pode se mudar depois de pagar uma semana de aluguel.
+364|Sair do seu apartamento no andar {0} para outro lugar?
+365|Sem espaço para a chave
+366|Abra espaço no inventário primeiro.
+367|Bem-vindo ao lar!
+368|Andar {0}. Sua chave está no inventário. A primeira semana é grátis.
+369|Aluguel
+370|Mudar-se e devolver a chave?
+371|Você se mudou
+372|Mudar-se
+373|Você pode se mudar depois de pagar a primeira semana de aluguel (dia
+374|). Se o aluguel não puder ser pago pelo banco, você será despejado e perderá tudo no apartamento.
+375|{0} condenação(ões)
+376|Multas não pagas
+377|Nada a pagar. Ande a menos de 30 mph e pare no sinal vermelho para continuar assim.
+378|· vence no dia
+379|Obrigado. Dirija com cuidado!
+380|do banco
+381|Multas não pagas em
+382|dias vão para o seu empréstimo com 25% a mais e para a sua ficha, o que reduz o que o banco empresta.
+383|Feminino
+384|Masculino
+385|Escolha Feminino ou Masculino.
+386|Não foi possível reservar seu nome de usuário. Tente de novo.
+387|Escolha seu nome de usuário
+388|Escolha seu personagem
+389|De 3 a 24 letras, números ou sublinhados. Você vai entrar com ele.
+390|Gênero
+395|Seu nome de usuário e gênero não podem ser mudados depois.
+396|Isso não pode ser mudado depois.
+397|Entre depois com seu usuário (ou e-mail) e esta senha, ou com o Google.
+398|Confirme sua senha
+399|Continuar
+400|Destrancada
+401|Trancada
+402|Abra com E. Qualquer um pode entrar enquanto estiver destrancada.
+403|Agora só a sua chave abre.
+404|Bom dia!
+405|{0}: você dormiu {1} h, energia {2}%.
+406|Descansado
+407|São 6 da manhã
+408|ELEVADOR CHEIO
+409|ELEVADOR AQUI
+410|E CHAMAR ELEVADOR
+411|E ANDARES
+412|E TRANCAR
+413|E TRANCADA
+414|E DESTRANCADA
+415|Está trancada
+416|Pegue sua chave (o número dela) e aperte E para destrancar.
+417|Quem mora aqui trancou a porta.
+418|E SAIR
+419|E APAGAR LUZ
+420|E ACENDER LUZ
+421|E LAVAR AS MÃOS
+422|lavar as mãos
+423|E USAR O VASO
+424|usar o vaso
+425|E BANHO
+426|E BANHEIRO
+427|E QUARTO
+428|E DORMIR
+429|Ainda não está cansado
+430|Você pode ir para a cama entre 21h e 5h.
+431|ir para a cama
+432|E GELADEIRA
+433|E GUARDA-ROUPA
+434|trocar de roupa
+435|E SENTAR
+436|TEM ALGUÉM AÍ
+437|BIG BELL BURGERS
+438|Aberto 24 horas · de frente para o parque
+439|BANCO BELLMONT
+440|Poupe, peça emprestado, cresça · caixas eletrônicos no parque
+441|NONNA LUCIA'S
+442|Pizza de verdade · das 11 às 20
+443|SUA MARCA AQUI
+444|Anuncie na Cidade Bellmont
+445|PRECISA-SE DE ENTREGADORES
+446|Celular › Trabalhos · receba hoje
+447|KITNETS A PARTIR DE $40
+448|Celular › Casa · perto do parque
+449|Alta gastronomia japonesa · das 12 às 22
+450|CAFÉ MORNING BELL
+451|Café a partir das 6h
+452|Não foi possível carregar seu progresso. Seu jogo salvo não foi alterado.
+453|Tentar carregar de novo
+454|Carregando sua cidade…
+455|Falha ao salvar na nuvem. Tentando de novo; mantenha esta aba aberta.
+456|Tentar salvar de novo
+457|Suas mãos estão ocupadas
+458|Largue o que está segurando (Q) antes de comer.
+460|Água mineral
+461|Cena
+462|Salvar e sair
+464|Velocidade do patinete
+465|MPH
+467|Dinheiro: ${0}
+469|Este navegador está desenhando o jogo
+470|sem a sua placa de vídeo
+471|, o que deixa tudo muito lento, então está em
+472|. Para corrigir no Chrome ou Edge:
+473|Configurações → Sistema
+474|, ative
+475|“Usar aceleração gráfica quando disponível”
+476|O jogo estava lento aqui, então mudou para
+477|Velocidade do aparelho: Baixa
+478|para jogar com mais fluidez. Você pode mudar isso na página inicial.
+479|Aperte qualquer tecla ou clique para olhar em volta livremente
+480|VOCÊ MORREU
+481|{0} no seu inventário
+482|{0} bala{1} no seu inventário
+483|E PEGAR UMA CESTA
+484|A loja está fechada
+485|O Fresh Market abre das {0} às {1}.
+486|Espere um pouco
+487|O caixa está atendendo alguém.
+488|Fresh Market
+489|Deu {0}.
+490|Pago {0}
+491|{0} item{1} no Fresh Market.
+492|E SAIR (DEVOLVER OS ITENS)
+493|E SAIR
+494|Você devolveu tudo
+495|Suas compras deram {0}.
+496|SEM ESPAÇO NO INVENTÁRIO
+497|CESTA CHEIA
+498|Aperte E para interagir
+499|GARRAFA VAZIA
+500|LATA VAZIA
+501|Ponto de música de rua
+502|Você chegou: {0}
+503|Excesso de velocidade ({0} numa via de {1})
+504|Avançou o sinal vermelho
+505|Multa: ${0}
+506|{0}. Pague na delegacia ou no app do Banco em até 3 dias.
+507|Começou a chover
+508|Procure um abrigo, ou aproveite.
+509|A neblina está chegando
+510|Está difícil ver longe.
+511|As nuvens estão chegando
+512|O céu está abrindo
+513|+${0} de gorjeta
+514|E RETIRAR
+515|E ENTREGAR
+516|E CAIXA ELETRÔNICO
+517|E PARAR
+518|E TOCAR
+519|gorjetas são bem-vindas ♪
+520|Cidade Bellmont
+521|FECHADO · ABRE {0}
+522|ABERTO 6h – 17h
+523|ABERTO 11h – 20h
+524|ABERTO 12h – 22h
+525|ABERTO 24 HORAS
+528|Mas antes,
+529|Pomodoro
+530|DESDE 1958
+531|subir a escada
+532|MÃOS OCUPADAS
+533|E SUBIR
+534|E DESCER
+535|Texturas de canvas indisponíveis
+536|Ações
+537|Pular (Espaço)
+538|Largar (Q)
+539|Interagir (E)
+544|Joystick de movimento
+548|ÔNIBUS URBANO
+549|Café Morning Bell
+550|Café · Doces · Café da manhã
+551|Nonna Lucia's
+552|Pizzaria
+553|Hanami
+554|Alta gastronomia japonesa
+555|Big Bell Burgers
+556|Aberto 24 horas
+557|Bell clássico
+558|Bell duplo
+559|Bacon barbecue
+560|Frango crocante
+561|Bell vegetariano
+562|Batata frita
+563|Batata com queijo
+564|Anéis de cebola
+565|Nuggets (6)
+566|Milkshake de baunilha
+567|Milkshake de chocolate
+568|Milkshake de morango
+569|Refrigerante
+570|Espresso
+571|Americano
+572|Cappuccino
+573|Latte
+574|Mocha
+575|Cold brew
+576|Croissant de manteiga
+577|Muffin de mirtilo
+578|Rolinho de canela
+579|Biscotti de amêndoa
+580|Torrada com abacate
+581|Bagel de ovo e queijo
+582|Parfait de iogurte
+583|Pilha de panquecas
+584|Margherita
+585|Pepperoni
+586|Quatro queijos
+587|Diavola
+588|Capricciosa
+589|Ortolana
+590|Nozinhos de alho
+591|Arancini (3)
+592|Salada Caesar
+593|Bruschetta
+594|Cannoli (2)
+595|Panna cotta
+596|San Pellegrino
+597|Nigiri de salmão (2)
+598|Nigiri de atum-azul (2)
+599|Dragon roll
+600|Sashimi variado
+601|Sopa de missô
+602|Frango teriyaki
+603|Lámen tonkotsu
+604|Tataki de wagyu A5
+605|Mochi de matcha
+606|Sorbet de yuzu
+607|Chá verde sencha
+608|Saquê (taça)
+609|Leite de aveia, amêndoa ou soja +$0.60
+610|Café
+611|Padaria
+612|Café da manhã
+613|Todas as pizzas 30 cm · forno a lenha · massa sem glúten +$2
+614|Pizzas
+615|Entradas
+616|Sobremesas e bebidas
+617|Menu degustação omakase do chef · $85 por pessoa
+618|Sushi e sashimi
+619|Cozinha
+620|Doces e chá
+621|Faça um combo: batata + bebida +$3.50
+622|Hambúrgueres
+623|Acompanhamentos
+624|Milkshakes e bebidas
+625|Suco de laranja
+626|Suco de maçã
+627|Cola
+628|Soda limonada
+629|Volt Energy
+630|Olá
+631|Ei
+632|Olá
+633|Oi
+634|Oi, tudo bem
+635|Bem-vindo
+636|Que bom te ver
+637|Oi, seja bem-vindo
+638|Olá, tudo bem
+639|Ei, oi
+640|O que vai ser para você?
+641|Por onde começamos?
+642|O que vai ser hoje?
+643|O que você está com vontade de comer?
+644|Pronto para pedir?
+645|O que parece bom hoje?
+646|O que posso trazer para você?
+647|O que você gostaria?
+648|Dê uma olhada, o que vai querer?
+649|Já sabe o que quer?
+650|O que vamos pedir hoje?
+651|Bom dia
+652|Bom dia
+653|Bom dia, oi
+654|Boa tarde
+655|Boa tarde
+656|Boa noite
+657|Boa noite
+658|Ei, coruja
+659|Noite longa, hein
+660|O café está fresquinho.
+661|Os doces acabaram de sair.
+662|O cold brew está ótimo hoje.
+663|O forno está bem quente.
+664|Massa fresca hoje.
+665|Irasshaimase!
+666|O peixe chegou hoje de manhã.
+667|A chapa está quente.
+668|As batatas estão quentinhas.
+669|Obrigado!
+670|Valeu!
+671|Perfeito, obrigado!
+672|Ótima escolha!
+673|Pode deixar!
+674|Show, valeu!
+675|Combinado!
+676|Saindo já!
+677|Por favor, espere ali, seu pedido sai em instantes.
+678|Sua comida vai estar ali em poucos minutos.
+679|Se puder esperar ali, logo fica pronto.
+680|Retire ali quando estiver pronto.
+681|Vai sair ali mesmo, só uns minutinhos.
+682|Aguarde ali, já já sai.
+683|Escolha qualquer mesa e levamos até você.
+684|Sente-se em qualquer mesa, já vai sair.
+685|Escolha uma mesa ali e espere, levamos até você.
+686|Pode escolher uma mesa, levamos sua comida.
+687|Procure uma mesa ali, não vai demorar.
+688|Ah, parece que isso passa um pouco do que você tem.
+689|Desculpe, o cartão não passou. Talvez algo menor?
+690|Hmm, não é suficiente. Quer mudar o pedido?
+691|algo da loja
+692|a sacola de compras
+693|uma lata vazia
+694|uma garrafa vazia
+695|a cesta
+696|Largue o que está segurando (Q) antes de {0}.
+697|Sua mão {0} está ocupada
+698|Solte o que está segurando primeiro (Q larga).
+699|{0} da sacola
+700|No espaço {0}.
+701|{0} guardado
+702|Não dá para guardar isso
+703|Só utensílios de cozinha vazios e limpos vão para o inventário.
+704|O espaço {0} está vazio
+705|Água mineral guardada
+706|Sua mão esquerda está ocupada
+707|Largue (Q) antes de {0}.
+708|Sem sede
+709|Você está satisfeito
+710|Sua mão direita está ocupada
+711|Maçã
+712|Banana
+713|Laranja
+714|Pera
+715|Kiwi
+716|Ameixa
+717|Uvas
+718|Pêssego
+719|Chave do apartamento
+720|Precisa do nível {0}
+721|Termine ou largue primeiro o seu trabalho atual
+722|Saia primeiro
+723|Nenhuma loja aberta
+724|Vá ao Fresh Market, aperte E e depois Fazer um turno.
+725|Músico de rua
+726|Vá ao ponto de música no parque e aperte E para tocar.
+727|Nenhum restaurante aberto
+728|Retire o pedido no restaurante
+729|Sem pacotes agora
+730|Retire o pacote em {0}
+731|Sem endereços agora
+732|Trabalho cancelado
+733|Use sua bike
+734|Entregas de bike são feitas de bike.
+735|Entregue em {0}
+736|Pedido retirado
+737|Pacote retirado
+738|Entregue em {0} ({1} m)
+739|Tocando
+740|Quem passar pode dar gorjeta. Mova-se ou aperte E para parar.
+741|Gorjetas de música de rua (dinheiro)
+742|Parou de tocar
+743|Você ganhou ${0} em gorjetas.
+744|Sem gorjetas desta vez. Tente quando tiver gente por perto.
+745|Sua comida está pronta
+746|{0}: tire do fogão em até 10 minutos ou queima.
+747|Sua comida queimou!
+748|{0} estragou: jogue no lixo.
+749|Que delícia
+750|Uma refeição caseira: +{0}% de fome.
+751|Largue o que está segurando (Q) antes de comer — fique só com os talheres.
+752|Você precisa de talheres
+753|Levante-se e pegue um garfo na bancada perto da pia.
+754|Está queimado
+755|Jogue no lixo perto do forno (E lá).
+756|Pegue um prato primeiro
+757|Pratos e tigelas ficam na bancada ao lado da pia (E lá).
+758|Sem espaço na mesa
+759|TEM ALGUÉM EM PÉ AÍ
+760|Q COLOCAR O PRATO AQUI
+761|E JOGAR FORA A COMIDA QUEIMADA
+762|SUAS MÃOS ESTÃO OCUPADAS
+763|E TIRAR (QUEIMADO)
+764|E TIRAR DO FOGÃO
+765|E COLOCAR {0} NO FOGÃO
+766|COZINHANDO · FALTAM {0}
+767|{0} MIN
+768|SEM ENLATADOS NA GELADEIRA
+769|LIBERE AS MÃOS PARA COZINHAR
+770|E COZINHAR NA {0} (ATÉ {1} LATAS){2}
+771|TEM ALGUÉM NA PIA
+772|E LAVAR ({0})
+773|E GUARDAR {0} NOVO(S)
+774|PANELAS E FRIGIDEIRAS
+775|SUA MÃO DIREITA ESTÁ OCUPADA
+776|E COLOCAR NO ARMÁRIO
+777|E PANELAS E FRIGIDEIRAS
+778|AINDA SEM PANELAS OU FRIGIDEIRAS
+779|TEM ALGUÉM NA BANCADA
+780|E GUARDAR OS PRATOS E XÍCARAS NOVOS
+781|AINDA SEM PRATOS OU XÍCARAS
+782|E PRATO · XÍCARA · COPO · TALHERES{0}
+783|· GUARDAR
+784|Cozinhando
+785|Pronto em {0} minutos.
+786|Pedalar
+787|Ética de trabalho
+788|Carisma
+789|Limão-siciliano
+790|Limão
+791|Depósito em dinheiro
+792|Saque em dinheiro
+793|Pagamento de empréstimo
+794|Apartamento pequeno
+795|Juros da poupança
+796|Plano de celular
+797|Aluguel (semana, andar {0})
+798|Despejado: aluguel não pago (andar {0})
+799|Juros do empréstimo
+800|{0} (não pago, somado ao empréstimo)
+801|Multas vencidas (+25%, somadas ao empréstimo)
+802|Multas pagas ({0})
+803|{0} (cartão)
+804|{0}, andar {1}: primeira semana grátis
+805|Saiu do andar {0}
+806|Coma ou beba {0} coisas
+807|Pedale {0} km
+808|Ganhe ${0} trabalhando
+809|Termine {0} trabalhos
+810|Caminhe {0} m
+811|Use um caixa eletrônico
+812|Sente-se num banco do parque
+813|Pegue o celular (P ou 1, ou pelo inventário)
+814|Tudo o que você tem e pode fazer está nele.
+815|Saque dinheiro num caixa eletrônico (marcado no mapa)
+816|Vá até um e aperte E.
+817|Compre algo para comer num restaurante
+818|Os restaurantes ficam de frente para o parque.
+819|Faça um trabalho pelo app Trabalhos
+820|Entregas a pé são o começo mais fácil.
+821|Alugue um apartamento na recepção de um prédio
+822|Entrega a pé
+823|Pegue um pacote e leve a pé até o endereço. Pago pela distância.
+824|Entrega de bike
+825|Retire um pedido num restaurante e leve de bike ao cliente. Gorjeta pela rapidez.
+826|Reponha as prateleiras do Fresh Market num turno de 40 segundos. Pago por prateleira.
+827|Novos trabalhos e casas podem estar disponíveis.
+828|Habilidade melhorou.
+829|Recompensa da meta diária
+830|Meta concluída
+831|Próximo passo
+832|Guia concluído
+833|Você já conhece a cidade. Aproveite Bellmont!
+834|{0} (após {1} de imposto)
+835|{0}: gorjeta (dinheiro)
+836|{0} no seu banco ({1} − {2} de imposto){3}
+837|· {0} de gorjeta em dinheiro
+838|Despejado
+839|Você foi despejado
+840|Não deu para pagar o aluguel pelo banco. A chave foi tomada e tudo no apartamento se foi.
+841|Algumas contas não foram pagas
+842|Contas pagas: {0}
+843|Foram somadas ao seu empréstimo e sua pontuação de crédito caiu.
+844|Aluguel, serviços e celular, pelo banco.
+845|Novo dia, novas metas
+846|Veja no app Metas do celular.
+847|Lucio
+848|Lua
+849|Você ilumina a minha noite inteira.
+850|Saí só para te ver.
+851|A cidade fica mais bonita com você lá em cima.
+852|Até as estrelas olham para você quando você nasce.
+853|Você puxa as marés, e acho que me puxa também.
+854|Você é a única luz da qual nunca me canso.
+855|Toda noite você brilha um pouco diferente, e eu gosto de todas.
+856|Você é feita de queijo? Porque você é demais.
+857|Eu te chamaria para jantar, mas você está sempre cheia.
+858|Você deve estar cansada, passou a noite toda girando na minha cabeça.
+859|Está quente aí em cima, ou é só você?
+860|O que você vê lá de cima?
+861|Você se sente sozinha às vezes?
+862|De quais luzes da cidade você mais gosta?
+863|No que você pensa a noite toda?
+864|Desce aqui e fala comigo direito.
+865|Um dia eu vou voar até aí por você.
+866|Admite, você só brilha assim para mim.
+867|Acho que você está um pouquinho apaixonada por mim.
+868|Você é só uma pedra grande.
+869|O sol é muito mais brilhante que você.
+870|Sinceramente, você é meio pálida.
+871|Por que você fica me seguindo?
+872|Que gentil. Ouço muito isso, sabia?
+873|Obrigada. Você é educado, para um terráqueo.
+874|Você saiu só por mim? Que… fofo.
+875|Hm. Você é mais doce que a maioria lá embaixo.
+876|Ai — para, assim eu brilho.
+877|Você sempre sabe o que me dizer.
+878|Eu espero o dia todo você sair, sabia?
+879|E você ilumina a minha. Todas as noites.
+880|Oh. Isso foi… realmente lindo.
+881|Um poeta? Não esperava isso de você.
+882|Fala de novo. Devagar.
+883|Você andou pensando em mim, né?
+884|Ninguém nunca me disse isso assim…
+885|Você vai me fazer brilhar mais que o sol.
+886|Eu puxaria todas as marés da Terra para você.
+887|Continua falando assim e eu nunca vou me pôr.
+888|Ha. Brega. Mas vou deixar passar.
+889|Essa foi péssima. Mesmo assim estou rindo.
+890|Você é ridículo. Eu gosto.
+891|Ha! Tá, essa foi boa.
+892|Para, minhas crateras estão doendo!
+893|Você sempre me faz rir, mesmo quando é péssimo.
+894|Só você para fazer uma pedra dar risadinha assim.
+895|Ri tanto que quase eclipsei.
+896|Telhados, principalmente. E gente que nunca olha para cima.
+897|Tudo. Fica silencioso aqui em cima.
+898|Vejo você, principalmente. Andando por aí à noite.
+899|Às vezes. As estrelas não falam muito.
+900|Eu olho sua janela para ver se você ainda está acordado.
+901|Penso em quem sai para conversar comigo.
+902|Penso em você. Isso é estranho?
+903|Sua rua. É a minha favorita, porque você está nela.
+904|Como é? A gente acabou de se conhecer.
+905|Calma, terráqueo.
+906|Ousado. Muito ousado… vou pensar.
+907|É mesmo? Veremos.
+908|Talvez… talvez eu brilhe um pouco mais para você.
+909|Não fala essas coisas, eu fico toda vermelha.
+910|Então se apressa. Vou estar esperando aqui.
+911|…Talvez um pouco. Tá. Mais que um pouco.
+912|Bom. Boa noite, então.
+913|Encantador. De verdade.
+914|Achei que você fosse diferente.
+915|Isso doeu mais do que você imagina.
+916|Por que você diria isso para mim?
+917|…Vou me esconder atrás de uma nuvem um pouco.
+918|Depois de tudo? Sério?
+919|Nunca achei que você fosse me dizer isso.
+920|Oh. Olá aí embaixo.
+921|Posso ajudar, terráqueo?
+922|Você está me encarando de novo.
+923|Você voltou. Eu percebi.
+924|Na rua até tarde de novo, é?
+925|Ah, é você. Oi.
+926|Aí está você! Eu esperava que você saísse.
+927|Oi, você. Eu estava esperando.
+928|Guardei meu melhor brilho para você.
+929|Finalmente! Senti sua falta o dia todo.
+930|Minha pessoa favorita do planeta inteiro.
+931|Estou brilhando só para você.
+932|Bom. Boa noite, terráqueo.
+933|Boa noite. Volta amanhã, quem sabe?
+934|Boa noite… volta amanhã à noite, tá?
+935|Boa noite, meu amor. Vou cuidar de você enquanto dorme.
+936|Feijão preto
+937|Feijão vermelho
+938|Feijão cozido
+939|Frango enlatado
+940|Atum
+941|Salsichas
+942|Sopa de frango
+943|Sopa de carne
+944|Milho
+945|Ervilhas
+946|Vagem
+947|Cenoura fatiada
+948|Chocolate ao leite
+949|Chocolate amargo
+950|Barra de caramelo
+951|Copinhos de amendoim
+952|Ursinhos de goma
+953|Minhocas azedinhas
+954|Pirulito
+955|Balas de menta
+956|Panela
+957|Frigideira
+958|Copo
+959|Jogo de talheres
+960|Norte
+961|Sul
+962|Olmo
+963|Carvalho
+964|Bordo
+965|Cedro
+966|Pinheiro
+967|Bétula
+968|Ai
+969|Você caiu {0} (−{1} de saúde).
+970|pelo alçapão
+971|Compras para a geladeira: mais barato que comer fora
+972|Threads
+973|Novas cores de roupa
+974|Spoke & Wheel
+975|Pinturas para sua bike
+976|Iron Bell Gym
+977|Treine para correr mais rápido
+978|Bellmont General
+979|Tratamento e planos de saúde
+980|Delegacia
+981|Pague multas, veja sua ficha
+982|Bellmont Residences
+983|Apartamentos pequenos para alugar, primeira semana grátis
+984|Sanduíche
+985|Tigela de salada
+986|Prato de massa
+987|Não identificado
+988|Limpo
+989|Nublado
+990|Chuva
+991|Neblina
+992|English
+993|Aperte voltar de novo para sair
+997|Carregando…
+998|Não foi possível conectar ao servidor do Bellmont.
+999|Tentar de novo
+1000|Jogar como convidado
+1001|WASD
+1002|mover ·
+1003|Shift
+1004|correr ·
+1005|pular ·
+1006|interagir · segure o mouse para olhar
+1007|Nenhuma sala tem esse código.
+1008|Essa sala está cheia ({0} jogadores).
+1009|Não foi possível criar a sala. Tente de novo.
+1010|Não foi possível entrar na sala. Tente de novo.
+1011|Construindo sua sala…
+1012|Entrando na sala…
+1013|Sala excluída.
+1014|Esta sala foi excluída pelo criador.
+1015|CÓDIGO DA SALA: {0}
+1016|{0} {1} nesta sala
+1018|Jogador
+1019|Criador da sala
+1020|Copie este link para compartilhar a sala:
+1021|Não foi possível excluir a sala. Tente de novo.
+1022|Configurações da sala
+1023|Link copiado!
+1024|Copiar link
+1025|Convidar amigos
+1026|Excluir sala
+1027|Tem certeza de que quer excluir esta sala?
+1028|Esta ação não pode ser desfeita.
+1029|Lembre o código da sua sala
+1030|Este código é a única forma de voltar a este mundo, então anote ou compartilhe o link da sala pelo menu ⚙.
+1031|As salas são excluídas automaticamente depois de
+1032|dias sem ninguém nelas.
+1033|Não mostrar de novo
+1034|Esse e-mail não parece certo.
+1035|Este e-mail já tem uma conta. Entre em vez disso.
+1036|Use uma senha com pelo menos 6 caracteres.
+1037|E-mail ou senha incorretos.
+1038|Tentativas demais. Espere um pouco e tente de novo.
+1039|Não foi possível conectar ao servidor. Verifique sua conexão.
+1040|O login com o Google foi cancelado.
+1041|Seu navegador bloqueou a janela do Google. Permita pop-ups e tente de novo.
+1042|Sua sessão expirou. Entre de novo.
+1043|Digite sua senha.
+1044|Senha incorreta.
+1045|Escolha um nome de usuário primeiro.
+1046|Adicione uma senha primeiro (menu → Adicionar uma senha).
+1047|Esse nome de usuário já está em uso.
+1048|Esta conta entra com o Google.
+1049|Sua senha foi adicionada, mas o login por usuário não pôde ser configurado. Entre uma vez com seu e-mail para concluir.
+1050|Não foi possível criar sua conta. Tente de novo.
+1051|Não foi possível salvar sua escolha. Tente de novo.
+1053|Novo pedido de amizade
+1054|{0} quer ser seu amigo.
+1055|Alguém
+1056|Pedido de amizade aceito
+1057|{0} aceitou seu pedido de amizade.
+1058|Seu amigo
+1059|Convite para sala
+1060|{0} convidou você para a sala {1}.
+1061|Um amigo
+1062|Não foi possível achar um código de sala livre.
+1063|isso.
+1064|Vazio.
+1065|Agora:
+1066|Caixas eletrônicos
+1067|EM BREVE
+1068|TRANCADA
+1069|HANAMI
+1070|Sair
+1071|SAÚDE
+1072|FOME
+1073|SEDE
+1074|ENERGIA
+1075|MERCADO
+1076|AO VIVO
+1077|MÚSICA
+1078|FECHADO
+1079|MILKSHAKES
+1080|TÁXI
+1083|Tiramisù
+1084|OK
+1085|ou
+1086|de
+1087|dinheiro
+1088|nível
+1089|pagar
+1090|pts
