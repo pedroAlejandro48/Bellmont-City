@@ -102,6 +102,9 @@ async function push(env, uid, message) {
 
 // ---------- what can be announced (only what really just happened) ----------
 const FRESH_MS = 3 * 60e3;
+const SITE = "https://bellmont-city.web.app";
+// The friend's picture (the big icon): theirs from Google, one of the game's (a site path), or the game's icon.
+const pic = (p) => (typeof p === "string" && p ? (p.startsWith("/") ? SITE + p : p) : `${SITE}/icon-192.png`);
 const fresh = (at) => typeof at === "number" && Date.now() - at < FRESH_MS;
 async function message(idToken, from, body) {
   const to = String(body.to ?? ""), type = body.type;
@@ -109,19 +112,19 @@ async function message(idToken, from, body) {
   if (type === "request") {
     const r = await getDoc(idToken, `friends/${to}/requests/${from}`);
     if (!r || !fresh(r.at)) return null;
-    return { to, title: "New friend request", body: `${r.name || "Someone"} wants to be your friend.`, tag: `req-${from}`, link: "/" };
+    return { to, title: "New friend request", body: `${r.name || "Someone"} wants to be your friend.`, tag: `req-${from}`, link: "/", icon: pic(r.photo) };
   }
   if (type === "accepted") {
     const f = await getDoc(idToken, `friends/${to}/list/${from}`);
     if (!f || f.by !== from || !fresh(f.at)) return null;
-    return { to, title: "Friend request accepted", body: `${f.name || "Your friend"} accepted your friend request.`, tag: `acc-${from}`, link: "/" };
+    return { to, title: "Friend request accepted", body: `${f.name || "Your friend"} accepted your friend request.`, tag: `acc-${from}`, link: "/", icon: pic(f.photo) };
   }
   if (type === "invite") {
     const code = String(body.code ?? "");
     if (!/^[A-Z0-9]{6}$/.test(code)) return null;
     const i = await getDoc(idToken, `friends/${to}/invites/${code}`);
     if (!i || i.from !== from || !fresh(i.at)) return null;
-    return { to, title: "Room invitation", body: `${i.name || "A friend"} invited you to room ${code}.`, tag: `inv-${code}`, link: `/?room=${code}` };
+    return { to, title: "Room invitation", body: `${i.name || "A friend"} invited you to room ${code}.`, tag: `inv-${code}`, link: `/?room=${code}`, icon: pic(i.photo) };
   }
   return null;
 }
@@ -149,7 +152,7 @@ export default {
     try {
       const m = await message(idToken, from, body);
       if (!m) return json({ sent: 0 }, 200, origin);
-      const sent = await push(env, m.to, { title: m.title, body: m.body, tag: m.tag, link: m.link });
+      const sent = await push(env, m.to, { title: m.title, body: m.body, tag: m.tag, link: m.link, icon: m.icon });
       return json({ sent }, 200, origin);
     } catch (e) {
       return json({ error: String(e?.message ?? e) }, 500, origin);

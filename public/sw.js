@@ -33,8 +33,9 @@ self.addEventListener("push", (event) => {
   const title = d.title || n.title || "Bellmont City";
   event.waitUntil(self.registration.showNotification(title, {
     body: d.body || n.body || "",
-    icon: "/icon-192.png",
-    badge: "/icon-192.png",
+    // The friend's picture as the big image; the game's own badge as the small icon.
+    icon: d.icon || "/icon-192.png",
+    badge: "/badge-96.png",
     tag: d.tag || undefined,
     data: { link: d.link || "/" },
   }));

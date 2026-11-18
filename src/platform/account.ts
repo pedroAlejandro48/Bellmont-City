@@ -23,6 +23,8 @@ export type Account = {
   gender: Gender | null;
   /** Signs in with a password (so username sign-in can work), rather than only with Google. */
   usesPassword: boolean;
+  /** The profile picture, from the Google account it signs in with (null: none). */
+  photo: string | null;
 };
 
 /** A message for the player; anything unexpected is reported generically by the caller. */
@@ -55,13 +57,34 @@ async function attempt<T>(run: () => Promise<T>): Promise<T> {
 
 async function toAccount(user: User): Promise<Account> {
   const profile = await playerOf(user.uid);
-  return {
+  const account: Account = {
     id: user.uid,
     email: user.email,
     username: profile.username,
     gender: profile.gender,
     usesPassword: user.providerData.some((p) => p.providerId === "password"),
+    // (Google's picture; without Google, the one chosen from the game's ten.)
+    photo: googlePhoto(user) ?? profile.photo,
   };
+  if (googlePhoto(user)) syncPhoto(account, profile.photo);
+  return account;
+}
+/** The Google account's picture (a bigger copy than the default thumbnail). */
+function googlePhoto(user: User) {
+  const url = user.providerData.find((p) => p.providerId === "google.com")?.photoURL ?? user.photoURL ?? null;
+  return url ? url.replace(/=s\d+-c$/, "=s192-c") : null;
+}
+/** The ten profile pictures to choose from without a Google account: things from the game. */
+export const AVATARS = ["scooter", "burger", "apple", "moon", "key", "pizza", "building", "tree", "coffee", "basket"].map((n) => `/avatars/${n}.png`);
+/** Sets the chosen picture (accounts without Google). */
+export async function chooseAvatar(account: Account, photo: string): Promise<Account> {
+  await updateDoc(doc(firestore, "players", account.id), { photo }).catch(() => { throw new AccountError("Could not save your picture. Please try again."); });
+  return { ...account, photo };
+}
+/** Keeps the player's public profile picture (players/<uid>.photo) the same as their Google one. */
+export function syncPhoto(account: Account, current: string | null) {
+  if (!account.username || (account.photo ?? null) === (current ?? null)) return;
+  void updateDoc(doc(firestore, "players", account.id), { photo: account.photo ?? null }).catch(() => {});
 }
 
 /** Follows the signed-in account (restored automatically on reload, in any browser after signing in). */
@@ -166,7 +189,7 @@ export async function claimUsername(account: Account, username: string, gender: 
     const name = doc(firestore, "usernames", username);
     if ((await tx.get(name)).exists()) return true;
     tx.set(name, { uid: account.id, ...(lock ? { lock } : {}) });
-    tx.set(doc(firestore, "players", account.id), { username, gender, createdAt: Date.now() });
+    tx.set(doc(firestore, "players", account.id), { username, gender, createdAt: Date.now(), ...(account.photo ? { photo: account.photo } : {}) });
     return false;
   }).catch(() => { throw new AccountError("Could not create your account. Please try again."); });
   if (taken) throw new AccountError("That username is already taken.");
@@ -181,10 +204,10 @@ async function chooseGender(account: Account, gender: Gender): Promise<Account> 
 }
 
 /** A player's public profile (username and gender), for showing who is in a room. */
-export async function playerOf(uid: string): Promise<{ username: string | null; gender: Gender | null }> {
+export async function playerOf(uid: string): Promise<{ username: string | null; gender: Gender | null; photo: string | null }> {
   const player = await getDoc(doc(firestore, "players", uid));
   const data = player.exists() ? player.data() : {};
-  return { username: typeof data["username"] === "string" ? data["username"] : null, gender: isGender(data["gender"]) ? data["gender"] : null };
+  return { username: typeof data["username"] === "string" ? data["username"] : null, gender: isGender(data["gender"]) ? data["gender"] : null, photo: typeof data["photo"] === "string" ? data["photo"] : null };
 }
 
 export type CloudSave = { data: Record<string, unknown>; updated_at: string } | null;

@@ -40,11 +40,13 @@ export async function enablePush(): Promise<NotificationPermission | "unsupporte
   return Notification.permission;
 }
 
-async function show(title: string, body: string, tag: string, link = "/") {
+// (The small status-bar icon is the game's badge; the big picture is the friend's.)
+async function show(title: string, body: string, tag: string, link = "/", photo?: unknown) {
   if (pushPermission() !== "granted") return;
+  const icon = typeof photo === "string" && photo ? photo : "/icon-192.png";
   try {
     const reg = await navigator.serviceWorker.getRegistration("/");
-    if (reg) await reg.showNotification(title, { body, tag, icon: "/icon-192.png", badge: "/icon-192.png", data: { link } });
+    if (reg) await reg.showNotification(title, { body, tag, icon, badge: "/badge-96.png", data: { link } });
     else new Notification(title, { body, tag, icon: "/icon-192.png" });
   } catch { /* (Nothing shown: the menu's badges still say so.) */ }
 }
@@ -57,15 +59,15 @@ export function watchNotifications(me: Account) {
   const stops = [
     onSnapshot(base("requests"), (s) => s.docChanges().forEach((c) => {
       const d = c.doc.data();
-      if (c.type === "added" && fresh(d["at"])) void show("New friend request", `${d["name"] || "Someone"} wants to be your friend.`, `req-${c.doc.id}`);
+      if (c.type === "added" && fresh(d["at"])) void show("New friend request", `${d["name"] || "Someone"} wants to be your friend.`, `req-${c.doc.id}`, "/", d["photo"]);
     }), () => {}),
     onSnapshot(base("list"), (s) => s.docChanges().forEach((c) => {
       const d = c.doc.data();
-      if (c.type === "added" && fresh(d["at"]) && d["by"] && d["by"] !== me.id) void show("Friend request accepted", `${d["name"] || "Your friend"} accepted your friend request.`, `acc-${c.doc.id}`);
+      if (c.type === "added" && fresh(d["at"]) && d["by"] && d["by"] !== me.id) void show("Friend request accepted", `${d["name"] || "Your friend"} accepted your friend request.`, `acc-${c.doc.id}`, "/", d["photo"]);
     }), () => {}),
     onSnapshot(base("invites"), (s) => s.docChanges().forEach((c) => {
       const d = c.doc.data();
-      if (c.type === "added" && fresh(d["at"])) void show("Room invitation", `${d["name"] || "A friend"} invited you to room ${c.doc.id}.`, `inv-${c.doc.id}`, `/?room=${c.doc.id}`);
+      if (c.type === "added" && fresh(d["at"])) void show("Room invitation", `${d["name"] || "A friend"} invited you to room ${c.doc.id}.`, `inv-${c.doc.id}`, `/?room=${c.doc.id}`, d["photo"]);
     }), () => {}),
   ];
   return () => stops.forEach((f) => f());

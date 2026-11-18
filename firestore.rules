@@ -24,10 +24,11 @@ service cloud.firestore {
       allow create: if signedIn() && request.auth.uid == uid
         && validGender(request.resource.data.gender)
         && getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.username)).data.uid == uid;
-      // Accounts made before genders existed may choose one, once.
-      allow update: if signedIn() && request.auth.uid == uid && !('gender' in resource.data)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['gender'])
-        && validGender(request.resource.data.gender);
+      // Accounts made before genders existed may choose one, once. The profile picture may change any time.
+      allow update: if signedIn() && request.auth.uid == uid && (
+        (!('gender' in resource.data) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['gender']) && validGender(request.resource.data.gender))
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['photo'])
+            && (request.resource.data.photo == null || (request.resource.data.photo is string && request.resource.data.photo.size() < 600))));
       allow delete: if false;
     }
 
@@ -48,7 +49,7 @@ service cloud.firestore {
       match /requests/{from} {
         // (The one who asked can read their own request: the notification sender checks it with their sign-in.)
         allow read: if signedIn() && (request.auth.uid == owner || request.auth.uid == from);
-        allow delete: if signedIn() && request.auth.uid == owner;
+        allow delete: if signedIn() && (request.auth.uid == owner || request.auth.uid == from);
         allow create, update: if signedIn() && request.auth.uid == from && from != owner
           && request.resource.data.from == from && !exists(/databases/$(database)/documents/friends/$(owner)/list/$(from));
       }
@@ -58,6 +59,12 @@ service cloud.firestore {
           (request.auth.uid == owner && exists(/databases/$(database)/documents/friends/$(owner)/requests/$(other)))
           || (request.auth.uid == other && exists(/databases/$(database)/documents/friends/$(other)/requests/$(owner))));
         allow delete: if signedIn() && (request.auth.uid == owner || request.auth.uid == other);
+      }
+      // Requests this player has sent and that are still waiting (shown as "request sent"); the other player clears
+      // it when they accept or discard it.
+      match /sent/{to} {
+        allow read, create, update: if signedIn() && request.auth.uid == owner;
+        allow delete: if signedIn() && (request.auth.uid == owner || request.auth.uid == to);
       }
       match /invites/{code} {
         allow read: if signedIn() && (request.auth.uid == owner || resource.data.from == request.auth.uid);

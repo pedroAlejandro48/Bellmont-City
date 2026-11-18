@@ -10,11 +10,17 @@ import { publishEmail } from "@/platform/friends";
 import { useEffect } from "react";
 import { FriendsMenu, RoomInvites, useFriends } from "@/components/Friends";
 import { PushPrompt } from "@/components/PushPrompt";
+import { Avatar, AvatarPicker } from "@/components/Avatar";
+import { chooseAvatar } from "@/platform/account";
 
 /** After signing in: your own city, or a shared room (new, or joined by its code). */
 export function MainMenu({ account, username, message, onCity, onRoom, onSignOut, onAccount }: { account: Account; username: string | null; message?: string | undefined; onCity: () => void; onRoom: (request: RoomRequest) => void; onSignOut: () => void; onAccount: (a: Account) => void }) {
   const [joining, setJoining] = useState(false);
   const friends = useFriends(account);
+  // Without a Google picture: choose one of the game's ten (asked once; tap the picture to change it).
+  const canChoose = !account.photo || account.photo.startsWith("/avatars/");
+  const [picking, setPicking] = useState(!account.photo);
+  const pick = (url: string) => { void chooseAvatar(account, url).then((a) => { onAccount(a); setPicking(false); }).catch(() => setMsg("Could not save your picture. Please try again.")); };
   useEffect(() => { publishEmail(account); }, [account]);
   // A Google account without a password: one can be added (then the username and password sign in too).
   const [pwOpen, setPwOpen] = useState(false), [pw1, setPw1] = useState(""), [pw2, setPw2] = useState(""), [pwBusy, setPwBusy] = useState(false);
@@ -43,10 +49,11 @@ export function MainMenu({ account, username, message, onCity, onRoom, onSignOut
     <div className="auth-bg auth-page flex items-center justify-center px-4">
       <QualityPicker />
       <PushPrompt account={account} />
+      {picking && canChoose && <AvatarPicker current={account.photo} onPick={pick} onClose={account.photo ? () => setPicking(false) : undefined} />}
       <div className="auth-split w-full max-w-sm">
         <div className="auth-titles">
           <h1 className="font-display text-center text-5xl tracking-tight text-foreground">Bellmont city</h1>
-          <p className="mt-2 text-center text-sm text-muted-foreground">{username ? <>Welcome back, <span className="text-foreground">{username}</span>.</> : "Twenty minutes of sun. Twenty minutes of moon. Real life in a game."}</p>
+          <p className="mt-2 text-center text-sm text-muted-foreground">{username ? <>Welcome back, <span className="welcome-user text-foreground">{canChoose ? <button type="button" aria-label="Change your profile picture" onClick={() => setPicking(true)}><Avatar photo={account.photo} name={username} size={26} /></button> : <Avatar photo={account.photo} name={username} size={26} />}{username}</span>.</> : "Twenty minutes of sun. Twenty minutes of moon. Real life in a game."}</p>
         </div>
         <div className="auth-box hud-panel mt-8 space-y-4 p-6">
           <Button type="button" className="w-full" onClick={onCity}>Go to my city</Button>

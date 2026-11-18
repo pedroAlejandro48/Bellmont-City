@@ -2,11 +2,12 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Check, ChevronDown, Plus, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Account } from "@/platform/account";
-import { acceptRequest, discardInvite, discardRequest, findPlayer, inviteToRoom, removeFriend, sendRequest, watchFriends, type Friend, type FriendRequest, type RoomInvite } from "@/platform/friends";
+import { Avatar } from "@/components/Avatar";
+import { acceptRequest, cancelRequest, discardInvite, discardRequest, findPlayer, inviteToRoom, removeFriend, sendRequest, watchFriends, type Friend, type FriendRequest, type RoomInvite } from "@/platform/friends";
 
 /** This player's friends, requests and invitations, kept up to date. */
 export function useFriends(account: Account | null) {
-  const [v, setV] = useState<{ friends: Friend[]; requests: FriendRequest[]; invites: RoomInvite[] }>({ friends: [], requests: [], invites: [] });
+  const [v, setV] = useState<{ friends: Friend[]; requests: FriendRequest[]; invites: RoomInvite[]; sent: FriendRequest[] }>({ friends: [], requests: [], invites: [], sent: [] });
   useEffect(() => (account ? watchFriends(account, setV) : undefined), [account]);
   return v;
 }
@@ -20,7 +21,7 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [unadding, setUnadding] = useState<string | null>(null);
-  const { friends, requests } = data;
+  const { friends, requests, sent } = data;
 
   async function add(e: FormEvent) {
     e.preventDefault();
@@ -52,11 +53,13 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
         </Button>
         {open && <ul className="friends-list friends-popup">
           {requests.map((r) => <li key={`r${r.uid}`} className="friends-row request">
+            <Avatar uid={r.uid} photo={r.photo} name={r.name} />
             <span><b>{r.name}</b><small>wants to be friends</small></span>
             <button type="button" className="ok" aria-label={`Accept ${r.name}`} onClick={() => void acceptRequest(account, r).catch(() => setMsg("Could not accept. Please try again."))}><Check size={15} /></button>
             <button type="button" aria-label={`Discard ${r.name}'s request`} onClick={() => void discardRequest(account, r.uid).catch(() => {})}><X size={15} /></button>
           </li>)}
           {friends.map((f) => <li key={f.uid} className="friends-row">
+            <Avatar uid={f.uid} photo={f.photo} name={f.name} />
             {unadding === f.uid ? <>
               <span><b>Are you sure?</b></span>
               <button type="button" className="pill grey" onClick={() => setUnadding(null)}>No</button>
@@ -66,7 +69,12 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
               <button type="button" className="pill red" aria-label={`Unadd ${f.name}`} onClick={() => setUnadding(f.uid)}>Unadd</button>
             </>}
           </li>)}
-          {!friends.length && !requests.length && <li className="friends-empty">No friends yet.</li>}
+          {sent.map((r) => <li key={`s${r.uid}`} className="friends-row">
+            <Avatar uid={r.uid} photo={r.photo} name={r.name} />
+            <span><b>{r.name}</b><small>request sent</small></span>
+            <button type="button" aria-label={`Take back the request to ${r.name}`} onClick={() => void cancelRequest(account, r.uid).catch(() => {})}><X size={15} /></button>
+          </li>)}
+          {!friends.length && !requests.length && !sent.length && <li className="friends-empty">No friends yet.</li>}
         </ul>}
       </div>
       <Button type="button" variant={adding ? "secondary" : "outline"} size="icon" aria-label="Add a friend" aria-expanded={adding} onClick={() => { setAdding((v) => !v); setOpen(false); setMsg(null); }}><Plus aria-hidden /></Button>
@@ -84,6 +92,7 @@ export function RoomInvites({ account, invites, onJoin }: { account: Account; in
   if (!invites.length) return null;
   return <ul className="friends-list invites">
     {invites.map((i) => <li key={i.code} className="friends-row">
+      <Avatar uid={i.from} photo={i.photo} name={i.name} />
       <span><b>Room {i.code}</b><small>from {i.name}</small></span>
       <button type="button" className="ok join" onClick={() => { void discardInvite(account, i.code).catch(() => {}); onJoin(i.code); }}>Join</button>
       <button type="button" aria-label={`Discard the invitation to room ${i.code}`} onClick={() => void discardInvite(account, i.code).catch(() => {})}><X size={15} /></button>
@@ -98,7 +107,7 @@ export function InviteFriends({ account, code }: { account: Account; code: strin
   if (!friends.length) return <p className="px-3 py-2 text-xs text-muted-foreground">No friends yet. Add them from the menu (Friends +).</p>;
   return <ul className="max-h-56 overflow-y-auto">
     {friends.map((f) => <li key={f.uid} className="flex items-center justify-between gap-2 px-3 py-1.5 text-foreground">
-      <span className="truncate">{f.name}</span>
+      <span className="flex min-w-0 items-center gap-2"><Avatar uid={f.uid} photo={f.photo} name={f.name} size={24} /><span className="truncate">{f.name}</span></span>
       <button type="button" disabled={sent.has(f.uid)} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground disabled:opacity-60"
         onClick={() => void inviteToRoom(account, f.uid, code).then(() => setSent((s) => new Set(s).add(f.uid))).catch(() => {})}>{sent.has(f.uid) ? "Invited" : "Invite"}</button>
     </li>)}
