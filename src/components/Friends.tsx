@@ -19,6 +19,7 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
   const [query, setQuery] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [unadding, setUnadding] = useState<string | null>(null);
   const { friends, requests } = data;
 
   async function add(e: FormEvent) {
@@ -43,29 +44,38 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
 
   return <div className="friends">
     <div className="flex gap-2">
-      <Button type="button" variant={open ? "secondary" : "outline"} className="flex-1 justify-between" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        <span>Friends{requests.length ? <span className="friends-badge">{requests.length}</span> : null}</span>
-        <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
-      </Button>
-      <Button type="button" variant={adding ? "secondary" : "outline"} size="icon" aria-label="Add a friend" aria-expanded={adding} onClick={() => { setAdding((v) => !v); setOpen(true); setMsg(null); }}><Plus aria-hidden /></Button>
+      {/* The list drops down from the Friends button over the page (nothing below moves), as one box with it. */}
+      <div className={`friends-drop ${open ? "open" : ""}`}>
+        <Button type="button" variant={open ? "secondary" : "outline"} className="friends-toggle w-full justify-between" aria-expanded={open} onClick={() => { setOpen((v) => !v); setUnadding(null); }}>
+          <span>Friends{requests.length ? <span className="friends-badge">{requests.length}</span> : null}</span>
+          <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
+        </Button>
+        {open && <ul className="friends-list friends-popup">
+          {requests.map((r) => <li key={`r${r.uid}`} className="friends-row request">
+            <span><b>{r.name}</b><small>wants to be friends</small></span>
+            <button type="button" className="ok" aria-label={`Accept ${r.name}`} onClick={() => void acceptRequest(account, r).catch(() => setMsg("Could not accept. Please try again."))}><Check size={15} /></button>
+            <button type="button" aria-label={`Discard ${r.name}'s request`} onClick={() => void discardRequest(account, r.uid).catch(() => {})}><X size={15} /></button>
+          </li>)}
+          {friends.map((f) => <li key={f.uid} className="friends-row">
+            {unadding === f.uid ? <>
+              <span><b>Are you sure?</b></span>
+              <button type="button" className="pill grey" onClick={() => setUnadding(null)}>No</button>
+              <button type="button" className="pill red" onClick={() => { setUnadding(null); void removeFriend(account, f.uid).catch(() => setMsg("Could not remove. Please try again.")); }}>Yes</button>
+            </> : <>
+              <span><b>{f.name}</b></span>
+              <button type="button" className="pill red" aria-label={`Unadd ${f.name}`} onClick={() => setUnadding(f.uid)}>Unadd</button>
+            </>}
+          </li>)}
+          {!friends.length && !requests.length && <li className="friends-empty">No friends yet.</li>}
+        </ul>}
+      </div>
+      <Button type="button" variant={adding ? "secondary" : "outline"} size="icon" aria-label="Add a friend" aria-expanded={adding} onClick={() => { setAdding((v) => !v); setOpen(false); setMsg(null); }}><Plus aria-hidden /></Button>
     </div>
     {adding && <form onSubmit={add} className="mt-2 flex items-stretch gap-2">
       <input aria-label="Username or email" className="auth-input flex-1" autoFocus autoComplete="off" spellCheck={false} placeholder="Username or email" value={query} onChange={(e) => setQuery(e.target.value)} />
       <Button type="submit" disabled={busy} aria-label="Send friend request" className="h-auto self-stretch px-3"><UserPlus aria-hidden /></Button>
     </form>}
     {msg && <p className="mt-1 text-center text-xs text-accent">{msg}</p>}
-    {open && <ul className="friends-list">
-      {requests.map((r) => <li key={`r${r.uid}`} className="friends-row request">
-        <span><b>{r.name}</b><small>wants to be friends</small></span>
-        <button type="button" className="ok" aria-label={`Accept ${r.name}`} onClick={() => void acceptRequest(account, r).catch(() => setMsg("Could not accept. Please try again."))}><Check size={15} /></button>
-        <button type="button" aria-label={`Discard ${r.name}'s request`} onClick={() => void discardRequest(account, r.uid).catch(() => {})}><X size={15} /></button>
-      </li>)}
-      {friends.map((f) => <li key={f.uid} className="friends-row">
-        <span><b>{f.name}</b></span>
-        <button type="button" aria-label={`Remove ${f.name}`} title="Remove friend" onClick={() => { if (window.confirm(`Remove ${f.name} from your friends?`)) void removeFriend(account, f.uid).catch(() => {}); }}><X size={15} /></button>
-      </li>)}
-      {!friends.length && !requests.length && <li className="friends-empty">No friends yet.</li>}
-    </ul>}
   </div>;
 }
 
