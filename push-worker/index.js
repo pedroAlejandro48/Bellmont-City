@@ -11,6 +11,10 @@
 // A player who opened an app in the last 30 days gets pushes only on their app devices, not in browsers.
 // The checks read Firestore as the caller (their own token: the rules let a sender read what they sent), and the
 // devices are kept in Workers KV (binding SUBS) — no Google service account involved.
+// Broadcasts (a message to every player, in their language): scripts/broadcast.mjs writes KV "broadcast"
+//   { id, title: { <lang>: … }, body: { <lang>: … }, link, at } through Cloudflare's API; the cron trigger (every
+//   minute) sends it out a batch at a time (cursor kept in KV), skipping browsers of players who have an app.
+//   GET /broadcast returns the latest one (the Windows app, which has no Web Push, checks it while running).
 // Secrets: VAPID_PUBLIC, VAPID_PRIVATE_JWK.
 
 const PROJECT = "bellmont-city";
@@ -22,7 +26,7 @@ const b64u = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).repl
 const fromB64u = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
 const concat = (...parts) => { const out = new Uint8Array(parts.reduce((a, p) => a + p.length, 0)); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; } return out; };
 const json = (body, status, origin) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...cors(origin) } });
-const cors = (origin) => (ORIGINS.includes(origin) ? { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "Authorization, Content-Type", "Access-Control-Allow-Methods": "POST, OPTIONS", Vary: "Origin" } : {});
+const cors = (origin) => (ORIGINS.includes(origin) ? { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "Authorization, Content-Type", "Access-Control-Allow-Methods": "GET, POST, OPTIONS", Vary: "Origin" } : {});
 
 // ---------- who's asking: their Firebase ID token ----------
 let jwks = null, jwksAt = 0;
@@ -106,7 +110,7 @@ async function push(env, uid, message) {
       const res = await fetch(s.endpoint, {
         method: "POST",
         headers: { Authorization: await vapid(env, s.endpoint), "Content-Encoding": "aes128gcm", "Content-Type": "application/octet-stream", TTL: "86400", Urgency: "high" },
-        body: await encrypt(s, JSON.stringify({ data: message })),
+        body: await encrypt(s, JSON.stringify({ data: typeof message === "function" ? message(s) : message })),
       });
       if (res.status === 404 || res.status === 410) dead.add(s.endpoint);
       else if (res.ok) sent++;
@@ -145,12 +149,35 @@ async function message(idToken, from, body) {
   return null;
 }
 
+// ---------- broadcasts ----------
+const BATCH = 20; // players per run (the free plan allows 50 outgoing requests per run)
+const currentBroadcast = async (env) => { try { return JSON.parse((await env.SUBS.get("broadcast")) ?? "null"); } catch { return null; } };
+const pick = (texts, lang) => (texts && (texts[lang] || texts.en)) || "";
+async function sendBroadcast(env) {
+  const b = await currentBroadcast(env);
+  if (!b || b.done || !b.id) return;
+  const page = await env.SUBS.list({ prefix: "subs:", limit: BATCH, ...(b.cursor ? { cursor: b.cursor } : {}) });
+  let sent = 0;
+  for (const k of page.keys) {
+    const uid = k.name.slice(5);
+    sent += await push(env, uid, (sub) => ({ title: pick(b.title, sub.lang), body: pick(b.body, sub.lang), tag: `news-${b.id}`, link: b.link ?? "/", icon: `${SITE}/icon-192.png` }));
+  }
+  const next = page.list_complete ? { ...b, cursor: null, done: true } : { ...b, cursor: page.cursor };
+  next.sent = (b.sent ?? 0) + sent;
+  await env.SUBS.put("broadcast", JSON.stringify(next));
+}
+
 export default {
+  async scheduled(_event, env, ctx) { ctx.waitUntil(sendBroadcast(env)); },
   async fetch(request, env) {
     const origin = request.headers.get("Origin") ?? "";
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(origin) });
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/") return json({ ok: true, service: "bellmont-push" }, 200, origin);
+    if (request.method === "GET" && url.pathname === "/broadcast") {
+      const b = await currentBroadcast(env);
+      return json(b ? { id: b.id, title: b.title, body: b.body, link: b.link ?? "/", at: b.at } : {}, 200, origin);
+    }
     if (request.method !== "POST" || !["/notify", "/subscribe", "/app", "/status"].includes(url.pathname)) return json({ error: "not found" }, 404, origin);
     const idToken = (request.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
     let from;
@@ -160,11 +187,12 @@ export default {
     if (url.pathname === "/subscribe") {
       const { endpoint, p256dh, auth } = body ?? {};
       const app = body?.app === "android" || body?.app === "windows" ? body.app : null;
+      const lang = typeof body?.lang === "string" && /^[a-z]{2}$/.test(body.lang) ? body.lang : "en";
       if (typeof endpoint !== "string" || !/^https:\/\//.test(endpoint) || endpoint.length > 1000 || typeof p256dh !== "string" || typeof auth !== "string") return json({ error: "bad subscription" }, 400, origin);
       const all = await subsOf(env, from), before = all.find((s) => s.endpoint === endpoint);
       const subs = all.filter((s) => s.endpoint !== endpoint);
       // (The Android app shares the phone browser's subscription: once it's the app's, it stays the app's.)
-      subs.push({ endpoint, p256dh, auth, at: Date.now(), ...(app || before?.app ? { app: app ?? before.app } : {}) });
+      subs.push({ endpoint, p256dh, auth, lang, at: Date.now(), ...(app || before?.app ? { app: app ?? before.app } : {}) });
       await saveSubs(env, from, subs);
       if (app) await markApp(env, from, app);
       return json({ ok: true }, 200, origin);

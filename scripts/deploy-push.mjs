@@ -20,6 +20,8 @@ form.append("metadata", JSON.stringify({ main_module: "index.js", compatibility_
 form.append("index.js", new Blob([readFileSync("push-worker/index.js")], { type: "application/javascript+module" }), "index.js");
 await call(API, { method: "PUT", headers: auth, body: form }, "upload");
 await call(`${API}/subdomain`, jsonInit("POST", { enabled: true }), "workers.dev");
+// Every minute: sends out a pending broadcast, a batch at a time (scripts/broadcast.mjs).
+await call(`${API}/schedules`, jsonInit("PUT", [{ cron: "* * * * *" }]), "cron");
 
 if (process.argv.includes("--secrets")) {
   for (const name of ["VAPID_PRIVATE_JWK", "VAPID_PUBLIC"]) {

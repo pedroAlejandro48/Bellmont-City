@@ -6,6 +6,7 @@
 import { collection, onSnapshot } from "firebase/firestore";
 import { auth, firestore } from "./firebase";
 import { appKind } from "@/lib/appKind";
+import { currentLang } from "@/i18n";
 
 const PUSH_SERVER = "https://bellmont-push.bellmont-city.workers.dev";
 /** The sender's public key (VAPID): browsers only accept pushes signed with its private half. */
@@ -26,7 +27,7 @@ export async function registerDevice() {
     const reg = await navigator.serviceWorker.getRegistration("/") ?? await navigator.serviceWorker.register("/sw.js");
     await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription() ?? await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromB64u(VAPID_PUBLIC) });
-    await callServer("/subscribe", { endpoint: sub.endpoint, p256dh: b64u(sub.getKey("p256dh")), auth: b64u(sub.getKey("auth")), app: appKind() });
+    await callServer("/subscribe", { endpoint: sub.endpoint, p256dh: b64u(sub.getKey("p256dh")), auth: b64u(sub.getKey("auth")), app: appKind(), lang: currentLang() });
   } catch { /* (Then only while the game is open.) */ }
 }
 /** Tells the other player (the sender checks it really happened). */
@@ -62,7 +63,8 @@ async function showNow(title: string, body: string, tag: string, link = "/", pho
   } catch { /* (The Windows app has no service-worker notifications: a plain one below.) */ }
   try {
     const n = new Notification(title, { body, tag, icon });
-    n.onclick = () => { window.focus(); if (link !== "/") location.href = link; };
+    // (In the Windows app, ?app-show=1 brings the window back from the tray.)
+    n.onclick = () => { window.focus(); if (appKind() === "windows") location.href = `${link}${link.includes("?") ? "&" : "?"}app-show=1`; else if (link !== "/") location.href = link; };
   } catch { /* (Nothing shown: the menu's badges still say so.) */ }
 }
 
@@ -73,6 +75,9 @@ export function watchNotifications(me: Account) {
   let allowed = false;
   void mayNotifyHere().then((ok) => { allowed = ok; });
   const show = (...a: Parameters<typeof showNow>) => { if (allowed) void showNow(...a); };
+  // The Windows app has no Web Push: it checks for news sent to everyone (broadcasts) every few minutes.
+  let poll: ReturnType<typeof setInterval> | undefined;
+  if (appKind() === "windows") { void checkBroadcast(); poll = setInterval(() => void checkBroadcast(), 3 * 60e3); }
   const fresh = (at: unknown) => typeof at === "number" && at > since;
   const base = (name: string) => collection(firestore, "friends", me.id, name);
   const stops = [
@@ -89,5 +94,17 @@ export function watchNotifications(me: Account) {
       if (c.type === "added" && fresh(d["at"])) show("Room invitation", `${d["name"] || "A friend"} invited you to room ${c.doc.id}.`, `inv-${c.doc.id}`, `/?room=${c.doc.id}`, d["photo"]);
     }), () => {}),
   ];
-  return () => stops.forEach((f) => f());
+  return () => { stops.forEach((f) => f()); if (poll) clearInterval(poll); };
+}
+
+const SEEN = "bellmont-news-seen";
+/** The latest broadcast, in this player's language, if it's new here and less than a day old. */
+async function checkBroadcast() {
+  try {
+    const b = await (await fetch(`${PUSH_SERVER}/broadcast`)).json() as { id?: string; title?: Record<string, string>; body?: Record<string, string>; link?: string; at?: number };
+    if (!b.id || !b.at || Date.now() - b.at > 864e5 || localStorage.getItem(SEEN) === b.id) return;
+    localStorage.setItem(SEEN, b.id);
+    const lang = currentLang(), pick = (t?: Record<string, string>) => (t?.[lang] || t?.["en"] || "");
+    void showNow(pick(b.title), pick(b.body), `news-${b.id}`, b.link ?? "/");
+  } catch { /* (offline: next time) */ }
 }
