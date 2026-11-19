@@ -14,3 +14,15 @@ function detect(): AppKind | null {
 }
 const KIND = typeof window === "undefined" ? null : detect();
 export const appKind = () => KIND;
+/** The Android app's notification address (FCM token), which it passes in when opening the game (?fcm=…). */
+function detectFcm(): string | null {
+  try {
+    const t = new URLSearchParams(location.search).get("fcm");
+    if (t) sessionStorage.setItem("bellmont-fcm", t);
+    return sessionStorage.getItem("bellmont-fcm");
+  } catch { return null; }
+}
+const FCM = typeof window === "undefined" ? null : detectFcm();
+export const fcmToken = () => FCM;
+/** Browser notifications only on Windows (in a browser or the Windows app); the Android app has its own. */
+export const browserNotifications = () => typeof navigator !== "undefined" && appKind() !== "android" && /Windows/.test(navigator.userAgent);

@@ -15,7 +15,11 @@
 //   { id, title: { <lang>: … }, body: { <lang>: … }, link, at } through Cloudflare's API; the cron trigger (every
 //   minute) sends it out a batch at a time (cursor kept in KV), skipping browsers of players who have an app.
 //   GET /broadcast returns the latest one (the Windows app, which has no Web Push, checks it while running).
-// Secrets: VAPID_PUBLIC, VAPID_PRIVATE_JWK.
+// POST /subscribe-fcm { token, lang }  (the Android app's Firebase Cloud Messaging token, passed in by the app)
+// Android phones get notifications only through FCM (shown by the app itself); browser Web Push only reaches
+// browsers on Windows (os: "windows").
+// Secrets: VAPID_PUBLIC, VAPID_PRIVATE_JWK, FCM_SERVICE_ACCOUNT (the Firebase project's service-account key JSON,
+// added by hand in Cloudflare: it lets this worker send through FCM).
 
 const PROJECT = "bellmont-city";
 const ORIGINS = ["https://bellmont-city.web.app", "https://bellmont-city.firebaseapp.com", "http://localhost:5173", "http://127.0.0.1:4181", "http://127.0.0.1:4182"];
@@ -102,10 +106,16 @@ async function vapid(env, endpoint) {
 }
 async function push(env, uid, message) {
   const subs = await subsOf(env, uid), dead = new Set();
-  // (With an app, only its devices: no second notification from a browser.)
-  const targets = (await hasApp(env, uid)) ? subs.filter((s) => s.app || s.os === "windows") : subs;
+  // (Phones: through FCM, shown by the app. Browsers: only on Windows.)
+  const targets = subs.filter((s) => s.fcm || s.os === "windows");
   let sent = 0;
   await Promise.all(targets.map(async (s) => {
+    if (s.fcm) {
+      const data = typeof message === "function" ? message(s) : message;
+      const r = await sendFcm(env, s.fcm, data).catch(() => "fail");
+      if (r === "dead") dead.add(s.fcm); else if (r === "ok") sent++;
+      return;
+    }
     if (!s.endpoint || !s.p256dh || !s.auth) return;
     try {
       const res = await fetch(s.endpoint, {
@@ -117,8 +127,42 @@ async function push(env, uid, message) {
       else if (res.ok) sent++;
     } catch { /* (one device failing doesn't stop the others) */ }
   }));
-  if (dead.size) await saveSubs(env, uid, subs.filter((s) => !dead.has(s.endpoint)));
+  if (dead.size) await saveSubs(env, uid, subs.filter((s) => !dead.has(s.endpoint) && !dead.has(s.fcm)));
   return sent;
+}
+
+// ---------- Firebase Cloud Messaging (HTTP v1), signed in as the project's service account ----------
+const PROJECT_FCM = "bellmont-city";
+let fcmAuth = null; // { token, exp }
+async function fcmAccessToken(env) {
+  if (fcmAuth && fcmAuth.exp > Date.now() + 60e3) return fcmAuth.token;
+  const sa = JSON.parse(env.FCM_SERVICE_ACCOUNT);
+  const now = Math.floor(Date.now() / 1000);
+  const enc64 = (o) => b64u(enc.encode(JSON.stringify(o)));
+  const unsigned = `${enc64({ alg: "RS256", typ: "JWT" })}.${enc64({ iss: sa.client_email, scope: "https://www.googleapis.com/auth/firebase.messaging", aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600 })}`;
+  const der = Uint8Array.from(atob(sa.private_key.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "")), (c) => c.charCodeAt(0));
+  const key = await crypto.subtle.importKey("pkcs8", der, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, enc.encode(unsigned));
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${unsigned}.${b64u(sig)}`,
+  });
+  const j = await res.json();
+  if (!j.access_token) throw new Error("FCM sign-in failed");
+  fcmAuth = { token: j.access_token, exp: Date.now() + (j.expires_in ?? 3600) * 1000 };
+  return fcmAuth.token;
+}
+/** Sends one notification to one Android phone; "dead" if that phone's token is no longer valid. */
+async function sendFcm(env, token, data) {
+  if (!env.FCM_SERVICE_ACCOUNT) return "skip";
+  const strings = Object.fromEntries(Object.entries(data).filter(([, v]) => v != null && v !== "").map(([k, v]) => [k, String(v)]));
+  const res = await fetch(`https://fcm.googleapis.com/v1/projects/${PROJECT_FCM}/messages:send`, {
+    method: "POST", headers: { Authorization: `Bearer ${await fcmAccessToken(env)}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ message: { token, data: strings, android: { priority: "HIGH", ttl: "86400s" } } }),
+  });
+  if (res.ok) return "ok";
+  const err = await res.text();
+  return res.status === 404 || /UNREGISTERED|INVALID_ARGUMENT/.test(err) ? "dead" : "fail";
 }
 
 // ---------- what can be announced (only what really just happened) ----------
@@ -185,7 +229,7 @@ export default {
       const b = await currentBroadcast(env);
       return json(b ? { id: b.id, title: b.title, body: b.body, link: b.link ?? "/", at: b.at } : {}, 200, origin);
     }
-    if (request.method !== "POST" || !["/notify", "/subscribe", "/app", "/status"].includes(url.pathname)) return json({ error: "not found" }, 404, origin);
+    if (request.method !== "POST" || !["/notify", "/subscribe", "/subscribe-fcm", "/app", "/status"].includes(url.pathname)) return json({ error: "not found" }, 404, origin);
     const idToken = (request.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
     let from;
     try { from = await verifyIdToken(idToken); } catch { return json({ error: "unauthorized" }, 401, origin); }
@@ -206,6 +250,20 @@ export default {
       await saveSubs(env, from, subs);
       if (app) await markApp(env, from, app);
       else if (brave && body?.app === "android") await markApp(env, from, "android"); // (they do have the app)
+      return json({ ok: true }, 200, origin);
+    }
+    if (url.pathname === "/subscribe-fcm") {
+      const token = body?.token;
+      if (typeof token !== "string" || !/^[\w:-]{20,400}$/.test(token)) return json({ error: "bad token" }, 400, origin);
+      const lang = typeof body?.lang === "string" && /^[a-z]{2}$/.test(body.lang) ? body.lang : "en";
+      // (One phone, one player: if someone else signed in on it before, it stops getting theirs.)
+      const owner = await env.SUBS.get(`fcm:${token}`);
+      if (owner && owner !== from) await saveSubs(env, owner, (await subsOf(env, owner)).filter((s) => s.fcm !== token));
+      const subs = (await subsOf(env, from)).filter((s) => s.fcm !== token);
+      subs.push({ fcm: token, lang, app: "android", at: Date.now() });
+      await saveSubs(env, from, subs);
+      if (owner !== from) await env.SUBS.put(`fcm:${token}`, from);
+      await markApp(env, from, "android");
       return json({ ok: true }, 200, origin);
     }
     if (url.pathname === "/app") { await markApp(env, from, body?.app); return json({ ok: true }, 200, origin); }

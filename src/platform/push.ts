@@ -5,7 +5,7 @@
 //  • while the game is open, the friend lists are also watched here (same tags, so one notification shows).
 import { collection, onSnapshot } from "firebase/firestore";
 import { auth, firestore } from "./firebase";
-import { appKind } from "@/lib/appKind";
+import { appKind, browserNotifications, fcmToken } from "@/lib/appKind";
 import { currentLang, tr } from "@/i18n";
 
 const PUSH_SERVER = "https://bellmont-push.bellmont-city.workers.dev";
@@ -22,32 +22,32 @@ async function callServer(path: string, body: unknown): Promise<Record<string, u
 }
 /** This device gets the signed-in player's notifications, even with the game closed (when they're allowed). */
 export async function registerDevice() {
+  // The Android app: its own notifications (Firebase Cloud Messaging), to this phone's token.
+  if (appKind() === "android") { const token = fcmToken(); if (token) await callServer("/subscribe-fcm", { token, lang: currentLang() }); return; }
+  // Other browsers than on Windows: no browser notifications (an old registration here is dropped).
+  if (!browserNotifications()) {
+    try { const reg = await navigator.serviceWorker?.getRegistration("/"); await (await reg?.pushManager?.getSubscription())?.unsubscribe(); } catch { /* */ }
+    return;
+  }
   if (pushPermission() !== "granted" || !("PushManager" in window)) return;
   try {
     const reg = await navigator.serviceWorker.getRegistration("/") ?? await navigator.serviceWorker.register("/sw.js");
     await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription() ?? await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromB64u(VAPID_PUBLIC) });
-    await callServer("/subscribe", { endpoint: sub.endpoint, p256dh: b64u(sub.getKey("p256dh")), auth: b64u(sub.getKey("auth")), app: appKind(), lang: currentLang(), os: onWindows() ? "windows" : null, browser: "brave" in navigator ? "brave" : null });
+    await callServer("/subscribe", { endpoint: sub.endpoint, p256dh: b64u(sub.getKey("p256dh")), auth: b64u(sub.getKey("auth")), app: appKind(), lang: currentLang(), os: "windows" });
   } catch { /* (Then only while the game is open.) */ }
 }
 /** Tells the other player (the sender checks it really happened). */
 export const notifyPlayer = (type: "request" | "accepted" | "invite", to: string, code?: string) => void callServer("/notify", { type, to, ...(code ? { code } : {}) });
-/**
- * Whether this page may show notifications: always inside the apps (each opening tells the sender this player has
- * one) and in browsers on Windows; in other browsers only if the player has no Android app (opened in the last 30
- * days) — then the app gets them.
- */
-const onWindows = () => /Windows/.test(navigator.userAgent);
+/** Whether this page shows notifications itself: only on Windows (the Android app gets its own from the server). */
 async function mayNotifyHere(): Promise<boolean> {
   const app = appKind();
-  if (app) { void callServer("/app", { app }); return true; }
-  if (onWindows()) return true; // (Browsers on Windows always: the Windows app only shows them while it's open.)
-  const r = await callServer("/status", {});
-  return !(r && r["hasApp"] === true);
+  if (app) void callServer("/app", { app });
+  return browserNotifications();
 }
 import type { Account } from "./account";
 
-export const pushPermission = (): NotificationPermission | "unsupported" => (typeof Notification === "undefined" || !("serviceWorker" in navigator) ? "unsupported" : Notification.permission);
+export const pushPermission = (): NotificationPermission | "unsupported" => (!browserNotifications() || typeof Notification === "undefined" || !("serviceWorker" in navigator) ? "unsupported" : Notification.permission);
 
 /** Asks for permission to show notifications (needs a tap). */
 export async function enablePush(): Promise<NotificationPermission | "unsupported"> {

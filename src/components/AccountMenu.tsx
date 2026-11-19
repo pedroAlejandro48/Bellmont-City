@@ -129,10 +129,9 @@ function Settings({ onClose }: { onClose: () => void }) {
       {QUALITIES.map((q, i) => <button key={q} type="button" aria-pressed={quality === q} onClick={() => { saveQuality(q); setQuality(q); }}
         className={`flex-1 px-2.5 py-1.5 text-sm font-semibold ${i > 0 ? "border-l border-input" : ""} ${quality === q ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-white/5"}`}>{QLABEL[q]}</button>)}
     </div>
-    <p className="sheet-label">Notifications</p>
+    {perm !== "unsupported" && <><p className="sheet-label">Notifications</p>
     {perm === "granted" ? <p className="text-sm">On: friend requests and room invitations reach you, even with the game closed.</p>
       : perm === "denied" ? <p className="text-sm text-muted-foreground">Blocked. Turn them on in your browser's or phone's settings for this site.</p>
-      : perm === "unsupported" ? <p className="text-sm text-muted-foreground">This browser can't show notifications. On iPhone, add the game to your Home Screen first.</p>
-      : <Button type="button" className="w-full" onClick={() => void enablePush().then((p) => { setPerm(p); if (p === "granted") void registerDevice(); })}>Turn on notifications</Button>}
+      : <Button type="button" className="w-full" onClick={() => void enablePush().then((p) => { setPerm(p); if (p === "granted") void registerDevice(); })}>Turn on notifications</Button>}</>}
   </Sheet>;
 }
