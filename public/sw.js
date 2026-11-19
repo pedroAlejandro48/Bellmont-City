@@ -24,21 +24,45 @@ self.addEventListener("fetch", (event) => {
   })());
 });
 
-// Notifications (shown by the game while it's open; a push handler too, in case a sending server is added): the
-// game's icon; tapping one brings the game forward (an invitation opens its room).
+// Notifications: the game's skyline as the small icon; a big picture only when another player is involved — theirs,
+// made round (or their initial in a circle). Tapping one brings the game forward (an invitation opens its room).
+async function roundIcon(url, who) {
+  const S = 192;
+  try {
+    const c = new OffscreenCanvas(S, S), g = c.getContext("2d");
+    g.beginPath(); g.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2); g.closePath(); g.clip();
+    if (url) {
+      const res = await fetch(url, { mode: "cors", referrerPolicy: "no-referrer" });
+      const img = await createImageBitmap(await res.blob());
+      const k = Math.max(S / img.width, S / img.height);
+      g.drawImage(img, (S - img.width * k) / 2, (S - img.height * k) / 2, img.width * k, img.height * k);
+    } else {
+      const name = String(who || "?"), hue = [...name].reduce((a, ch) => a + ch.charCodeAt(0), 0) % 360;
+      g.fillStyle = `hsl(${hue} 55% 42%)`; g.fillRect(0, 0, S, S);
+      g.fillStyle = "#fff"; g.font = "800 92px Arial, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+      g.fillText((name[0] || "?").toUpperCase(), S / 2, S / 2 + 4);
+    }
+    const blob = await c.convertToBlob({ type: "image/png" });
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return `data:image/png;base64,${btoa(bin)}`;
+  } catch { return url || undefined; }
+}
 self.addEventListener("push", (event) => {
   let msg = {};
   try { msg = event.data ? event.data.json() : {}; } catch { msg = { data: { body: event.data && event.data.text() } }; }
   const d = msg.data || {}, n = msg.notification || {};
   const title = d.title || n.title || "Bellmont City";
-  event.waitUntil(self.registration.showNotification(title, {
-    body: d.body || n.body || "",
-    // The friend's picture as the big image; the game's own badge as the small icon.
-    icon: d.icon || "/icon-192.png",
-    badge: "/badge-96.png",
-    tag: d.tag || undefined,
-    data: { link: d.link || "/" },
-  }));
+  event.waitUntil((async () => {
+    const icon = d.icon || d.who ? await roundIcon(d.icon, d.who) : undefined;
+    await self.registration.showNotification(title, {
+      body: d.body || n.body || "",
+      ...(icon ? { icon } : {}),
+      badge: "/badge-96.png",
+      tag: d.tag || undefined,
+      data: { link: d.link || "/" },
+    });
+  })());
 });
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();

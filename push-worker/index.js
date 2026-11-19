@@ -124,8 +124,14 @@ async function push(env, uid, message) {
 // ---------- what can be announced (only what really just happened) ----------
 const FRESH_MS = 3 * 60e3;
 const SITE = "https://bellmont-city.web.app";
-// The friend's picture (the big icon): theirs from Google, one of the game's (a site path), or the game's icon.
-const pic = (p) => (typeof p === "string" && p ? (p.startsWith("/") ? SITE + p : p) : `${SITE}/icon-192.png`);
+// The other player's picture (the big icon, made round on the device): theirs from Google or one of the game's (a
+// site path); without one, the device draws their initial in a circle (`who`).
+const pic = (p) => (typeof p === "string" && p ? (p.startsWith("/") ? SITE + p : p) : null);
+// The words, in each device's language (TEXTS is added at deploy from the game's dictionaries; English otherwise).
+const tr = (lang, text, ...args) => {
+  const t = (typeof TEXTS !== "undefined" && TEXTS[lang]?.[text]) || text;
+  return t.replace(/\{(\d)\}/g, (_, i) => args[Number(i)] ?? "");
+};
 const fresh = (at) => typeof at === "number" && Date.now() - at < FRESH_MS;
 async function message(idToken, from, body) {
   const to = String(body.to ?? ""), type = body.type;
@@ -133,19 +139,19 @@ async function message(idToken, from, body) {
   if (type === "request") {
     const r = await getDoc(idToken, `friends/${to}/requests/${from}`);
     if (!r || !fresh(r.at)) return null;
-    return { to, title: "New friend request", body: `${r.name || "Someone"} wants to be your friend.`, tag: `req-${from}`, link: "/", icon: pic(r.photo) };
+    return { to, title: ["New friend request"], body: ["{0} wants to be your friend.", r.name, "Someone"], tag: `req-${from}`, link: "/", icon: pic(r.photo), who: r.name || "" };
   }
   if (type === "accepted") {
     const f = await getDoc(idToken, `friends/${to}/list/${from}`);
     if (!f || f.by !== from || !fresh(f.at)) return null;
-    return { to, title: "Friend request accepted", body: `${f.name || "Your friend"} accepted your friend request.`, tag: `acc-${from}`, link: "/", icon: pic(f.photo) };
+    return { to, title: ["Friend request accepted"], body: ["{0} accepted your friend request.", f.name, "Your friend"], tag: `acc-${from}`, link: "/", icon: pic(f.photo), who: f.name || "" };
   }
   if (type === "invite") {
     const code = String(body.code ?? "");
     if (!/^[A-Z0-9]{6}$/.test(code)) return null;
     const i = await getDoc(idToken, `friends/${to}/invites/${code}`);
     if (!i || i.from !== from || !fresh(i.at)) return null;
-    return { to, title: "Room invitation", body: `${i.name || "A friend"} invited you to room ${code}.`, tag: `inv-${code}`, link: `/?room=${code}`, icon: pic(i.photo) };
+    return { to, title: ["Room invitation"], body: ["{0} invited you to room {1}.", i.name, "A friend", code], tag: `inv-${code}`, link: `/?room=${code}`, icon: pic(i.photo), who: i.name || "" };
   }
   return null;
 }
@@ -161,7 +167,7 @@ async function sendBroadcast(env) {
   let sent = 0;
   for (const k of page.keys) {
     const uid = k.name.slice(5);
-    sent += await push(env, uid, (sub) => ({ title: pick(b.title, sub.lang), body: pick(b.body, sub.lang), tag: `news-${b.id}`, link: b.link ?? "/", icon: `${SITE}/icon-192.png` }));
+    sent += await push(env, uid, (sub) => ({ title: pick(b.title, sub.lang), body: pick(b.body, sub.lang), tag: `news-${b.id}`, link: b.link ?? "/" }));
   }
   const next = page.list_complete ? { ...b, cursor: null, done: true } : { ...b, cursor: page.cursor };
   next.sent = (b.sent ?? 0) + sent;
@@ -187,16 +193,19 @@ export default {
     try { body = await request.json(); } catch { return json({ error: "bad request" }, 400, origin); }
     if (url.pathname === "/subscribe") {
       const { endpoint, p256dh, auth } = body ?? {};
-      const app = body?.app === "android" || body?.app === "windows" ? body.app : null;
+      // (The Android app running inside Brave can't hand notifications to the app: that copy counts as a browser.)
+      const brave = body?.browser === "brave";
+      const app = !brave && (body?.app === "android" || body?.app === "windows") ? body.app : null;
       const lang = typeof body?.lang === "string" && /^[a-z]{2}$/.test(body.lang) ? body.lang : "en";
       if (typeof endpoint !== "string" || !/^https:\/\//.test(endpoint) || endpoint.length > 1000 || typeof p256dh !== "string" || typeof auth !== "string") return json({ error: "bad subscription" }, 400, origin);
       const all = await subsOf(env, from), before = all.find((s) => s.endpoint === endpoint);
       const subs = all.filter((s) => s.endpoint !== endpoint);
       // (The Android app shares the phone browser's subscription: once it's the app's, it stays the app's.)
       const os = body?.os === "windows" ? "windows" : null;
-      subs.push({ endpoint, p256dh, auth, lang, at: Date.now(), ...(os ? { os } : {}), ...(app || before?.app ? { app: app ?? before.app } : {}) });
+      subs.push({ endpoint, p256dh, auth, lang, at: Date.now(), ...(os ? { os } : {}), ...(!brave && (app || before?.app) ? { app: app ?? before.app } : {}) });
       await saveSubs(env, from, subs);
       if (app) await markApp(env, from, app);
+      else if (brave && body?.app === "android") await markApp(env, from, "android"); // (they do have the app)
       return json({ ok: true }, 200, origin);
     }
     if (url.pathname === "/app") { await markApp(env, from, body?.app); return json({ ok: true }, 200, origin); }
@@ -204,7 +213,9 @@ export default {
     try {
       const m = await message(idToken, from, body);
       if (!m) return json({ sent: 0 }, 200, origin);
-      const sent = await push(env, m.to, { title: m.title, body: m.body, tag: m.tag, link: m.link, icon: m.icon });
+      // (title/body: [English text, name, fallback name if none, more args] → in each device's language)
+      const words = (lang, [text, name, fallback, ...rest]) => tr(lang, text, name || (fallback ? tr(lang, fallback) : ""), ...rest);
+      const sent = await push(env, m.to, (sub) => ({ title: words(sub.lang, m.title), body: words(sub.lang, m.body), tag: m.tag, link: m.link, icon: m.icon, who: m.who }));
       return json({ sent }, 200, origin);
     } catch (e) {
       return json({ error: String(e?.message ?? e) }, 500, origin);

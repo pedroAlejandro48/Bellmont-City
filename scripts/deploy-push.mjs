@@ -1,7 +1,15 @@
 // Publishes push-worker/index.js as the Cloudflare Worker "bellmont-push" (https://bellmont-push.bellmont-city.workers.dev),
 // with its Workers KV namespace (the players' devices). Needs a Cloudflare API token (Edit Workers) for
 // api.cloudflare.com. `--secrets` sets the VAPID key pair once (VAPID_PRIVATE_JWK, VAPID_PUBLIC); later deploys keep it.
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+
+// The notification words in every language, from the game's dictionaries (src/i18n/dict/<lang>.json).
+const WORDS = ["New friend request", "{0} wants to be your friend.", "Someone", "Friend request accepted", "{0} accepted your friend request.", "Your friend", "Room invitation", "{0} invited you to room {1}.", "A friend"];
+const TEXTS = {};
+for (const f of readdirSync("src/i18n/dict").filter((n) => n.endsWith(".json"))) {
+  const dict = JSON.parse(readFileSync(`src/i18n/dict/${f}`, "utf8"));
+  TEXTS[f.replace(".json", "")] = Object.fromEntries(WORDS.filter((w) => dict[w]).map((w) => [w, dict[w]]));
+}
 
 const ACCOUNT = process.env.CLOUDFLARE_ACCOUNT_ID || "93a2a37e3231f6afe7fa7b65aef743a4";
 const NAME = "bellmont-push", KV_TITLE = "bellmont-push-subs";
@@ -17,7 +25,8 @@ if (!kv) kv = await call(`${BASE}/storage/kv/namespaces`, jsonInit("POST", { tit
 
 const form = new FormData();
 form.append("metadata", JSON.stringify({ main_module: "index.js", compatibility_date: "2024-11-01", keep_bindings: ["secret_text"], bindings: [{ type: "kv_namespace", name: "SUBS", namespace_id: kv.id }] }));
-form.append("index.js", new Blob([readFileSync("push-worker/index.js")], { type: "application/javascript+module" }), "index.js");
+const source = `const TEXTS = ${JSON.stringify(TEXTS)};\n` + readFileSync("push-worker/index.js", "utf8");
+form.append("index.js", new Blob([source], { type: "application/javascript+module" }), "index.js");
 await call(API, { method: "PUT", headers: auth, body: form }, "upload");
 await call(`${API}/subdomain`, jsonInit("POST", { enabled: true }), "workers.dev");
 // Every minute: sends out a pending broadcast, a batch at a time (scripts/broadcast.mjs).

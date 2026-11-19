@@ -6,7 +6,7 @@
 import { collection, onSnapshot } from "firebase/firestore";
 import { auth, firestore } from "./firebase";
 import { appKind } from "@/lib/appKind";
-import { currentLang } from "@/i18n";
+import { currentLang, tr } from "@/i18n";
 
 const PUSH_SERVER = "https://bellmont-push.bellmont-city.workers.dev";
 /** The sender's public key (VAPID): browsers only accept pushes signed with its private half. */
@@ -27,7 +27,7 @@ export async function registerDevice() {
     const reg = await navigator.serviceWorker.getRegistration("/") ?? await navigator.serviceWorker.register("/sw.js");
     await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.getSubscription() ?? await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: fromB64u(VAPID_PUBLIC) });
-    await callServer("/subscribe", { endpoint: sub.endpoint, p256dh: b64u(sub.getKey("p256dh")), auth: b64u(sub.getKey("auth")), app: appKind(), lang: currentLang(), os: onWindows() ? "windows" : null });
+    await callServer("/subscribe", { endpoint: sub.endpoint, p256dh: b64u(sub.getKey("p256dh")), auth: b64u(sub.getKey("auth")), app: appKind(), lang: currentLang(), os: onWindows() ? "windows" : null, browser: "brave" in navigator ? "brave" : null });
   } catch { /* (Then only while the game is open.) */ }
 }
 /** Tells the other player (the sender checks it really happened). */
@@ -56,16 +56,41 @@ export async function enablePush(): Promise<NotificationPermission | "unsupporte
   return Notification.permission;
 }
 
-// (The small status-bar icon is the game's badge; the big picture is the friend's.)
-async function showNow(title: string, body: string, tag: string, link = "/", photo?: unknown) {
+/** The other player's picture made round (or their initial in a circle), as an image the notification can show. */
+async function roundIcon(photo: string | null, who: string): Promise<string | undefined> {
+  const S = 192, c = document.createElement("canvas");
+  c.width = c.height = S;
+  const g = c.getContext("2d");
+  if (!g) return photo ?? undefined;
+  g.beginPath(); g.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2); g.closePath(); g.clip();
+  try {
+    if (photo) {
+      const img = new Image(); img.crossOrigin = "anonymous"; img.referrerPolicy = "no-referrer"; img.src = photo;
+      await img.decode();
+      const k = Math.max(S / img.naturalWidth, S / img.naturalHeight);
+      g.drawImage(img, (S - img.naturalWidth * k) / 2, (S - img.naturalHeight * k) / 2, img.naturalWidth * k, img.naturalHeight * k);
+    } else {
+      const hue = [...who].reduce((a, ch) => a + ch.charCodeAt(0), 0) % 360;
+      g.fillStyle = `hsl(${hue} 55% 42%)`; g.fillRect(0, 0, S, S);
+      g.fillStyle = "#fff"; g.font = "800 92px Arial, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+      g.fillText((who[0] ?? "?").toUpperCase(), S / 2, S / 2 + 4);
+    }
+    return c.toDataURL("image/png");
+  } catch { return photo ?? undefined; }
+}
+
+// (The small status-bar icon is the game's badge; a big picture only when another player is involved: theirs, round.)
+async function showNow(title: string, body: string, tag: string, link = "/", photo?: unknown, who?: string) {
   if (pushPermission() !== "granted") return;
-  const icon = typeof photo === "string" && photo ? photo : "/icon-192.png";
+  const pic = typeof photo === "string" && photo ? photo : null;
+  title = tr(title); body = tr(body); // (in the game's language)
+  const icon = who !== undefined ? await roundIcon(pic, who || "?") : undefined;
   try {
     const reg = await navigator.serviceWorker.getRegistration("/");
-    if (reg) { await reg.showNotification(title, { body, tag, icon, badge: "/badge-96.png", data: { link } }); return; }
+    if (reg) { await reg.showNotification(title, { body, tag, ...(icon ? { icon } : {}), badge: "/badge-96.png", data: { link } }); return; }
   } catch { /* (The Windows app has no service-worker notifications: a plain one below.) */ }
   try {
-    const n = new Notification(title, { body, tag, icon });
+    const n = new Notification(title, { body, tag, ...(icon ? { icon } : {}) });
     // (In the Windows app, ?app-show=1 brings the window back from the tray.)
     n.onclick = () => { window.focus(); if (appKind() === "windows") location.href = `${link}${link.includes("?") ? "&" : "?"}app-show=1`; else if (link !== "/") location.href = link; };
   } catch { /* (Nothing shown: the menu's badges still say so.) */ }
@@ -86,15 +111,15 @@ export function watchNotifications(me: Account) {
   const stops = [
     onSnapshot(base("requests"), (s) => s.docChanges().forEach((c) => {
       const d = c.doc.data();
-      if (c.type === "added" && fresh(d["at"])) show("New friend request", `${d["name"] || "Someone"} wants to be your friend.`, `req-${c.doc.id}`, "/", d["photo"]);
+      if (c.type === "added" && fresh(d["at"])) show("New friend request", `${d["name"] || "Someone"} wants to be your friend.`, `req-${c.doc.id}`, "/", d["photo"], String(d["name"] ?? ""));
     }), () => {}),
     onSnapshot(base("list"), (s) => s.docChanges().forEach((c) => {
       const d = c.doc.data();
-      if (c.type === "added" && fresh(d["at"]) && d["by"] && d["by"] !== me.id) show("Friend request accepted", `${d["name"] || "Your friend"} accepted your friend request.`, `acc-${c.doc.id}`, "/", d["photo"]);
+      if (c.type === "added" && fresh(d["at"]) && d["by"] && d["by"] !== me.id) show("Friend request accepted", `${d["name"] || "Your friend"} accepted your friend request.`, `acc-${c.doc.id}`, "/", d["photo"], String(d["name"] ?? ""));
     }), () => {}),
     onSnapshot(base("invites"), (s) => s.docChanges().forEach((c) => {
       const d = c.doc.data();
-      if (c.type === "added" && fresh(d["at"])) show("Room invitation", `${d["name"] || "A friend"} invited you to room ${c.doc.id}.`, `inv-${c.doc.id}`, `/?room=${c.doc.id}`, d["photo"]);
+      if (c.type === "added" && fresh(d["at"])) show("Room invitation", `${d["name"] || "A friend"} invited you to room ${c.doc.id}.`, `inv-${c.doc.id}`, `/?room=${c.doc.id}`, d["photo"], String(d["name"] ?? ""));
     }), () => {}),
   ];
   return () => { stops.forEach((f) => f()); if (poll) clearInterval(poll); };
