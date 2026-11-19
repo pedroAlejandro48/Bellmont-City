@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "893211055022",
+    "firebase_url": "https://bellmont-city-default-rtdb.firebaseio.com",
+    "project_id": "bellmont-city",
+    "storage_bucket": "bellmont-city.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:893211055022:android:b5d9abc272707748c0ee3f",
+        "android_client_info": {
+          "package_name": "app.bellmont.city"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "893211055022-je7ob2qb19gorft738kev2s9vbgd6vjm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD2Gsi9l1lTXwQvFhs2TGp7BGj2iuw3u4k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "893211055022-je7ob2qb19gorft738kev2s9vbgd6vjm.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

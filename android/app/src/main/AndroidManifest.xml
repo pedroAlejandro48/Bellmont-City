@@ -2,12 +2,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- (BellmontLauncher checks whether Chrome is installed: Android 11+ only shows apps listed here.) -->
-    <queries>
-        <package android:name="com.android.chrome" />
-        <package android:name="com.chrome.beta" />
-        <package android:name="com.chrome.dev" />
-    </queries>
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -16,8 +10,20 @@
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Translucent.NoTitleBar">
         <meta-data android:name="asset_statements" android:resource="@string/asset_statements" />
+        <!-- The app icon: asks for notifications the first time, then opens the game with this phone's FCM token. -->
         <activity
-            android:name=".BellmontLauncher"
+            android:name=".StartActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
             android:exported="true"
             android:label="@string/app_name">
             <meta-data android:name="android.support.customtabs.trusted.DEFAULT_URL" android:value="${launchUrl}" />
@@ -27,10 +33,6 @@
             <meta-data android:name="android.support.customtabs.trusted.SPLASH_SCREEN_BACKGROUND_COLOR" android:resource="@color/background" />
             <meta-data android:name="android.support.customtabs.trusted.DISPLAY_MODE" android:value="immersive" />
             <meta-data android:name="android.support.customtabs.trusted.SCREEN_ORIENTATION" android:value="any" />
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -39,21 +41,15 @@
             </intent-filter>
         </activity>
         <activity android:name="com.google.androidbrowserhelper.trusted.FocusActivity" />
-        <!-- Notifications from the site come from this app (its name, the game's white skyline as the small icon),
-             not from Chrome; on Android 13+ the app asks for permission the first time the game asks. -->
+        <!-- Notifications: sent by the game's server through Firebase Cloud Messaging and shown by the app itself. -->
         <service
-            android:name="com.google.androidbrowserhelper.trusted.DelegationService"
-            android:enabled="true"
-            android:exported="true">
-            <meta-data android:name="android.support.customtabs.trusted.SMALL_ICON" android:resource="@drawable/ic_notification" />
+            android:name=".Messaging"
+            android:exported="false">
             <intent-filter>
-                <action android:name="android.support.customtabs.trusted.TRUSTED_WEB_ACTIVITY_SERVICE" />
-                <category android:name="android.intent.category.DEFAULT" />
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
-        <activity
-            android:name="com.google.androidbrowserhelper.trusted.NotificationPermissionRequestActivity"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_notification" />
         <activity android:name="com.google.androidbrowserhelper.trusted.WebViewFallbackActivity" android:configChanges="orientation|screenSize" />
         <provider
             android:name="androidx.core.content.FileProvider"

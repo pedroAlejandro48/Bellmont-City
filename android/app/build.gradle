@@ -1,7 +1,10 @@
 // Bellmont City for Android: a Trusted Web Activity — the installed app opens https://bellmont-city.web.app full
 // screen (in the phone's Chrome engine), so it always runs the latest version of the game; this wrapper rarely
 // needs rebuilding. Built and signed by .github/workflows/apps.yml.
-plugins { id "com.android.application" }
+plugins {
+    id "com.android.application"
+    id "com.google.gms.google-services" // (reads google-services.json: this app in the Firebase project)
+}
 
 def host = "bellmont-city.web.app"
 android {
@@ -13,7 +16,7 @@ android {
         targetSdk 34
         versionCode Integer.parseInt(System.getenv("VERSION_CODE") ?: "1")
         versionName System.getenv("VERSION_NAME") ?: "1.0"
-        manifestPlaceholders = [hostName: host, launchUrl: "https://" + host + "/?app=android"]
+        manifestPlaceholders = [hostName: host, launchUrl: "https://" + host + "/?app=android"]  // (StartActivity adds the FCM token)
         resValue "string", "app_name", "Bellmont City"
         resValue "string", "asset_statements", "[{ \"relation\": [\"delegate_permission/common.handle_all_urls\"], \"target\": { \"namespace\": \"web\", \"site\": \"https://" + host + "\" } }]"
     }
@@ -32,4 +35,6 @@ android {
 }
 dependencies {
     implementation "com.google.androidbrowserhelper:androidbrowserhelper:2.5.0"
+    implementation "com.google.firebase:firebase-messaging:24.0.3"
+    implementation "androidx.core:core:1.13.1"
 }
