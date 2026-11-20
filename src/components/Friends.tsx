@@ -74,7 +74,7 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
       <Button type="button" variant={adding ? "secondary" : "outline"} size="icon" aria-label="Add a friend" aria-expanded={adding} onClick={() => { setAdding((v) => !v); setOpen(false); setMsg(null); }}><span className="add-friend-icon" aria-hidden><User /><Plus className="plus" strokeWidth={3.2} /></span></Button>
     </div>
     {adding && <form data-extra onSubmit={add} className="mt-2 flex items-stretch gap-2">
-      <input aria-label="Username or email" className="auth-input flex-1" autoFocus autoComplete="off" spellCheck={false} placeholder="Username or email" value={query} onChange={(e) => setQuery(e.target.value)} />
+      <input aria-label="Username or email" className="auth-input flex-1 lowercase placeholder:normal-case" autoFocus autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="Username or email" value={query} onChange={(e) => setQuery(e.target.value.toLowerCase())} />
       <Button type="submit" disabled={busy} aria-label="Send friend request" className="h-auto self-stretch px-3"><UserPlus aria-hidden /></Button>
     </form>}
     {msg && <p data-extra className="mt-1 text-center text-xs text-accent">{msg}</p>}

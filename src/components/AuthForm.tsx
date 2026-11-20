@@ -93,7 +93,7 @@ export function AuthForm({ room, onSignedIn, children }: AuthFormProps) {
           </div>}
           {usingEmail
             ? <input aria-label="Email" className="auth-input" type="email" autoComplete="email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            : <input aria-label="Username" className="auth-input" autoComplete="username" required minLength={3} maxLength={24} placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />}
+            : <input aria-label="Username" className="auth-input lowercase placeholder:normal-case" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required minLength={3} maxLength={24} placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} />}
           <input aria-label="Password" className="auth-input" type="password" autoComplete={mode === "up" ? "new-password" : "current-password"} required minLength={mode === "up" ? 6 : 1} maxLength={256} placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} />
           <Button disabled={busy} className="w-full">
             {busy ? "…" : mode === "in" ? "Enter the city" : "Create account"}

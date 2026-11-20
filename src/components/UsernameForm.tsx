@@ -53,7 +53,7 @@ export function UsernameForm({ account, password, onComplete, onSignOut }: { acc
       <form onSubmit={submit} className="auth-box hud-panel mt-6 space-y-4 p-6">
         {needsName && <>
           <label className="block text-sm text-foreground" htmlFor="player-username">Username</label>
-          <input id="player-username" className="auth-input" autoComplete="username" autoFocus required minLength={3} maxLength={24} value={username} onChange={(e) => setUsername(e.target.value)} />
+          <input id="player-username" className="auth-input lowercase" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} autoFocus required minLength={3} maxLength={24} value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} />
           <p className="text-xs text-muted-foreground">3–24 letters, numbers, or underscores. You'll sign in with it.</p>
         </>}
         <div className="flex overflow-hidden rounded-md border border-input" role="radiogroup" aria-label="Gender">

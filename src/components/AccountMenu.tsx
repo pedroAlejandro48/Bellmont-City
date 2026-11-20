@@ -87,7 +87,7 @@ function Profile({ account, friends, onAccount, onSignOut, onClose }: { account:
       <button type="button" className="link back" onClick={() => { setRenaming(null); setNameMsg(null); }}><ArrowLeft size={14} aria-hidden /> Back</button>
       <p className="text-sm">Now: <b data-no-translate>{account.username}</b></p>
       {account.usesPassword ? <form onSubmit={rename} className="space-y-2">
-        <input aria-label="New username" className="auth-input" autoComplete="off" autoFocus placeholder="New username" value={newName} onChange={(e) => setNewName(e.target.value)} />
+        <input aria-label="New username" className="auth-input lowercase placeholder:normal-case" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} autoFocus placeholder="New username" value={newName} onChange={(e) => setNewName(e.target.value.toLowerCase())} />
         <input aria-label="Password" className="auth-input" type="password" autoComplete="current-password" placeholder="Your password" value={pw} onChange={(e) => setPw(e.target.value)} />
         <Button type="submit" className="w-full" disabled={busy || !newName || !pw}>{busy ? "…" : "Change username"}</Button>
         {nameMsg && <p className="text-center text-xs text-accent">{nameMsg}</p>}
