@@ -12,6 +12,7 @@ import { CloudGame } from "@/game/CloudGame";
 import { GuestGame } from "@/game/GuestGame";
 import { RoomEntry, type RoomRequest } from "@/multiplayer/RoomGame";
 import { setInGame, watchForUpdates } from "@/lib/updates";
+import { appKind } from "@/lib/appKind";
 import { isSignedIn, signOutAccount, watchAccount, type Account } from "@/platform/account";
 import { normalizeRoomCode } from "@/platform/rooms";
 import "./styles.css";
@@ -87,6 +88,8 @@ startCityBackdrop();
 listenForInstall();
 guardBackButton();
 watchForUpdates();
+// The Windows app: Ctrl + R refreshes the game (as its refresh button's tip says).
+if (appKind() === "windows") window.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && (e.key === "r" || e.key === "R")) { e.preventDefault(); location.reload(); } });
 // Installable as an app (Android browsers need a service worker); only in real builds, so dev never caches.
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => { navigator.serviceWorker.register("/sw.js").catch(() => {}); });

@@ -1099,3 +1099,6 @@
 1098|Entrar en la sala {0}
 1099|Administrador de la sala
 1100|(tú)
+1101|Está guardada en tus salas, en Unirse a una sala, así que siempre puedes volver. Comparte este código, o el enlace de la sala desde el menú ⚙, para que otros entren.
+1102|La sala existe mientras alguien la tenga en sus salas.
+1103|Actualizar

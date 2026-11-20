@@ -717,3 +717,12 @@ input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-sele
 .pill.kick { flex: none; font-size: 0.7rem; padding: 0.2rem 0.55rem; }
 .saved-room .pill, .pill.kick { height: 1.7rem; padding: 0 0.65rem; border-radius: 999px; font-weight: 800; background: #d93a3a; color: #fff; }
 .saved-room .pill:disabled { opacity: 0.55; }
+/* Windows app: the refresh button beside the picture, with "Ctrl + R" under it while pointed at. */
+.account-menu { display: flex; align-items: center; gap: 0.5rem; }
+.account-menu .account-drop { position: absolute; top: 100%; left: 0; }
+.account-refresh-wrap { position: relative; display: inline-flex; }
+.account-refresh { width: 2.5rem; height: 2.5rem; border-radius: 50%; display: grid; place-items: center; background: rgba(12,16,32,0.72); border: 1px solid rgba(255,255,255,0.18); color: #f2f3f7; transition: transform 0.15s, background 0.15s; }
+.account-refresh:hover { background: rgba(40,48,72,0.85); }
+.account-refresh:active { transform: rotate(-30deg) scale(0.95); }
+.hover-tip { position: absolute; top: calc(100% + 0.35rem); left: 50%; transform: translateX(-50%); padding: 0.2rem 0.5rem; border-radius: 0.4rem; background: rgba(0,0,0,0.82); color: #fff; font-size: 0.72rem; font-weight: 700; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.12s; }
+.account-refresh-wrap:hover .hover-tip { opacity: 1; }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Settings, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { roomLink, ROOM_LIFETIME_DAYS } from "@/platform/rooms";
+import { roomLink } from "@/platform/rooms";
 import { InviteFriends } from "@/components/Friends";
 import type { Account } from "@/platform/account";
 
@@ -62,8 +62,8 @@ export function RoomCreatedNotice({ code, onClose }: { code: string; onClose: ()
     <div className="hud-panel w-full max-w-sm space-y-4 p-6 text-foreground">
       <h2 id="room-notice-title" className="flex items-center gap-2 font-display text-xl"><TriangleAlert className="h-5 w-5 text-yellow-400" aria-hidden />Remember your room code</h2>
       <p className="text-center font-display text-3xl tracking-[0.2em]">{code}</p>
-      <p className="text-sm text-muted-foreground">This code is the only way you can get back into this world, so write it down or share the room's link from the ⚙ menu.</p>
-      <p className="text-sm text-muted-foreground">Rooms are deleted automatically after {ROOM_LIFETIME_DAYS} days with nobody in them.</p>
+      <p className="text-sm text-muted-foreground">It's saved in your rooms, under Join a room, so you can always come back. Share this code, or the room's link from the ⚙ menu, for others to join.</p>
+      <p className="text-sm text-muted-foreground">The room stays for as long as someone has it in their rooms.</p>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={hide} onChange={(e) => setHide(e.target.checked)} className="h-4 w-4 accent-primary" />Do not show again</label>
       <Button className="w-full" onClick={close}>OK</Button>
     </div>

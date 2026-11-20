@@ -1046,3 +1046,6 @@
 1098|Entrer dans la salle {0}
 1099|Admin de la salle
 1100|(toi)
+1101|Elle est enregistrée dans tes salles, sous Rejoindre une salle : tu peux toujours revenir. Partage ce code, ou le lien de la salle depuis le menu ⚙, pour que d'autres la rejoignent.
+1102|La salle existe tant que quelqu'un l'a dans ses salles.
+1103|Actualiser

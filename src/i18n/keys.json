@@ -1099,5 +1099,8 @@
   "Who has this room",
   "Join room {0}",
   "Room admin",
-  "(you)"
+  "(you)",
+  "It's saved in your rooms, under Join a room, so you can always come back. Share this code, or the room's link from the ⚙ menu, for others to join.",
+  "The room stays for as long as someone has it in their rooms.",
+  "Refresh"
 ]

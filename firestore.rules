@@ -108,7 +108,8 @@ service cloud.firestore {
         || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['admin'])
           && resource.data.get('admin', resource.data.createdBy) == request.auth.uid
           && exists(/databases/$(database)/documents/rooms/$(code)/members/$(request.resource.data.admin))));
-      allow delete: if signedIn() && (resource.data.get('admin', resource.data.createdBy) == request.auth.uid || resource.data.expiresAt <= request.time);
+      // (No expiry: a room lasts while someone has it; its admin — the last one left — deletes it.)
+      allow delete: if signedIn() && resource.data.get('admin', resource.data.createdBy) == request.auth.uid;
 
       // Who has the room (saved it by joining): themselves in, themselves out (discard), or out by the admin (kick).
       match /members/{uid} {

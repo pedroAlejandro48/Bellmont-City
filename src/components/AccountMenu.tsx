@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { X } from "lucide-react";
+import { RotateCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarPicker, EditableAvatar } from "@/components/Avatar";
 import { AccountError, changeUsername, chooseAvatar, deleteAccount, type Account } from "@/platform/account";
@@ -22,6 +22,11 @@ export function AccountMenu({ account, friends, onAccount, onSignOut }: { accoun
   return <>
     <div className="account-menu">
       <button type="button" className="account-pic" aria-label="Your account" aria-expanded={open} onClick={() => setOpen((v) => !v)}><Avatar photo={account.photo} name={name} size={40} /></button>
+      {/* (Windows app: refresh, with its key under it while the pointer is on it.) */}
+      {inWindowsApp() && <span className="account-refresh-wrap">
+        <button type="button" className="account-refresh" aria-label="Refresh" onClick={() => location.reload()}><RotateCw size={18} aria-hidden /></button>
+        <span className="hover-tip" aria-hidden data-no-translate>Ctrl + R</span>
+      </span>}
       {open && <ul className="hud-panel account-drop">
         <li><button type="button" onClick={() => { setPanel("profile"); setOpen(false); }}>Profile</button></li>
         <li><button type="button" onClick={() => { setPanel("settings"); setOpen(false); }}>Settings</button></li>
