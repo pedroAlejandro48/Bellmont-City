@@ -1090,3 +1090,12 @@
 1089|pagar
 1090|pts
 1091|Tu foto de Google
+1092|En línea
+1093|Desconectados
+1094|Expulsar
+1095|Descartar sala
+1096|Te han sacado de esta sala.
+1097|Quién tiene esta sala
+1098|Entrar en la sala {0}
+1099|Administrador de la sala
+1100|(tú)

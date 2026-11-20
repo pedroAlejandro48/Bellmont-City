@@ -31,8 +31,11 @@ export function capturePose(rig: AvatarRig, scooter: { riding: boolean; braking:
   const s: number[] = [];
   pushTransform(s, bike);
   s.push(round(rig.scooter[1]?.rotation.y ?? 0));
-  const pose: PoseWire = { ts, b, bv: root.visible ? 1 : 0, s, sf: (scooter.riding ? 1 : 0) | (scooter.braking ? 2 : 0) | (scooter.id !== null ? 4 : 0) };
-  if (rig.ragdoll[1]?.visible) {
+  // (Others always see this player's body — it's hidden here only for this player's own view, e.g. the cupboard
+  // close-up — unless the ragdoll is shown instead.)
+  const ragdollShown = !!rig.ragdoll[1]?.visible;
+  const pose: PoseWire = { ts, b, bv: ragdollShown ? 0 : 1, s, sf: (scooter.riding ? 1 : 0) | (scooter.braking ? 2 : 0) | (scooter.id !== null ? 4 : 0) };
+  if (ragdollShown) {
     const r: number[] = [];
     for (const part of rig.ragdoll) pushTransform(r, part);
     pose.r = r;

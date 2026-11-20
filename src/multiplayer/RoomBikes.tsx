@@ -1,3 +1,4 @@
+import { pickHost } from "./host";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import type * as THREE from "three";
@@ -121,7 +122,7 @@ export function RoomBikes({ state, code, uid, channel }: { state: GameState; cod
       sh.pushed.clear();
     }
     // Hosting the room: parked bikes nobody controls are moved here by everyone's shoves.
-    const hosting = (() => { let best: (typeof peers)[number] | null = null; for (const p of peers) if (p.kind === "viewer" && (!best || ((p.presence["joinedAt"] as number) ?? Infinity) < ((best.presence["joinedAt"] as number) ?? Infinity) || (p.presence["joinedAt"] === best.presence["joinedAt"] && p.peer < best.peer))) best = p; return best?.sameTab ?? false; })();
+    const hosting = pickHost(peers)?.sameTab ?? false;
     if (hosting && now - sh.appliedAt > 100) {
       sh.appliedAt = now;
       for (const [id, rec] of free) {

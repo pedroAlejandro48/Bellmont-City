@@ -1,3 +1,4 @@
+import { pickHost } from "./host";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useRef } from "react";
 import { SIT } from "@/game/restaurantRoom";
@@ -86,8 +87,7 @@ export function FurnitureSync({ state, channel }: { state: GameState; channel: N
     for (const peer of [...m.theirs.keys()]) if (!present.has(peer)) { m.theirs.delete(peer); m.shown.delete(peer); }
 
     // ---- the host's settled record ----
-    let host: Peer | null = null;
-    for (const p of peers) if (p.kind === "viewer" && (!host || joinedAt(p) < joinedAt(host) || (joinedAt(p) === joinedAt(host) && p.peer < host.peer))) host = p;
+    const host: Peer | null = pickHost(peers);
     if (host && !host.sameTab) {
       const v = host.presence["fbase"] as { n?: unknown; pos?: unknown; snap?: unknown } | undefined;
       if (v && v.n !== undefined && v.n !== m.baseN) {

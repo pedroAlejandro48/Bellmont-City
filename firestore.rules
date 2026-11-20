@@ -92,13 +92,37 @@ service cloud.firestore {
 
     // Multiplayer rooms: a code is taken while its document exists. Entering a room pushes back its expiry; the
     // creator may delete a room at any time, and anyone may remove one unvisited for 30 days (expired).
+    // `admin`: the creator, until they discard the room; then whoever joined it next (a member). Only the admin
+    // deletes the room or takes someone's access away (kick).
+    function roomAdmin(code) {
+      let r = get(/databases/$(database)/documents/rooms/$(code)).data;
+      return r.get('admin', r.createdBy);
+    }
     match /rooms/{code} {
       allow read: if signedIn();
       allow create: if signedIn() && code.matches('^[A-Z0-9]{6}$')
         && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.keys().hasOnly(['seed', 'createdAt', 'createdBy', 'lastActiveAt', 'expiresAt']);
-      allow update: if signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastActiveAt', 'expiresAt']);
-      allow delete: if signedIn() && (resource.data.createdBy == request.auth.uid || resource.data.expiresAt <= request.time);
+        && request.resource.data.get('admin', request.auth.uid) == request.auth.uid
+        && request.resource.data.keys().hasOnly(['seed', 'createdAt', 'createdBy', 'admin', 'lastActiveAt', 'expiresAt']);
+      allow update: if signedIn() && (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastActiveAt', 'expiresAt'])
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['admin'])
+          && resource.data.get('admin', resource.data.createdBy) == request.auth.uid
+          && exists(/databases/$(database)/documents/rooms/$(code)/members/$(request.resource.data.admin))));
+      allow delete: if signedIn() && (resource.data.get('admin', resource.data.createdBy) == request.auth.uid || resource.data.expiresAt <= request.time);
+
+      // Who has the room (saved it by joining): themselves in, themselves out (discard), or out by the admin (kick).
+      match /members/{uid} {
+        allow read: if signedIn();
+        allow create, update: if signedIn() && uid == request.auth.uid
+          && exists(/databases/$(database)/documents/rooms/$(code))
+          && request.resource.data.keys().hasOnly(['name', 'photo', 'joinedAt'])
+          && request.resource.data.name is string && request.resource.data.name.size() <= 40
+          && (request.resource.data.photo == null || (request.resource.data.photo is string && request.resource.data.photo.size() < 600))
+          && request.resource.data.joinedAt is number;
+        allow delete: if signedIn() && (uid == request.auth.uid
+          || !exists(/databases/$(database)/documents/rooms/$(code))
+          || roomAdmin(code) == request.auth.uid);
+      }
     }
   }
 }

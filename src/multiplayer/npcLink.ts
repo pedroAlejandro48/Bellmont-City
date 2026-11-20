@@ -1,3 +1,4 @@
+import { pickHost } from "./host";
 import { isNpcSnapshot, type NpcLink, type NpcSnapshot } from "@/game/pedestrians";
 import type { NamedRoom, Peer } from "@/platform/realtime";
 
@@ -21,12 +22,7 @@ export function makeNpcLink(channel: NamedRoom): NpcLink {
   // rebuilt on every update, so identity alone would make every frame look like a fresh snapshot).
   let seq = 0, cached: { n: unknown; snapshot: NpcSnapshot } | null = null;
   const host = () => {
-    let best: Peer | null = null;
-    for (const p of channel.peers()) {
-      if (p.kind !== "viewer") continue;
-      if (!best || joinedAt(p) < joinedAt(best) || (joinedAt(p) === joinedAt(best) && p.peer < best.peer)) best = p;
-    }
-    return best;
+    return pickHost(channel.peers());
   };
   return {
     isHost: () => host()?.sameTab ?? true,

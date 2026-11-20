@@ -1,3 +1,4 @@
+import { pickHost } from "./host";
 import type { AptClaim, LiftLink, LiftPeer, LiftSnap } from "@/game/state";
 import type { AptDoc } from "@/game/aptShare";
 const isClaim = (v: unknown): v is AptClaim => { const c = v as AptClaim | null; return typeof c === "object" && c !== null && typeof c.b === "string" && typeof c.floor === "number" && typeof c.locked === "boolean"; };
@@ -20,12 +21,7 @@ export function makeLiftLink(channel: NamedRoom): LiftLink {
   const seenReq = new Map<string, number>();
   let last: { stamp: unknown; snap: LiftSnap | null; n: number } | null = null;
   const host = () => {
-    let best: Peer | null = null;
-    for (const p of channel.peers()) {
-      if (p.kind !== "viewer") continue;
-      if (!best || joinedAt(p) < joinedAt(best) || (joinedAt(p) === joinedAt(best) && p.peer < best.peer)) best = p;
-    }
-    return best;
+    return pickHost(channel.peers());
   };
   return {
     isHost: () => host()?.sameTab ?? true,

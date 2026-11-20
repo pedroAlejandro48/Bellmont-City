@@ -1037,3 +1037,12 @@
 1089|payer
 1090|pts
 1091|Ta photo Google
+1092|En ligne
+1093|Hors ligne
+1094|Exclure
+1095|Retirer la salle
+1096|Tu as été retiré de cette salle.
+1097|Qui a cette salle
+1098|Entrer dans la salle {0}
+1099|Admin de la salle
+1100|(toi)

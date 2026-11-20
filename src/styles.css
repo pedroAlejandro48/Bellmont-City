@@ -696,3 +696,24 @@ body.has-install-pc .quality-picker { right: 9.6rem; }
 .exit-app:hover { background: rgba(40,16,24,0.85); }
 .exit-app:active { transform: scale(0.96); }
 body:has(.exit-app) .quality-picker { left: auto; right: 0.75rem; }
+
+/* Nothing in the game can be selected (titles, buttons, signs, lists…), except what you type into. */
+html, body, #root, * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+
+/* Your rooms (under Join a room): picture · code · who has it · discard. */
+.saved-rooms { display: flex; flex-direction: column; gap: 0.35rem; max-height: 14rem; overflow-y: auto; overscroll-behavior: contain; }
+.saved-room { display: flex; align-items: center; gap: 0.4rem; padding: 0.3rem; border-radius: 0.6rem; background: rgba(255,255,255,0.06); }
+.saved-room-go { display: flex; align-items: center; gap: 0.55rem; flex: 1; min-width: 0; text-align: left; }
+.saved-room-go img, .saved-room-blank { width: 4.2rem; aspect-ratio: 16 / 9; height: auto; border-radius: 0.35rem; object-fit: cover; flex: none; background: rgba(255,255,255,0.08); }
+.saved-room-go b { font-size: 0.9rem; letter-spacing: 0.06em; }
+.saved-room-people { display: flex; align-items: center; gap: 0.2rem; padding: 0.25rem 0.45rem; border-radius: 999px; background: rgba(255,255,255,0.1); font-size: 0.78rem; flex: none; }
+.saved-room-people svg { transition: transform 0.15s; }
+.saved-room .pill { flex: none; white-space: nowrap; font-size: 0.72rem; }
+.saved-room-members { display: flex; flex-direction: column; gap: 0.25rem; margin: 0.3rem 0 0.2rem 0.6rem; font-size: 0.8rem; }
+.saved-room-members li { display: flex; align-items: center; gap: 0.45rem; }
+/* In a room: the people list's Online / Offline subtitles, and Kick. */
+.room-people-title { padding: 0.35rem 0.75rem 0.15rem; font-size: 0.68rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-muted-foreground, #9aa3b5); }
+.pill.kick { flex: none; font-size: 0.7rem; padding: 0.2rem 0.55rem; }
+.saved-room .pill, .pill.kick { height: 1.7rem; padding: 0 0.65rem; border-radius: 999px; font-weight: 800; background: #d93a3a; color: #fff; }
+.saved-room .pill:disabled { opacity: 0.55; }

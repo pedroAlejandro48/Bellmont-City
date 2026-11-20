@@ -1090,5 +1090,14 @@
   "level",
   "pay",
   "pts",
-  "Your Google picture"
+  "Your Google picture",
+  "Online",
+  "Offline",
+  "Kick",
+  "Discard room",
+  "You were removed from this room.",
+  "Who has this room",
+  "Join room {0}",
+  "Room admin",
+  "(you)"
 ]

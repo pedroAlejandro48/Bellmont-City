@@ -68,6 +68,14 @@ export function RoomScene({ state, channel, remotes, joinedAt, creator }: { stat
   // Until this player first moves, someone found standing on their spawn point (whose position arrived late) and who
   // was here first makes them step to that person's left, as if they had spawned there.
   const spawnCheck = useRef<{ x: number; z: number; until: number } | null>(null);
+  // Whether this game is open in front (else the browser pauses it, and someone else runs the shared world).
+  useEffect(() => {
+    const say = () => { void channel.presence({ awake: document.visibilityState === "visible" }).catch(() => {}); };
+    say();
+    document.addEventListener("visibilitychange", say);
+    window.addEventListener("pagehide", say);
+    return () => { document.removeEventListener("visibilitychange", say); window.removeEventListener("pagehide", say); };
+  }, [channel]);
   useEffect(() => {
     spawnCheck.current = { x: state.pos.x, z: state.pos.z, until: Date.now() + SPAWN_FIX_MS };
     // While arriving, others do not bump into this player, so nobody is shoved off the spawn point.

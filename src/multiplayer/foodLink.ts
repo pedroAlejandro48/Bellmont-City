@@ -1,3 +1,4 @@
+import { pickHost } from "./host";
 import { readSnapshot, type FoodLink, type FoodRequest } from "@/game/food";
 import type { NamedRoom, Peer } from "@/platform/realtime";
 
@@ -21,12 +22,7 @@ export function makeFoodLink(channel: NamedRoom): FoodLink {
   let last: { value: unknown; view: ReturnType<typeof readSnapshot>; at: number } | null = null;
   let inside: string | null | undefined;
   const host = () => {
-    let best: Peer | null = null;
-    for (const p of channel.peers()) {
-      if (p.kind !== "viewer") continue;
-      if (!best || joinedAt(p) < joinedAt(best) || (joinedAt(p) === joinedAt(best) && p.peer < best.peer)) best = p;
-    }
-    return best;
+    return pickHost(channel.peers());
   };
   const me = () => channel.peers().find((p) => p.sameTab)?.peer ?? "me";
   return {

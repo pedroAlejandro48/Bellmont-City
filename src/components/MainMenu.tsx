@@ -1,6 +1,7 @@
 import { usePullToRefresh } from "@/lib/pullRefresh";
 import { useTitleBetweenObeliskAndForm } from "@/lib/fitTitle";
 import { QualityPicker } from "@/components/QualityPicker";
+import { SavedRooms } from "@/components/SavedRooms";
 import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { normalizeRoomCode } from "@/platform/rooms";
@@ -62,6 +63,8 @@ export function MainMenu({ account, username, message, onCity, onRoom, onSignOut
     ro.observe(box);
     return () => ro.disconnect();
   }, []);
+  // (On a phone the keyboard doesn't pop up by itself: the code box is tapped first.)
+  const coarse = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
   useTitleBetweenObeliskAndForm();
   usePullToRefresh();
   return (
@@ -83,9 +86,10 @@ export function MainMenu({ account, username, message, onCity, onRoom, onSignOut
             <Button type="button" variant={joining ? "secondary" : "outline"} className="flex-1 rounded-none border-0" aria-expanded={joining} onClick={() => { setJoining((v) => !v); setMsg(null); }}>Join a room{friends.invites.length ? <span className="friends-badge">{friends.invites.length}</span> : null}</Button>
           </div>
           {joining && <form data-extra onSubmit={join} className="flex gap-2">
-            <input aria-label="Room code" className="auth-input flex-1 uppercase placeholder:normal-case" autoFocus autoComplete="off" spellCheck={false} maxLength={6} placeholder="Enter the room code" value={code} onChange={(e) => setCode(e.target.value)} />
-            <Button type="submit">Join</Button>
+            <input aria-label="Room code" className="auth-input flex-1 uppercase placeholder:normal-case" autoFocus={!coarse} autoComplete="off" spellCheck={false} maxLength={6} placeholder="Enter the room code" value={code} onChange={(e) => setCode(e.target.value)} />
+            <Button type="submit" className="h-auto self-stretch">Join</Button>
           </form>}
+          {joining && <div data-extra><SavedRooms account={account} onJoin={(c) => onRoom({ mode: "join", code: c })} /></div>}
           {joining && friends.invites.length > 0 && <div data-extra><RoomInvites account={account} invites={friends.invites} onJoin={(c) => onRoom({ mode: "join", code: c })} /></div>}
           <FriendsMenu account={account} data={friends} />
           {!account.usesPassword && account.email && <button type="button" onClick={() => { setPwOpen((v) => !v); setMsg(null); }} className="w-full text-center text-xs text-muted-foreground underline-offset-2 hover:underline">Add a password (sign in with your username)</button>}

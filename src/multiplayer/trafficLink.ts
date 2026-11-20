@@ -1,3 +1,4 @@
+import { pickHost } from "./host";
 import { readTrafficSnapshot, type TrafficLink, type TrafficSnapshot } from "@/game/trafficShare";
 import type { NamedRoom, Peer } from "@/platform/realtime";
 
@@ -16,12 +17,7 @@ export function makeTrafficLink(channel: NamedRoom): TrafficLink {
   let mine: Hit[] = [];
   let last: { value: unknown; snapshot: TrafficSnapshot | null; at: number } | null = null;
   const host = () => {
-    let best: Peer | null = null;
-    for (const p of channel.peers()) {
-      if (p.kind !== "viewer") continue;
-      if (!best || joinedAt(p) < joinedAt(best) || (joinedAt(p) === joinedAt(best) && p.peer < best.peer)) best = p;
-    }
-    return best;
+    return pickHost(channel.peers());
   };
   return {
     isHost: () => host()?.sameTab ?? true,

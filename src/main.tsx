@@ -11,6 +11,7 @@ import { MainMenu } from "@/components/MainMenu";
 import { CloudGame } from "@/game/CloudGame";
 import { GuestGame } from "@/game/GuestGame";
 import { RoomEntry, type RoomRequest } from "@/multiplayer/RoomGame";
+import { setInGame, watchForUpdates } from "@/lib/updates";
 import { isSignedIn, signOutAccount, watchAccount, type Account } from "@/platform/account";
 import { normalizeRoomCode } from "@/platform/rooms";
 import "./styles.css";
@@ -30,6 +31,8 @@ function App() {
   // The password just typed, kept in memory only until the new account has chosen its username.
   const [password, setPassword] = useState<string | null>(null);
   const [view, setView] = useState<View>({ name: "menu" });
+  // (A newer version waits until you're out of the game, then loads.)
+  useEffect(() => { setInGame(view.name !== "menu"); }, [view.name]);
   const [menuMessage, setMenuMessage] = useState<string>();
   const [pendingRoom, setPendingRoom] = useState(linkedRoom);
   // Friend requests, accepted requests and room invitations pop up as notifications while the game is open.
@@ -83,6 +86,7 @@ function App() {
 startCityBackdrop();
 listenForInstall();
 guardBackButton();
+watchForUpdates();
 // Installable as an app (Android browsers need a service worker); only in real builds, so dev never caches.
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => { navigator.serviceWorker.register("/sw.js").catch(() => {}); });
