@@ -104,7 +104,21 @@ export async function changeUsername(account: Account, next: string, password: s
     return false;
   }).catch(() => { throw new AccountError("Could not change your username. Please try again."); });
   if (taken) throw new AccountError("That username is already taken.");
+  void shareNewName(account.id, next);
   return { ...account, username: next };
+}
+/**
+ * After a rename, the copies of your name others keep: your entry in each friend's list, requests you've sent that
+ * are still waiting, and your membership in the rooms you have. (Everything that shows names also reads them live
+ * from players/<uid>, so this is for what's stored, e.g. notifications.)
+ */
+async function shareNewName(uid: string, name: string) {
+  const list = await getDocs(collection(firestore, "friends", uid, "list")).catch(() => null);
+  for (const f of list?.docs ?? []) await updateDoc(doc(firestore, "friends", f.id, "list", uid), { name }).catch(() => {});
+  const sent = await getDocs(collection(firestore, "friends", uid, "sent")).catch(() => null);
+  for (const r of sent?.docs ?? []) await updateDoc(doc(firestore, "friends", r.id, "requests", uid), { name }).catch(() => {});
+  const { savedRooms } = await import("./savedRooms");
+  for (const r of savedRooms(uid)) await updateDoc(doc(firestore, "rooms", r.code, "members", uid), { name }).catch(() => {});
 }
 /** Deletes the account for good: friends (on both sides), requests, invitations, saves, the username and profile, then
  * the sign-in itself. */

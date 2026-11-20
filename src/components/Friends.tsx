@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Check, ChevronDown, Plus, User, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Account } from "@/platform/account";
+import { LiveName } from "@/platform/liveNames";
 import { Avatar } from "@/components/Avatar";
 import { acceptRequest, cancelRequest, discardInvite, discardRequest, findPlayer, inviteToRoom, removeFriend, sendRequest, watchFriends, type Friend, type FriendRequest, type RoomInvite } from "@/platform/friends";
 
@@ -54,17 +55,17 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
         {open && <ul className="friends-list friends-popup">
           {requests.map((r) => <li key={`r${r.uid}`} className="friends-row request">
             <Avatar uid={r.uid} photo={r.photo} name={r.name} />
-            <span><b data-no-translate>{r.name}</b><small>wants to be friends</small></span>
+            <span><b><LiveName uid={r.uid} fallback={r.name} /></b><small>wants to be friends</small></span>
             <button type="button" className="ok" aria-label={`Accept ${r.name}`} onClick={() => void acceptRequest(account, r).catch(() => setMsg("Could not accept. Please try again."))}><Check size={15} /></button>
             <button type="button" aria-label={`Discard ${r.name}'s request`} onClick={() => void discardRequest(account, r.uid).catch(() => {})}><X size={15} /></button>
           </li>)}
           {friends.map((f) => <li key={f.uid} className="friends-row">
             <Avatar uid={f.uid} photo={f.photo} name={f.name} />
-            <span><b data-no-translate>{f.name}</b></span>
+            <span><b><LiveName uid={f.uid} fallback={f.name} /></b></span>
           </li>)}
           {sent.map((r) => <li key={`s${r.uid}`} className="friends-row">
             <Avatar uid={r.uid} photo={r.photo} name={r.name} />
-            <span><b data-no-translate>{r.name}</b><small>request sent</small></span>
+            <span><b><LiveName uid={r.uid} fallback={r.name} /></b><small>request sent</small></span>
             <button type="button" aria-label={`Take back the request to ${r.name}`} onClick={() => void cancelRequest(account, r.uid).catch(() => {})}><X size={15} /></button>
           </li>)}
           {!friends.length && !requests.length && !sent.length && <li className="friends-empty">No friends yet.</li>}
@@ -111,7 +112,7 @@ export function RoomInvites({ account, invites, onJoin }: { account: Account; in
   return <ul className="friends-list invites">
     {invites.map((i) => <li key={i.code} className="friends-row">
       <Avatar uid={i.from} photo={i.photo} name={i.name} />
-      <span><b>Room {i.code}</b><small>from <span data-no-translate>{i.name}</span></small></span>
+      <span><b>Room {i.code}</b><small>from <LiveName uid={i.from} fallback={i.name} /></small></span>
       <button type="button" className="ok join" onClick={() => { void discardInvite(account, i.code).catch(() => {}); onJoin(i.code); }}>Join</button>
       <button type="button" aria-label={`Discard the invitation to room ${i.code}`} onClick={() => void discardInvite(account, i.code).catch(() => {})}><X size={15} /></button>
     </li>)}
@@ -125,7 +126,7 @@ export function InviteFriends({ account, code }: { account: Account; code: strin
   if (!friends.length) return <p className="px-3 py-2 text-xs text-muted-foreground">No friends yet. Add them from the menu (Friends +).</p>;
   return <ul className="max-h-56 overflow-y-auto">
     {friends.map((f) => <li key={f.uid} className="flex items-center justify-between gap-2 px-3 py-1.5 text-foreground">
-      <span className="flex min-w-0 items-center gap-2"><Avatar uid={f.uid} photo={f.photo} name={f.name} size={24} /><span className="truncate" data-no-translate>{f.name}</span></span>
+      <span className="flex min-w-0 items-center gap-2"><Avatar uid={f.uid} photo={f.photo} name={f.name} size={24} /><LiveName uid={f.uid} fallback={f.name} className="truncate" /></span>
       <button type="button" disabled={sent.has(f.uid)} className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground disabled:opacity-60"
         onClick={() => void inviteToRoom(account, f.uid, code).then(() => setSent((s) => new Set(s).add(f.uid))).catch(() => {})}>{sent.has(f.uid) ? "Invited" : "Invite"}</button>
     </li>)}

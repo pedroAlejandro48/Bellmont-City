@@ -1,6 +1,7 @@
-import { useState, type FormEvent } from "react";
-import { RotateCw, X } from "lucide-react";
+import { useRef, useState, type FormEvent } from "react";
+import { ArrowLeft, Pencil, RotateCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { LiveName } from "@/platform/liveNames";
 import { Avatar, AvatarPicker, EditableAvatar } from "@/components/Avatar";
 import { AccountError, changeUsername, chooseAvatar, deleteAccount, type Account } from "@/platform/account";
 import { removeFriend } from "@/platform/friends";
@@ -45,9 +46,9 @@ export function AccountMenu({ account, friends, onAccount, onSignOut }: { accoun
   </>;
 }
 
-function Sheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function Sheet({ title, onClose, children, height }: { title: string; onClose: () => void; children: React.ReactNode; height?: number | undefined }) {
   return <div className="install-help" role="dialog" aria-label={title} onClick={onClose}>
-    <div className="install-card sheet" onClick={(e) => e.stopPropagation()}>
+    <div className="install-card sheet" style={height ? { height } : undefined} onClick={(e) => e.stopPropagation()}>
       <button type="button" className="install-x" aria-label="Close" onClick={onClose}><X size={18} /></button>
       <b>{title}</b>
       <div className="sheet-body">{children}</div>
@@ -59,6 +60,9 @@ function Profile({ account, friends, onAccount, onSignOut, onClose }: { account:
   const [picking, setPicking] = useState(false);
   const [newName, setNewName] = useState(""), [pw, setPw] = useState(""), [nameMsg, setNameMsg] = useState<string | null>(null), [busy, setBusy] = useState(false);
   const [unadding, setUnadding] = useState<string | null>(null);
+  /** On the Change username page (with the profile's height to keep), or not (null). */
+  const [renaming, setRenaming] = useState<number | null>(null);
+  const body = useRef<HTMLDivElement>(null);
   const [deleting, setDeleting] = useState(false), [delPw, setDelPw] = useState(""), [delMsg, setDelMsg] = useState<string | null>(null);
 
   async function rename(e: FormEvent) {
@@ -66,7 +70,7 @@ function Profile({ account, friends, onAccount, onSignOut, onClose }: { account:
     const parsed = usernameSchema.safeParse(newName);
     if (!parsed.success) { setNameMsg("Use 3–24 letters, numbers, or underscores."); return; }
     setBusy(true); setNameMsg(null);
-    try { onAccount(await changeUsername(account, parsed.data, pw)); setNameMsg("Username changed."); setNewName(""); setPw(""); }
+    try { onAccount(await changeUsername(account, parsed.data, pw)); setNameMsg(null); setNewName(""); setPw(""); setRenaming(null); }
     catch (err) { setNameMsg(err instanceof AccountError ? err.message : "Could not change your username. Please try again."); }
     setBusy(false);
   }
@@ -77,19 +81,31 @@ function Profile({ account, friends, onAccount, onSignOut, onClose }: { account:
     setBusy(false);
   }
 
+  // Changing the username: its own page in the same box, as tall as the profile was (so nothing moves).
+  if (renaming !== null) return <Sheet title="Change username" onClose={onClose} height={renaming || undefined}>
+    <div className="rename-page">
+      <button type="button" className="link back" onClick={() => { setRenaming(null); setNameMsg(null); }}><ArrowLeft size={14} aria-hidden /> Back</button>
+      <p className="text-sm">Now: <b data-no-translate>{account.username}</b></p>
+      {account.usesPassword ? <form onSubmit={rename} className="space-y-2">
+        <input aria-label="New username" className="auth-input" autoComplete="off" autoFocus placeholder="New username" value={newName} onChange={(e) => setNewName(e.target.value)} />
+        <input aria-label="Password" className="auth-input" type="password" autoComplete="current-password" placeholder="Your password" value={pw} onChange={(e) => setPw(e.target.value)} />
+        <Button type="submit" className="w-full" disabled={busy || !newName || !pw}>{busy ? "…" : "Change username"}</Button>
+        {nameMsg && <p className="text-center text-xs text-accent">{nameMsg}</p>}
+      </form> : <p className="text-xs text-muted-foreground">Add a password first (on the menu: Add a password), then you can change your username with it.</p>}
+    </div>
+  </Sheet>;
+
   return <Sheet title="Profile" onClose={onClose}>
+    <div ref={body}>
     <div className="profile-head">
       <EditableAvatar photo={account.photo} name={account.username ?? ""} size={64} onEdit={() => setPicking(true)} />
-      <div><b data-no-translate>{account.username}</b>{account.email && <small data-no-translate>{account.email}</small>}<button type="button" className="link" onClick={() => setPicking(true)}>Change picture</button></div>
+      <div>
+        <span className="profile-name"><b data-no-translate>{account.username}</b>
+          <button type="button" className="name-pencil" aria-label="Change username" onClick={() => { setRenaming(body.current?.closest(".install-card")?.getBoundingClientRect().height ?? 0); setNameMsg(null); }}><Pencil size={15} strokeWidth={2.4} aria-hidden /></button>
+        </span>
+        {account.email && <small data-no-translate>{account.email}</small>}<button type="button" className="link" onClick={() => setPicking(true)}>Change picture</button>
+      </div>
     </div>
-
-    <p className="sheet-label">Change username</p>
-    {account.usesPassword ? <form onSubmit={rename} className="space-y-2">
-      <input aria-label="New username" className="auth-input" autoComplete="off" placeholder="New username" value={newName} onChange={(e) => setNewName(e.target.value)} />
-      <input aria-label="Password" className="auth-input" type="password" autoComplete="current-password" placeholder="Your password" value={pw} onChange={(e) => setPw(e.target.value)} />
-      <Button type="submit" className="w-full" disabled={busy || !newName || !pw}>Change username</Button>
-      {nameMsg && <p className="text-center text-xs text-accent">{nameMsg}</p>}
-    </form> : <p className="text-xs text-muted-foreground">Add a password first (on the menu: Add a password), then you can change your username with it.</p>}
 
     <p className="sheet-label">Manage friends</p>
     {friends.friends.length ? <ul className="friends-list">
@@ -100,7 +116,7 @@ function Profile({ account, friends, onAccount, onSignOut, onClose }: { account:
           <button type="button" className="pill grey" onClick={() => setUnadding(null)}>No</button>
           <button type="button" className="pill red" onClick={() => { setUnadding(null); void removeFriend(account, f.uid).catch(() => {}); }}>Yes</button>
         </> : <>
-          <span><b data-no-translate>{f.name}</b></span>
+          <span><b><LiveName uid={f.uid} fallback={f.name} /></b></span>
           <button type="button" className="pill red" onClick={() => setUnadding(f.uid)}>Unadd</button>
         </>}
       </li>)}
@@ -117,6 +133,7 @@ function Profile({ account, friends, onAccount, onSignOut, onClose }: { account:
       </div>
       {delMsg && <p className="text-center text-xs text-accent">{delMsg}</p>}
     </div>}
+    </div>
     {picking && <AvatarPicker current={account.photo} google={account.google} onPick={(url) => { void chooseAvatar(account, url).then((a) => { onAccount(a); setPicking(false); }).catch(() => {}); }} onClose={() => setPicking(false)} />}
   </Sheet>;
 }

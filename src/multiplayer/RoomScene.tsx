@@ -1,3 +1,4 @@
+import { useLiveName } from "@/platform/liveNames";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
@@ -184,7 +185,8 @@ const RemoteAvatar = memo(function RemoteAvatar({ id, uid, creator, remotes, sta
     load(1000);
     return () => { live = false; window.clearTimeout(retry); };
   }, [uid]);
-  const name = profile.username, color = bodyColor(profile.gender);
+  // (The name label follows their username live: a rename shows at once.)
+  const name = useLiveName(uid, profile.username ?? "") || null, color = bodyColor(profile.gender);
   const body = useBodyRig();
   // Food this player holds is drawn in their hands.
   useEffect(() => { state.remoteRigs.set(id, body); return () => { if (state.remoteRigs.get(id) === body) state.remoteRigs.delete(id); }; }, [state, id, body]);

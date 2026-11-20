@@ -739,3 +739,9 @@ input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-sele
 .quality-picker.compact, body .quality-picker.compact { left: auto !important; right: 0.75rem !important; top: 0.75rem !important; align-items: flex-end !important; }
 .quality-drop { position: absolute; top: 2.4rem; right: 0; transform-origin: top right; transform: translateY(-0.4rem) scaleY(0.6); opacity: 0; pointer-events: none; transition: transform 0.18s ease, opacity 0.18s ease; }
 .quality-drop.open { transform: none; opacity: 1; pointer-events: auto; }
+/* Profile: the username with a plain white pencil (no circle) beside it; the Change username page. */
+.profile-name { display: inline-flex; align-items: center; gap: 0.4rem; }
+.name-pencil { display: inline-grid; place-items: center; padding: 0.15rem; background: none; border: 0; color: #fff; opacity: 0.9; cursor: pointer; }
+.name-pencil:hover { opacity: 1; transform: scale(1.1); }
+.rename-page { display: flex; flex-direction: column; gap: 0.8rem; }
+.rename-page .back { display: inline-flex; align-items: center; gap: 0.3rem; align-self: flex-start; }

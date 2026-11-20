@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, Users } from "lucide-react";
+import { LiveName } from "@/platform/liveNames";
 import { Avatar } from "@/components/Avatar";
 import type { Account } from "@/platform/account";
 import { deleteRoom, discardRoom, findRoom, membersOf, stillMine, type Member } from "@/platform/rooms";
@@ -60,7 +61,7 @@ export function SavedRooms({ account, onJoin }: { account: Account; onJoin: (cod
           <button type="button" className="pill red" onClick={() => void discard(r.code, true)}>Yes</button>
         </div>}
         {open === r.code && ms && <ul className="saved-room-members">
-          {ms.map((m) => <li key={m.uid}><Avatar uid={m.uid} photo={m.photo} name={m.name || "?"} size={22} /><span data-no-translate>{m.name || "Player"}</span>{m.uid === account.id && <span className="text-muted-foreground"> (you)</span>}</li>)}
+          {ms.map((m) => <li key={m.uid}><Avatar uid={m.uid} photo={m.photo} name={m.name || "?"} size={22} /><LiveName uid={m.uid} fallback={m.name || "Player"} />{m.uid === account.id && <span className="text-muted-foreground"> (you)</span>}</li>)}
         </ul>}
       </li>;
     })}

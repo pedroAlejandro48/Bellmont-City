@@ -63,6 +63,9 @@ service cloud.firestore {
         allow create, update: if signedIn() && (
           (request.auth.uid == owner && exists(/databases/$(database)/documents/friends/$(owner)/requests/$(other)))
           || (request.auth.uid == other && exists(/databases/$(database)/documents/friends/$(other)/requests/$(owner))));
+        // (A friend keeps their own name and picture up to date in your list.)
+        allow update: if signedIn() && request.auth.uid == other
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photo']);
         allow delete: if signedIn() && (request.auth.uid == owner || request.auth.uid == other);
       }
       // Requests this player has sent and that are still waiting (shown as "request sent"); the other player clears

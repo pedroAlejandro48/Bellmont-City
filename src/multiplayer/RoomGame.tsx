@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useFrame } from "@react-three/fiber";
 import { ChevronDown, Crown, User } from "lucide-react";
+import { LiveName } from "@/platform/liveNames";
 import { Avatar } from "@/components/Avatar";
 import { FriendActions, useFriends } from "@/components/Friends";
 import { CloudGame, type GameExtras, type WorldSlot } from "@/game/CloudGame";
@@ -261,7 +262,7 @@ function OnlinePanel({ account, channel, meta, code }: { account: Account; chann
           <div className="flex items-center gap-1">
             <button type="button" disabled={mine || !id} onClick={() => setPicked((v) => (v === p.peer ? null : p.peer))} className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-white/5 disabled:cursor-default disabled:hover:bg-transparent">
               <Avatar uid={id ?? undefined} photo={mine ? account.photo : undefined} name={name} size={26} />
-              <span className="min-w-0 truncate"><span data-no-translate>{name}</span>{mine && <span className="text-muted-foreground"> (you)</span>}</span>
+              <span className="min-w-0 truncate"><LiveName uid={id} fallback={name} />{mine && <span className="text-muted-foreground"> (you)</span>}</span>
               {id === admin && <Crown className="h-3.5 w-3.5 shrink-0 fill-yellow-400 text-yellow-400" aria-label="Room admin" />}
             </button>
             {isAdmin && id && !mine && kick(id)}
@@ -276,7 +277,7 @@ function OnlinePanel({ account, channel, meta, code }: { account: Account; chann
           <div className="flex items-center gap-1">
             <button type="button" onClick={() => setPicked((v) => (v === m.uid ? null : m.uid))} className="offline flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-white/5">
               <span className="opacity-50"><Avatar uid={m.uid} photo={m.photo} name={m.name || "?"} size={26} /></span>
-              <span className="min-w-0 truncate text-muted-foreground" data-no-translate>{m.name || "Player"}</span>
+              <LiveName uid={m.uid} fallback={m.name || "Player"} className="min-w-0 truncate text-muted-foreground" />
               {m.uid === admin && <Crown className="h-3.5 w-3.5 shrink-0 fill-yellow-400 text-yellow-400 opacity-60" aria-label="Room admin" />}
             </button>
             {isAdmin && kick(m.uid)}
