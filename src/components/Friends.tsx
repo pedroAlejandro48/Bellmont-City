@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Check, ChevronDown, Plus, UserPlus, X } from "lucide-react";
+import { Check, ChevronDown, Plus, User, UserPlus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { Account } from "@/platform/account";
 import { Avatar } from "@/components/Avatar";
@@ -70,7 +70,7 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
           {!friends.length && !requests.length && !sent.length && <li className="friends-empty">No friends yet.</li>}
         </ul>}
       </div>
-      <Button type="button" variant={adding ? "secondary" : "outline"} size="icon" aria-label="Add a friend" aria-expanded={adding} onClick={() => { setAdding((v) => !v); setOpen(false); setMsg(null); }}><Plus aria-hidden /></Button>
+      <Button type="button" variant={adding ? "secondary" : "outline"} size="icon" aria-label="Add a friend" aria-expanded={adding} onClick={() => { setAdding((v) => !v); setOpen(false); setMsg(null); }}><span className="add-friend-icon" aria-hidden><User /><Plus className="plus" strokeWidth={3.2} /></span></Button>
     </div>
     {adding && <form data-extra onSubmit={add} className="mt-2 flex items-stretch gap-2">
       <input aria-label="Username or email" className="auth-input flex-1" autoFocus autoComplete="off" spellCheck={false} placeholder="Username or email" value={query} onChange={(e) => setQuery(e.target.value)} />

@@ -731,8 +731,11 @@ input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-sele
 .account-refresh:hover { --bg: #1f2740; padding-right: 2.6rem; }
 .account-refresh:hover .refresh-arrow { right: 0.8rem; transform: translateX(0) rotate(360deg); }
 .account-refresh:active { filter: brightness(1.15); }
-/* (Upright phone with the Refresh button: the device-speed picker goes on a row under the picture and the button.) */
-@media (orientation: portrait) {
-  body:has(.account-refresh) .quality-picker { top: 3.6rem; left: 0.75rem; right: auto; align-items: flex-start; }
-  body:has(.account-refresh) .auth-page { padding-top: 6.6rem; }
-}
+/* Add a friend: a person (head and shoulders) with a small + on its top corner. */
+.add-friend-icon { position: relative; display: inline-grid; place-items: center; width: 1.25rem; height: 1.25rem; }
+.add-friend-icon > svg:first-child { width: 1.1rem; height: 1.1rem; }
+.add-friend-icon .plus { position: absolute; top: -0.2rem; right: -0.22rem; width: 0.66rem; height: 0.66rem; }
+/* Phones: Device speed is a button in the top right corner; the choices drop down under it and fold back up. */
+.quality-picker.compact, body .quality-picker.compact { left: auto !important; right: 0.75rem !important; top: 0.75rem !important; align-items: flex-end !important; }
+.quality-drop { position: absolute; top: 2.4rem; right: 0; transform-origin: top right; transform: translateY(-0.4rem) scaleY(0.6); opacity: 0; pointer-events: none; transition: transform 0.18s ease, opacity 0.18s ease; }
+.quality-drop.open { transform: none; opacity: 1; pointer-events: auto; }
