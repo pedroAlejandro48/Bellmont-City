@@ -62,8 +62,10 @@ export async function joinRealtimeRoom(code: string, uid: string): Promise<Named
   // Losing the connection (the app in the background, the screen off, no signal) doesn't take this player out of
   // the room: the server marks them away and they stay where they were for everyone; when the connection is back
   // the same record carries on. Only leaving (Exit, closing the game) removes it.
-  await onDisconnect(meRef).update({ away: true, awayAt: serverTimestamp() });
+  // (The record first: the rules only let this player mark their own record, so it must exist — and carry their
+  // uid — before the server is told what to do when the connection drops.)
   await update(meRef, mine);
+  await onDisconnect(meRef).update({ uid, away: true, awayAt: serverTimestamp() }).catch(() => onDisconnect(meRef).remove().catch(() => {}));
   // (Any old record of this account here — a game that lost its connection and was then closed — is replaced.)
   void get(peersRef).then((snap) => {
     snap.forEach((child) => { if (child.key !== me && (child.val() as Record<string, unknown> | null)?.["uid"] === uid) void remove(child.ref).catch(() => {}); });
@@ -94,7 +96,7 @@ export async function joinRealtimeRoom(code: string, uid: string): Promise<Named
       isConnected = snap.val() === true;
       // Back after a dropped connection: no longer away (and the away mark is set up again for next time).
       if (isConnected && !was && !left) {
-        void onDisconnect(meRef).update({ away: true, awayAt: serverTimestamp() }).catch(() => {});
+        void onDisconnect(meRef).update({ uid, away: true, awayAt: serverTimestamp() }).catch(() => {});
         void update(meRef, { ...mine, away: null, awayAt: null }).catch(() => {});
       }
     }),
