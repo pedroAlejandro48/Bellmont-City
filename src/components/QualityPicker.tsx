@@ -25,7 +25,7 @@ export function QualityPicker() {
   </div>;
   return <div className={`quality-picker fixed right-3 top-3 z-30 flex max-w-[calc(100vw-1.5rem)] flex-col items-end gap-1.5 ${compact ? "compact" : ""}`}>
   {compact ? <>
-    <button type="button" className="hud-panel flex items-center gap-2 px-2.5 py-1.5 text-foreground" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+    <button type="button" className="quality-toggle hud-panel flex items-center gap-2 px-3 text-foreground" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
       <Gauge className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
       <span className="whitespace-nowrap text-xs text-muted-foreground">Device speed</span>
       <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
