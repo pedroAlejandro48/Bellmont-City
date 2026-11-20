@@ -258,6 +258,8 @@ export class KitchenRun {
     if (near(K.ovenStand, 0.85, K.burners[0]!.map((v, i) => (v + K.burners[1]![i]!) / 2)) && dTo(K.ovenStand) <= dTo(K.sinkStand) + 0.05) {
       const mid = K.burners.reduce((a2, b2) => [a2[0] + b2[0] / K.burners.length, 0, a2[2] + b2[2] / K.burners.length], [0, 0, 0] as [number, number, number]);
       const at: [number, number, number] = [mid[0], 1.25, mid[2]];
+      // One person at the stove at a time (both burners).
+      if ([0, 1].some((i) => claimed(`stove${i}`))) return { at, label: "SOMEONE'S AT THE STOVE", act: null };
       // Something done: take it off (the burnt one first, so it stops smoking).
       // (A burner someone else is at is theirs for now: the other one is yours.)
       const mineB = (i: number) => !claimed(`stove${i}`), firstB = (what: string) => states.findIndex((st2, i) => st2 === what && mineB(i));

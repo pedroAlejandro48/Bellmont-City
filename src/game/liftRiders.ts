@@ -16,6 +16,8 @@ import { SHAFT, venueLayout } from "./venueRoom";
 
 type P2 = [number, number];
 const SPEED = 1.25;
+/** How far apart people waiting for the elevator stand in line. */
+const QUEUE_GAP = 0.75;
 /** Where people stand in the car (from its middle; the doors are toward +z). */
 const SLOTS: P2[] = [[-0.55, -0.5], [0.55, -0.5], [-0.55, 0.3], [0.55, 0.3]];
 const len = (pts: P2[]) => pts.slice(1).reduce((a, p, i) => a + Math.hypot(p[0] - pts[i]![0], p[1] - pts[i]![1]), 0);
@@ -53,7 +55,8 @@ type Rider = {
 };
 /** What the street hands over (someone at a lobby's door going in) and gets back (someone out of the door). */
 export type LiftBridge = {
-  arrive: (id: number, b: string) => void;
+  /** `direct`: home out of sight (not through the lobby). */
+  arrive: (id: number, b: string, direct?: boolean) => void;
   release: (id: number, b: string) => void;
   takeOut: () => { id: number; x: number; z: number; yaw: number }[];
   /** Who's at home where (for choosing who comes out). */
@@ -69,7 +72,7 @@ export class LiftSystem {
   /** Apartment doors swinging shut by themselves once a resident is through: from how open, since when. */
   private shutting: { key: string; a: number; at: number }[] = [];
   private homes = new Map<number, { b: string; floor: number }>();
-  private queueIn: { id: number; b: string }[] = [];
+  private queueIn: { id: number; b: string; direct: boolean }[] = [];
   private queueOut: { id: number; b: string }[] = [];
   private outbox: { id: number; x: number; z: number; yaw: number }[] = [];
   private lastN = -1;
@@ -85,7 +88,7 @@ export class LiftSystem {
   constructor(private byKey: Map<string, Building>) {}
 
   bridge: LiftBridge = {
-    arrive: (id, b) => { this.queueIn.push({ id, b }); },
+    arrive: (id, b, direct) => { this.queueIn.push({ id, b, direct: !!direct }); },
     release: (id, b) => { this.queueOut.push({ id, b }); },
     takeOut: () => this.outbox.splice(0),
     homeOf: (id) => this.homes.get(id)?.b ?? null,
@@ -184,13 +187,17 @@ export class LiftSystem {
   private stepPeople(dt: number, now: number, peers: LiftPeer[]) {
     const shown = new Set(peers.map((p) => p.b).filter((b): b is string => !!b && this.byKey.has(b)));
     // Arrivals and departures: shown where a player is (or near); otherwise straight home / straight out.
+    // (One through the street door at a time: whoever comes while someone's still coming in waits outside a moment.)
+    const later: typeof this.queueIn = [];
     for (const q of this.queueIn.splice(0)) {
       const bb = this.byKey.get(q.b);
       if (!bb || this.sim.some((r) => r.id === q.id)) continue;
+      if (!q.direct && shown.has(q.b) && this.sim.some((r) => r.b === q.b && r.st === "lobbyIn" || r.b === q.b && r.st === "toLift" && r.from === 1 && r.d < 1.4)) { later.push(q); continue; }
       const floors = this.rented(q.b), floor = this.homes.get(q.id)?.b === q.b ? this.homes.get(q.id)!.floor : floors[Math.floor(Math.random() * floors.length)] ?? 2 + Math.floor(Math.random() * (APT_FLOORS - 1));
-      if (!shown.has(q.b)) { this.homes.set(q.id, { b: q.b, floor }); continue; }
+      if (!shown.has(q.b) || q.direct) { this.homes.set(q.id, { b: q.b, floor }); continue; }
       this.sim.push(this.rider(q.id, q.b, 1, floor, "lobbyIn", now, LOBBY_IN));
     }
+    this.queueIn.push(...later);
     for (const q of this.queueOut.splice(0)) {
       const bb = this.byKey.get(q.b);
       if (!bb) continue;
@@ -215,6 +222,8 @@ export class LiftSystem {
       ...this.sim.filter((o) => o !== r && o.b === r.b && o.floor === r.floor).map((o) => [o.x + o.off[0], o.z + o.off[1]] as P2),
       ...peers.filter((p) => p.b === r.b && p.floor === r.floor && p.x !== undefined).map((p) => [p.x!, p.z!] as P2),
     ];
+    /** Who's waiting for the car on r's floor of r's building, first come first. */
+    const waiting = (r: Rider) => this.sim.filter((o) => o.b === r.b && o.st === "wait" && o.from === r.from && o !== r || o === r && r.st === "wait").sort((a, b) => a.since - b.since || a.id - b.id);
     for (const r of this.sim) {
       const bb = this.byKey.get(r.b)!, sh = shaftOf(bb), c = this.car(r.b), t = now - r.since;
       r.reach = null; r.key = false; r.lean = 0;
@@ -239,13 +248,24 @@ export class LiftSystem {
         const total = ENTER.done + enterLead(LOBBY_IN), pose = enterPose(Math.min(t, total), LOBBY_IN, Math.PI);
         r.x = pose.x; r.z = pose.z; r.yaw = pose.yaw; r.lean = pose.lean; r.walking = true;
         if (t >= ENTER.free + enterLead(LOBBY_IN)) next("toLift", [[r.x, r.z], ...this.lobbyPath(bb).slice(1)]);
-      } else if (r.st === "toLift") { if (walk()) { next("wait"); r.yaw = Math.atan2(sh.cx - r.x, sh.cz - r.z); request(c, r.from); } }
-      else if (r.st === "wait") {
+      } else if (r.st === "toLift") {
+        // To the elevator — or, with others already waiting, to the end of their line (back along the way in).
+        const ahead = waiting(r).length, stop = len(r.path) - QUEUE_GAP * ahead;
+        if (ahead > 0 && r.d >= stop - 0.02) { r.st = "wait"; r.since = now; r.walking = false; request(c, r.from); }
+        else if (walk()) { r.st = "wait"; r.since = now; r.yaw = Math.atan2(sh.cx - r.x, sh.cz - r.z); request(c, r.from); }
+      } else if (r.st === "wait") {
         settle();
+        // In line: each one QUEUE_GAP behind the one ahead, stepping up as the line moves.
+        const line = waiting(r), place = line.indexOf(r), spot = len(r.path) - QUEUE_GAP * Math.max(0, place);
+        if (r.d < spot - 0.02) {
+          r.d = Math.min(spot, r.d + SPEED * 0.8 * dt);
+          const p = along(r.path, r.d); r.x = p.x; r.z = p.z; r.yaw = p.yaw; r.walking = true;
+        } else { r.walking = false; if (place === 0) r.yaw = Math.atan2(sh.cx - r.x, sh.cz - r.z); }
         const taken = new Set(this.sim.filter((o) => o !== r && o.b === r.b && (o.st === "enter" || o.st === "ride")).map((o) => o.slot));
         const free = [0, 1, 2, 3].find((k) => !taken.has(k));
-        r.walking = false;
-        if (atFloor(c, r.from) && doorsOf(c) > 0.9 && free !== undefined && this.occupancy(r.b, peers) < CAPACITY) {
+        // One at a time through the doors: the first in line, once whoever went in before is clear of the doorway.
+        const doorwayBusy = this.sim.some((o) => o !== r && o.b === r.b && o.st === "enter" && o.d < 1.3);
+        if (place === 0 && !r.walking && !doorwayBusy && atFloor(c, r.from) && doorsOf(c) > 0.9 && free !== undefined && this.occupancy(r.b, peers) < CAPACITY) {
           r.slot = free; next("enter", [[r.x, r.z], [sh.cx, sh.front - 0.3], slotAt(free)]);
         } else if (atFloor(c, r.from) ? c.phase === "idle" : !c.stops.includes(r.from)) request(c, r.from);
       } else if (r.st === "enter") {
@@ -253,7 +273,9 @@ export class LiftSystem {
       } else if (r.st === "ride") {
         settle();
         r.floor = carFloor(c); r.walking = false; r.yaw = 0;
-        if (atFloor(c, r.to) && doorsOf(c) > 0.9) {
+        // Off one at a time too: after whoever got off before is clear of the doorway.
+        const doorwayBusy = this.sim.some((o) => o !== r && o.b === r.b && o.st === "exit" && o.floor === r.to && o.d < 1.3);
+        if (atFloor(c, r.to) && doorsOf(c) > 0.9 && !doorwayBusy) {
           r.floor = r.to;
           if (r.to > 1) { const h = this.hall(bb, r.to); next("exit", [[r.x, r.z], [sh.cx, sh.front - 0.3], ...[...h.toLift].reverse()]); }
           else next("exit", [[r.x, r.z], [sh.cx, sh.front - 0.3], sh.out, [0, sh.front + 1.1], LOBBY_OUT]);

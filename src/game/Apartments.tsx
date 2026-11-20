@@ -22,7 +22,12 @@ import { KitchenThings, type KitchenActor } from "./KitchenThings";
 import { newKView } from "./kitchenRun";
 import type { Held } from "./kitchen";
 /** A player's kitchen doings as sent to the others. */
-type KShowWire = { key: string; at: string[]; hands: { left: Held | null; right: Held | null }; v: Partial<Pick<KView, "door" | "lid" | "canOpen" | "canTilt" | "potTilt" | "water" | "stream" | "can" | "washing" | "drying" | "pourK" | "pourInto" | "holdL" | "holdR">> & { tossAge?: number; eat?: { chair: number; age: number; T: number; bites: number } | null } };
+/** What a player is moving on the floor they're on (everyone there draws it): the hinged doors (apartment `d`,
+ *  bedroom `bd`, bathroom `ba`), the fridge `fr` and closet `cl` doors, the bathroom (`bath`: tap, shower, curtain,
+ *  sway, flush seconds, paper and how long ago it dropped), the bed sheet (`sh`, while they're in or out of bed) and
+ *  the light switches (`lt`: bedroom, bathroom, when last flicked — Date.now()). */
+type FloorFx = { d: number; bd: number; ba: number; fr: number; cl: number; bath: { si: number; sh: number; cu: number; sw: number; fl: number; pp: BathLink["paper"]; pa: number } | null; sh: { f: SheetShape; t: SheetShape; k: number; l: SheetLead; li: number } | null; lt: { b: boolean; ba: boolean; at: number } | null };
+type KShowWire = { fx?: FloorFx; key: string; at: string[]; hands: { left: Held | null; right: Held | null }; v: Partial<Pick<KView, "door" | "lid" | "canOpen" | "canTilt" | "potTilt" | "water" | "stream" | "can" | "washing" | "drying" | "pourK" | "pourInto" | "holdL" | "holdR">> & { tossAge?: number; eat?: { chair: number; age: number; T: number; bites: number } | null } };
 import { SHOWER, TOILET, WASH, showerAt, showerSpots, showerView, toiletAt, washAt, washStand, type BathPose } from "./bathMoves";
 import { BedSheet, MATTRESS_TOP, PILLOW_TOP, SHEET_NX, SHEET_NZ, sheetGrips, sheetPoint, type SheetLead, type SheetLink, type SheetShape } from "./BedSheet";
 import { canSleepAt, hoursTo6, sleepEnergy, wakeElapsed } from "./needs";
@@ -925,7 +930,11 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   const doorsDone = useRef(new WeakSet<object>());
   const aptShare = useRef(new AptShare());
   /** The other players at work in kitchens (by peer): what to draw of them, the places they're using. */
-  const actors = useRef(new Map<string, KitchenActor & { key: string; at: string[]; raw: string; target: KView }>());
+  const actors = useRef(new Map<string, KitchenActor & { key: string; at: string[]; raw: string; target: KView; fx: FloorFx | null; fxT: FloorFx | null }>());
+  /** When each floor's lights were last flicked (by you or adopted from someone else's flick): Date.now(). */
+  const lightsAt = useRef(new Map<string, number>());
+  /** Floors whose bathroom / bed sheet are being shown from another player (put back when they stop). */
+  const fromOthers = useRef({ bath: new Set<string>(), sheet: new Set<string>() });
   const showTimer = useRef(0);
   /** Doors closing behind someone who has walked on: which, how it was used (pushed open: leave; pulled: enter), when. */
   const closing = useRef<{ which: "apartment" | "bedroom" | "bathroom"; kind: "leave" | "enter"; from: [number, number]; fromYaw: number; start: number }[]>([]);
@@ -1364,13 +1373,15 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         if (!rig) continue;
         seen.add(peer);
         let a = actors.current.get(peer);
-        if (!a) { a = { id: peer, key: "", at: [], raw: "", view: newKView(), target: newKView(), hands: { left: null, right: null }, rig, meal: null }; actors.current.set(peer, a); }
+        if (!a) { a = { id: peer, key: "", at: [], raw: "", view: newKView(), target: newKView(), hands: { left: null, right: null }, rig, meal: null, fx: null, fxT: null }; actors.current.set(peer, a); }
         a.rig = rig;
         if (a.raw !== json) {
           a.raw = json;
           try {
             const w = JSON.parse(json) as KShowWire, v = w.v, T = a.target;
             a.key = w.key; a.at = w.at ?? []; a.hands = { left: w.hands?.left ?? null, right: w.hands?.right ?? null };
+            a.fxT = w.fx ?? null;
+            if (a.fxT && !a.fx) a.fx = { ...a.fxT, bath: a.fxT.bath ? { ...a.fxT.bath } : null };
             Object.assign(T, { door: v.door ?? 0, lid: v.lid ?? 0, canOpen: v.canOpen ?? 0, canTilt: v.canTilt ?? 0, potTilt: v.potTilt ?? 0, water: v.water ?? 0, pourK: v.pourK ?? 0 });
             Object.assign(a.view, { stream: v.stream ?? null, can: v.can ?? null, washing: v.washing ?? null, drying: v.drying ?? [], pourInto: v.pourInto ?? 0, holdL: v.holdL ?? null, holdR: v.holdR ?? null });
             if ((v.tossAge ?? -1) >= 0) { if (a.view.tossAt < 0 || now - a.view.tossAt > 0.6) a.view.tossAt = now - v.tossAge!; } else a.view.tossAt = -1;
@@ -1379,10 +1390,54 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         }
         // (The turning, tipping and pouring eased between their updates.)
         for (const f of ["door", "lid", "canOpen", "canTilt", "potTilt", "water", "pourK"] as const) a.view[f] += (a.target[f] - a.view[f]) * k2;
+        // (Their doors and the curtain eased the same way; the rest as it comes.)
+        if (a.fxT && a.fx) {
+          for (const f of ["d", "bd", "ba", "fr", "cl"] as const) a.fx[f] += (a.fxT[f] - a.fx[f]) * k2;
+          const cu = a.fx.bath?.cu ?? 0;
+          a.fx.bath = a.fxT.bath ? { ...a.fxT.bath, cu: cu + (a.fxT.bath.cu - cu) * k2 } : null;
+          a.fx.sh = a.fxT.sh; a.fx.lt = a.fxT.lt;
+        } else a.fx = null;
       }
       for (const id of actors.current.keys()) if (!seen.has(id)) actors.current.delete(id);
     }
+    // The other players' bathroom, bed sheet and light switches, on their floor (not while you're using them yourself).
+    {
+      const mine = move.current, myKey = floor?.key ?? null, fo = fromOthers.current;
+      const busyBath = !!mine && (mine.kind === "wash" || mine.kind === "toilet" || mine.kind === "shower");
+      const busyBed = !!mine && mine.kind === "bed";
+      const byKey = new Map<string, typeof actors.current extends Map<string, infer A> ? A[] : never>();
+      for (const a of actors.current.values()) if (a.fx && a.key) { const l = byKey.get(a.key) ?? []; l.push(a); byKey.set(a.key, l); }
+      for (const [key, list] of byKey) {
+        // Bathroom: whoever is using it (else nobody: back to still).
+        if (!(busyBath && key === myKey)) {
+          const using = list.find((a) => a.fx!.bath);
+          const bl = bathLink(key);
+          if (using) {
+            const b = using.fx!.bath!;
+            Object.assign(bl, { sink: b.si, shower: b.sh, curtain: b.cu, sway: b.sw, flush: b.fl, paper: b.pp, paperAt: now - b.pa });
+            fo.bath.add(key);
+          } else if (fo.bath.has(key)) { Object.assign(bl, newBathLink()); fo.bath.delete(key); }
+        }
+        // The bed sheet: whoever is in (or getting into / out of) bed.
+        if (!(busyBed && key === myKey)) {
+          const inBed = list.find((a) => a.fx!.sh);
+          const sl = sheetLink(key);
+          if (inBed) { const w = inBed.fx!.sh!; Object.assign(sl, { from: w.f, to: w.t, k: w.k, lead: w.l, lift: w.li }); fo.sheet.add(key); }
+          else if (fo.sheet.has(key)) { Object.assign(sl, { from: "made", to: "made", k: 1, lead: "top", lift: 0 }); fo.sheet.delete(key); }
+        }
+        // Lights: the latest flick anyone made.
+        for (const a of list) {
+          const lt = a.fx!.lt;
+          if (lt && lt.at > (lightsAt.current.get(key) ?? 0)) { const l = lightsOf(key); l.bedroom = lt.b; l.bathroom = lt.ba; lightsAt.current.set(key, lt.at); }
+        }
+      }
+      // (Someone who left mid-shower or out of bed: things go back to still.)
+      for (const key of [...fo.bath]) if (!byKey.has(key) && !(busyBath && key === myKey)) { Object.assign(bathLink(key), newBathLink()); fo.bath.delete(key); }
+      for (const key of [...fo.sheet]) if (!byKey.has(key) && !(busyBed && key === myKey)) { Object.assign(sheetLink(key), { from: "made", to: "made", k: 1, lead: "top", lift: 0 }); fo.sheet.delete(key); }
+    }
     const hereActors = floor ? [...actors.current.values()].filter((a) => a.key === floor.key) : [];
+    /** Places on this floor another player is using right now (the kitchen's, the fridge, the bathroom's). */
+    const takenHere = () => new Set(hereActors.flatMap((a) => a.at));
     const kc: KCtx | null = (ownFloor || (!!floor && state.aptHere?.key === floor.key)) && floor ? (() => {
       const [klx, klz] = toLocal(floor.frame, p.x, p.z);
       const others = (state.liftLink?.others() ?? []).filter((o) => o.b === lvl!.building && o.floor === lvl!.floor && o.x !== undefined).map((o) => [o.x!, o.z!] as [number, number]);
@@ -1394,8 +1449,28 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       showTimer.current = 0.1;
       const kr0 = kitchen.current, v = kr0.view, r3 = (x: number) => Math.round(x * 100) / 100;
       const h = state.life.kitchen.hands, tossAge = v.tossAt >= 0 && now - v.tossAt < 0.6 ? r3(now - v.tossAt) : -1;
-      const wire: KShowWire | null = kc ? { key: kc.fl.key, at: kr0.busy ? kr0.stations : [], hands: h, v: { door: r3(v.door), lid: r3(v.lid), canOpen: r3(v.canOpen), canTilt: r3(v.canTilt), potTilt: r3(v.potTilt), water: r3(v.water), stream: v.stream, can: v.can, washing: v.washing, drying: v.drying, pourK: r3(v.pourK), pourInto: v.pourInto, holdL: v.holdL, holdR: v.holdR, tossAge, eat: v.eat && state.meal ? { chair: v.eat.chair, age: Math.round((now - v.eat.t0) * 2) / 2, T: v.eat.T, bites: state.meal.bites ?? 3 } : null } } : null;
-      state.liftLink.setShow(wire ? JSON.stringify(wire) : null);
+      // (What you're moving on this floor — doors, fridge, closet, bathroom, bed, lights — for everyone else here.)
+      const mvNow = move.current, bl0 = floor ? bathLink(floor.key) : null, sl0 = floor ? sheetLink(floor.key) : null;
+      const inBath = !!mvNow && (mvNow.kind === "wash" || mvNow.kind === "toilet" || mvNow.kind === "shower");
+      const fx: FloorFx | null = floor ? {
+        d: r3(doorAngle.current), bd: r3(bedAngle.current), ba: r3(bathAngle.current), fr: r3(fridgeAngle.current), cl: r3(closetAngle.current),
+        bath: inBath && bl0 ? { si: r3(bl0.sink), sh: r3(bl0.shower), cu: r3(bl0.curtain), sw: r3(bl0.sway), fl: r3(bl0.flush), pp: bl0.paper, pa: r3(now - bl0.paperAt) } : null,
+        sh: mvNow?.kind === "bed" && sl0 ? { f: sl0.from, t: sl0.to, k: r3(sl0.k), l: sl0.lead, li: r3(sl0.lift) } : null,
+        lt: lightsAt.current.has(floor.key) ? { b: lightsOf(floor.key).bedroom, ba: lightsOf(floor.key).bathroom, at: lightsAt.current.get(floor.key)! } : null,
+      } : null;
+      // (Places you're using, so nobody else does at the same time: the kitchen's, and the fridge and bathroom.)
+      const using: string[] = [...(kc && kr0.busy ? kr0.stations : [])];
+      if (kc && state.uiLock === "cook") using.push(`stove${state.kitchenAsk?.burner ?? 0}`);
+      if (kc && state.uiLock === "rack") using.push("rack");
+      if (kc && state.uiLock === "cupboard") using.push("sink");
+      if (mvNow?.kind === "fridge" || state.uiLock === "fridge") using.push("fridge");
+      if (mvNow?.kind === "wash") using.push("bath-sink");
+      if (mvNow?.kind === "toilet") using.push("toilet");
+      if (mvNow?.kind === "shower") using.push("shower");
+      const wire: KShowWire | null = kc ? { fx: fx!, key: kc.fl.key, at: [...new Set(using)], hands: h, v: { door: r3(v.door), lid: r3(v.lid), canOpen: r3(v.canOpen), canTilt: r3(v.canTilt), potTilt: r3(v.potTilt), water: r3(v.water), stream: v.stream, can: v.can, washing: v.washing, drying: v.drying, pourK: r3(v.pourK), pourInto: v.pourInto, holdL: v.holdL, holdR: v.holdR, tossAge, eat: v.eat && state.meal ? { chair: v.eat.chair, age: Math.round((now - v.eat.t0) * 2) / 2, T: v.eat.T, bites: state.meal.bites ?? 3 } : null } } : null;
+      // (Off the kitchen — the hallway, someone's floor with no kitchen of yours — only the floor's moving things.)
+      const wire2: KShowWire | null = wire ?? (floor && fx ? { fx, key: floor.key, at: [...new Set(using)], hands: { left: null, right: null }, v: {} } : null);
+      state.liftLink.setShow(wire2 ? JSON.stringify(wire2) : null);
     }
     if (kc && !eRide && !move.current) {
       if (!kr.busy) kr.answer(kc);
@@ -1415,7 +1490,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     if (!eRide && mv && floor && mv.kind === "switch" && mv.plan) {
       const t = now - mv.t0, r = planAt(mv.plan, t, mv.keyT ?? -1);
       mv.keyT = t;
-      if (r.events.includes("flick") && mv.which) { const lt = lightsOf(floor.key), w = mv.which as "bedroom" | "bathroom"; lt[w] = !lt[w]; }
+      if (r.events.includes("flick") && mv.which) { const lt = lightsOf(floor.key), w = mv.which as "bedroom" | "bathroom"; lt[w] = !lt[w]; lightsAt.current.set(floor.key, Date.now()); }
       script = scriptFrom(r.pose);
       if (r.done) { move.current = null; script = null; }
     }
@@ -1460,6 +1535,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
 
     // ---------- E: what can be done here ----------
     const pr = prompt.current; pr.visible = false; pr.label = undefined;
+    if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") (window as unknown as { __aptPrompt?: () => string | undefined }).__aptPrompt = () => (pr.visible ? pr.label : undefined);
     if (eRide || move.current || kr.busy || state.ladder || state.ladderPrompt || state.accident || state.health <= 0 || sleeping.current) { if (eRide || move.current || kr.busy) state.interactQueued = false; return; }
     // Calling the car (to this floor); the label says where it is.
     const callLift = (bkey: string, here: number) => { myCalls.current.push({ b: bkey, floor: here }); };
@@ -1557,7 +1633,10 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       } else if (use && lz > floor.bath.z0 && lx > floor.bath.x0 && lx < floor.bath.x1 && bathNear(floor, lx, lz, yawL)) {
         const what = bathNear(floor, lx, lz, yawL)!, from: [number, number] = [lx, lz], fromYaw = state.rotY - floor.frame.rot, carry = { basket: false, bag: !!state.groceryBag };
         const B = floor.bath;
-        if (what === "sink") {
+        const busyAt = what === "sink" ? "bath-sink" : what;
+        if (takenHere().has(busyAt)) {
+          show(what === "sink" ? B.sink.x : what === "toilet" ? B.toilet.x : (B.shower.x0 + B.shower.x1) / 2, what === "sink" ? B.sink.z : what === "toilet" ? B.toilet.z : B.shower.curtainZ, 1.5, "SOMEONE'S THERE");
+        } else if (what === "sink") {
           show(B.sink.x, B.sink.z, 1.5, "E  WASH HANDS");
           act = () => { if (!needFreeHands(state, "washing your hands")) return; move.current = { kind: "wash", t0: now, plan: makePlan([walkSeg(from, fromYaw, washStand(floor), Math.PI / 2, carry)]) }; state.keys.clear(); };
         } else if (what === "toilet") {
@@ -1593,6 +1672,8 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
           move.current = { kind: "bed", phase: "in", t0: now, flap: null, plan: makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, bedSpots(floor).S, -Math.PI / 2, { basket: false, bag: !!state.groceryBag })]) };
           state.keys.clear();
         };
+      } else if (use && Math.hypot(lx - floor.spots.fridge[0], lz - floor.spots.fridge[1]) < 1.0 && sees(fridgeAt.x, fridgeAt.z) && takenHere().has("fridge")) {
+        show(floor.spots.fridge[0] + 0.5, floor.spots.fridge[1], 2.0, "SOMEONE'S AT THE FRIDGE");
       } else if (use && Math.hypot(lx - floor.spots.fridge[0], lz - floor.spots.fridge[1]) < 1.0 && sees(fridgeAt.x, fridgeAt.z)) {
         show(floor.spots.fridge[0] + 0.5, floor.spots.fridge[1], 2.0, "E  FRIDGE");
         act = () => {
@@ -1604,8 +1685,8 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         const c = closetNear(floor, lx, lz)!, stand: [number, number] = [c.x + Math.sin(c.rot) * (c.d / 2 + 0.62), c.z + Math.cos(c.rot) * (c.d / 2 + 0.62)];
         show(c.x, c.z + 0.4, 2.2, "E  CLOSET");
         act = () => { if (!needFreeHands(state, "changing your clothes")) return; move.current = { kind: "closet", phase: "open", t0: now, plan: makePlan([walkSeg([lx, lz], state.rotY - floor.frame.rot, stand, c.rot + Math.PI, { basket: false, bag: !!state.groceryBag })]) }; state.keys.clear(); };
-      } else if (use && chairNear(floor, lx, lz) !== null && sees(floor.items[chairNear(floor, lx, lz)!]!.x, floor.items[chairNear(floor, lx, lz)!]!.z, 1.3)) {
-        const idx = chairNear(floor, lx, lz)!, c = floor.items[idx]!;
+      } else if (use && chairNear(floor, lx, lz, state.takenChairs) !== null && sees(floor.items[chairNear(floor, lx, lz, state.takenChairs)!]!.x, floor.items[chairNear(floor, lx, lz, state.takenChairs)!]!.z, 1.3)) {
+        const idx = chairNear(floor, lx, lz, state.takenChairs)!, c = floor.items[idx]!;
         show(c.x - c.f[0] * CHAIR.back, c.z - c.f[1] * CHAIR.back, 1.5, "E  SIT");
         act = () => {
           const plan = planSit(floor, idx, lx, lz, state.rotY - floor.frame.rot);
@@ -1645,6 +1726,14 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
 
 
   const lobbies = useMemo(() => buildings.map((b) => ({ b, layout: venueLayout(b) })), [buildings]);
+  /** Whether you're on floor `key` (your own doors' swings are for that floor only). */
+  const here = (key: string) => !!state.level && `${state.level.building}#${state.level.floor}` === key;
+  /** A door on floor `key` as it shows: whichever is swung furthest — yours (if you're there) or another player's there. */
+  const swingOf = (key: string, f: "d" | "bd" | "ba" | "fr" | "cl", own: number) => {
+    let a = f === "d" ? own : here(key) ? own : 0;
+    for (const o of actors.current.values()) if (o.key === key && o.fx && Math.abs(o.fx[f]) > Math.abs(a)) a = o.fx[f];
+    return a;
+  };
   return <group>
     {buildings.map((b) => <AptExterior key={aptKey(b)} b={b} state={state} />)}
     {/* The lobby elevators' doors (and the car, while someone's in it at the lobby). */}
@@ -1653,7 +1742,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       <LobbyCar state={state} bkey={aptKey(b)} at={[layout.bounds.minX + SHAFT / 2, layout.bounds.minZ + SHAFT / 2]} m={m} />
       <LobbyVisitor state={state} layout={layout} />
     </group>)}
-    {shown.map((fl) => <FloorInterior key={fl.key} actorsAt={(k3) => [...actors.current.values()].filter((a) => a.key === k3)} lift={() => carShown(fl.key.split("#")[0]!)} sheet={sheetLink(fl.key)} bath={bathLink(fl.key)} kview={kitchen.current.view} lightsOf={lightsOf} bathDoor={() => (state.level?.floor === fl.upper ? bathAngle.current : 0)} fl={fl} state={state} m={m} door={() => Math.max(state.level?.floor === fl.upper && state.level?.building === fl.key.split("#")[0] ? doorAngle.current : 0, lift().aptDoors.get(fl.key) ?? 0)} bedDoor={() => bedAngle.current} fridgeDoor={() => fridgeAngle.current} closetDoor={() => closetAngle.current} elevatorOpen={elevatorOpen(fl.key.split("#")[0]!, fl.upper)} />)}
+    {shown.map((fl) => <FloorInterior key={fl.key} actorsAt={(k3) => [...actors.current.values()].filter((a) => a.key === k3)} lift={() => carShown(fl.key.split("#")[0]!)} sheet={sheetLink(fl.key)} bath={bathLink(fl.key)} kview={kitchen.current.view} lightsOf={lightsOf} bathDoor={() => swingOf(fl.key, "ba", bathAngle.current)} fl={fl} state={state} m={m} door={() => swingOf(fl.key, "d", Math.max(here(fl.key) ? doorAngle.current : 0, lift().aptDoors.get(fl.key) ?? 0))} bedDoor={() => swingOf(fl.key, "bd", bedAngle.current)} fridgeDoor={() => swingOf(fl.key, "fr", fridgeAngle.current)} closetDoor={() => swingOf(fl.key, "cl", closetAngle.current)} elevatorOpen={elevatorOpen(fl.key.split("#")[0]!, fl.upper)} />)}
     <CarAt state={state} buildings={byKey} m={m} carY={carY} light={carLight} doors={(bkey) => doorsOf(lift().car(bkey))} shown={carShown} />
     {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => <LiftRider key={i} state={state} get={() => lift().riders[i] ?? null} buildings={byKey} carY={carY} />)}
     <pointLight ref={bathLight} intensity={0} distance={3.4} decay={1.4} color="#fff4e6" />
@@ -1680,10 +1769,10 @@ function seatNear(fl: AptFloor, lx: number, lz: number): Seat | null {
   return best;
 }
 /** A chair (index into the floor's items) one is standing behind or beside, ready to pull it out and sit. */
-function chairNear(fl: AptFloor, lx: number, lz: number): number | null {
+function chairNear(fl: AptFloor, lx: number, lz: number, taken?: Set<string>): number | null {
   let best: number | null = null, bd = 0.9;
   fl.items.forEach((c, i) => {
-    if (c.kind !== "chair") return;
+    if (c.kind !== "chair" || taken?.has(`${fl.key}#${i}`)) return;
     const d = Math.hypot(lx - (c.x - c.f[0] * 0.64), lz - (c.z - c.f[1] * 0.64));
     if (d < bd) { bd = d; best = i; }
   });

@@ -254,7 +254,8 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
       const out = npcs.filter((n) => n.active || n.pendingOut).length;
       if (out < target) {
         const doorNear = (key: string) => { const a = apts.find((x) => x.key === key); return !!a && players.some((o) => Math.hypot(a.door[0] - o.x, a.door[1] - o.z) < 110); };
-        const home = bridge ? npcs.find((m) => !m.active && !m.pendingOut && m.home && doorNear(m.home)) : undefined;
+        // (Only about half come out through their building — door, elevator, lobby; the rest just appear out of sight.)
+        const home = bridge && Math.random() < 0.5 ? npcs.find((m) => !m.active && !m.pendingOut && m.home && doorNear(m.home)) : undefined;
         if (home && bridge) { home.pendingOut = true; bridge.release(home.body.id, home.home); }
         else {
           const n = npcs.find((m) => !m.active && !m.pendingOut);
@@ -262,11 +263,12 @@ export function Pedestrians({ state, city }: { state: GameState; city: City }) {
         }
       } else if (out > target) {
         const free = (m: Npc) => m.active && !m.accident && !m.meal && !m.park && !m.goHome;
-        const onApt = npcs.find((m) => free(m) && m.leg.kind === "ring" && aptOn(m));
+        // (Only about half go home through their building's door and elevator; the rest go out of sight.)
+        const onApt = Math.random() < 0.5 ? npcs.find((m) => free(m) && m.leg.kind === "ring" && aptOn(m)) : undefined;
         if (onApt) startHome(onApt, aptOn(onApt)!);
         else {
           const n = npcs.find((m) => free(m) && outOfSight(m.pos.x, m.pos.z, players));
-          if (n) { n.home = nearestApt(n.pos.x, n.pos.z)?.key ?? n.home; bridge?.arrive(n.body.id, n.home); putAway(n, state.seatOccupants); }
+          if (n) { n.home = nearestApt(n.pos.x, n.pos.z)?.key ?? n.home; bridge?.arrive(n.body.id, n.home, true); putAway(n, state.seatOccupants); }
         }
       }
     }
