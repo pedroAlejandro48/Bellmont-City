@@ -55,7 +55,8 @@ export function MainMenu({ account, username, message, onCity, onRoom, onSignOut
       const m = /scale\(([\d.]+)\)/.exec(box.closest<HTMLElement>(".auth-split")?.style.transform ?? ""), k = m ? Number(m[1]) : 1;
       const h = (el: HTMLElement) => el.getBoundingClientRect().height / k;
       let extra = 0;
-      box.querySelectorAll<HTMLElement>("[data-extra]").forEach((el) => { const cs = getComputedStyle(el); extra += h(el) + parseFloat(cs.marginTop) + parseFloat(cs.marginBottom); });
+      // (An empty one takes no room: its margins collapse away, so it isn't counted.)
+      box.querySelectorAll<HTMLElement>("[data-extra]").forEach((el) => { if (h(el) < 0.5) return; const cs = getComputedStyle(el); extra += h(el) + parseFloat(cs.marginTop) + parseFloat(cs.marginBottom); });
       setSlotH(h(box) + parseFloat(getComputedStyle(box).marginTop) - extra);
     };
     measure();
@@ -89,7 +90,7 @@ export function MainMenu({ account, username, message, onCity, onRoom, onSignOut
             <input aria-label="Room code" className="auth-input flex-1 uppercase placeholder:normal-case" autoFocus={!coarse} autoComplete="off" spellCheck={false} maxLength={6} placeholder="Enter the room code" value={code} onChange={(e) => setCode(e.target.value)} />
             <Button type="submit" className="h-auto self-stretch">Join</Button>
           </form>}
-          {joining && <div data-extra><SavedRooms account={account} onJoin={(c) => onRoom({ mode: "join", code: c })} /></div>}
+          {joining && <SavedRooms account={account} onJoin={(c) => onRoom({ mode: "join", code: c })} />}
           {joining && friends.invites.length > 0 && <div data-extra><RoomInvites account={account} invites={friends.invites} onJoin={(c) => onRoom({ mode: "join", code: c })} /></div>}
           <FriendsMenu account={account} data={friends} />
           {!account.usesPassword && account.email && <button type="button" onClick={() => { setPwOpen((v) => !v); setMsg(null); }} className="w-full text-center text-xs text-muted-foreground underline-offset-2 hover:underline">Add a password (sign in with your username)</button>}

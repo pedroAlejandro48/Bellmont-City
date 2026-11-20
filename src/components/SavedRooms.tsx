@@ -41,7 +41,7 @@ export function SavedRooms({ account, onJoin }: { account: Account; onJoin: (cod
     setBusy(null); setSure(null);
   }
 
-  return <ul className="saved-rooms">
+  return <ul data-extra className="saved-rooms">
     {rooms.map((r) => {
       const ms = members[r.code], alone = !!ms && ms.filter((m) => m.uid !== account.id).length === 0;
       return <li key={r.code}>
