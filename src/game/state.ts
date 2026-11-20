@@ -193,6 +193,9 @@ export type GameState = {
   liftPress: number[];
   /** While riding: the building and the floors to draw (those the car is passing). */
   liftShown: { b: string; floors: number[] } | null;
+  /** The elevator's doorway where you are while its doors are shut (in the room's frame): the camera treats it as
+   *  wall, from inside the car and from the hallway or lobby. */
+  liftShut: { x: number; z: number; hx: number } | null;
   /** The street's people going into apartment buildings and coming out (set by the apartments). */
   liftBridge: import("./liftRiders").LiftBridge | null;
   /** Another player's apartment you're in (its kitchen and fridge, shared; your own hands). */
@@ -363,7 +366,7 @@ export function createState(save: SaveData): GameState {
     extraDoorUses: [],
     level: save.apt && save.apt.floor >= 2 ? { building: save.apt.building, floor: save.apt.floor, y: floorY(save.apt.floor) } : null,
     seatSurface: null,
-    inCar: false, liftView: null, liftPress: [], liftShown: null, liftBridge: null, aptHere: null,
+    inCar: false, liftView: null, liftPress: [], liftShown: null, liftShut: null, liftBridge: null, aptHere: null,
     uiLock: null, fridgeLoad: [], camLock: null, ladder: null, ladderPrompt: false, noJump: false, kitchenAsk: null, meal: null, kitchenQ: false,
     keys: new Set(),
     jumpQueued: false,

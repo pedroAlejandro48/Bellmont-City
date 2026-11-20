@@ -1069,12 +1069,15 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       // The doorway: open while its doors are open at this floor and there's room in it (or you're in it).
       const myFloor = state.level?.floor ?? 1, full = lift().occupancy(bHere, [{ b: bHere, floor: myFloor, inCar: insideCar, inDoor }, ...(state.liftLink?.others() ?? [])]) - (insideCar ? 1 : 0) >= CAPACITY;
       const doorOpen = atFloor(car, myFloor) && doorsOf(car) > 0.5 && (insideCar || inDoor || !full);
+      // (Shut doors are a wall for the camera — inside the car and out: a closed elevator is part of the wall.)
+      const shutNow = !atFloor(car, myFloor) || doorsOf(car) < 0.12;
+      if (shutNow) { const sh = shaftOf(bOb); state.liftShut = { x: sh.cx, z: sh.front, hx: LIFT_DOOR / 2 + 0.1 }; } else state.liftShut = null;
       if (floor) setLiftDoor(floor.liftDoor, !doorOpen);
       const lr = lobby ? state.rooms.get(aptKey(lobby.b)) as (VenueLayout | undefined) : undefined;
       if (lr?.liftDoor) setLiftDoor(lr.liftDoor, !doorOpen);
       // The buttons' view of it.
       if (state.uiLock === "elevator") state.liftView = { b: bHere, floor: cf, dir: carDir(car), stops: [...car.stops] };
-    } else { state.liftShown = null; state.inCar = false; }
+    } else { state.liftShown = null; state.inCar = false; state.liftShut = null; }
     if (state.uiLock === "elevator" && !insideCar) { state.uiLock = null; state.liftView = null; }
     const eRide = insideCar && !!car && car.phase === "moving" ? car : null;
     function here(): { x: number; z: number; yaw: number } { const [x, z] = frameNow ? toLocal(frameNow, p.x, p.z) : [p.x, p.z]; return { x, z, yaw: hereYaw() }; }

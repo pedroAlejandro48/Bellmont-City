@@ -286,7 +286,9 @@ export function CameraRig({ state }: { state: GameState }) {
           wall(target.y, dy, base + 0.2, base + top - m);
         } else if (dz < -1e-6) reach = Math.min(reach, (0.3 - tz) / dz);
         // Walls inside the room (an apartment floor's): the camera stops in front of the first one in the way.
-        const walls = (room as { walls?: { x: number; z: number; hx: number; hz: number }[] }).walls;
+        const walls0 = (room as { walls?: { x: number; z: number; hx: number; hz: number }[] }).walls;
+        // (A shut elevator is part of the wall: its doorway too, from either side.)
+        const shut = state.liftShut, walls = shut ? [...(walls0 ?? []), { x: shut.x, z: shut.z, hx: shut.hx, hz: 0.04 }] : walls0;
         if (keepIn && walls) for (const w of walls) {
           let t0 = 0, t1 = Infinity;
           const slab = (o: number, d: number, lo: number, hi: number) => {
