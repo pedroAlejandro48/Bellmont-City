@@ -721,8 +721,18 @@ input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-sele
 .account-menu { display: flex; align-items: center; gap: 0.5rem; }
 .account-menu .account-drop { position: absolute; top: 100%; left: 0; }
 .account-refresh-wrap { position: relative; display: inline-flex; }
-.account-refresh { width: 2.5rem; height: 2.5rem; border-radius: 50%; display: grid; place-items: center; background: rgba(12,16,32,0.72); border: 1px solid rgba(255,255,255,0.18); color: #f2f3f7; transition: transform 0.15s, background 0.15s; }
-.account-refresh:hover { background: rgba(40,48,72,0.85); }
-.account-refresh:active { transform: rotate(-30deg) scale(0.95); }
 .hover-tip { position: absolute; top: calc(100% + 0.35rem); left: 50%; transform: translateX(-50%); padding: 0.2rem 0.5rem; border-radius: 0.4rem; background: rgba(0,0,0,0.82); color: #fff; font-size: 0.72rem; font-weight: 700; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.12s; }
 .account-refresh-wrap:hover .hover-tip { opacity: 1; }
+/* Refresh (the apps): the word, and the arrow hidden behind it. Pointed at, the button widens and the arrow slides out
+   to the right of the word, turning once clockwise; leaving, all of it goes back the same way. */
+.account-refresh { --bg: #151a2a; position: relative; display: inline-flex; align-items: center; height: 2.5rem; padding: 0 1rem; border-radius: 999px; background: var(--bg); border: 1px solid rgba(255,255,255,0.18); color: #f2f3f7; font: 800 0.88rem/1 Manrope, Arial, sans-serif; overflow: hidden; transition: padding-right 0.42s cubic-bezier(0.3, 0.7, 0.3, 1), background 0.2s; }
+.account-refresh .refresh-word { position: relative; z-index: 1; padding: 0.55rem 0.15rem; background: var(--bg); transition: background 0.2s; }
+.account-refresh .refresh-arrow { position: absolute; right: 1.05rem; top: 50%; margin-top: -8.5px; z-index: 0; transform: translateX(-1.4rem) rotate(0deg); transition: transform 0.42s cubic-bezier(0.3, 0.7, 0.3, 1), right 0.42s cubic-bezier(0.3, 0.7, 0.3, 1); }
+.account-refresh:hover { --bg: #1f2740; padding-right: 2.6rem; }
+.account-refresh:hover .refresh-arrow { right: 0.8rem; transform: translateX(0) rotate(360deg); }
+.account-refresh:active { filter: brightness(1.15); }
+/* (Upright phone with the Refresh button: the device-speed picker goes on a row under the picture and the button.) */
+@media (orientation: portrait) {
+  body:has(.account-refresh) .quality-picker { top: 3.6rem; left: 0.75rem; right: auto; align-items: flex-start; }
+  body:has(.account-refresh) .auth-page { padding-top: 6.6rem; }
+}

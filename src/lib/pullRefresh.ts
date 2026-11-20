@@ -4,6 +4,24 @@ import { useEffect } from "react";
 // has no browser to do it, so a finger dragged down from anywhere on the page pulls a round arrow down from the top;
 // past the line, letting go reloads the page.
 const PULL = 90;
+/** The pull-down arrow of the page showing, to play it from a button. */
+let shown: { ring: HTMLDivElement; set: (d: number) => void } | null = null;
+/**
+ * The pull-to-refresh as if pulled (the mobile apps' Refresh button): the arrow comes down from the top of the screen,
+ * turns orange and spins, and right after, the game reloads.
+ */
+export function playPullRefresh() {
+  const at = shown;
+  if (!at) { window.location.reload(); return; }
+  const t0 = performance.now(), T = 550;
+  const step = (now: number) => {
+    const k = Math.min(1, (now - t0) / T), e = 1 - (1 - k) ** 3;
+    at.set(PULL * 1.05 * e);
+    if (k < 1) requestAnimationFrame(step);
+    else { at.ring.classList.add("spin"); window.setTimeout(() => window.location.reload(), 450); }
+  };
+  requestAnimationFrame(step);
+}
 export function usePullToRefresh() {
   useEffect(() => {
     let startY: number | null = null, dy = 0;
@@ -30,6 +48,7 @@ export function usePullToRefresh() {
       if (dy >= PULL) { ring.classList.add("spin"); window.setTimeout(() => window.location.reload(), 250); return; }
       ring.style.transition = "transform 0.2s, opacity 0.2s"; set(0); window.setTimeout(() => { ring.style.transition = ""; }, 220);
     };
+    shown = { ring, set };
     window.addEventListener("touchstart", down, { passive: true });
     window.addEventListener("touchmove", move, { passive: true });
     window.addEventListener("touchend", up);
@@ -38,6 +57,7 @@ export function usePullToRefresh() {
       window.removeEventListener("touchstart", down); window.removeEventListener("touchmove", move);
       window.removeEventListener("touchend", up); window.removeEventListener("touchcancel", up);
       ring.remove();
+      if (shown?.ring === ring) shown = null;
     };
   }, []);
 }

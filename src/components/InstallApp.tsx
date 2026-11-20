@@ -24,6 +24,8 @@ const IN_APP = appKind() !== null;
 export const inApp = () => IN_APP;
 /** Inside the Windows app (where Exit closes the app: it runs full screen, without a title bar). */
 export const inWindowsApp = () => appKind() === "windows";
+/** The game as an app on a phone or tablet: the Android app, or installed to the home screen (iPhone, iPad, Android). */
+export const inMobileApp = () => appKind() === "android" || (isMobile() && window.matchMedia("(display-mode: standalone)").matches) || (navigator as { standalone?: boolean }).standalone === true;
 export const installed = () => IN_APP || window.matchMedia("(display-mode: standalone)").matches || window.matchMedia("(display-mode: fullscreen)").matches || (navigator as { standalone?: boolean }).standalone === true;
 /** Which iPhone browser: Safari (or one that looks like it, such as Brave), Chrome, Firefox, Edge. */
 function iosBrowser() {

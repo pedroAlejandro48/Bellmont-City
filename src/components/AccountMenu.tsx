@@ -9,7 +9,8 @@ import { LANGS, currentLang, setLang } from "@/i18n";
 import { QUALITIES, readQuality, saveQuality, type Quality } from "@/game/quality";
 import { enablePush, pushPermission, registerDevice } from "@/platform/push";
 import type { useFriends } from "@/components/Friends";
-import { exitApp, inWindowsApp } from "@/components/InstallApp";
+import { exitApp, inMobileApp, inWindowsApp } from "@/components/InstallApp";
+import { playPullRefresh } from "@/lib/pullRefresh";
 
 /**
  * The player's picture in the top-left corner of the menu: tap it for Profile (picture, username, friends, deleting
@@ -23,9 +24,15 @@ export function AccountMenu({ account, friends, onAccount, onSignOut }: { accoun
     <div className="account-menu">
       <button type="button" className="account-pic" aria-label="Your account" aria-expanded={open} onClick={() => setOpen((v) => !v)}><Avatar photo={account.photo} name={name} size={40} /></button>
       {/* (Windows app: refresh, with its key under it while the pointer is on it.) */}
-      {inWindowsApp() && <span className="account-refresh-wrap">
-        <button type="button" className="account-refresh" aria-label="Refresh" onClick={() => location.reload()}><RotateCw size={18} aria-hidden /></button>
-        <span className="hover-tip" aria-hidden data-no-translate>Ctrl + R</span>
+      {/* The apps: Refresh. Pointed at, the arrow slides out from behind the word, spinning, and the button widens
+          (all back again when the pointer leaves). Windows shows "Ctrl + R" under it; on a phone, pressing it plays
+          the pull-to-refresh arrow down from the top, then the game reloads. */}
+      {(inWindowsApp() || inMobileApp()) && <span className="account-refresh-wrap">
+        <button type="button" className="account-refresh" onClick={() => (inWindowsApp() ? location.reload() : playPullRefresh())}>
+          <span className="refresh-word">Refresh</span>
+          <RotateCw size={17} className="refresh-arrow" aria-hidden />
+        </button>
+        {inWindowsApp() && <span className="hover-tip" aria-hidden data-no-translate>Ctrl + R</span>}
       </span>}
       {open && <ul className="hud-panel account-drop">
         <li><button type="button" onClick={() => { setPanel("profile"); setOpen(false); }}>Profile</button></li>
