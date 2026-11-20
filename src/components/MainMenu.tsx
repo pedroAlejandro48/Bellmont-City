@@ -7,7 +7,7 @@ import { normalizeRoomCode } from "@/platform/rooms";
 import type { RoomRequest } from "@/multiplayer/RoomGame";
 import { AccountError, MIN_PASSWORD, addPassword, type Account } from "@/platform/account";
 import { publishEmail } from "@/platform/friends";
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { FriendsMenu, RoomInvites, useFriends } from "@/components/Friends";
 import { PushPrompt } from "@/components/PushPrompt";
 import { AvatarPicker } from "@/components/Avatar";
@@ -43,6 +43,25 @@ export function MainMenu({ account, username, message, onCity, onRoom, onSignOut
     onRoom({ mode: "join", code: normalized });
   }
 
+  // The box keeps its place (and the title theirs) whatever opens in it: its slot is as tall as the box without
+  // anything opened or shown in it (data-extra); what opens pushes only what's below it further down.
+  const boxRef = useRef<HTMLDivElement>(null), [slotH, setSlotH] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const box = boxRef.current;
+    if (!box) return;
+    const measure = () => {
+      // (Exact sizes, not whole pixels; the page may be shrunk to fit the screen: undone.)
+      const m = /scale\(([\d.]+)\)/.exec(box.closest<HTMLElement>(".auth-split")?.style.transform ?? ""), k = m ? Number(m[1]) : 1;
+      const h = (el: HTMLElement) => el.getBoundingClientRect().height / k;
+      let extra = 0;
+      box.querySelectorAll<HTMLElement>("[data-extra]").forEach((el) => { const cs = getComputedStyle(el); extra += h(el) + parseFloat(cs.marginTop) + parseFloat(cs.marginBottom); });
+      setSlotH(h(box) + parseFloat(getComputedStyle(box).marginTop) - extra);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, []);
   useTitleBetweenObeliskAndForm();
   usePullToRefresh();
   return (
@@ -56,25 +75,28 @@ export function MainMenu({ account, username, message, onCity, onRoom, onSignOut
           <h1 className="font-display text-center text-5xl tracking-tight text-foreground">Bellmont city</h1>
           <p className="mt-2 text-center text-sm text-muted-foreground">{username ? <>Welcome back, <span className="text-foreground" data-no-translate>{username}</span>.</> : "Twenty minutes of sun. Twenty minutes of moon. Real life in a game."}</p>
         </div>
-        <div className="auth-box hud-panel mt-8 space-y-4 p-6">
+        <div className="auth-box-slot" style={slotH ? { height: slotH } : undefined}>
+        <div ref={boxRef} className="auth-box hud-panel mt-8 space-y-4 p-6">
           <Button type="button" className="w-full" onClick={onCity}>Go to my city</Button>
           <div className="flex overflow-hidden rounded-md border border-input">
             <Button type="button" variant="outline" className="flex-1 rounded-none border-0 border-r border-input" onClick={() => onRoom({ mode: "create" })}>Create a room</Button>
             <Button type="button" variant={joining ? "secondary" : "outline"} className="flex-1 rounded-none border-0" aria-expanded={joining} onClick={() => { setJoining((v) => !v); setMsg(null); }}>Join a room{friends.invites.length ? <span className="friends-badge">{friends.invites.length}</span> : null}</Button>
           </div>
-          {joining && <form onSubmit={join} className="flex gap-2">
+          {joining && <form data-extra onSubmit={join} className="flex gap-2">
             <input aria-label="Room code" className="auth-input flex-1 uppercase placeholder:normal-case" autoFocus autoComplete="off" spellCheck={false} maxLength={6} placeholder="Enter the room code" value={code} onChange={(e) => setCode(e.target.value)} />
             <Button type="submit">Join</Button>
           </form>}
-          {joining && <RoomInvites account={account} invites={friends.invites} onJoin={(c) => onRoom({ mode: "join", code: c })} />}
+          {joining && friends.invites.length > 0 && <div data-extra><RoomInvites account={account} invites={friends.invites} onJoin={(c) => onRoom({ mode: "join", code: c })} /></div>}
           <FriendsMenu account={account} data={friends} />
-          {!account.usesPassword && account.email && (pwOpen ? <form onSubmit={savePassword} className="space-y-2">
+          {!account.usesPassword && account.email && <button type="button" onClick={() => { setPwOpen((v) => !v); setMsg(null); }} className="w-full text-center text-xs text-muted-foreground underline-offset-2 hover:underline">Add a password (sign in with your username)</button>}
+          {!account.usesPassword && account.email && pwOpen && <form data-extra onSubmit={savePassword} className="space-y-2">
             <input aria-label="New password" className="auth-input" type="password" autoComplete="new-password" placeholder={`Create a password (${MIN_PASSWORD}+ characters)`} value={pw1} onChange={(e) => { setPw1(e.target.value); setMsg(null); }} />
             <input aria-label="Confirm password" className="auth-input" type="password" autoComplete="new-password" placeholder="Confirm the password" value={pw2} onChange={(e) => { setPw2(e.target.value); setMsg(null); }} />
             <Button type="submit" className="w-full" disabled={pwBusy || pw1.length < MIN_PASSWORD || pw1 !== pw2}>{pwBusy ? "…" : pw2 && pw1 !== pw2 ? "Passwords don't match" : "Save password"}</Button>
-          </form> : <button type="button" onClick={() => { setPwOpen(true); setMsg(null); }} className="w-full text-center text-xs text-muted-foreground underline-offset-2 hover:underline">Add a password (sign in with your username)</button>)}
-          {(msg ?? message) && <p className="text-center text-sm text-accent">{msg ?? message}</p>}
+          </form>}
+          {(msg ?? message) && <p data-extra className="text-center text-sm text-accent">{msg ?? message}</p>}
           <button type="button" onClick={onSignOut} className="w-full text-center text-xs text-muted-foreground underline-offset-2 hover:underline">Sign out</button>
+        </div>
         </div>
       </div>
     </div>

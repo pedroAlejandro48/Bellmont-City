@@ -620,7 +620,7 @@ html:has(.auth-page), body:has(.auth-page) { overflow: hidden; height: 100%; }
 body.has-install-pc .quality-picker { right: 9.6rem; }
 /* ---------- Friends (main menu) ---------- */
 .friends-badge { display: inline-grid; place-items: center; min-width: 1.15rem; height: 1.15rem; margin-left: 0.4rem; padding: 0 0.3rem; border-radius: 999px; background: #ffb547; color: #1a1205; font-size: 0.7rem; font-weight: 800; }
-.friends-list { margin-top: 0.4rem; display: flex; flex-direction: column; gap: 0.3rem; max-height: 11rem; overflow-y: auto; }
+.friends-list { margin-top: 0.4rem; display: flex; flex-direction: column; gap: 0.3rem; max-height: 11rem; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .friends-row { display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.4rem 0.4rem 0.7rem; border-radius: 0.6rem; background: rgba(255,255,255,0.06); font-size: 0.85rem; }
 .friends-row.request { background: rgba(255,181,71,0.14); }
 .friends-row > span { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }

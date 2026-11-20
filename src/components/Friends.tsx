@@ -72,11 +72,11 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
       </div>
       <Button type="button" variant={adding ? "secondary" : "outline"} size="icon" aria-label="Add a friend" aria-expanded={adding} onClick={() => { setAdding((v) => !v); setOpen(false); setMsg(null); }}><Plus aria-hidden /></Button>
     </div>
-    {adding && <form onSubmit={add} className="mt-2 flex items-stretch gap-2">
+    {adding && <form data-extra onSubmit={add} className="mt-2 flex items-stretch gap-2">
       <input aria-label="Username or email" className="auth-input flex-1" autoFocus autoComplete="off" spellCheck={false} placeholder="Username or email" value={query} onChange={(e) => setQuery(e.target.value)} />
       <Button type="submit" disabled={busy} aria-label="Send friend request" className="h-auto self-stretch px-3"><UserPlus aria-hidden /></Button>
     </form>}
-    {msg && <p className="mt-1 text-center text-xs text-accent">{msg}</p>}
+    {msg && <p data-extra className="mt-1 text-center text-xs text-accent">{msg}</p>}
   </div>;
 }
 
