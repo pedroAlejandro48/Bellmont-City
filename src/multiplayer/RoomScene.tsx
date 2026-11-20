@@ -17,6 +17,9 @@ import { makeTrafficLink } from "./trafficLink";
 import { makeDoorLink } from "./doorLink";
 import { makeLiftLink } from "./liftLink";
 import { FurnitureSync } from "./FurnitureSync";
+import { GroceryBagModel, heldWire, ItemModel, useLooks, type HeldWire, type Thing } from "@/game/InventoryWorld";
+import { Basket, type InBasket } from "@/game/Grocery";
+import { handWorld } from "@/game/arms";
 import { bodyColor, playerOf, type Gender } from "@/platform/account";
 
 /** How long after entering a late-arriving position can still move a player who has not moved yet. */
@@ -61,10 +64,11 @@ export function RoomScene({ state, channel, remotes, joinedAt, creator }: { stat
     // So are the traffic and the restaurant doors.
     state.trafficLink = makeTrafficLink(channel);
     state.doorLink = makeDoorLink(channel);
-    state.liftLink = makeLiftLink(channel);
+    state.liftLink = makeLiftLink(channel, { apts: () => state.roomKept?.apts ?? [], homes: () => state.roomKept?.homes ?? [] });
     return () => { state.npcLink = null; state.foodLink = null; state.trafficLink = null; state.doorLink = null; state.liftLink = null; };
   }, [state, channel]);
   const lastSent = useRef({ at: 0, body: "" });
+  const lastHeld = useRef({ at: 0, body: "" });
   const lastHitAt = useRef(Date.now());
   // Until this player first moves, someone found standing on their spawn point (whose position arrived late) and who
   // was here first makes them step to that person's left, as if they had spawned there.
@@ -94,6 +98,12 @@ export function RoomScene({ state, channel, remotes, joinedAt, creator }: { stat
           void channel.presence({ pose }).catch(() => {});
         }
       }
+    }
+    // What's in this player's hands (for the others to draw), when it changes.
+    if (now - lastHeld.current.at > 150) {
+      const w = JSON.stringify(heldWire(state));
+      if (w !== lastHeld.current.body) { lastHeld.current = { at: now, body: w }; void channel.presence({ held: w }).catch(() => {}); }
+      else lastHeld.current.at = now;
     }
     // Take in new poses, drop players who left, and hand their bodies to the local collision.
     const present = new Set<string>();
@@ -211,9 +221,49 @@ const RemoteAvatar = memo(function RemoteAvatar({ id, uid, creator, remotes, sta
   return <group ref={group} visible={false}>
     <CharacterBody rig={body} color={color} />
     {name && <NameLabel name={name} crown={creator} follow={() => body.root.current} />}
+    <RemoteHeld id={id} remotes={remotes} body={body} />
     <RagdollMeshes mat={ragdollMat} groupRef={(i, el) => { rig.current.ragdoll[i] = el; }} />
     <group ref={(el) => { rig.current.scooter = el; }}>
       <ScooterModel state={look} headlight={false} frontRef={(el) => { rig.current.front = el; }} />
     </group>
   </group>;
 });
+
+/** What another player holds, in their hands as they move: the thing in each hand, the grocery bag, the store basket. */
+function RemoteHeld({ id, remotes, body }: { id: string; remotes: RemotePlayers; body: ReturnType<typeof useBodyRig> }) {
+  const looks0 = useLooks();
+  const looks = useMemo(() => Object.assign({}, looks0, { basket: new THREE.MeshStandardMaterial({ color: "#d62f3a", roughness: 0.55 }) }), [looks0]);
+  const [held, setHeld] = useState<HeldWire>({ r: null, l: null, bag: -1, bk: null });
+  const raw = useRef("");
+  const rG = useRef<THREE.Group>(null), lG = useRef<THREE.Group>(null), bagG = useRef<THREE.Group>(null), bkG = useRef<THREE.Group>(null);
+  const tmp = useMemo(() => ({ e: new THREE.Euler(), q: new THREE.Quaternion() }), []);
+  useFrame(() => {
+    const w = remotes.get(id)?.presence?.["held"];
+    if (typeof w === "string" && w !== raw.current) { raw.current = w; try { setHeld(JSON.parse(w) as HeldWire); } catch { /* */ } }
+    const root = body.root.current, foreR = body.foreR.current, foreL = body.foreL.current;
+    if (!root) return;
+    const yaw = tmp.e.setFromQuaternion(root.getWorldQuaternion(tmp.q), "YXZ").y;
+    const place = (g: THREE.Group | null, fore: THREE.Object3D | null, kind: string | null, turn = 0) => {
+      if (!g || !fore) return;
+      fore.updateWorldMatrix(true, false); handWorld(fore, g.position);
+      let tipX = 0;
+      if (kind === "phone") { tipX = -0.55; turn = Math.PI; g.position.y += 0.05; }
+      if (kind === "key") { tipX = Math.PI / 2; g.position.x += Math.sin(yaw) * 0.035; g.position.z += Math.cos(yaw) * 0.035; g.position.y -= 0.01; }
+      if (kind === "water" || kind === "bottle" || kind === "orangeJuice" || kind === "appleJuice") g.position.y -= 0.07;
+      if (kind === "cola" || kind === "lemonSoda" || kind === "energy" || kind === "can") g.position.y -= 0.05;
+      g.rotation.set(tipX, yaw + turn, 0, "YXZ");
+      g.scale.setScalar(kind === "key" ? 1.7 : 1);
+    };
+    place(rG.current, foreR, held.r);
+    place(lG.current, foreL, held.l);
+    if (bagG.current && foreL) { foreL.updateWorldMatrix(true, false); handWorld(foreL, bagG.current.position); bagG.current.rotation.set(0, yaw, 0); }
+    if (bkG.current && foreR) { foreR.updateWorldMatrix(true, false); handWorld(foreR, bkG.current.position); bkG.current.rotation.set(0, yaw + Math.PI / 2, 0); }
+  });
+  const basketItems = useMemo<InBasket[]>(() => (held.bk ?? []).map(([kind, x, y, z, rot]) => ({ kind: kind as InBasket["kind"], x, y, z, rot })), [held.bk]);
+  return <>
+    {held.r && !held.bk && <group ref={rG}><ItemModel kind={held.r as Thing} looks={looks} empty={held.r === "bottle"} /></group>}
+    {held.l && held.bag < 0 && <group ref={lG}><ItemModel kind={held.l as Thing} looks={looks} empty={held.l === "bottle"} /></group>}
+    {held.bag >= 0 && <group ref={bagG}><GroceryBagModel items={held.bag} looks={looks} /></group>}
+    {held.bk && <group ref={bkG}><Basket looks={looks} items={basketItems} /></group>}
+  </>;
+}

@@ -75,5 +75,7 @@ export class AptShare {
     if (this.linger && now < this.linger.until && !docs.some((d) => d.key === this.linger!.key)) { const { until: _u, ...d } = this.linger; void _u; docs.push(d); }
     else if (this.linger && now >= this.linger.until) this.linger = null;
     link.setApts(docs);
+    // (And kept by the room, so it's still there when nobody who shares it is.)
+    s.aptPersist?.(docs);
   }
 }

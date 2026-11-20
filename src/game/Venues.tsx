@@ -381,6 +381,8 @@ function DrinkShelf({ f, m }: { f: Fixture; m: VMats }) {
   return <group>
     <mesh position={[0, 0.9, -d / 2 + 0.02]} material={m.white}>{box([w, 1.8, 0.04])}</mesh>
     {[-1, 1].map((s) => <mesh key={s} position={[s * w / 2, 0.9, 0]} material={m.white}>{box([0.04, 1.8, d])}</mesh>)}
+    {/* One divider in the middle: the bottles on one side, the cans on the other. */}
+    <mesh position={[0, 0.9, 0]} material={m.white}>{box([0.04, 1.8, d])}</mesh>
     {/* A price strip along each shelf's edge. */}
     {levels.map((y) => <group key={y}>
       <mesh position={[0, y, 0]} material={m.white}>{box([w, 0.03, d])}</mesh>

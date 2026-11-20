@@ -114,6 +114,27 @@ service cloud.firestore {
       // (No expiry: a room lasts while someone has it; its admin — the last one left — deletes it.)
       allow delete: if signedIn() && resource.data.get('admin', resource.data.createdBy) == request.auth.uid;
 
+      // What the room keeps for good (platform/roomWorld): things put down (anyone in it puts down and picks up),
+      // apartment kitchens (anyone may change one — guests cook there too), and each player's home (their own).
+      match /ground/{id} {
+        allow read: if signedIn();
+        allow create: if signedIn() && request.resource.data.by == request.auth.uid
+          && request.resource.data.kind is string && request.resource.data.kind.size() < 40
+          && request.resource.data.x is number && request.resource.data.z is number
+          && (!('contents' in request.resource.data) || request.resource.data.contents.size() <= 40);
+        allow delete: if signedIn();
+      }
+      match /apts/{key} {
+        allow read: if signedIn();
+        allow create, update: if signedIn() && request.resource.data.keys().hasOnly(['key', 'n', 'j'])
+          && request.resource.data.j is string && request.resource.data.j.size() < 20000 && request.resource.data.n is number;
+        allow delete: if signedIn() && (roomAdmin(code) == request.auth.uid || !exists(/databases/$(database)/documents/rooms/$(code)));
+      }
+      match /homes/{uid} {
+        allow read: if signedIn();
+        allow create, update: if signedIn() && uid == request.auth.uid;
+        allow delete: if signedIn() && (uid == request.auth.uid || roomAdmin(code) == request.auth.uid || !exists(/databases/$(database)/documents/rooms/$(code)));
+      }
       // Who has the room (saved it by joining): themselves in, themselves out (discard), or out by the admin (kick).
       match /members/{uid} {
         allow read: if signedIn();

@@ -1,3 +1,4 @@
+import { SIGN_NAME } from "./InteractionPrompt";
 import { facesAt } from "./Apartments";
 import { handFree, handsFullMessage, holding as heldIn } from "./handsHeld";
 import { useFrame } from "@react-three/fiber";
@@ -23,12 +24,12 @@ import { toast, type GameState, type Script } from "./state";
 import { venueLayout, type VenueLayout } from "./venueRoom";
 import { bodyColor } from "@/platform/account";
 
-type InBasket = { kind: ItemKind; x: number; y: number; z: number; rot: number };
+export type InBasket = { kind: ItemKind; x: number; y: number; z: number; rot: number };
 type Checkout = { who: "player" | number; t0: number; items: InBasket[] };
 const money = (n: number) => `$${n.toFixed(2)}`;
 
 /** The red plastic shopping basket (origin at the middle of its handles, where it's held; floor 0.24 below). */
-function Basket({ looks, items }: { looks: Looks & { basket: THREE.Material }; items: InBasket[] }) {
+export function Basket({ looks, items }: { looks: Looks & { basket: THREE.Material }; items: InBasket[] }) {
   return <group>
     <group position={[0, -0.26, 0]}>
       <mesh position={[0, 0.01, 0]} material={looks.basket} castShadow>{<boxGeometry args={[0.42, 0.02, 0.28]} />}</mesh>
@@ -249,7 +250,7 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
           // A free hand takes one (no basket): the right first, then the left. Both full: nothing more.
           const hand = !state.storeHands.right && handFree(state, "right") ? "right" : !state.storeHands.left && handFree(state, "left") ? "left" : null;
           if (src && hand) {
-            const [x, z] = world(src.take[0], src.take[2]); Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: "E" });
+            const [x, z] = world(src.take[0], src.take[2]); Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: `E  ${SIGN_NAME}${itemInfo(src.kind).name}` });
             if (state.interactQueued) { state.interactQueued = false; start(makePlan(handSegs([lx, lz], yaw, src, hand, !!state.groceryBag)), "handPick", { src, hand }); }
           }
         }
@@ -307,7 +308,7 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
           const [x, z] = world(src.take[0], src.take[2]); Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: "NO ROOM IN YOUR INVENTORY" });
         } else if (src && n < BASKET_MAX) {
           const [x, z] = world(src.take[0], src.take[2]);
-          Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: `E  ${itemInfo(src.kind).name.toUpperCase()} ${money(GROCERY_PRICE[src.kind] ?? 1)}` });
+          Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: `E  ${SIGN_NAME}${itemInfo(src.kind).name}` });
           // (The left hand takes it off the shelf: it must be free, or carrying the grocery bag.)
           action = () => { if (heldIn(state, "left") && !state.groceryBag) { const m = handsFullMessage("left"); toast(state, m.title, "warn", m.body); return; } start(pickItem([lx, lz], yaw, src, !!state.groceryBag), "pick", { src }); };
         } else if (src && n >= BASKET_MAX) { const [x, z] = world(src.take[0], src.take[2]); Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: "BASKET FULL" }); }
@@ -336,6 +337,8 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
     if (bg) {
       const onBelt = co?.who === "player" && me.kind === "pay" && me.plan !== null && now - me.t0 < me.plan.total - 0.75;
       bg.visible = !!state.groceryBasket && !state.home;
+      // (What's in it, for the others in a room to see the same basket.)
+      state.basketShown = state.groceryBasket && !onBelt ? visibleItems("player", items.current) : null;
       if (onBelt) { bg.position.copy(at3([spots.basket[0], spots.basket[1] + 0.27, spots.basket[2]])); bg.rotation.set(0, yawOf(layout.service.yaw), 0); }
       else {
         const fore = state.avatar.body[11];

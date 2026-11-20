@@ -748,3 +748,7 @@ input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-sele
 /* (Phones: the Device speed button as tall as the Refresh button beside the picture, same rounded-box shape.) */
 .quality-toggle { height: 2.5rem; }
 .quality-picker.compact .quality-drop { top: 2.95rem; }
+/* A sign with a thing's name (the grocery's shelves and crates): the key, then the name. */
+.scooter-key.wide { display: flex; align-items: center; }
+.scooter-key .sign-name { margin-left: 0.5rem; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.01em; }
+.scooter-key.wide:has(.sign-name) { font-size: 0.95rem; letter-spacing: 0; }

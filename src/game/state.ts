@@ -196,6 +196,12 @@ export type GameState = {
   /** The elevator's doorway where you are while its doors are shut (in the room's frame): the camera treats it as
    *  wall, from inside the car and from the hallway or lobby. */
   liftShut: { x: number; z: number; hx: number } | null;
+  /** The store basket you carry, as it shows (what's in it and where), for the others in a room. */
+  basketShown?: { kind: string; x: number; y: number; z: number; rot: number }[] | null;
+  /** In a room: what the room keeps for floors whose players aren't here (see platform/roomWorld). */
+  roomKept?: { apts: import("./aptShare").AptDoc[]; homes: AptClaim[] } | null;
+  /** In a room: keeps apartment kitchens (the documents aptShare publishes). */
+  aptPersist?: ((docs: import("./aptShare").AptDoc[]) => void) | null;
   /** The street's people going into apartment buildings and coming out (set by the apartments). */
   liftBridge: import("./liftRiders").LiftBridge | null;
   /** Another player's apartment you're in (its kitchen and fridge, shared; your own hands). */

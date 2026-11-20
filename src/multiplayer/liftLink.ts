@@ -15,7 +15,8 @@ const isPeer = (v: unknown): v is LiftPeer => { const p = v as LiftPeer | null; 
  * call or press (`liftReqs`, the last few seconds' worth, numbered) and says where they are (`liftMe`: in which
  * building, on which floor, in a car, in a doorway) — which the runner uses for the doors and the car's room.
  */
-export function makeLiftLink(channel: NamedRoom): LiftLink {
+/** `kept`: what the room keeps for good (apartment kitchens and homes), for floors whose players aren't here. */
+export function makeLiftLink(channel: NamedRoom, kept?: { apts: () => AptDoc[]; homes: () => AptClaim[] }): LiftLink {
   let seq = 0, reqId = 0, mine: Req[] = [], lastMe = "", lastHome = "", lastApts = "", lastShow: string | null = null;
   const isDoc = (v: unknown): v is AptDoc => { const d = v as AptDoc | null; return typeof d === "object" && d !== null && typeof d.key === "string" && typeof d.n === "number" && typeof d.j === "string"; };
   const seenReq = new Map<string, number>();
@@ -75,7 +76,14 @@ export function makeLiftLink(channel: NamedRoom): LiftLink {
       lastApts = key;
       void channel.presence({ aptDocs: docs }).catch(() => {});
     },
-    apts: () => channel.peers().filter((p) => !p.sameTab).flatMap((p) => (Array.isArray(p.presence["aptDocs"]) ? (p.presence["aptDocs"] as unknown[]).filter(isDoc) : [])),
-    homes: () => channel.peers().filter((p) => !p.sameTab).map((p) => p.presence["aptHome"]).filter(isClaim),
+    // (What the players here share live, and what the room keeps — the highest number wins in aptShare.)
+    apts: () => [...channel.peers().filter((p) => !p.sameTab).flatMap((p) => (Array.isArray(p.presence["aptDocs"]) ? (p.presence["aptDocs"] as unknown[]).filter(isDoc) : [])), ...(kept?.apts() ?? [])],
+    homes: () => {
+      const live = channel.peers().filter((p) => !p.sameTab).map((p) => p.presence["aptHome"]).filter(isClaim);
+      const me = channel.peers().find((p) => p.sameTab)?.presence["aptHome"];
+      const mine = isClaim(me) ? `${me.b}#${me.floor}` : "";
+      // (Homes of players who aren't here, as the room keeps them; never your own, and live ones first.)
+      return [...live, ...(kept?.homes() ?? []).filter((h) => `${h.b}#${h.floor}` !== mine && !live.some((l) => l.b === h.b && l.floor === h.floor))];
+    },
   };
 }

@@ -52,6 +52,23 @@ function pickDir(c: Car) {
   c.dir = near > c.y ? 1 : -1;
 }
 /** On by `dt` seconds; `blocked`: someone is standing in its doorway (at the floor it's stopped at). */
+/**
+ * For players who don't run the elevators (rooms): the car as the runner last said, carried on between its updates —
+ * moving the same way at the same speed (never past the floor it's stopping at), its doors' timers running — but
+ * never deciding anything itself (no new stops, opening, closing or setting off): that's only ever the runner's, so
+ * everyone sees the same car, doors and floors.
+ */
+export function followCar(c: Car, dt: number) {
+  if (c.phase === "moving") {
+    const next = ahead(c, c.dir).sort((a, b) => (a - b) * c.dir)[0];
+    if (next === undefined) return;
+    const y = c.y + c.dir * LIFT_SPEED * dt;
+    c.y = (next - y) * c.dir <= 0 ? next : y;
+    return;
+  }
+  if (c.phase === "opening" || c.phase === "closing") c.t = Math.min(DOOR_T, c.t + dt);
+  else if (c.phase === "open") c.dwell = Math.max(0, c.dwell - dt);
+}
 export function stepCar(c: Car, dt: number, blocked: boolean) {
   // (A stop asked for at the floor it's already at, while there: the doors see to it.)
   if (c.phase !== "moving") c.stops = c.stops.filter((s) => !(Math.abs(s - c.y) < 1e-3 && (request(c, s), true)));

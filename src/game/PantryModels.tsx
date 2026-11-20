@@ -287,7 +287,8 @@ export function PantryShelf({ tag, w, d, frame }: { tag: string; w: number; d: n
   useEffect(() => () => meshes.forEach((im) => { if (!im.geometry.userData["shared"]) im.geometry.dispose(); im.dispose(); }), [meshes]);
   return <group>
     <mesh position={[0, 0.9, 0]} material={frame}><boxGeometry args={[w, 1.8, 0.04]} /></mesh>
-    {[-1, 1].map((s) => <mesh key={s} position={[s * w / 2, 0.9, 0]} material={frame}><boxGeometry args={[0.04, 1.8, d]} /></mesh>)}
+    {/* (The kitchenware shelf stands against the pantry's end: that one panel divides them.) */}
+    {[-1, 1].filter((s) => !(tag === "kitchenware" && s < 0)).map((s) => <mesh key={s} position={[s * w / 2, 0.9, 0]} material={frame}><boxGeometry args={[0.04, 1.8, d]} /></mesh>)}
     {levels.map((y) => <mesh key={y} position={[0, y, 0]} material={frame}><boxGeometry args={[w, 0.03, d]} /></mesh>)}
     {meshes.map((im, i) => <primitive key={i} object={im} />)}
   </group>;

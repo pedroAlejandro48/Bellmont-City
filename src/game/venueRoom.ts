@@ -156,7 +156,8 @@ export function venueLayout(b: Building): VenueLayout {
     FRUITS.forEach((tag, k) => add("crate", minX + 0.42, -2.55 - k * 0.88, Math.PI / 2, 0.82, 0.62, true, tag));
     // The pantry shelf (cans on the front, candy on the back) and the kitchenware shelf.
     add("shelf", -1.2, -7.2, 0, 3.2, 0.6, true, "pantry");
-    add("shelf", 1.6, -7.2, 0, 3.0, 0.6, true, "kitchenware");
+    // (Butted against the pantry shelf: one panel between them, the pantry's — no narrow slot.)
+    add("shelf", 1.9, -7.2, 0, 3.0, 0.6, true, "kitchenware");
     add("shelf", 0, minZ + 0.35, 0, Math.min(6, width - 4), 0.6, true, "bottles");
     add("baskets", -1.9, -1.0, 0, 0.5, 0.4, true);
   }

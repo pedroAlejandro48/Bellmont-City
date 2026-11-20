@@ -15,6 +15,7 @@ import { RoomCreatedNotice, RoomMenu, roomNoticeHidden } from "./RoomMenu";
 import { isPoseWire } from "./pose";
 import { remotePeers, RoomScene, type RemotePlayers } from "./RoomScene";
 import { RoomBikes } from "./RoomBikes";
+import { RoomWorldSync } from "./RoomWorldSync";
 import { spawnBeside, standingFromPose, type Standing } from "./spawn";
 
 /** How long a new arrival listens for who is already here before deciding the room is not full. */
@@ -47,7 +48,7 @@ export function RoomEntry({ account, request, onExit }: { account: Account; requ
         for (let waited = SETTLE_MS; waited < POSE_WAIT_MS && remotePeers(channel.peers()).some((p) => !isPoseWire(p.presence["pose"])); waited += 250) {
           await new Promise((resolve) => setTimeout(resolve, 250));
         }
-        if (request.mode === "join" && channel.peers().filter((p) => p.kind === "viewer").length > ROOM_CAPACITY) {
+        if (request.mode === "join" && channel.peers().filter((p) => p.kind === "viewer" && p.presence["away"] !== true).length > ROOM_CAPACITY) {
           await channel.leave();
           return onExit(`That room is full (${ROOM_CAPACITY} players).`);
         }
@@ -136,6 +137,7 @@ function RoomGame({ account, session, onExit }: { account: Account; session: Ses
       <SceneWithAdmin state={state} channel={live} remotes={remotes} joinedAt={session.joinedAt} meta={meta} />
       <RoomBikes state={state} code={room.key} uid={account.id} channel={live} />
       <RoomThumb uid={account.id} code={room.code} />
+      <RoomWorldSync state={state} code={room.code} uid={account.id} />
     </>,
     Overlay: () => <OnlinePanel account={account} channel={live} meta={meta} code={room.code} />,
     Actions: () => <MenuWithAdmin account={account} code={room.code} meta={meta} onDelete={async () => { deletingHere.current = true; await deleteRoom(room); }} />,

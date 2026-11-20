@@ -98,6 +98,11 @@ export function watchRoom(code: string, onGone: () => void) {
 
 /** Deletes the room and everything in it (only its creator may). Everyone inside is sent back to the menu. */
 export async function deleteRoom(room: RoomInfo) {
+  // (Everything the room keeps goes with it, so a room made later with the same code starts clean.)
+  for (const sub of ["ground", "apts", "homes", "members"]) {
+    const docs = await getDocs(collection(firestore, "rooms", room.code, sub)).catch(() => null);
+    await Promise.all((docs?.docs ?? []).map((d) => deleteDoc(d.ref).catch(() => {})));
+  }
   await deleteDoc(doc(firestore, "rooms", room.code));
   await remove(ref(realtime, `rooms/${room.key}`)).catch(() => {});
 }

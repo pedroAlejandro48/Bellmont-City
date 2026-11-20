@@ -256,49 +256,51 @@ export class KitchenRun {
     // (Standing nearer the sink, it's the sink that E is for.)
     const dTo = (q: [number, number]) => Math.hypot(c.lx - q[0], c.lz - q[1]);
     if (near(K.ovenStand, 0.85, K.burners[0]!.map((v, i) => (v + K.burners[1]![i]!) / 2)) && dTo(K.ovenStand) <= dTo(K.sinkStand) + 0.05) {
-      const mid = K.burners.reduce((a2, b2) => [a2[0] + b2[0] / K.burners.length, 0, a2[2] + b2[2] / K.burners.length], [0, 0, 0] as [number, number, number]);
-      const at: [number, number, number] = [mid[0], 1.25, mid[2]];
       // One person at the stove at a time (both burners).
-      if ([0, 1].some((i) => claimed(`stove${i}`))) return { at, label: "SOMEONE'S AT THE STOVE", act: null };
-      // Something done: take it off (the burnt one first, so it stops smoking).
-      // (A burner someone else is at is theirs for now: the other one is yours.)
-      const mineB = (i: number) => !claimed(`stove${i}`), firstB = (what: string) => states.findIndex((st2, i) => st2 === what && mineB(i));
-      const done = firstB("burnt") >= 0 ? firstB("burnt") : firstB("ready");
-      if (done >= 0) {
+      const mid = K.burners.reduce((a2, b2) => [a2[0] + b2[0] / K.burners.length, 0, a2[2] + b2[2] / K.burners.length], [0, 0, 0] as [number, number, number]);
+      if ([0, 1].some((i) => claimed(`stove${i}`))) return { at: [mid[0], 1.25, mid[2]], label: "SOMEONE'S AT THE STOVE", act: null };
+      // Each burner has its own E, over it; only one shows: the one nearest the middle of the view — in first person
+      // where the camera looks, else where the character faces. That one is what E does.
+      const look = s.firstPerson ? s.camYaw + Math.PI - c.fl.frame.rot : c.yaw, lx2 = Math.sin(look), lz2 = Math.cos(look);
+      const off = (i: number) => { const bp = K.burners[i]!, dx = bp[0] - c.lx, dz = bp[2] - c.lz, d = Math.hypot(dx, dz) || 1; return Math.acos(Math.max(-1, Math.min(1, (dx * lx2 + dz * lz2) / d))); };
+      const bi = off(0) <= off(1) ? 0 : 1, bp = K.burners[bi]!;
+      const at: [number, number, number] = [bp[0], 1.2, bp[2]];
+      const st = states[bi];
+      // Done there: take it off.
+      if (st === "burnt" || st === "ready") {
         if (!this.canTakeRight(s)) return { at, label: "YOUR HANDS ARE FULL", act: null };
-        const burntNow = states[done] === "burnt";
-        this.lastStand = burnerStand(fl, done);
-        return { at, label: burntNow ? "E  TAKE IT OFF (BURNT)" : "E  TAKE IT OFF THE STOVE", act: () => {
+        this.lastStand = burnerStand(fl, bi);
+        return { at, label: st === "burnt" ? "E  TAKE IT OFF (BURNT)" : "E  TAKE IT OFF THE STOVE", act: () => {
           this.rightFree(s);
-          this.go(c, offStove(flB(fl, done), from, c.yaw, this.carry(s), done), (e) => {
-            const b2 = k.stoves[done];
+          this.go(c, offStove(flB(fl, bi), from, c.yaw, this.carry(s), bi), (e) => {
+            const b2 = k.stoves[bi];
             if (e !== "lift" || !b2) return;
-            const burnt = stoveState(k, done, s.elapsed, GAME_MINUTE) === "burnt";
+            const burnt = stoveState(k, bi, s.elapsed, GAME_MINUTE) === "burnt";
             h.right = { ware: b2.ware, food: b2.cans, dirty: false, ...(burnt ? { burnt: true } : {}) };
-            k.stoves[done] = null;
-          }, [`stove${done}`]);
+            k.stoves[bi] = null;
+          }, [`stove${bi}`]);
         } };
       }
-      // A clean pot or pan in hand and a free burner: on it goes.
-      const holdingPot = (["right", "left"] as const).find((x) => !!h[x] && isPotLike(h[x]!.ware) && !h[x]!.dirty && !h[x]!.food);
-      const free = firstB("none");
-      if (holdingPot && free >= 0) this.lastStand = burnerStand(fl, free);
-      if (holdingPot && free >= 0) return { at, label: `E  PUT THE ${h[holdingPot]!.ware.toUpperCase()} ON THE STOVE`, act: () => {
-        if (holdingPot === "left") { const r = h.right; h.right = h.left; h.left = r; }
-        this.go(c, toStove(flB(fl, free), from, c.yaw, this.carry(s), free), (e) => { if (e === "onStove" && h.right) { k.stoves[free] = { ware: h.right.ware as "pot" | "pan", cans: [], start: null }; h.right = null; } }, [`stove${free}`]);
-      } };
-      // An empty pot or pan on a burner: cook in it.
-      const empty = firstB("empty");
-      if (empty >= 0) this.lastStand = burnerStand(fl, empty);
-      const cooking = states.map((st2, i) => (st2 === "cooking" ? Math.ceil(COOK_MINUTES - (s.elapsed - k.stoves[i]!.start!) / GAME_MINUTE) : null)).filter((x): x is number => x !== null);
-      const cookingLabel = cooking.length ? `COOKING · ${cooking.map((m2) => `${m2} MIN`).join(" / ")} LEFT` : null;
-      if (empty >= 0) {
-        const cans = fridgeOf(s).filter((n) => canByName(n));
-        if (!cans.length) return { at, label: cookingLabel ?? "NO CANNED FOOD IN THE FRIDGE", act: null };
-        if (!handFree(s, "left") || !handFree(s, "right")) return { at, label: "FREE YOUR HANDS TO COOK", act: null };
-        return { at, label: `E  COOK IN THE ${k.stoves[empty]!.ware.toUpperCase()} (UP TO ${CAPACITY[k.stoves[empty]!.ware]} CANS)${cookingLabel ? ` · ${cookingLabel}` : ""}`, act: () => { s.uiLock = "cook"; s.kitchenAsk = { burner: empty }; s.keys.clear(); } };
+      // Free: a clean pot or pan in hand goes on it.
+      if (st === "none") {
+        const holdingPot = (["right", "left"] as const).find((x) => !!h[x] && isPotLike(h[x]!.ware) && !h[x]!.dirty && !h[x]!.food);
+        if (!holdingPot) return null;
+        this.lastStand = burnerStand(fl, bi);
+        return { at, label: `E  PUT THE ${h[holdingPot]!.ware.toUpperCase()} ON THE STOVE`, act: () => {
+          if (holdingPot === "left") { const r = h.right; h.right = h.left; h.left = r; }
+          this.go(c, toStove(flB(fl, bi), from, c.yaw, this.carry(s), bi), (e) => { if (e === "onStove" && h.right) { k.stoves[bi] = { ware: h.right.ware as "pot" | "pan", cans: [], start: null }; h.right = null; } }, [`stove${bi}`]);
+        } };
       }
-      if (cookingLabel) return { at, label: cookingLabel, act: null };
+      // An empty pot or pan on it: cook in it.
+      if (st === "empty") {
+        this.lastStand = burnerStand(fl, bi);
+        const cans = fridgeOf(s).filter((n) => canByName(n));
+        if (!cans.length) return { at, label: "NO CANNED FOOD IN THE FRIDGE", act: null };
+        if (!handFree(s, "left") || !handFree(s, "right")) return { at, label: "FREE YOUR HANDS TO COOK", act: null };
+        return { at, label: `E  COOK IN THE ${k.stoves[bi]!.ware.toUpperCase()} (UP TO ${CAPACITY[k.stoves[bi]!.ware]} CANS)`, act: () => { s.uiLock = "cook"; s.kitchenAsk = { burner: bi }; s.keys.clear(); } };
+      }
+      // Cooking there: how long it has left.
+      if (st === "cooking") return { at, label: `COOKING · ${Math.ceil(COOK_MINUTES - (s.elapsed - k.stoves[bi]!.start!) / GAME_MINUTE)} MIN LEFT`, act: null };
     }
     // ---- the sink ----
     if (near(K.sinkStand, 0.75, K.basin)) {

@@ -8,8 +8,12 @@ import { SCOOTER_PROMPT_FADE_SECONDS } from "./config";
  * What a sign says: only the key (E, Q…). The few signs with words: an apartment door's LOCKED / UNLOCKED, the
  * elevator COMING, and a delivery's PICK UP / DROP OFF. Anything else that's only words (no key) isn't shown.
  */
+/** In a label, what follows this mark is a thing's name shown beside the key ("E  ⁣Apple" shows "E Apple"). */
+export const SIGN_NAME = "\u2063";
 export function signText(label: string | undefined): string | null {
   if (label === undefined) return "E";
+  const named = label.indexOf(SIGN_NAME);
+  if (named >= 0) { const key = /^([A-Z0-9])/.exec(label.trim())?.[1] ?? "E"; return `${key}${SIGN_NAME}${label.slice(named + 1).trim()}`; }
   const t = label.trim();
   const key = /^([A-Z0-9])(\s+|$)/.exec(t)?.[1] ?? null;
   const kept = /\b(UNLOCKED|LOCKED|LOCK|COMING|PICK UP|DROP OFF)$/.exec(t)?.[1];
@@ -28,7 +32,16 @@ export function InteractionPrompt({ sample }: { sample: () => { visible: boolean
       el.style.opacity = String(alpha.current); el.style.visibility = alpha.current ? "visible" : "hidden";
       if (p.visible) {
         const text = p.label ?? "E";
-        if (el.textContent !== text) { el.textContent = text; el.classList.toggle("wide", text.length > 1); el.setAttribute("aria-label", text === "E" ? "Press E to interact" : text); }
+        // (A named sign: the key, then the thing's name in its own span — which the language swap translates.)
+        if (el.dataset["raw"] !== text) {
+          el.dataset["raw"] = text;
+          const at = text.indexOf(SIGN_NAME);
+          if (at >= 0) {
+            el.textContent = text.slice(0, at);
+            const name = document.createElement("span"); name.className = "sign-name"; name.textContent = text.slice(at + 1); el.appendChild(name);
+          } else el.textContent = text;
+          el.classList.toggle("wide", text.length > 1); el.setAttribute("aria-label", text === "E" ? "Press E to interact" : text.replace(SIGN_NAME, " "));
+        }
       }
     }
   });

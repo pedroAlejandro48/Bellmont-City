@@ -8,7 +8,8 @@ const joinedAt = (p: Peer) => (typeof p.presence["joinedAt"] === "number" ? p.pr
  */
 export function pickHost(peers: readonly Peer[]): Peer | null {
   const viewers = peers.filter((p) => p.kind === "viewer");
-  const awake = viewers.filter((p) => p.presence["awake"] !== false);
+  // (Away — connection gone — or in the background: can't run anything.)
+  const awake = viewers.filter((p) => p.presence["awake"] !== false && p.presence["away"] !== true);
   let best: Peer | null = null;
   for (const p of awake.length ? awake : viewers) if (!best || joinedAt(p) < joinedAt(best) || (joinedAt(p) === joinedAt(best) && p.peer < best.peer)) best = p;
   return best;

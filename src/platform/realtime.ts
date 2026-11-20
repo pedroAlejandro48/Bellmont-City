@@ -1,7 +1,7 @@
 // Live room presence on the Firebase Realtime Database: each open tab in a room keeps one record at
 // `rooms/<CODE>/peers/<peer>` (its uid, arrival time and latest pose), removed by the server as soon as the
 // tab leaves or loses its connection.
-import { onChildAdded, onChildChanged, onChildRemoved, onDisconnect, onValue, push, ref, remove, update } from "firebase/database";
+import { get, onChildAdded, onChildChanged, onChildRemoved, onDisconnect, onValue, push, ref, remove, serverTimestamp, update } from "firebase/database";
 import { realtime } from "./firebase";
 
 export type Peer = {
@@ -27,6 +27,10 @@ export type NamedRoom = {
   connected(): boolean;
   leave(): Promise<void>;
 };
+
+/** Someone away (their connection gone) this long is taken as gone for good: not shown any more. */
+export const AWAY_FOR_GOOD_MS = 12 * 60 * 60 * 1000;
+const goneForGood = (v: unknown) => { const p = v as Record<string, unknown> | null; return !!p && p["away"] === true && typeof p["awayAt"] === "number" && Date.now() - p["awayAt"] > AWAY_FOR_GOOD_MS; };
 
 export async function joinRealtimeRoom(code: string, uid: string): Promise<NamedRoom> {
   const peersRef = ref(realtime, `rooms/${code}/peers`);
@@ -55,13 +59,20 @@ export async function joinRealtimeRoom(code: string, uid: string): Promise<Named
     return Object.freeze({ peer: key, by, isMe: by === uid, sameTab: false, kind: "viewer" as const, presence });
   };
 
-  await onDisconnect(meRef).remove();
+  // Losing the connection (the app in the background, the screen off, no signal) doesn't take this player out of
+  // the room: the server marks them away and they stay where they were for everyone; when the connection is back
+  // the same record carries on. Only leaving (Exit, closing the game) removes it.
+  await onDisconnect(meRef).update({ away: true, awayAt: serverTimestamp() });
   await update(meRef, mine);
+  // (Any old record of this account here — a game that lost its connection and was then closed — is replaced.)
+  void get(peersRef).then((snap) => {
+    snap.forEach((child) => { if (child.key !== me && (child.val() as Record<string, unknown> | null)?.["uid"] === uid) void remove(child.ref).catch(() => {}); });
+  }).catch(() => {});
   rebuild();
 
   const stops = [
     onChildAdded(peersRef, (snap) => {
-      if (snap.key === me || !snap.key) return;
+      if (snap.key === me || !snap.key || goneForGood(snap.val())) return;
       const peer = toPeer(snap.key, snap.val());
       others.set(snap.key, peer);
       notify({ joined: [peer], left: [], updated: [] });
@@ -78,7 +89,15 @@ export async function joinRealtimeRoom(code: string, uid: string): Promise<Named
       others.delete(snap.key);
       if (peer) notify({ joined: [], left: [peer], updated: [] });
     }),
-    onValue(ref(realtime, ".info/connected"), (snap) => { isConnected = snap.val() === true; }),
+    onValue(ref(realtime, ".info/connected"), (snap) => {
+      const was = isConnected;
+      isConnected = snap.val() === true;
+      // Back after a dropped connection: no longer away (and the away mark is set up again for next time).
+      if (isConnected && !was && !left) {
+        void onDisconnect(meRef).update({ away: true, awayAt: serverTimestamp() }).catch(() => {});
+        void update(meRef, { ...mine, away: null, awayAt: null }).catch(() => {});
+      }
+    }),
   ];
 
   return {

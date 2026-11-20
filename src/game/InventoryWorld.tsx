@@ -10,7 +10,7 @@ import { ITEMS, itemInfo, type ItemKind } from "./inventory";
 import { INV_TIME, USE_SECONDS, dropHeld, heldKind, pickUpNear, stepInventory, consumeHeld } from "./invRuntime";
 import type { GameState } from "./state";
 
-type Thing = ItemKind | "bottle" | "can" | "mealFood" | "mealDrink";
+export type Thing = ItemKind | "bottle" | "can" | "mealFood" | "mealDrink";
 /** What a thing is drawn as (a restaurant meal from the fridge: a take-out box, or a cup). */
 const shownAs = (k: Thing): Thing => (typeof k === "string" && k.startsWith("meal:") ? (itemInfo(k as ItemKind).use === "drink" ? "mealDrink" : "mealFood") : (CANS as readonly string[]).includes(k as string) ? "can" : k);
 
@@ -161,6 +161,25 @@ export function ItemModel({ kind, looks, empty = false }: { kind: Thing; looks: 
  * (it follows the hand: carried at the waist, lifted to the mouth to eat or drink, held up when the phone is open),
  * and things lying on the ground.
  */
+/**
+ * What a player's hands show (for the others in a room): the right hand (the thing out of the inventory, trash, a
+ * store item, or kitchenware off an apartment floor), the left (a store item or kitchenware), the grocery bag (how full)
+ * and the store basket (with what's in it). Restaurant food is shared by the restaurant itself; kitchenware up on
+ * an apartment floor by the kitchen.
+ */
+export type HeldWire = { r: string | null; l: string | null; bag: number; bk: [string, number, number, number, number][] | null };
+export function heldWire(state: GameState): HeldWire {
+  if (state.home || state.accident || state.health <= 0) return { r: null, l: null, bag: -1, bk: null };
+  const offFloor = !state.level || state.level.floor < 2, kh = state.life.kitchen.hands;
+  const r0 = state.heldTrash ?? heldKind(state) ?? (state.storeHands.right?.kind ?? null) ?? (offFloor && kh.right ? kh.right.ware as Thing : null);
+  const l0 = state.storeHands.left?.kind ?? (offFloor && kh.left ? kh.left.ware as Thing : null);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  return {
+    r: r0 ? shownAs(r0 as Thing) : null, l: l0 ? shownAs(l0 as Thing) : null,
+    bag: state.groceryBag ? state.groceryBag.length : -1,
+    bk: state.basketShown ? state.basketShown.map((i) => [i.kind, r2(i.x), r2(i.y), r2(i.z), r2(i.rot)]) : null,
+  };
+}
 export function InventoryWorld({ state }: { state: GameState }) {
   const looks = useLooks();
   const held = useRef<THREE.Group>(null);
@@ -182,15 +201,10 @@ export function InventoryWorld({ state }: { state: GameState }) {
     const kh = state.life.kitchen.hands, home = state.life.home, inv = state.life.inventory;
     const atHome = !!home && state.level?.building === home.building && state.level?.floor === home.floor;
     const heldNow = state.heldSlot !== null ? inv[state.heldSlot] ?? null : null;
-    if (atHome && heldNow && isWare(heldNow) && !kh.right && !state.invAct) { kh.right = { ware: heldNow, food: null, dirty: false }; inv[state.heldSlot!] = null; state.heldSlot = null; }
-    if (!atHome && !state.invAct) for (const side of ["right", "left"] as const) {
-      const h = kh[side];
-      if (!h || h.food || h.dirty) continue;
-      const slot = inv.findIndex((x, i) => i > 0 && x === null);
-      if (slot < 0) break;
-      inv[slot] = h.ware; kh[side] = null;
-      if (side === "right" && state.heldSlot === null) state.heldSlot = slot;
-    }
+    // (Kitchenware never stays in the inventory: one an old save kept there goes into your hand when taken out,
+    // wherever you are — kitchenware is only ever carried.)
+    if (heldNow && isWare(heldNow) && !kh.right && !state.invAct) { kh.right = { ware: heldNow, food: null, dirty: false }; inv[state.heldSlot!] = null; state.heldSlot = null; }
+    void atHome;
     // (The kitchen's own Q — pour, to the sink, to the table — came first; if it did nothing, Q puts it down.)
     const kitchenEmpty = !!((kh.right && !kh.right.food) || (kh.left && !kh.left.food));
     if (state.dropQueued && (state.heldTrash || state.heldSlot !== null || kitchenEmpty || state.storeHands.left?.paid || state.storeHands.right?.paid || (state.groceryBag && !state.groceryBasket))) { if (dropHeld(state)) state.dropQueued = false; }
@@ -210,7 +224,9 @@ export function InventoryWorld({ state }: { state: GameState }) {
   useFrame(() => {
     // What the right hand shows: the thing out, or trash, or (while picking up) nothing until it's in hand.
     const act = state.invAct;
-    let kind: Thing | null = state.heldTrash ?? heldKind(state) ?? (state.storeHands.right?.kind ?? null);
+    // (Kitchenware in hand: the apartment's kitchen draws it up on an apartment floor; anywhere else, here.)
+    const offFloor = !state.level || state.level.floor < 2, khr = state.life.kitchen.hands;
+    let kind: Thing | null = state.heldTrash ?? heldKind(state) ?? (state.storeHands.right?.kind ?? null) ?? (offFloor && khr.right ? khr.right.ware as Thing : null);
     if (kind) kind = shownAs(kind);
     if (act?.kind === "pickup" && act.done && act.item === "bottle") kind = "bottle";
     const fore = state.avatar.body[11];
@@ -245,7 +261,8 @@ export function InventoryWorld({ state }: { state: GameState }) {
       }
     }
     {
-      const gl = heldL.current, foreL0 = state.avatar.body[9], k = state.storeHands.left ? shownAs(state.storeHands.left.kind) : null;
+      const khl = state.life.kitchen.hands.left, offF = !state.level || state.level.floor < 2;
+      const gl = heldL.current, foreL0 = state.avatar.body[9], k = state.storeHands.left ? shownAs(state.storeHands.left.kind) : offF && khl ? khl.ware as Thing : null;
       if (gl) {
         const vis = !!k && !!foreL0 && !state.home && !state.accident && state.health > 0;
         gl.visible = vis;

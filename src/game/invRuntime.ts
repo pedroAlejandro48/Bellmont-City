@@ -52,16 +52,9 @@ export function pressInventorySlot(state: GameState, slot: number) {
       toast(state, `${itemInfo(fromBag).name} from the bag`, "info", `In slot ${slot + 1}.`);
       return;
     }
-    // An empty (clean) pot, pan, plate, bowl, cup, glass or silverware in a hand: into the inventory. (With food in
-    // it, it can't go in.)
-    const kh = state.life.kitchen.hands, side = (["right", "left"] as const).find((h) => kh[h] && !kh[h]!.food && !kh[h]!.dirty);
-    if (side) {
-      const w = kh[side]!.ware;
-      addItem(inv, w, slot); kh[side] = null;
-      toast(state, `${itemInfo(w).name} stored`, "info", `In slot ${slot + 1}.`);
-      return;
-    }
-    if ((["right", "left"] as const).some((h) => kh[h])) { toast(state, "Can't store that", "warn", "Only empty, clean kitchenware goes in the inventory."); return; }
+    // Pots, pans, plates, bowls, cups, glasses and silverware never go in the inventory: they stay in your hands.
+    const kh = state.life.kitchen.hands;
+    if ((["right", "left"] as const).some((h) => kh[h])) { toast(state, "Kitchenware stays in your hands", "warn", "Put it down (Q) or put it away in a kitchen."); return; }
     const water = carriedWater(state);
     if (!water) { toast(state, `Slot ${slot + 1} is empty`, "info"); return; }
     addItem(inv, "water", slot);

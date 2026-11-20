@@ -9,7 +9,7 @@ import { aptFloor, INNER_WALL } from "./aptRoom";
 import { APT_FLOORS, floorKey } from "./apartments";
 import type { Building } from "./config";
 import { OPENER_PASS } from "./doors";
-import { atFloor, CAPACITY, carFloor, doorsOf, newCar, request, stepCar, type Car } from "./liftCar";
+import { atFloor, followCar, CAPACITY, carFloor, doorsOf, newCar, request, stepCar, type Car } from "./liftCar";
 import { ENTER, LEAVE, enterLead, enterPose, leaveLead, leavePose, toWorld } from "./restaurantRoom";
 import type { LiftLink, LiftPeer, LiftRiderWire } from "./state";
 import { SHAFT, venueLayout } from "./venueRoom";
@@ -77,6 +77,7 @@ export class LiftSystem {
   private outbox: { id: number; x: number; z: number; yaw: number }[] = [];
   private lastN = -1;
   private publishAt = 0;
+  private lastSig = "";
   private yErr = new Map<string, number>();
   private floors = new Map<string, ReturnType<typeof aptFloor>>();
   /** Lobby doors to swing (for whoever draws them): a resident going in or out. */
@@ -121,19 +122,20 @@ export class LiftSystem {
     link?.setMe(me);
     for (const [b, e] of this.yErr) this.yErr.set(b, e * Math.exp(-5 * dt));
     if (!host && link) {
-      for (const r of mine) { link.request(r.b, r.floor); request(this.car(r.b), r.floor); }
+      // (A call or press goes to the runner; the car moves when the runner's does, the same for everyone.)
+      for (const r of mine) link.request(r.b, r.floor);
       const got = link.latest();
       if (got && got.n !== this.lastN) {
         this.lastN = got.n;
         for (const [b, c] of Object.entries(got.snap.cars)) {
           const was = this.shownY(b), next: Car = { ...c, stops: [...c.stops] };
-          stepCar(next, 0.12, false);
+          followCar(next, 0.08);
           this.cars.set(b, next);
           if (Math.abs(was - next.y) < 1.5) this.yErr.set(b, was - next.y); else this.yErr.delete(b);
         }
         this.riders = got.snap.riders;
         this.aptDoors = new Map(Object.entries(got.snap.aptDoors ?? {}));
-      } else for (const c of this.cars.values()) stepCar(c, dt, false);
+      } else for (const c of this.cars.values()) followCar(c, dt);
       this.noteDoors(now);
       return;
     }
@@ -163,9 +165,12 @@ export class LiftSystem {
     }
     this.riders = this.sim.map((r) => ({ id: r.id, b: r.b, seed: r.id, x: r.x + r.off[0], z: r.z + r.off[1], yaw: r.yaw, floor: r.floor, walking: r.walking, inCar: r.st === "enter" || r.st === "ride", riding: r.st === "ride", lean: r.lean, reach: r.reach, key: r.key, door: r.st === "lobbyIn" || r.st === "lobbyOut" ? { leaf: r.st === "lobbyIn" ? "right" : "left", t: now - r.since } : null }));
     this.noteDoors(now);
+    // (Any change — a new stop, the doors, setting off, arriving — goes out at once, not at the next tick.)
+    const sig = [...this.cars].map(([b, c]) => `${b}:${c.phase}:${c.dir}:${c.stops.join(",")}`).join("|");
+    if (sig !== this.lastSig) { this.lastSig = sig; this.publishAt = Math.min(this.publishAt, now); }
     if (link && now >= this.publishAt) {
       const busy = this.sim.length > 0 || [...this.cars.values()].some((c) => c.phase !== "idle");
-      this.publishAt = now + (busy ? 0.25 : 1.5);
+      this.publishAt = now + (busy ? 0.1 : 1);
       link.publish({ cars: Object.fromEntries(this.cars), riders: this.riders, aptDoors: Object.fromEntries(this.aptDoors) });
     }
   }
