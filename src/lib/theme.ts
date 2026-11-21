@@ -33,9 +33,11 @@ function apply() {
 }
 
 export function setThemePref(p: ThemePref) {
+  if (p === themePref()) return; // (choosing what's already chosen does nothing)
+  const before = backdropTime();
   try { localStorage.setItem(KEY, p); } catch { /* no storage */ }
   apply();
-  for (const f of listeners) f();
+  if (backdropTime() !== before) for (const f of listeners) f(); // (dark ↔ system on a dark device: same picture)
 }
 
 /** Called when the backdrop's time may have changed (the setting, or the device's mode under "system"). */

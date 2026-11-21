@@ -1064,3 +1064,10 @@
 1116|Envoi impossible. Veuillez réessayer.
 1117|Écrire à {0}
 1118|La vraie vie dans un jeu.
+1119|Copier
+1120|Transférer
+1121|Annuler l'envoi
+1122|Transférer à…
+1123|Pas encore d'autres amis.
+1124|Transféré
+1125|{0} nouveaux

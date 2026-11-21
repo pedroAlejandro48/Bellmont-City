@@ -29,6 +29,7 @@ public class ReplyReceiver extends BroadcastReceiver {
         final PendingResult done = goAsync();
         new Thread(() -> {
             boolean ok = false;
+            String id = "";
             try {
                 HttpURLConnection con = (HttpURLConnection) new URL(SERVER).openConnection();
                 con.setRequestMethod("POST");
@@ -39,9 +40,18 @@ public class ReplyReceiver extends BroadcastReceiver {
                 byte[] body = new JSONObject().put("token", Chats.token(app, friend)).put("text", text).toString().getBytes(StandardCharsets.UTF_8);
                 try (OutputStream out = con.getOutputStream()) { out.write(body); }
                 ok = con.getResponseCode() == 200;
+                if (ok) {
+                    try (java.io.InputStream in = con.getInputStream()) {
+                        java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+                        byte[] b = new byte[1024];
+                        for (int n; (n = in.read(b)) > 0; ) buf.write(b, 0, n);
+                        id = new JSONObject(buf.toString("UTF-8")).optString("id", "");
+                    } catch (Exception ignored) { /* (then it can't be taken out if unsent) */ }
+                }
                 con.disconnect();
             } catch (Exception ignored) { /* (shown as not sent) */ }
-            if (ok) Chats.replied(app, friend, text); else Chats.failed(app, friend);
+            final String sentId = id;
+            if (ok) Chats.replied(app, friend, text, sentId); else Chats.failed(app, friend);
             done.finish();
         }).start();
     }

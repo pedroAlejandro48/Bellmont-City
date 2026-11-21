@@ -6,7 +6,7 @@ import { Avatar, AvatarPicker, EditableAvatar } from "@/components/Avatar";
 import { AccountError, changeUsername, chooseAvatar, deleteAccount, type Account } from "@/platform/account";
 import { removeFriend } from "@/platform/friends";
 import { usernameSchema } from "@/lib/usernames";
-import { LANGS, currentLang, setLang } from "@/i18n";
+import { LANGS, LANGS_SORTED, currentLang, setLang } from "@/i18n";
 import { QUALITIES, readQuality, saveQuality, type Quality } from "@/game/quality";
 import { enablePush, pushPermission, registerDevice } from "@/platform/push";
 import type { useFriends } from "@/components/Friends";
@@ -127,7 +127,7 @@ const THEMES: { id: ThemePref; label: string }[] = [{ id: "light", label: "Light
 /** One row of options, the chosen one filled (Theme, Graphics). */
 function Segments<T extends string>({ value, options, onPick }: { value: T; options: { id: T; label: string }[]; onPick: (v: T) => void }) {
   return <div className="flex overflow-hidden rounded-md border border-input">
-    {options.map((o, i) => <button key={o.id} type="button" aria-pressed={value === o.id} onClick={() => onPick(o.id)}
+    {options.map((o, i) => <button key={o.id} type="button" aria-pressed={value === o.id} onClick={() => { if (o.id !== value) onPick(o.id); }}
       className={`flex-1 px-2.5 py-1.5 text-sm font-semibold ${i > 0 ? "border-l border-input" : ""} ${value === o.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-white/5"}`}>{o.label}</button>)}
   </div>;
 }
@@ -157,7 +157,7 @@ function LanguagePicker() {
         <ChevronDown size={16} className="lang-chev" aria-hidden />
       </button>
       {open && <ul className="lang-options" role="listbox" aria-label="Language">
-        {LANGS.filter((l) => l.code !== lang).map((l) => <li key={l.code}>
+        {LANGS_SORTED.filter((l) => l.code !== lang).map((l) => <li key={l.code}>
           <button type="button" role="option" aria-selected={false} onClick={() => { setOpen(false); setLang(l.code); }}>
             <img src={`/flags/${l.flag}.svg`} alt="" />
             <span data-no-translate>{l.name}</span>

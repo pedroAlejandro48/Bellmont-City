@@ -1064,3 +1064,10 @@
 1116|Não foi possível enviar. Tente novamente.
 1117|Mandar mensagem para {0}
 1118|A vida real em um jogo.
+1119|Copiar
+1120|Encaminhar
+1121|Cancelar envio
+1122|Encaminhar para…
+1123|Ainda não há outros amigos.
+1124|Encaminhada
+1125|{0} novas

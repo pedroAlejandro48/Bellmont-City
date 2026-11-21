@@ -23,7 +23,7 @@ import org.json.JSONObject;
  * Chat messages from friends, one notification per friend: "Message from <name>", their message(s) and your answers
  * ("You replied: …"), the latest two only (a third pushes the oldest out). Expanded, up to 6 lines, then "… more".
  * A Reply button opens a text box with a send (paper plane) button; the answer is sent by ReplyReceiver and shows
- * under their message. Notifications of different friends (and other kinds) stack in one expandable group.
+ * under their message. An unsent message disappears from it. Notifications of different friends (and other kinds) stack in one expandable group.
  */
 final class Chats {
     static final String CHANNEL = "bellmont";
@@ -64,15 +64,31 @@ final class Chats {
         JSONArray lines = history(c, friend);
         // (A friend's notification that was opened or swiped away starts over.)
         if (!showing(c, tag)) lines = new JSONArray();
-        lines = add(lines, false, text);
+        lines = add(lines, false, text, info.optString("id"));
         save(c, friend, info, lines);
         show(c, friend, pic, false, null);
     }
 
     /** This player answered from the notification: their answer is added under the friend's message. */
-    static void replied(Context c, String friend, String text) {
-        save(c, friend, null, add(history(c, friend), true, text));
+    static void replied(Context c, String friend, String text, String id) {
+        save(c, friend, null, add(history(c, friend), true, text, id));
         show(c, friend, null, true, null);
+    }
+
+    /** A message was unsent: it leaves the notification as if it had never been there (the box goes if empty). */
+    static void unsent(Context c, String friend, String id) {
+        if (id == null || id.isEmpty()) return;
+        JSONArray lines = history(c, friend), kept = new JSONArray();
+        boolean found = false;
+        for (int i = 0; i < lines.length(); i++) {
+            JSONObject l = lines.optJSONObject(i);
+            if (l != null && id.equals(l.optString("id"))) found = true; else if (l != null) kept.put(l);
+        }
+        if (!found) return;
+        save(c, friend, null, kept);
+        if (!showing(c, "msg-" + friend)) return;
+        if (kept.length() == 0) NotificationManagerCompat.from(c).cancel("msg-" + friend, 1);
+        else show(c, friend, null, true, null);
     }
 
     /** An answer that could not be sent: the notification comes back (so the spinner stops) saying so. */
@@ -86,10 +102,10 @@ final class Chats {
         try { return new JSONArray(prefs(c).getString("lines-" + friend, "[]")); } catch (Exception e) { return new JSONArray(); }
     }
 
-    private static JSONArray add(JSONArray lines, boolean mine, String text) {
+    private static JSONArray add(JSONArray lines, boolean mine, String text, String id) {
         JSONArray out = new JSONArray();
         try {
-            lines.put(new JSONObject().put("me", mine).put("text", text));
+            lines.put(new JSONObject().put("me", mine).put("text", text).put("id", id == null ? "" : id));
             for (int i = Math.max(0, lines.length() - KEEP); i < lines.length(); i++) out.put(lines.get(i));
         } catch (Exception ignored) { /* */ }
         return out;

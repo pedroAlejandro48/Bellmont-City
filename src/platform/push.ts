@@ -41,6 +41,8 @@ export async function registerDevice() {
 export const notifyPlayer = (type: "request" | "accepted" | "invite", to: string, code?: string) => void callServer("/notify", { type, to, ...(code ? { code } : {}) });
 /** Tells a friend about a chat message (the sender reads it from the chat to check it's really from this player). */
 export const notifyMessage = (to: string, id: string) => void callServer("/notify", { type: "message", to, id });
+/** Takes an unsent message out of the friend's notification (the sender checks it's really gone). */
+export const notifyUnsend = (to: string, id: string) => void callServer("/notify", { type: "unsend", to, id });
 /** Whether this page shows notifications itself: only on Windows (the Android app gets its own from the server). */
 async function mayNotifyHere(): Promise<boolean> {
   const app = appKind();

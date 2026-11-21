@@ -4,8 +4,8 @@
 // "{0}"-style holes for the parts that change, like numbers and names). Nothing in the code changes; the text is
 // swapped as it appears. Changing the language reloads the page so everything is drawn again.
 
-export type LangCode = "en" | "zh" | "hi" | "es" | "ar" | "fr" | "bn" | "pt" | "ru" | "ur";
-/** The ten most spoken languages, with the flag of the main country that speaks each. */
+export type LangCode = "en" | "zh" | "hi" | "es" | "ar" | "fr" | "bn" | "pt" | "ru" | "ur" | "de" | "it";
+/** The ten most spoken languages, plus German and Italian, with the flag of the main country that speaks each. */
 export const LANGS: { code: LangCode; name: string; flag: string }[] = [
   { code: "en", name: "English", flag: "us" },
   { code: "zh", name: "中文", flag: "cn" },
@@ -17,7 +17,11 @@ export const LANGS: { code: LangCode; name: string; flag: string }[] = [
   { code: "pt", name: "Português", flag: "br" },
   { code: "ru", name: "Русский", flag: "ru" },
   { code: "ur", name: "اردو", flag: "pk" },
+  { code: "de", name: "Deutsch", flag: "de" },
+  { code: "it", name: "Italiano", flag: "it" },
 ];
+/** The languages as the menu lists them: in alphabetical order of their names. */
+export const LANGS_SORTED = [...LANGS].sort((a, b) => a.name.localeCompare(b.name, "en"));
 const KEY = "bellmont-lang";
 export function currentLang(): LangCode {
   try { const v = localStorage.getItem(KEY); if (v && LANGS.some((l) => l.code === v)) return v as LangCode; } catch { /* */ }

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Check, ChevronDown, MessageCircle, Plus, User, UserPlus, X } from "lucide-react";
 import { Chat } from "@/components/Chat";
+import { watchUnread } from "@/platform/chat";
 import { Button } from "@/components/ui/button";
 import type { Account } from "@/platform/account";
 import { LiveName } from "@/platform/liveNames";
@@ -63,7 +64,7 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
           <span>Friends{requests.length ? <span className="friends-badge">{requests.length}</span> : null}</span>
           <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
         </Button>
-        {open && chatFriend && <div className="friends-popup chat-popup"><Chat account={account} friend={chatFriend} onBack={() => setChatting(null)} /></div>}
+        {open && chatFriend && <div className="friends-popup chat-popup"><Chat account={account} friend={chatFriend} friends={friends} onBack={() => setChatting(null)} /></div>}
         {open && !chatFriend && <ul className="friends-list friends-popup">
           {requests.map((r) => <li key={`r${r.uid}`} className="friends-row request">
             <Avatar uid={r.uid} photo={r.photo} name={r.name} />
@@ -74,7 +75,7 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
           {friends.map((f) => <li key={f.uid} className="friends-row">
             <Avatar uid={f.uid} photo={f.photo} name={f.name} />
             <span><b><LiveName uid={f.uid} fallback={f.name} /></b></span>
-            <button type="button" className="chat-open" aria-label={`Message ${f.name}`} onClick={() => setChatting(f.uid)}><MessageCircle size={18} strokeWidth={2.3} aria-hidden /></button>
+            <ChatButton account={account} friend={f} onOpen={() => setChatting(f.uid)} />
           </li>)}
           {sent.map((r) => <li key={`s${r.uid}`} className="friends-row">
             <Avatar uid={r.uid} photo={r.photo} name={r.name} />
@@ -92,6 +93,16 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
     </form>}
     {msg && <p data-extra className="mt-1 text-center text-xs text-accent">{msg}</p>}
   </div>;
+}
+
+/** A friend row's message icon, with a yellow count of the messages from them not seen yet (gone once opened). */
+function ChatButton({ account, friend, onOpen }: { account: Account; friend: Friend; onOpen: () => void }) {
+  const [unread, setUnread] = useState(0);
+  useEffect(() => watchUnread(account, friend.uid, setUnread), [account, friend.uid]);
+  return <button type="button" className="chat-open" aria-label={`Message ${friend.name}`} onClick={onOpen}>
+    <MessageCircle size={18} strokeWidth={2.3} aria-hidden />
+    {unread > 0 && <span className="chat-badge" aria-label={`${unread} new`}>{unread > 99 ? "99+" : unread}</span>}
+  </button>;
 }
 
 /** What you can do about another player (in a room's people list): add them, accept or discard their request, take

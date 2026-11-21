@@ -1117,3 +1117,10 @@
 1116|No se pudo enviar. Inténtalo de nuevo.
 1117|Enviar mensaje a {0}
 1118|La vida real en un juego.
+1119|Copiar
+1120|Reenviar
+1121|Anular envío
+1122|Reenviar a…
+1123|Aún no tienes otros amigos.
+1124|Reenviado
+1125|{0} nuevos

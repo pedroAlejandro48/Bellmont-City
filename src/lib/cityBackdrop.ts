@@ -238,7 +238,6 @@ function draw(W: number, H: number, time: BackdropTime) {
   return c;
 }
 
-let url: string | null = null;
 let drawn = "";
 
 /** Draws the backdrop for the current window, and again whenever its size changes. */
@@ -256,6 +255,19 @@ export const drawBackdrop = draw;
 export function startCityBackdrop() {
   if (typeof window === "undefined" || typeof document === "undefined") return;
   let timer = 0;
+  // Each drawn picture is kept (by screen size and time of day), so switching back and forth shows the very same
+  // picture at once; the shown one is only replaced, never cleared (no stand-in picture flashes in between).
+  const made = new Map<string, Promise<string | null>>();
+  const make = (W: number, H: number, time: BackdropTime, key: string) => {
+    let p = made.get(key);
+    if (!p) {
+      p = new Promise<string | null>((done) => {
+        try { draw(W, H, time).toBlob((blob) => done(blob ? URL.createObjectURL(blob) : null), "image/png"); } catch { done(null); }
+      });
+      made.set(key, p);
+    }
+    return p;
+  };
   const render = () => {
     // Real pixels for a sharp picture, within what canvases handle well.
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
@@ -266,17 +278,12 @@ export function startCityBackdrop() {
     const key = `${W}x${H}:${time}`;
     if (key === drawn) return;
     drawn = key;
-    try {
-      draw(W, H, time).toBlob((blob) => {
-        if (!blob || drawn !== key) return;
-        const next = URL.createObjectURL(blob);
-        document.documentElement.style.setProperty("--city-bg", `url("${next}")`);
-        if (url) URL.revokeObjectURL(url);
-        url = next;
-      }, "image/png");
-    } catch { /* keep the pre-rendered picture */ }
+    void make(W, H, time, key).then((next) => {
+      if (!next || drawn !== key) return;
+      document.documentElement.style.setProperty("--city-bg", `url("${next}")`);
+    });
   };
   render();
-  onThemeChange(() => { document.documentElement.style.removeProperty("--city-bg"); render(); });
+  onThemeChange(render);
   window.addEventListener("resize", () => { window.clearTimeout(timer); timer = window.setTimeout(render, 200); });
 }
