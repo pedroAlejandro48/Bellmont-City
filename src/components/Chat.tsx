@@ -57,6 +57,12 @@ export function Chat({ account, friend, friends, onBack }: { account: Account; f
   useLayoutEffect(() => { const el = log.current; if (el && atEnd.current) el.scrollTop = el.scrollHeight; }, [msgs, forwarding]);
   // The text box grows with what's typed, up to five lines (no scroll bar of its own).
   useLayoutEffect(() => { const el = box.current; if (!el) return; el.style.height = "auto"; el.style.height = `${Math.min(el.scrollHeight, 120)}px`; }, [text, forwarding]);
+  // On a computer the text box is ready to type in as soon as the chat opens (and on coming back from Forward); on a
+  // touch screen the keyboard stays down until the box is tapped.
+  useEffect(() => {
+    if (forwarding || matchMedia("(pointer: coarse)").matches) return;
+    box.current?.focus({ preventScroll: true });
+  }, [friend.uid, forwarding]);
   // A held message is moved up above its options if they'd cover it (room is made under the messages while held).
   const menu = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -75,7 +81,7 @@ export function Chat({ account, friend, friends, onBack }: { account: Account; f
     const t = text;
     setText(""); setFailed(false); atEnd.current = true;
     sendMessage(account, friend.uid, t).catch(() => { setFailed(true); setText((now) => now || t); });
-    box.current?.focus();
+    if (!matchMedia("(pointer: coarse)").matches || document.activeElement === box.current) box.current?.focus();
   }
   // Enter sends (Shift+Enter: a new line); on touch screens Enter is a new line and the plane sends.
   function key(e: KeyboardEvent<HTMLTextAreaElement>) {
