@@ -45,21 +45,38 @@ const HOME = "https://bellmont-city.web.app/";
 // (Google's sign-in refuses apps that say they're Electron: it sees an ordinary Chrome.)
 const UA = (ua) => ua.replace(/\s?Electron\/\S+/, "").replace(/\s?bellmont-city\/\S+/i, "");
 
-function open() {
-  const win = new BrowserWindow({
+/*
+ * Two windows: the game (shown, full screen) and a hidden one that only listens for notifications (the game's page
+ * with ?bg=1: it draws nothing, just follows the signed-in player's friends and chats and shows Windows
+ * notifications). Closing the game (Exit, or Alt+F4) closes only its window: the hidden one keeps running — and starts
+ * with Windows — so notifications reach the player even with the game closed, like any other app's. Clicking one
+ * opens the game there (the hidden page asks for /?app-open=<link>).
+ */
+let main = null, bg = null;
+
+function openMain(link) {
+  const chat = link ? new URL(link, HOME).searchParams.get("chat") : null;
+  if (main && !main.isDestroyed()) {
+    if (main.isMinimized()) main.restore();
+    main.show(); main.focus();
+    if (chat) void main.webContents.executeJavaScript(`window.dispatchEvent(new CustomEvent("bellmont-open-chat", { detail: ${JSON.stringify(chat)} }))`).catch(() => {});
+    return;
+  }
+  const win = main = new BrowserWindow({
     width: 1280, height: 800, minWidth: 640, minHeight: 400,
     fullscreen: true, backgroundColor: "#0b1231", autoHideMenuBar: true, title: "Bellmont City", icon: __dirname + "/icon.png",
     webPreferences: { contextIsolation: true, sandbox: true },
   });
+  win.on("closed", () => { if (main === win) main = null; });
   win.webContents.setUserAgent(UA(win.webContents.getUserAgent()));
-  // Always full screen (F11 or Esc cannot take it out); Exit closes the app.
-  // (Exit: the page closes its window, or — as a fallback — asks for /?app-exit=1, which quits.)
+  // Always full screen (F11 or Esc cannot take it out); Exit closes the game's window.
+  // (Exit: the page closes its window, or — as a fallback — asks for /?app-exit=1.)
   win.webContents.on("will-navigate", (e, url) => {
-    if (url.includes("app-exit=1")) { e.preventDefault(); app.quit(); }
-    else if (url.includes("app-show=1")) { win.show(); win.focus(); } // (a notification was clicked)
+    if (url.includes("app-exit=1")) { e.preventDefault(); win.close(); }
+    else if (url.includes("app-show=1")) { win.show(); win.focus(); }
   });
   win.webContents.on("did-finish-load", () => void readLang(win));
-  win.on("leave-full-screen", () => setTimeout(() => win.setFullScreen(true), 50));
+  win.on("leave-full-screen", () => setTimeout(() => { if (!win.isDestroyed()) win.setFullScreen(true); }, 50));
   // The game's own pages and Google's sign-in stay in the app; anything else opens in the normal browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\/(accounts\.google\.com|bellmont-city\.(web\.app|firebaseapp\.com))\//.test(url)) return { action: "allow" };
@@ -67,22 +84,45 @@ function open() {
     return { action: "deny" };
   });
   win.webContents.on("did-create-window", (child) => child.webContents.setUserAgent(UA(child.webContents.getUserAgent())));
-  // Notifications: whatever the player answered (the page's own request asks again only if never answered).
-  const ses = session.defaultSession;
-  ses.setPermissionCheckHandler((_wc, permission) => permission !== "notifications" || readPrefs().notifications === "granted");
-  ses.setPermissionRequestHandler((_wc, permission, done) => {
-    if (permission !== "notifications") return done(true);
-    const p = readPrefs().notifications;
-    if (p) return done(p === "granted");
-    void askNotifications(win).then(done);
-  });
   if (!readPrefs().notifications) win.webContents.once("did-finish-load", () => setTimeout(() => void askNotifications(win), 1200));
-  win.loadURL(HOME + "?app=windows"); // (the game hides "Install app" inside the app)
+  const url = new URL(link && link.startsWith("/") ? link : "/", HOME);
+  url.searchParams.set("app", "windows"); // (the game hides "Install app" inside the app)
+  win.loadURL(url.toString());
+}
+
+function openBackground() {
+  if (bg && !bg.isDestroyed()) return;
+  const win = bg = new BrowserWindow({ show: false, skipTaskbar: true, width: 400, height: 300, webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false } });
+  win.webContents.setUserAgent(UA(win.webContents.getUserAgent()));
+  win.webContents.on("will-navigate", (e, url) => {
+    const link = new URL(url).searchParams.get("app-open");
+    if (link !== null) { e.preventDefault(); openMain(link || "/"); }
+  });
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  // (If it ever stops, it starts again.)
+  win.webContents.on("render-process-gone", () => setTimeout(() => { if (!win.isDestroyed()) win.reload(); }, 5000));
+  win.on("closed", () => { if (bg === win) bg = null; });
+  win.loadURL(HOME + "?app=windows&bg=1");
 }
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on("second-instance", () => { const win = BrowserWindow.getAllWindows()[0]; if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
-  app.whenReady().then(open);
-  app.on("window-all-closed", () => app.quit());
+  app.on("second-instance", () => openMain());
+  app.whenReady().then(() => {
+    // Notifications: whatever the player answered (the page's own request asks again only if never answered).
+    const ses = session.defaultSession;
+    ses.setPermissionCheckHandler((_wc, permission) => permission !== "notifications" || readPrefs().notifications === "granted");
+    ses.setPermissionRequestHandler((_wc, permission, done) => {
+      if (permission !== "notifications") return done(true);
+      const p = readPrefs().notifications;
+      if (p) return done(p === "granted");
+      if (main && !main.isDestroyed()) void askNotifications(main).then(done); else done(false);
+    });
+    // Starts with Windows, hidden (just the notification listener).
+    if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: true, args: ["--hidden"] });
+    openBackground();
+    if (!process.argv.includes("--hidden")) openMain();
+  });
+  // (The hidden listener stays when the game's window closes.)
+  app.on("window-all-closed", () => {});
 }

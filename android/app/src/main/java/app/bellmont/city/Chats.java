@@ -75,6 +75,13 @@ final class Chats {
         show(c, friend, null, true, null);
     }
 
+    /** The chat with this friend was opened: their notification goes (and starts over next time). */
+    static void seen(Context c, String friend) {
+        if (friend == null || friend.isEmpty()) return;
+        save(c, friend, null, new JSONArray());
+        NotificationManagerCompat.from(c).cancel("msg-" + friend, 1);
+    }
+
     /** A message was unsent: it leaves the notification as if it had never been there (the box goes if empty). */
     static void unsent(Context c, String friend, String id) {
         if (id == null || id.isEmpty()) return;

@@ -5,7 +5,7 @@ import { Avatar } from "@/components/Avatar";
 import { LiveName } from "@/platform/liveNames";
 import { MAX_MESSAGE, markSeen, sendMessage, unsendMessage, watchChat, type ChatMessage } from "@/platform/chat";
 import type { Friend } from "@/platform/friends";
-import { setOpenChat } from "@/platform/push";
+import { notifySeen, setOpenChat } from "@/platform/push";
 
 /** Copies text to the clipboard (with an older way for browsers without the Clipboard API). */
 async function copyText(text: string) {
@@ -43,7 +43,8 @@ export function Chat({ account, friend, friends, onBack }: { account: Account; f
   // While it's open, everything in it counts as seen (and once more on leaving).
   const newest = msgs.length ? msgs[msgs.length - 1]!.at : 0;
   useEffect(() => { markSeen(account, friend.uid, Math.max(Date.now(), newest)); }, [account, friend.uid, newest]);
-  useEffect(() => { setOpenChat(friend.uid); return () => { setOpenChat(null); markSeen(account, friend.uid); }; }, [account, friend.uid]);
+  // Opening the chat takes its notifications away on the player's phones (and computers watch "seen" themselves).
+  useEffect(() => { setOpenChat(friend.uid); notifySeen(friend.uid); return () => { setOpenChat(null); markSeen(account, friend.uid); }; }, [account, friend.uid]);
   // (Kept at the newest message, unless the player scrolled up to read.)
   useLayoutEffect(() => { const el = log.current; if (el && atEnd.current) el.scrollTop = el.scrollHeight; }, [msgs, forwarding]);
   // The text box grows with what's typed, up to five lines (no scroll bar of its own).

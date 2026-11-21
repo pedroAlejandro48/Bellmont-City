@@ -3,11 +3,10 @@
 //    push-worker/), and whoever asks, accepts or invites tells the sender, which checks it and pushes to the other
 //    player's devices;
 //  • while the game is open, the friend lists are also watched here (same tags, so one notification shows).
-import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { collection, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
 import { auth, firestore } from "./firebase";
-import { appKind, browserNotifications, fcmToken } from "@/lib/appKind";
+import { appKind, backgroundPage, browserNotifications, fcmToken } from "@/lib/appKind";
 import { currentLang, tr } from "@/i18n";
-import { inAppToast } from "@/lib/inAppToast";
 
 const PUSH_SERVER = "https://bellmont-push.bellmont-city.workers.dev";
 /** The sender's public key (VAPID): browsers only accept pushes signed with its private half. */
@@ -44,10 +43,14 @@ export const notifyPlayer = (type: "request" | "accepted" | "invite", to: string
 export const notifyMessage = (to: string, id: string) => void callServer("/notify", { type: "message", to, id });
 /** Takes an unsent message out of the friend's notification (the sender checks it's really gone). */
 export const notifyUnsend = (to: string, id: string) => void callServer("/notify", { type: "unsend", to, id });
+/** This player opened their chat with `friend`: that chat's notifications go from their other devices (phones). */
+export const notifySeen = (friend: string) => void callServer("/notify", { type: "seen", to: friend });
 /** Whether this page shows notifications itself: only on Windows (the Android app gets its own from the server). */
 async function mayNotifyHere(): Promise<boolean> {
   const app = appKind();
-  if (app) void callServer("/app", { app });
+  if (app && !backgroundPage()) void callServer("/app", { app });
+  // (The Windows app: only its hidden listener shows them, never the game's window too.)
+  if (app === "windows") return backgroundPage();
   return browserNotifications();
 }
 import type { Account } from "./account";
@@ -85,15 +88,14 @@ async function roundIcon(photo: string | null, who: string): Promise<string | un
 }
 
 // (The small status-bar icon is the game's badge; a big picture only when another player is involved: theirs, round.)
+/** Notifications shown by this page, by tag (so a chat's can be taken away once it's read). */
+const shown = new Map<string, Notification>();
+
 async function showNow(title: string, body: string, tag: string, link = "/", photo?: unknown, who?: string, asTyped = false) {
-  const inApp = appKind() === "windows";
-  if (pushPermission() !== "granted" && !inApp) return;
+  if (pushPermission() !== "granted") return;
   const pic = typeof photo === "string" && photo ? photo : null;
   title = tr(title); if (!asTyped) body = tr(body); // (in the game's language; a player's message stays as typed)
   const icon = who !== undefined ? await roundIcon(pic, who || "?") : undefined;
-  // The Windows app is always full screen, and Windows doesn't pop notifications up over full-screen apps: the game
-  // shows them in its own window too (the Windows one still goes to the notification centre).
-  if (inApp) { inAppToast(title, body, tag, icon, link); if (pushPermission() !== "granted") return; }
   // (The Windows app shows nothing from service-worker notifications: it uses the plain kind below, which it turns
   // into Windows notifications.)
   if (appKind() !== "windows") try {
@@ -101,10 +103,19 @@ async function showNow(title: string, body: string, tag: string, link = "/", pho
     if (reg) { await reg.showNotification(title, { body, tag, ...(icon ? { icon } : {}), badge: "/badge-96.png", data: { link } }); return; }
   } catch { /* (then a plain one below) */ }
   try {
+    shown.get(tag)?.close();
     const n = new Notification(title, { body, tag, ...(icon ? { icon } : {}) });
-    // (In the Windows app, ?app-show=1 brings the window back from the tray.)
-    n.onclick = () => { window.focus(); if (appKind() === "windows") location.href = `${link}${link.includes("?") ? "&" : "?"}app-show=1`; else if (link !== "/") location.href = link; };
+    shown.set(tag, n);
+    n.onclose = () => { if (shown.get(tag) === n) shown.delete(tag); };
+    // (The Windows app's hidden page asks the app to open the game there.)
+    n.onclick = () => { if (backgroundPage()) location.href = `/?app-open=${encodeURIComponent(link)}`; else { window.focus(); if (link !== "/") location.href = link; } };
   } catch { /* (Nothing shown: the menu's badges still say so.) */ }
+}
+
+/** Takes away the notification of a chat that has been read (here, and the browser's own on this device). */
+async function clearShown(tag: string) {
+  shown.get(tag)?.close(); shown.delete(tag);
+  try { const reg = await navigator.serviceWorker?.getRegistration("/"); for (const n of (await reg?.getNotifications({ tag })) ?? []) n.close(); } catch { /* */ }
 }
 
 /** The friend whose chat is open on screen (their messages then need no notification here). */
@@ -148,13 +159,25 @@ export function watchNotifications(me: Account) {
     if (name === null) { had?.stop(); chats.delete(friend); return; }
     if (had) { had.name = name; had.photo = photo; return; }
     const entry = { name, photo, stop: () => {} };
-    entry.stop = onSnapshot(query(collection(firestore, "chats", pairId(me.id, friend), "messages"), where("at", ">", since)), (s) => s.docChanges().forEach((c) => {
-      const d = c.doc.data();
+    const pair = pairId(me.id, friend), seenRef = doc(firestore, "chats", pair, "seen", me.id);
+    let seenAt = 0;
+    const stopMsgs = onSnapshot(query(collection(firestore, "chats", pair, "messages"), where("at", ">", since)), (s) => s.docChanges().forEach((c) => {
+      const d = c.doc.data(), at = Number(d["at"] ?? 0);
       if (c.type !== "added" || d["to"] !== me.id || c.doc.metadata.hasPendingWrites) return;
       if (chatOpen === friend && document.visibilityState === "visible") return;
       const text = String(d["text"] ?? "");
-      show(`Message from ${entry.name || "A friend"}`, text.length > 300 ? `${text.slice(0, 300)}…` : text, `msg-${friend}`, `/?chat=${friend}`, entry.photo, entry.name, true);
+      // Only while the chat is closed everywhere: a moment later, if it was seen (open on some device), nothing.
+      window.setTimeout(() => void getDoc(seenRef).then((sn) => {
+        if (Math.max(seenAt, Number(sn.data()?.["at"] ?? 0)) >= at) return;
+        show(`Message from ${entry.name || "A friend"}`, text.length > 300 ? `${text.slice(0, 300)}…` : text, `msg-${friend}`, `/?chat=${friend}`, entry.photo, entry.name, true);
+      }).catch(() => {}), 1800);
     }), () => {});
+    // The chat read (opened on any device): its notification goes.
+    const stopSeen = onSnapshot(seenRef, (sn) => {
+      const at = Number(sn.data()?.["at"] ?? 0);
+      if (at > seenAt) { if (seenAt) void clearShown(`msg-${friend}`); seenAt = at; }
+    }, () => {});
+    entry.stop = () => { stopMsgs(); stopSeen(); };
     chats.set(friend, entry);
   }
 }

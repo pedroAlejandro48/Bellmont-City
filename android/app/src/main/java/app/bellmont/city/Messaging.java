@@ -46,6 +46,8 @@ public class Messaging extends FirebaseMessagingService {
         String link = d.containsKey("link") ? d.get("link") : "/";
 
         Chats.ensureChannel(this);
+        // A chat that was opened (on any device): its notification goes.
+        if ("seen".equals(d.get("kind"))) { Chats.seen(this, d.get("friend")); return; }
         // A message that was unsent: out of its notification.
         if ("unsend".equals(d.get("kind"))) { Chats.unsent(this, d.get("friend"), d.get("id")); return; }
         // A friend's chat message: its own notification per friend, with Reply.

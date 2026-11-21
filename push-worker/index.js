@@ -15,6 +15,7 @@
 //   { id, title: { <lang>: … }, body: { <lang>: … }, link, at } through Cloudflare's API; the cron trigger (every
 //   minute) sends it out a batch at a time (cursor kept in KV), skipping browsers of players who have an app.
 //   GET /broadcast returns the latest one (the Windows app, which has no Web Push, checks it while running).
+// POST /notify { type: "seen", to }  (the caller opened their chat with <to>: its notification goes from their phones)
 // POST /notify { type: "unsend", to, id }  (a message its sender deleted: taken out of notifications, Android only)
 // POST /notify { type: "message", to, id }  (a chat message: read from chats/<pair>/messages/<id> to check it)
 // POST /reply { token, text }  (an answer typed into a message notification on Android: the token, sent with that
@@ -212,8 +213,9 @@ async function message(idToken, from, body) {
     if (!m || m.from !== from || m.to !== to || !fresh(m.at) || typeof m.text !== "string") return null;
     const f = await getDoc(idToken, `friends/${to}/list/${from}`); // (still friends; their name and picture)
     if (!f) return null;
-    return { chat: true, to, from, id, name: f.name || "", photo: f.photo, text: m.text };
+    return { chat: true, to, from, id, at: m.at, name: f.name || "", photo: f.photo, text: m.text };
   }
+  if (type === "seen") return { seen: true, me: from, friend: to }; // (only ever sent to the caller's own phones)
   if (type === "unsend") {
     // (Only once it's really gone, and only between friends.)
     const id = String(body.id ?? "");
@@ -251,7 +253,12 @@ async function checkReplyToken(env, token) {
   return ok ? { me: to, friend: from } : null;
 }
 /** Tells `to` about a message from `from` (named `name`): their phones get it with a way to answer. */
-async function pushChat(env, { to, from, id, name, photo, text }) {
+const SEEN_WAIT_MS = 2000;
+async function pushChat(env, { to, from, id, at, name, photo, text }) {
+  // Only while the chat is closed: a moment later, if the friend has it open (seen at or after this message), nothing.
+  await new Promise((r) => setTimeout(r, SEEN_WAIT_MS));
+  const seen = await adminGet(env, `chats/${chatId(to, from)}/seen/${to}`).catch(() => null);
+  if (seen && Number(seen.at) >= Number(at ?? Date.now())) return 0;
   const reply = await replyToken(env, to, from);
   const short = text.length > MSG_CHARS ? `${text.slice(0, MSG_CHARS)}…` : text;
   return push(env, to, (sub) => ({
@@ -285,9 +292,10 @@ async function replyFromNotification(env, body) {
   // (Only between friends: the friend's list must still have this player.)
   const me = await adminGet(env, `friends/${who.friend}/list/${who.me}`);
   if (!me) return { error: "not friends", status: 403 };
-  const id = await adminAdd(env, `chats/${chatId(who.me, who.friend)}/messages`, { from: who.me, to: who.friend, text, at: Date.now() });
+  const at = Date.now();
+  const id = await adminAdd(env, `chats/${chatId(who.me, who.friend)}/messages`, { from: who.me, to: who.friend, text, at });
   if (!id) return { error: "could not save", status: 500 };
-  await pushChat(env, { to: who.friend, from: who.me, id, name: me.name || "", photo: me.photo, text });
+  await pushChat(env, { to: who.friend, from: who.me, id, at, name: me.name || "", photo: me.photo, text });
   return { ok: true, id, status: 200 };
 }
 
@@ -376,6 +384,7 @@ export default {
       const m = await message(idToken, from, body);
       if (!m) return json({ sent: 0 }, 200, origin);
       if (m.chat) return json({ sent: await pushChat(env, m) }, 200, origin);
+      if (m.seen) return json({ sent: await push(env, m.me, { kind: "seen", friend: m.friend }, true) }, 200, origin);
       // An unsent message leaves the friend's notification, and the sender's own (an answer from a notification).
       if (m.unsend) {
         const [a, b] = await Promise.all([push(env, m.to, { kind: "unsend", friend: m.from, id: m.id }, true), push(env, m.from, { kind: "unsend", friend: m.to, id: m.id }, true)]);

@@ -14,6 +14,9 @@ function detect(): AppKind | null {
 }
 const KIND = typeof window === "undefined" ? null : detect();
 export const appKind = () => KIND;
+/** The Windows app's hidden page (?bg=1): it only listens for notifications (desktop/main.js). */
+const BG = typeof window !== "undefined" && KIND === "windows" && new URLSearchParams(location.search).get("bg") === "1";
+export const backgroundPage = () => BG;
 /** The Android app's notification address (FCM token), which it passes in when opening the game (?fcm=…). */
 function detectFcm(): string | null {
   try {

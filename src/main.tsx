@@ -12,7 +12,7 @@ import { CloudGame } from "@/game/CloudGame";
 import { GuestGame } from "@/game/GuestGame";
 import { RoomEntry, type RoomRequest } from "@/multiplayer/RoomGame";
 import { setInGame, watchForUpdates } from "@/lib/updates";
-import { appKind } from "@/lib/appKind";
+import { appKind, backgroundPage } from "@/lib/appKind";
 import { isSignedIn, signOutAccount, watchAccount, type Account } from "@/platform/account";
 import { normalizeRoomCode } from "@/platform/rooms";
 import "./styles.css";
@@ -37,7 +37,8 @@ function App() {
   const [menuMessage, setMenuMessage] = useState<string>();
   const [pendingRoom, setPendingRoom] = useState(linkedRoom);
   // Friend requests, accepted requests and room invitations pop up as notifications while the game is open.
-  useEffect(() => (account?.username ? watchNotifications(account) : undefined), [account]);
+  // (Not in the Windows app's game window: its hidden listener shows them, even with the game closed.)
+  useEffect(() => (account?.username && appKind() !== "windows" ? watchNotifications(account) : undefined), [account]);
   const toMenu = useCallback((message?: string) => { setMenuMessage(message); setView({ name: "menu" }); }, []);
 
   useEffect(() => watchAccount(
@@ -84,7 +85,15 @@ function App() {
   return <><InstallApp /><MainMenu account={account} onAccount={setAccount} username={account.username} message={menuMessage} onSignOut={() => void signOut()} onCity={() => setView({ name: "city" })} onRoom={(request) => { setMenuMessage(undefined); setView({ name: "room", request }); }} /></>;
 }
 
-startCityBackdrop();
+/** The Windows app's hidden page: no game, just the signed-in player's notifications (shown by Windows). */
+function Background() {
+  const [account, setAccount] = useState<Account | null>(null);
+  useEffect(() => watchAccount(setAccount, () => {}), []);
+  useEffect(() => (account?.username ? watchNotifications(account) : undefined), [account]);
+  return null;
+}
+
+if (!backgroundPage()) startCityBackdrop();
 listenForInstall();
 guardBackButton();
 watchForUpdates();
@@ -95,4 +104,4 @@ if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => { navigator.serviceWorker.register("/sw.js").catch(() => {}); });
 }
 // (The chosen language's words first, so the page is drawn in it from the start.)
-void loadLang().catch(() => {}).finally(() => createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>));
+void loadLang().catch(() => {}).finally(() => createRoot(document.getElementById("root")!).render(<StrictMode>{backgroundPage() ? <Background /> : <App />}</StrictMode>));
