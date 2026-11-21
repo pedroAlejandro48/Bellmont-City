@@ -114,10 +114,10 @@ async function roundIcon(photo: string | null, who: string): Promise<string | un
 const shown = new Map<string, Notification>();
 
 /** The Windows app's bridge (desktop/preload.js), when the page runs inside it. */
-type AppBridge = { notify: (n: { tag: string; title: string; body: string; icon?: string | undefined; link: string; reply?: string | undefined; you?: string | undefined }) => void; close: (tag: string) => void; onReply: (f: (r: { friend: string; text: string }) => void) => void; gameFocused: () => boolean };
+type AppBridge = { notify: (n: { tag: string; title: string; body: string; icon?: string | undefined; link: string; reply?: string | undefined }) => void; close: (tag: string) => void; gameFocused: () => boolean };
 export const appBridge = (): AppBridge | null => (typeof window !== "undefined" ? (window as unknown as { bellmontApp?: AppBridge }).bellmontApp ?? null : null);
 
-// `reply`: for a chat message, the friend's id (the Windows app then gives the notification a text box to answer).
+// `reply`: for a chat message, the friend's id (the Windows app collects their new messages in one notification).
 async function showNow(title: string, body: string, tag: string, link = "/", photo?: unknown, who?: string, asTyped = false, reply?: string) {
   const app = appKind() === "windows";
   if (!app && pushPermission() !== "granted") return;
@@ -126,10 +126,10 @@ async function showNow(title: string, body: string, tag: string, link = "/", pho
   const icon = who !== undefined ? await roundIcon(pic, who || "?") : undefined;
   if (app) {
     // The Windows app: the game's window shows a card in its corner; the hidden listener a Windows notification
-    // (through the app, so a message's has a text box to reply) — unless the game is in front, showing the card.
+    // (through the app) — unless the game is in front, showing the card.
     if (!backgroundPage()) { inAppToast(title, body, tag, icon, link); return; }
     const bridge = appBridge();
-    if (bridge) { if (!bridge.gameFocused()) bridge.notify({ tag, title, body, icon, link, reply, you: tr("You replied:") }); return; }
+    if (bridge) { if (!bridge.gameFocused()) bridge.notify({ tag, title, body, icon, link, reply }); return; }
     if (pushPermission() !== "granted") return;
   } else try {
     const reg = await navigator.serviceWorker.getRegistration("/");

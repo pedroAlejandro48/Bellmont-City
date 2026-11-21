@@ -29,12 +29,6 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Bellmont City"
-    },
-    "asarUnpack": [
-      "node_modules/node-notifier/vendor/**"
-    ]
-  },
-  "dependencies": {
-    "node-notifier": "10.0.1"
+    }
   }
 }
