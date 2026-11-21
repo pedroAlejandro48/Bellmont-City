@@ -15,6 +15,9 @@
 //   { id, title: { <lang>: … }, body: { <lang>: … }, link, at } through Cloudflare's API; the cron trigger (every
 //   minute) sends it out a batch at a time (cursor kept in KV), skipping browsers of players who have an app.
 //   GET /broadcast returns the latest one (the Windows app, which has no Web Push, checks it while running).
+// POST /notify { type: "message", to, id }  (a chat message: read from chats/<pair>/messages/<id> to check it)
+// POST /reply { token, text }  (an answer typed into a message notification on Android: the token, sent with that
+//   notification, lets its player message that one friend; saved with the service account, then notified)
 // POST /subscribe-fcm { token, lang }  (the Android app's Firebase Cloud Messaging token, passed in by the app)
 // Android phones get notifications only through FCM (shown by the app itself); browser Web Push only reaches
 // browsers on Windows (os: "windows").
@@ -133,13 +136,15 @@ async function push(env, uid, message) {
 
 // ---------- Firebase Cloud Messaging (HTTP v1), signed in as the project's service account ----------
 const PROJECT_FCM = "bellmont-city";
-let fcmAuth = null; // { token, exp }
-async function fcmAccessToken(env) {
+const SCOPE_FCM = "https://www.googleapis.com/auth/firebase.messaging", SCOPE_FS = "https://www.googleapis.com/auth/datastore";
+const saAuth = {}; // scope → { token, exp }
+async function fcmAccessToken(env, scope = SCOPE_FCM) {
+  const fcmAuth = saAuth[scope];
   if (fcmAuth && fcmAuth.exp > Date.now() + 60e3) return fcmAuth.token;
   const sa = JSON.parse(env.FCM_SERVICE_ACCOUNT);
   const now = Math.floor(Date.now() / 1000);
   const enc64 = (o) => b64u(enc.encode(JSON.stringify(o)));
-  const unsigned = `${enc64({ alg: "RS256", typ: "JWT" })}.${enc64({ iss: sa.client_email, scope: "https://www.googleapis.com/auth/firebase.messaging", aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600 })}`;
+  const unsigned = `${enc64({ alg: "RS256", typ: "JWT" })}.${enc64({ iss: sa.client_email, scope, aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600 })}`;
   const der = Uint8Array.from(atob(sa.private_key.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "")), (c) => c.charCodeAt(0));
   const key = await crypto.subtle.importKey("pkcs8", der, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
   const sig = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, enc.encode(unsigned));
@@ -149,8 +154,8 @@ async function fcmAccessToken(env) {
   });
   const j = await res.json();
   if (!j.access_token) throw new Error("FCM sign-in failed");
-  fcmAuth = { token: j.access_token, exp: Date.now() + (j.expires_in ?? 3600) * 1000 };
-  return fcmAuth.token;
+  saAuth[scope] = { token: j.access_token, exp: Date.now() + (j.expires_in ?? 3600) * 1000 };
+  return saAuth[scope].token;
 }
 /** Sends one notification to one Android phone; "dead" if that phone's token is no longer valid. */
 async function sendFcm(env, token, data) {
@@ -197,7 +202,78 @@ async function message(idToken, from, body) {
     if (!i || i.from !== from || !fresh(i.at)) return null;
     return { to, title: ["Room invitation"], body: ["{0} invited you to room {1}.", i.name, "A friend", code], tag: `inv-${code}`, link: `/?room=${code}`, icon: pic(i.photo), who: i.name || "" };
   }
+  if (type === "message") {
+    const id = String(body.id ?? "");
+    if (!/^[A-Za-z0-9]{10,40}$/.test(id)) return null;
+    const m = await getDoc(idToken, `chats/${chatId(from, to)}/messages/${id}`);
+    if (!m || m.from !== from || m.to !== to || !fresh(m.at) || typeof m.text !== "string") return null;
+    const f = await getDoc(idToken, `friends/${to}/list/${from}`); // (still friends; their name and picture)
+    if (!f) return null;
+    return { chat: true, to, from, name: f.name || "", photo: f.photo, text: m.text };
+  }
   return null;
+}
+
+// ---------- chat messages ----------
+const chatId = (a, b) => (a < b ? `${a}_${b}` : `${b}_${a}`);
+// (FCM data must stay under 4 KB: long messages are cut; the phone shows at most 6 lines anyway.)
+const MSG_CHARS = 700;
+// Who may answer from the notification: "<to>.<from>.<expiry>.<signature>" lets <to> send a message to <from>
+// (signed with a key derived from this worker's own secret, so it can't be made up).
+const REPLY_DAYS = 14;
+async function replyKey(env) {
+  const raw = await crypto.subtle.digest("SHA-256", enc.encode(`reply:${env.VAPID_PRIVATE_JWK}`));
+  return crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+}
+async function replyToken(env, to, from) {
+  const head = `${to}.${from}.${Date.now() + REPLY_DAYS * 864e5}`;
+  return `${head}.${b64u(await crypto.subtle.sign("HMAC", await replyKey(env), enc.encode(head)))}`;
+}
+async function checkReplyToken(env, token) {
+  const parts = String(token ?? "").split(".");
+  if (parts.length !== 4) return null;
+  const [to, from, exp, sig] = parts;
+  if (!/^[A-Za-z0-9]{10,64}$/.test(to) || !/^[A-Za-z0-9]{10,64}$/.test(from) || !(Number(exp) > Date.now())) return null;
+  let sigBytes; try { sigBytes = fromB64u(sig); } catch { return null; }
+  const ok = await crypto.subtle.verify("HMAC", await replyKey(env), sigBytes, enc.encode(`${to}.${from}.${exp}`));
+  return ok ? { me: to, friend: from } : null;
+}
+/** Tells `to` about a message from `from` (named `name`): their phones get it with a way to answer. */
+async function pushChat(env, { to, from, name, photo, text }) {
+  const reply = await replyToken(env, to, from);
+  const short = text.length > MSG_CHARS ? `${text.slice(0, MSG_CHARS)}…` : text;
+  return push(env, to, (sub) => ({
+    title: tr(sub.lang, "Message from {0}", name || tr(sub.lang, "A friend")), body: short, tag: `msg-${from}`, link: `/?chat=${from}`,
+    icon: pic(photo), who: name || "", ...(sub.fcm ? { kind: "msg", from, name: name || "", reply, you: tr(sub.lang, "You replied:"), more: tr(sub.lang, "more"), replyLabel: tr(sub.lang, "Reply") } : {}),
+  }));
+}
+// Firestore as the project's service account (an answer sent from a notification has no player sign-in).
+const fsVal = (v) => (typeof v === "number" ? { integerValue: String(Math.round(v)) } : v == null ? { nullValue: null } : { stringValue: String(v) });
+async function adminGet(env, path) {
+  const res = await fetch(`${FS}/${path}`, { headers: { Authorization: `Bearer ${await fcmAccessToken(env, SCOPE_FS)}` } });
+  if (!res.ok) return null;
+  const d = await res.json(), out = {};
+  for (const [k, v] of Object.entries(d.fields ?? {})) out[k] = val(v);
+  return out;
+}
+async function adminAdd(env, path, data) {
+  const fields = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, fsVal(v)]));
+  const res = await fetch(`${FS}/${path}`, { method: "POST", headers: { Authorization: `Bearer ${await fcmAccessToken(env, SCOPE_FS)}`, "Content-Type": "application/json" }, body: JSON.stringify({ fields }) });
+  return res.ok;
+}
+/** An answer typed into a message notification on an Android phone. */
+async function replyFromNotification(env, body) {
+  if (!env.FCM_SERVICE_ACCOUNT) return { error: "not set up", status: 503 };
+  const who = await checkReplyToken(env, body?.token);
+  if (!who) return { error: "unauthorized", status: 401 };
+  const text = typeof body?.text === "string" ? body.text.slice(0, 65536) : "";
+  if (!text.trim()) return { error: "empty", status: 400 };
+  // (Only between friends: the friend's list must still have this player.)
+  const me = await adminGet(env, `friends/${who.friend}/list/${who.me}`);
+  if (!me) return { error: "not friends", status: 403 };
+  if (!(await adminAdd(env, `chats/${chatId(who.me, who.friend)}/messages`, { from: who.me, to: who.friend, text, at: Date.now() }))) return { error: "could not save", status: 500 };
+  await pushChat(env, { to: who.friend, from: who.me, name: me.name || "", photo: me.photo, text });
+  return { ok: true, status: 200 };
 }
 
 // ---------- broadcasts ----------
@@ -228,6 +304,12 @@ export default {
     if (request.method === "GET" && url.pathname === "/broadcast") {
       const b = await currentBroadcast(env);
       return json(b ? { id: b.id, title: b.title, body: b.body, link: b.link ?? "/", at: b.at } : {}, 200, origin);
+    }
+    if (request.method === "POST" && url.pathname === "/reply") {
+      let body;
+      try { body = await request.json(); } catch { return json({ error: "bad request" }, 400, origin); }
+      const r = await replyFromNotification(env, body).catch((e) => ({ error: String(e?.message ?? e), status: 500 }));
+      return json(r, r.status, origin);
     }
     if (request.method !== "POST" || !["/notify", "/subscribe", "/subscribe-fcm", "/app", "/status"].includes(url.pathname)) return json({ error: "not found" }, 404, origin);
     const idToken = (request.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
@@ -271,6 +353,7 @@ export default {
     try {
       const m = await message(idToken, from, body);
       if (!m) return json({ sent: 0 }, 200, origin);
+      if (m.chat) return json({ sent: await pushChat(env, m) }, 200, origin);
       // (title/body: [English text, name, fallback name if none, more args] → in each device's language)
       const words = (lang, [text, name, fallback, ...rest]) => tr(lang, text, name || (fallback ? tr(lang, fallback) : ""), ...rest);
       const sent = await push(env, m.to, (sub) => ({ title: words(sub.lang, m.title), body: words(sub.lang, m.body), tag: m.tag, link: m.link, icon: m.icon, who: m.who }));

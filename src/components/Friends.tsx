@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Check, ChevronDown, Plus, User, UserPlus, X } from "lucide-react";
+import { Check, ChevronDown, MessageCircle, Plus, User, UserPlus, X } from "lucide-react";
+import { Chat } from "@/components/Chat";
 import { Button } from "@/components/ui/button";
 import type { Account } from "@/platform/account";
 import { LiveName } from "@/platform/liveNames";
@@ -22,7 +23,17 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [unadding, setUnadding] = useState<string | null>(null);
+  /** The friend whose chat is open in the list's place (or null). */
+  const [chatting, setChatting] = useState<string | null>(null);
   const { friends, requests, sent } = data;
+  const chatFriend = chatting ? friends.find((f) => f.uid === chatting) ?? null : null;
+  // A message notification's link (?chat=<uid>) opens that chat.
+  useEffect(() => {
+    const want = new URLSearchParams(location.search).get("chat");
+    if (!want || !friends.some((f) => f.uid === want)) return;
+    setChatting(want); setOpen(true);
+    const u = new URL(location.href); u.searchParams.delete("chat"); history.replaceState(history.state, "", u);
+  }, [friends]);
 
   async function add(e: FormEvent) {
     e.preventDefault();
@@ -48,11 +59,12 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
     <div className="flex gap-2">
       {/* The list drops down from the Friends button over the page (nothing below moves), as one box with it. */}
       <div className={`friends-drop ${open ? "open" : ""}`}>
-        <Button type="button" variant={open ? "secondary" : "outline"} className="friends-toggle w-full justify-between" aria-expanded={open} onClick={() => { setOpen((v) => !v); setUnadding(null); }}>
+        <Button type="button" variant={open ? "secondary" : "outline"} className="friends-toggle w-full justify-between" aria-expanded={open} onClick={() => { setOpen((v) => !v); setUnadding(null); setChatting(null); }}>
           <span>Friends{requests.length ? <span className="friends-badge">{requests.length}</span> : null}</span>
           <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
         </Button>
-        {open && <ul className="friends-list friends-popup">
+        {open && chatFriend && <div className="friends-popup chat-popup"><Chat account={account} friend={chatFriend} onBack={() => setChatting(null)} /></div>}
+        {open && !chatFriend && <ul className="friends-list friends-popup">
           {requests.map((r) => <li key={`r${r.uid}`} className="friends-row request">
             <Avatar uid={r.uid} photo={r.photo} name={r.name} />
             <span><b><LiveName uid={r.uid} fallback={r.name} /></b><small>wants to be friends</small></span>
@@ -62,6 +74,7 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
           {friends.map((f) => <li key={f.uid} className="friends-row">
             <Avatar uid={f.uid} photo={f.photo} name={f.name} />
             <span><b><LiveName uid={f.uid} fallback={f.name} /></b></span>
+            <button type="button" className="chat-open" aria-label={`Message ${f.name}`} onClick={() => setChatting(f.uid)}><MessageCircle size={18} strokeWidth={2.3} aria-hidden /></button>
           </li>)}
           {sent.map((r) => <li key={`s${r.uid}`} className="friends-row">
             <Avatar uid={r.uid} photo={r.photo} name={r.name} />

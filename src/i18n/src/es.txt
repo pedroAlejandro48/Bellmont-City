@@ -1106,3 +1106,14 @@
 1105|Claro
 1106|Oscuro
 1107|Sistema
+1108|Mensaje de {0}
+1109|Respondiste:
+1110|más
+1111|Responder
+1112|Mensaje
+1113|Enviar
+1114|Aún no hay mensajes. ¡Saluda!
+1115|Volver a tus amigos
+1116|No se pudo enviar. Inténtalo de nuevo.
+1117|Enviar mensaje a {0}
+1118|La vida real en un juego.

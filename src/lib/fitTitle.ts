@@ -15,9 +15,11 @@ export function useTitleBetweenObeliskAndForm() {
       // The whole page on the screen, however short (a browser's bars take room): shrunk to fit, never scrolled.
       const page = document.querySelector<HTMLElement>(".auth-page");
       if (split && page) {
-        const cs = getComputedStyle(page), room = page.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 8;
+        // (Shrunk from its top: the title and the top of the box stay where they are, whatever the box holds.)
+        const cs = getComputedStyle(page), top = split.getBoundingClientRect().top - page.getBoundingClientRect().top;
+        const room = page.clientHeight - top - parseFloat(cs.paddingBottom) - 8;
         const s = Math.min(1, room / Math.max(1, split.offsetHeight), (page.clientWidth - 16) / Math.max(1, split.offsetWidth));
-        if (s < 1) { split.style.transform = `scale(${s})`; split.style.transformOrigin = "center center"; }
+        if (s < 1) { split.style.transform = `scale(${s})`; split.style.transformOrigin = "center top"; }
       }
     };
     const fitTitle = () => {

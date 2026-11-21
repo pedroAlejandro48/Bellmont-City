@@ -1106,5 +1106,16 @@
   "Theme",
   "Light",
   "Dark",
-  "System"
+  "System",
+  "Message from {0}",
+  "You replied:",
+  "more",
+  "Reply",
+  "Message",
+  "Send",
+  "No messages yet. Say hi!",
+  "Back to your friends",
+  "Could not send. Please try again.",
+  "Message {0}",
+  "Real life in a game."
 ]

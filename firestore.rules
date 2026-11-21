@@ -82,6 +82,22 @@ service cloud.firestore {
       }
     }
 
+    // Private chats between two friends: chats/<smaller uid>_<larger uid>/messages/<id>. Only the two read them;
+    // a message is written by its sender, to a friend, 1 to 65,536 characters (WhatsApp's limit), and never changed.
+    match /chats/{chat}/messages/{id} {
+      allow read: if signedIn() && chat.split('_').hasAny([request.auth.uid]);
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['from', 'to', 'text', 'at'])
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.to is string && request.resource.data.to != request.auth.uid
+        && (chat == request.auth.uid + '_' + request.resource.data.to || chat == request.resource.data.to + '_' + request.auth.uid)
+        && chat.split('_')[0] < chat.split('_')[1]
+        && request.resource.data.text is string
+        && request.resource.data.text.size() >= 1 && request.resource.data.text.size() <= 65536
+        && request.resource.data.at is number
+        && exists(/databases/$(database)/documents/friends/$(request.auth.uid)/list/$(request.resource.data.to));
+    }
+
     // Where to send a player's push notifications (one entry per device/browser): only they write them; the
     // server (Cloud Functions) reads them.
     match /pushTokens/{uid}/tokens/{token} {

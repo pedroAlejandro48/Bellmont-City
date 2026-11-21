@@ -1053,3 +1053,14 @@
 1105|Clair
 1106|Sombre
 1107|Système
+1108|Message de {0}
+1109|Vous avez répondu :
+1110|plus
+1111|Répondre
+1112|Message
+1113|Envoyer
+1114|Pas encore de messages. Dites bonjour !
+1115|Retour à vos amis
+1116|Envoi impossible. Veuillez réessayer.
+1117|Écrire à {0}
+1118|La vraie vie dans un jeu.

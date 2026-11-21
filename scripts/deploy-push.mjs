@@ -4,7 +4,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 
 // The notification words in every language, from the game's dictionaries (src/i18n/dict/<lang>.json).
-const WORDS = ["New friend request", "{0} wants to be your friend.", "Someone", "Friend request accepted", "{0} accepted your friend request.", "Your friend", "Room invitation", "{0} invited you to room {1}.", "A friend"];
+const WORDS = ["New friend request", "{0} wants to be your friend.", "Someone", "Friend request accepted", "{0} accepted your friend request.", "Your friend", "Room invitation", "{0} invited you to room {1}.", "A friend", "Message from {0}", "You replied:", "more", "Reply"];
 const TEXTS = {};
 for (const f of readdirSync("src/i18n/dict").filter((n) => n.endsWith(".json"))) {
   const dict = JSON.parse(readFileSync(`src/i18n/dict/${f}`, "utf8"));

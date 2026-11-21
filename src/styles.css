@@ -262,7 +262,7 @@
  * the left, the form box on the right. Upright phones keep them stacked.
  */
 @media (orientation: landscape) {
-  .auth-split { max-width: min(60rem, 100%); display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem); align-items: center; column-gap: clamp(1.5rem, 5vw, 4rem); padding-block: 1rem; }
+  .auth-split { max-width: min(60rem, 100%); display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem); align-items: start; column-gap: clamp(1.5rem, 5vw, 4rem); padding-block: 1rem; }
   .auth-split .auth-titles { text-align: center; justify-self: start; }
   .auth-split .auth-titles > * { text-align: center; }
   .auth-split .auth-titles h1 { font-size: clamp(2.5rem, 6vw, 4.5rem); line-height: 1.05; }
@@ -767,3 +767,49 @@ input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-sele
 .scooter-key.wide { display: flex; align-items: center; }
 .scooter-key .sign-name { margin-left: 0.5rem; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.01em; }
 .scooter-key.wide:has(.sign-name) { font-size: 0.95rem; letter-spacing: 0; }
+
+/* Private chats (components/Chat.tsx), in the friends list's place under the Friends button. */
+.friends-row button.chat-open { width: 1.9rem; height: 1.9rem; background: none; border-radius: 0; color: #fff; opacity: 0.9; }
+.friends-row button.chat-open:hover { opacity: 1; transform: scale(1.1); }
+.friends-popup.chat-popup { max-height: none; height: min(28rem, calc(100dvh - 9rem)); display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.chat-head { display: flex; align-items: center; gap: 0.5rem; padding: 0.45rem 0.6rem 0.45rem 0.25rem; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 0.92rem; }
+.chat-head b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-back { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 50%; color: #fff; }
+.chat-back:hover { background: rgba(255,255,255,0.08); }
+.chat-log { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 0.45rem; padding: 0.7rem 0.75rem; }
+.chat-empty { margin: auto; font-size: 0.8rem; opacity: 0.6; }
+.chat-bubble { position: relative; max-width: 80%; width: fit-content; padding: 0.45rem 0.7rem; border-radius: 0.9rem; font-size: 0.88rem; line-height: 1.35; white-space: pre-wrap; overflow-wrap: anywhere; color: #fff; }
+.chat-bubble.mine { align-self: flex-end; background: #6d6446; border-bottom-right-radius: 0.2rem; margin-right: 0.45rem; }
+.chat-bubble.theirs { align-self: flex-start; background: #444a5a; border-bottom-left-radius: 0.2rem; margin-left: 0.45rem; }
+/* (The tail: a little triangle at the bottom corner, pointing out to its side.) */
+.chat-bubble::after { content: ""; position: absolute; bottom: 0; width: 0; height: 0; border-style: solid; }
+.chat-bubble.mine::after { right: -0.45rem; border-width: 0.55rem 0 0 0.55rem; border-color: transparent transparent transparent #6d6446; }
+.chat-bubble.theirs::after { left: -0.45rem; border-width: 0.55rem 0.55rem 0 0; border-color: transparent #444a5a transparent transparent; }
+.chat-bubble.pending { opacity: 0.7; }
+.chat-failed { padding: 0 0.75rem 0.25rem; font-size: 0.72rem; color: #ff8a8a; }
+.chat-send { display: flex; align-items: flex-end; gap: 0.4rem; padding: 0.5rem; border-top: 1px solid rgba(255,255,255,0.08); }
+.chat-send textarea { flex: 1; min-width: 0; resize: none; max-height: 120px; padding: 0.5rem 0.7rem; border-radius: 1.1rem; border: 1px solid var(--color-input, rgba(255,255,255,0.15)); background: rgba(0,0,0,0.25); color: inherit; font: inherit; font-size: 0.9rem; line-height: 1.3; outline: none; }
+.chat-send textarea:focus { border-color: #ffb547; }
+.chat-send button { flex: none; width: 2.35rem; height: 2.35rem; border-radius: 50%; display: grid; place-items: center; background: #ffb547; color: #1a1205; transition: opacity 0.15s, transform 0.15s; }
+.chat-send button:disabled { opacity: 0.35; cursor: default; }
+.chat-send button:not(:disabled):hover { transform: scale(1.06); }
+/* Light theme: lighter bubbles with black text. */
+[data-backdrop="day"] .chat-bubble { color: #111; }
+[data-backdrop="day"] .chat-bubble.mine { background: #d9cfaa; }
+[data-backdrop="day"] .chat-bubble.mine::after { border-left-color: #d9cfaa; }
+[data-backdrop="day"] .chat-bubble.theirs { background: #c9cdd6; }
+[data-backdrop="day"] .chat-bubble.theirs::after { border-right-color: #c9cdd6; }
+
+/* The pages before the game (sign in, sign up, the menu, choosing a name): the title and the top of the box are always
+   in the same place — set from the top of the screen, never centred on the content — and the box only grows down. */
+.auth-page.items-center { align-items: flex-start; }
+.auth-split { margin-top: max(0px, calc((100dvh - 7.1rem - 38rem) / 2)); }
+@media (orientation: landscape) {
+  .auth-split { margin-top: max(0px, calc((100dvh - 1rem - 30rem) / 2)); }
+  /* (Beside the box, the title sits level with its upper part.) */
+  .auth-split .auth-titles { padding-top: clamp(0rem, calc((100dvh - 20rem) / 4), 6rem); }
+}
+/* Light theme (the park by day): the title and its line in white with a soft dark shadow, so they read on the sky. */
+[data-backdrop="day"] .auth-titles :is(h1, p) { color: #fff; text-shadow: 0 2px 4px rgba(10,20,45,0.55), 0 0 18px rgba(10,20,45,0.45); }
+[data-backdrop="day"] .auth-titles p { font-weight: 600; }

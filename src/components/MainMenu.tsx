@@ -77,7 +77,7 @@ export function MainMenu({ account, username, message, onCity, onRoom, onSignOut
       <div className="auth-split w-full max-w-sm">
         <div className="auth-titles">
           <h1 className="font-display text-center text-5xl tracking-tight text-foreground">Bellmont city</h1>
-          <p className="mt-2 text-center text-sm text-muted-foreground">{username ? <>Welcome back, <span className="text-foreground" data-no-translate>{username}</span>.</> : "Twenty minutes of sun. Twenty minutes of moon. Real life in a game."}</p>
+          <p className="mt-2 text-center text-sm text-muted-foreground">{username ? <>Welcome back, <span className="text-foreground" data-no-translate>{username}</span>.</> : "Real life in a game."}</p>
         </div>
         <div className="auth-box-slot" style={slotH ? { height: slotH } : undefined}>
         <div ref={boxRef} className="auth-box hud-panel mt-8 space-y-4 p-6">

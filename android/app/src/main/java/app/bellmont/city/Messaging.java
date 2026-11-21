@@ -29,7 +29,7 @@ import java.util.Map;
  * and icon; a big picture only when another player is involved — theirs, round, or their initial in a circle.
  */
 public class Messaging extends FirebaseMessagingService {
-    private static final String CHANNEL = "bellmont";
+    private static final String CHANNEL = Chats.CHANNEL;
 
     @Override
     public void onNewToken(String token) {
@@ -45,10 +45,17 @@ public class Messaging extends FirebaseMessagingService {
         String tag = d.containsKey("tag") ? d.get("tag") : String.valueOf(System.currentTimeMillis());
         String link = d.containsKey("link") ? d.get("link") : "/";
 
-        NotificationManager nm = getSystemService(NotificationManager.class);
-        if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(CHANNEL) == null) {
-            NotificationChannel ch = new NotificationChannel(CHANNEL, "Bellmont City", NotificationManager.IMPORTANCE_HIGH);
-            nm.createNotificationChannel(ch);
+        Chats.ensureChannel(this);
+        // A friend's chat message: its own notification per friend, with Reply.
+        if ("msg".equals(d.get("kind")) && d.get("from") != null) {
+            try {
+                org.json.JSONObject info = new org.json.JSONObject();
+                for (String k : new String[] { "from", "name", "title", "reply", "you", "more", "replyLabel", "icon", "who" }) {
+                    if (d.get(k) != null) info.put(k, d.get(k));
+                }
+                Chats.received(this, info, body, picture(d.get("icon"), d.get("who")));
+            } catch (Exception ignored) { /* */ }
+            return;
         }
         Intent open = new Intent(this, StartActivity.class).putExtra("link", link).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent tap = PendingIntent.getActivity(this, tag.hashCode(), open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
@@ -61,16 +68,18 @@ public class Messaging extends FirebaseMessagingService {
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true)
+                .setGroup(Chats.GROUP)
                 .setContentIntent(tap);
         Bitmap pic = picture(d.get("icon"), d.get("who"));
         if (pic != null) n.setLargeIcon(pic);
 
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return;
         NotificationManagerCompat.from(this).notify(tag, 1, n.build());
+        Chats.summary(this);
     }
 
     /** The other player's picture cut into a circle, or their initial in a coloured circle; null if no player. */
-    private Bitmap picture(String url, String who) {
+    static Bitmap picture(String url, String who) {
         final int S = 192;
         Bitmap out = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(out);
