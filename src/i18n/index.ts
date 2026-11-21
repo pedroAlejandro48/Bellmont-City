@@ -21,6 +21,18 @@ export const LANGS: { code: LangCode; name: string; flag: string }[] = [
 const KEY = "bellmont-lang";
 export function currentLang(): LangCode {
   try { const v = localStorage.getItem(KEY); if (v && LANGS.some((l) => l.code === v)) return v as LangCode; } catch { /* */ }
+  return deviceLang();
+}
+/** Until one is chosen: the device's language (the first of its languages the game has), else English. */
+export function deviceLang(): LangCode {
+  try {
+    const list = navigator.languages?.length ? navigator.languages : [navigator.language];
+    for (const tag of list) {
+      const code = String(tag || "").toLowerCase().split(/[-_]/)[0];
+      const hit = LANGS.find((l) => l.code === code);
+      if (hit) return hit.code;
+    }
+  } catch { /* */ }
   return "en";
 }
 export function setLang(code: LangCode) {

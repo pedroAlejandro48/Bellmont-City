@@ -1,5 +1,5 @@
-import { useRef, useState, type FormEvent } from "react";
-import { ArrowLeft, Pencil, RotateCw, X } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { ArrowLeft, ChevronDown, Pencil, RotateCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LiveName } from "@/platform/liveNames";
 import { Avatar, AvatarPicker, EditableAvatar } from "@/components/Avatar";
@@ -12,10 +12,11 @@ import { enablePush, pushPermission, registerDevice } from "@/platform/push";
 import type { useFriends } from "@/components/Friends";
 import { exitApp, inMobileApp, inWindowsApp } from "@/components/InstallApp";
 import { playPullRefresh } from "@/lib/pullRefresh";
+import { setThemePref, themePref, type ThemePref } from "@/lib/theme";
 
 /**
- * The player's picture in the top-left corner of the menu: tap it for Profile (picture, username, friends, deleting
- * the account) or Settings (language, graphics, notifications).
+ * The player's picture in the top-left corner of the menu: tap it for Profile (picture, username, friends) or
+ * Settings (language, theme, graphics, notifications, deleting the account).
  */
 export function AccountMenu({ account, friends, onAccount, onSignOut }: { account: Account; friends: ReturnType<typeof useFriends>; onAccount: (a: Account) => void; onSignOut: () => void }) {
   const [open, setOpen] = useState(false);
@@ -41,8 +42,8 @@ export function AccountMenu({ account, friends, onAccount, onSignOut }: { accoun
         {inWindowsApp() && <li><button type="button" className="account-exit" onClick={exitApp}>Exit</button></li>}
       </ul>}
     </div>
-    {panel === "profile" && <Profile account={account} friends={friends} onAccount={onAccount} onSignOut={onSignOut} onClose={() => setPanel(null)} />}
-    {panel === "settings" && <Settings onClose={() => setPanel(null)} />}
+    {panel === "profile" && <Profile account={account} friends={friends} onAccount={onAccount} onClose={() => setPanel(null)} />}
+    {panel === "settings" && <Settings account={account} onSignOut={onSignOut} onClose={() => setPanel(null)} />}
   </>;
 }
 
@@ -56,14 +57,13 @@ function Sheet({ title, onClose, children, height }: { title: string; onClose: (
   </div>;
 }
 
-function Profile({ account, friends, onAccount, onSignOut, onClose }: { account: Account; friends: ReturnType<typeof useFriends>; onAccount: (a: Account) => void; onSignOut: () => void; onClose: () => void }) {
+function Profile({ account, friends, onAccount, onClose }: { account: Account; friends: ReturnType<typeof useFriends>; onAccount: (a: Account) => void; onClose: () => void }) {
   const [picking, setPicking] = useState(false);
   const [newName, setNewName] = useState(""), [pw, setPw] = useState(""), [nameMsg, setNameMsg] = useState<string | null>(null), [busy, setBusy] = useState(false);
   const [unadding, setUnadding] = useState<string | null>(null);
   /** On the Change username page (with the profile's height to keep), or not (null). */
   const [renaming, setRenaming] = useState<number | null>(null);
   const body = useRef<HTMLDivElement>(null);
-  const [deleting, setDeleting] = useState(false), [delPw, setDelPw] = useState(""), [delMsg, setDelMsg] = useState<string | null>(null);
 
   async function rename(e: FormEvent) {
     e.preventDefault();
@@ -72,12 +72,6 @@ function Profile({ account, friends, onAccount, onSignOut, onClose }: { account:
     setBusy(true); setNameMsg(null);
     try { onAccount(await changeUsername(account, parsed.data, pw)); setNameMsg(null); setNewName(""); setPw(""); setRenaming(null); }
     catch (err) { setNameMsg(err instanceof AccountError ? err.message : "Could not change your username. Please try again."); }
-    setBusy(false);
-  }
-  async function remove() {
-    setBusy(true); setDelMsg(null);
-    try { await deleteAccount(account, account.usesPassword ? delPw : null); onClose(); onSignOut(); }
-    catch (err) { setDelMsg(err instanceof AccountError ? err.message : "Could not delete your account. Please try again."); }
     setBusy(false);
   }
 
@@ -122,6 +116,80 @@ function Profile({ account, friends, onAccount, onSignOut, onClose }: { account:
       </li>)}
     </ul> : <p className="text-xs text-muted-foreground">No friends yet.</p>}
 
+    </div>
+    {picking && <AvatarPicker current={account.photo} google={account.google} onPick={(url) => { void chooseAvatar(account, url).then((a) => { onAccount(a); setPicking(false); }).catch(() => {}); }} onClose={() => setPicking(false)} />}
+  </Sheet>;
+}
+
+const QLABEL: Record<Quality, string> = { low: "Low", medium: "Medium", high: "High" };
+const THEMES: { id: ThemePref; label: string }[] = [{ id: "light", label: "Light" }, { id: "dark", label: "Dark" }, { id: "system", label: "System" }];
+
+/** One row of options, the chosen one filled (Theme, Graphics). */
+function Segments<T extends string>({ value, options, onPick }: { value: T; options: { id: T; label: string }[]; onPick: (v: T) => void }) {
+  return <div className="flex overflow-hidden rounded-md border border-input">
+    {options.map((o, i) => <button key={o.id} type="button" aria-pressed={value === o.id} onClick={() => onPick(o.id)}
+      className={`flex-1 px-2.5 py-1.5 text-sm font-semibold ${i > 0 ? "border-l border-input" : ""} ${value === o.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-white/5"}`}>{o.label}</button>)}
+  </div>;
+}
+
+/**
+ * The language: a button right of the "Language" label showing the current one (name and flag); pressed, the others
+ * drop down under it, as wide as the button. Picking one reloads the game in it.
+ */
+function LanguagePicker() {
+  const lang = currentLang();
+  const cur = LANGS.find((l) => l.code === lang) ?? LANGS[0]!;
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const off = (e: PointerEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); } };
+    document.addEventListener("pointerdown", off); document.addEventListener("keydown", esc, true);
+    return () => { document.removeEventListener("pointerdown", off); document.removeEventListener("keydown", esc, true); };
+  }, [open]);
+  return <div className="setting-row">
+    <p className="sheet-label">Language</p>
+    <div className={`lang-drop${open ? " open" : ""}`} ref={box}>
+      <button type="button" className="lang-current" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <img src={`/flags/${cur.flag}.svg`} alt="" />
+        <span data-no-translate>{cur.name}</span>
+        <ChevronDown size={16} className="lang-chev" aria-hidden />
+      </button>
+      {open && <ul className="lang-options" role="listbox" aria-label="Language">
+        {LANGS.filter((l) => l.code !== lang).map((l) => <li key={l.code}>
+          <button type="button" role="option" aria-selected={false} onClick={() => { setOpen(false); setLang(l.code); }}>
+            <img src={`/flags/${l.flag}.svg`} alt="" />
+            <span data-no-translate>{l.name}</span>
+          </button>
+        </li>)}
+      </ul>}
+    </div>
+  </div>;
+}
+
+function Settings({ account, onSignOut, onClose }: { account: Account; onSignOut: () => void; onClose: () => void }) {
+  const [quality, setQuality] = useState<Quality>(readQuality);
+  const [theme, setTheme] = useState<ThemePref>(themePref);
+  const [perm, setPerm] = useState(pushPermission());
+  const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false), [delPw, setDelPw] = useState(""), [delMsg, setDelMsg] = useState<string | null>(null);
+  async function remove() {
+    setBusy(true); setDelMsg(null);
+    try { await deleteAccount(account, account.usesPassword ? delPw : null); onClose(); onSignOut(); }
+    catch (err) { setDelMsg(err instanceof AccountError ? err.message : "Could not delete your account. Please try again."); }
+    setBusy(false);
+  }
+  return <Sheet title="Settings" onClose={onClose}>
+    <LanguagePicker />
+    <p className="sheet-label">Theme</p>
+    <Segments value={theme} options={THEMES} onPick={(t) => { setThemePref(t); setTheme(t); }} />
+    <p className="sheet-label">Graphics</p>
+    <Segments value={quality} options={QUALITIES.map((q) => ({ id: q, label: QLABEL[q] }))} onPick={(q) => { saveQuality(q); setQuality(q); }} />
+    {perm !== "unsupported" && <><p className="sheet-label">Notifications</p>
+    {perm === "granted" ? <p className="text-sm">On: friend requests and room invitations reach you, even with the game closed.</p>
+      : perm === "denied" ? <p className="text-sm text-muted-foreground">Blocked. Turn them on in your browser's or phone's settings for this site.</p>
+      : <Button type="button" className="w-full" onClick={() => void enablePush().then((p) => { setPerm(p); if (p === "granted") void registerDevice(); })}>Turn on notifications</Button>}</>}
     <p className="sheet-label danger">Delete account</p>
     {!deleting ? <Button type="button" variant="destructive" className="w-full" onClick={() => setDeleting(true)}>Delete my account</Button> : <div className="space-y-2">
       <p className="text-xs">This deletes your account, your progress, your username and your friends, for good. It can't be undone.</p>
@@ -133,34 +201,5 @@ function Profile({ account, friends, onAccount, onSignOut, onClose }: { account:
       </div>
       {delMsg && <p className="text-center text-xs text-accent">{delMsg}</p>}
     </div>}
-    </div>
-    {picking && <AvatarPicker current={account.photo} google={account.google} onPick={(url) => { void chooseAvatar(account, url).then((a) => { onAccount(a); setPicking(false); }).catch(() => {}); }} onClose={() => setPicking(false)} />}
-  </Sheet>;
-}
-
-const QLABEL: Record<Quality, string> = { low: "Low", medium: "Medium", high: "High" };
-function Settings({ onClose }: { onClose: () => void }) {
-  const lang = currentLang();
-  const [quality, setQuality] = useState<Quality>(readQuality);
-  const [perm, setPerm] = useState(pushPermission());
-  return <Sheet title="Settings" onClose={onClose}>
-    <p className="sheet-label">Language</p>
-    <ul className="lang-list">
-      {LANGS.map((l) => <li key={l.code}>
-        <button type="button" className={lang === l.code ? "on" : ""} aria-pressed={lang === l.code} onClick={() => { if (l.code !== lang) setLang(l.code); }}>
-          <span data-no-translate>{l.name}</span>
-          <img src={`/flags/${l.flag}.svg`} alt="" />
-        </button>
-      </li>)}
-    </ul>
-    <p className="sheet-label">Graphics</p>
-    <div className="flex overflow-hidden rounded-md border border-input">
-      {QUALITIES.map((q, i) => <button key={q} type="button" aria-pressed={quality === q} onClick={() => { saveQuality(q); setQuality(q); }}
-        className={`flex-1 px-2.5 py-1.5 text-sm font-semibold ${i > 0 ? "border-l border-input" : ""} ${quality === q ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-white/5"}`}>{QLABEL[q]}</button>)}
-    </div>
-    {perm !== "unsupported" && <><p className="sheet-label">Notifications</p>
-    {perm === "granted" ? <p className="text-sm">On: friend requests and room invitations reach you, even with the game closed.</p>
-      : perm === "denied" ? <p className="text-sm text-muted-foreground">Blocked. Turn them on in your browser's or phone's settings for this site.</p>
-      : <Button type="button" className="w-full" onClick={() => void enablePush().then((p) => { setPerm(p); if (p === "granted") void registerDevice(); })}>Turn on notifications</Button>}</>}
   </Sheet>;
 }

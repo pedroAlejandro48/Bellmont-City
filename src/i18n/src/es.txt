@@ -1102,3 +1102,7 @@
 1101|Está guardada en tus salas, en Unirse a una sala, así que siempre puedes volver. Comparte este código, o el enlace de la sala desde el menú ⚙, para que otros entren.
 1102|La sala existe mientras alguien la tenga en sus salas.
 1103|Actualizar
+1104|Tema
+1105|Claro
+1106|Oscuro
+1107|Sistema

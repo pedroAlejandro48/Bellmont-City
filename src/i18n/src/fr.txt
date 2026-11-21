@@ -1049,3 +1049,7 @@
 1101|Elle est enregistrée dans tes salles, sous Rejoindre une salle : tu peux toujours revenir. Partage ce code, ou le lien de la salle depuis le menu ⚙, pour que d'autres la rejoignent.
 1102|La salle existe tant que quelqu'un l'a dans ses salles.
 1103|Actualiser
+1104|Thème
+1105|Clair
+1106|Sombre
+1107|Système

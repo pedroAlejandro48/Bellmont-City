@@ -1049,3 +1049,7 @@
 1101|Ela fica salva nas suas salas, em Entrar em uma sala, para você sempre poder voltar. Compartilhe este código, ou o link da sala pelo menu ⚙, para outros entrarem.
 1102|A sala existe enquanto alguém a tiver nas suas salas.
 1103|Atualizar
+1104|Tema
+1105|Claro
+1106|Escuro
+1107|Sistema

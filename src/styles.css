@@ -174,11 +174,15 @@
     transition: filter 0.2s;
   }
   .hud-button:hover { filter: brightness(1.08); }
-  /* The pages before the game: the park at night (the same scene as the site icon), in a shape for each screen. */
+  /* The pages before the game: the park at night or by day (the same scene as the site icon), in a shape for each screen. */
   /* --city-bg is drawn for the exact screen by lib/cityBackdrop.ts; these pictures stand in until then. */
   .auth-bg { background: #0b1230 var(--city-bg, url("/bg-city.webp")) center bottom / cover no-repeat; }
   @media (max-aspect-ratio: 1/1) { .auth-bg { background-image: var(--city-bg, url("/bg-city-tall.webp")); } }
   @media (min-aspect-ratio: 2/1) { .auth-bg { background-image: var(--city-bg, url("/bg-city-wide.webp")); } }
+  /* By day (lib/theme.ts sets data-backdrop): the park at 10 am. */
+  [data-backdrop="day"] .auth-bg { background-color: #2f78d0; background-image: var(--city-bg, url("/bg-city-day.webp")); }
+  @media (max-aspect-ratio: 1/1) { [data-backdrop="day"] .auth-bg { background-image: var(--city-bg, url("/bg-city-day-tall.webp")); } }
+  @media (min-aspect-ratio: 2/1) { [data-backdrop="day"] .auth-bg { background-image: var(--city-bg, url("/bg-city-day-wide.webp")); } }
   .auth-input {
     width: 100%;
     border-radius: var(--radius-md);
@@ -681,10 +685,21 @@ body.has-install-pc .quality-picker { right: 9.6rem; }
 .profile-head b { font-size: 1.05rem; }
 .profile-head small { font-size: 0.75rem; opacity: 0.7; overflow: hidden; text-overflow: ellipsis; }
 .profile-head .link { align-self: flex-start; margin-top: 0.2rem; font-size: 0.75rem; color: #ffb547; text-decoration: underline; }
-.lang-list { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; }
-.lang-list button { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; padding: 0.5rem 0.65rem; border-radius: 0.6rem; background: rgba(255,255,255,0.06); font-size: 0.9rem; border: 2px solid transparent; }
-.lang-list button.on { border-color: #ffb547; }
-.lang-list img { width: 1.6rem; height: 1.2rem; border-radius: 0.2rem; object-fit: cover; box-shadow: 0 0 0 1px rgba(255,255,255,0.15); }
+/* Settings: the "Language" label on the left, a button with the current language on the right; its list drops
+   down under it over the rest of the box, exactly as wide as the button (nothing below moves). */
+.setting-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-top: 0.3rem; }
+.setting-row > .sheet-label { margin-top: 0; }
+.sheet-body:has(.lang-drop.open) { overflow: visible; }
+.lang-drop { position: relative; width: 11.5rem; }
+.lang-drop button { width: 100%; display: flex; align-items: center; gap: 0.55rem; padding: 0.5rem 0.65rem; font-size: 0.9rem; text-align: left; }
+.lang-drop button span { flex: 1; }
+.lang-current { font-weight: 700; border-radius: 0.6rem; background: #232633; border: 2px solid rgba(255,255,255,0.1); }
+.lang-drop.open .lang-current { border-color: #ffb547; border-bottom-color: rgba(255,255,255,0.1); border-radius: 0.6rem 0.6rem 0 0; }
+.lang-chev { flex: none; opacity: 0.7; transition: transform 0.18s; }
+.lang-drop.open .lang-chev { transform: rotate(180deg); }
+.lang-options { position: absolute; z-index: 5; top: 100%; left: 0; right: 0; max-height: min(24rem, 60dvh); overflow-y: auto; background: #232633; border: 2px solid #ffb547; border-top: 0; border-radius: 0 0 0.6rem 0.6rem; box-shadow: 0 14px 30px rgba(0,0,0,0.45); }
+.lang-options button:hover, .lang-options button:focus-visible { background: rgba(255,255,255,0.08); }
+.lang-drop img { width: 1.6rem; height: 1.2rem; flex: none; border-radius: 0.2rem; object-fit: cover; box-shadow: 0 0 0 1px rgba(255,255,255,0.15); }
 
 /* Profile picture that can be changed: tap it; a pencil sits in its bottom-right corner. */
 .avatar-edit { position: relative; padding: 0; border: 0; background: none; border-radius: 50%; flex: none; cursor: pointer; }
