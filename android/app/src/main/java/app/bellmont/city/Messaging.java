@@ -47,12 +47,12 @@ public class Messaging extends FirebaseMessagingService {
 
         Chats.ensureChannel(this);
         // A message that was unsent: out of its notification.
-        if ("unsend".equals(d.get("kind"))) { Chats.unsent(this, d.get("from"), d.get("id")); return; }
+        if ("unsend".equals(d.get("kind"))) { Chats.unsent(this, d.get("friend"), d.get("id")); return; }
         // A friend's chat message: its own notification per friend, with Reply.
-        if ("msg".equals(d.get("kind")) && d.get("from") != null) {
+        if ("msg".equals(d.get("kind")) && d.get("friend") != null) {
             try {
                 org.json.JSONObject info = new org.json.JSONObject();
-                for (String k : new String[] { "from", "id", "name", "title", "reply", "you", "more", "replyLabel", "icon", "who" }) {
+                for (String k : new String[] { "friend", "id", "name", "title", "reply", "you", "more", "replyLabel", "icon", "who" }) {
                     if (d.get(k) != null) info.put(k, d.get(k));
                 }
                 Chats.received(this, info, body, picture(d.get("icon"), d.get("who")));

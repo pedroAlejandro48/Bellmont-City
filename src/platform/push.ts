@@ -89,10 +89,12 @@ async function showNow(title: string, body: string, tag: string, link = "/", pho
   const pic = typeof photo === "string" && photo ? photo : null;
   title = tr(title); if (!asTyped) body = tr(body); // (in the game's language; a player's message stays as typed)
   const icon = who !== undefined ? await roundIcon(pic, who || "?") : undefined;
-  try {
+  // (The Windows app shows nothing from service-worker notifications: it uses the plain kind below, which it turns
+  // into Windows notifications.)
+  if (appKind() !== "windows") try {
     const reg = await navigator.serviceWorker.getRegistration("/");
     if (reg) { await reg.showNotification(title, { body, tag, ...(icon ? { icon } : {}), badge: "/badge-96.png", data: { link } }); return; }
-  } catch { /* (The Windows app has no service-worker notifications: a plain one below.) */ }
+  } catch { /* (then a plain one below) */ }
   try {
     const n = new Notification(title, { body, tag, ...(icon ? { icon } : {}) });
     // (In the Windows app, ?app-show=1 brings the window back from the tray.)

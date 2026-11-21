@@ -168,7 +168,9 @@ async function sendFcm(env, token, data) {
   });
   if (res.ok) return "ok";
   const err = await res.text();
-  return res.status === 404 || /UNREGISTERED|INVALID_ARGUMENT/.test(err) ? "dead" : "fail";
+  // (Only a phone that's really gone is forgotten: not when the message itself was refused. FCM data may not use
+  // reserved keys such as "from" — that comes back as INVALID_ARGUMENT too.)
+  return res.status === 404 || /UNREGISTERED|not a valid FCM registration token/i.test(err) ? "dead" : "fail";
 }
 
 // ---------- what can be announced (only what really just happened) ----------
@@ -254,7 +256,7 @@ async function pushChat(env, { to, from, id, name, photo, text }) {
   const short = text.length > MSG_CHARS ? `${text.slice(0, MSG_CHARS)}…` : text;
   return push(env, to, (sub) => ({
     title: tr(sub.lang, "Message from {0}", name || tr(sub.lang, "A friend")), body: short, tag: `msg-${from}`, link: `/?chat=${from}`,
-    icon: pic(photo), who: name || "", ...(sub.fcm ? { kind: "msg", from, id, name: name || "", reply, you: tr(sub.lang, "You replied:"), more: tr(sub.lang, "more"), replyLabel: tr(sub.lang, "Reply") } : {}),
+    icon: pic(photo), who: name || "", ...(sub.fcm ? { kind: "msg", friend: from, id, name: name || "", reply, you: tr(sub.lang, "You replied:"), more: tr(sub.lang, "more"), replyLabel: tr(sub.lang, "Reply") } : {}),
   }));
 }
 // Firestore as the project's service account (an answer sent from a notification has no player sign-in).
@@ -376,7 +378,7 @@ export default {
       if (m.chat) return json({ sent: await pushChat(env, m) }, 200, origin);
       // An unsent message leaves the friend's notification, and the sender's own (an answer from a notification).
       if (m.unsend) {
-        const [a, b] = await Promise.all([push(env, m.to, { kind: "unsend", from: m.from, id: m.id }, true), push(env, m.from, { kind: "unsend", from: m.to, id: m.id }, true)]);
+        const [a, b] = await Promise.all([push(env, m.to, { kind: "unsend", friend: m.from, id: m.id }, true), push(env, m.from, { kind: "unsend", friend: m.to, id: m.id }, true)]);
         return json({ sent: a + b }, 200, origin);
       }
       // (title/body: [English text, name, fallback name if none, more args] → in each device's language)

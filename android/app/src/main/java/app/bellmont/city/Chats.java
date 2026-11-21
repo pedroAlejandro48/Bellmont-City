@@ -59,7 +59,7 @@ final class Chats {
 
     /** A message arrived from a friend (data from the game's server). */
     static void received(Context c, JSONObject info, String text, Bitmap pic) {
-        String friend = info.optString("from");
+        String friend = info.optString("friend");
         String tag = "msg-" + friend;
         JSONArray lines = history(c, friend);
         // (A friend's notification that was opened or swiped away starts over.)
