@@ -6,6 +6,7 @@ import { LiveName } from "@/platform/liveNames";
 import { MAX_MESSAGE, OPEN_RENEW_MS, markOpen, markSeen, sendMessage, unsendMessage, watchChat, type ChatMessage } from "@/platform/chat";
 import type { Friend } from "@/platform/friends";
 import { notifySeen, setOpenChat } from "@/platform/push";
+import { serverNow } from "@/lib/serverTime";
 
 /** Copies text to the clipboard (with an older way for browsers without the Clipboard API). */
 async function copyText(text: string) {
@@ -42,7 +43,7 @@ export function Chat({ account, friend, friends, onBack }: { account: Account; f
   useEffect(() => watchChat(account, friend.uid, setMsgs), [account, friend.uid]);
   // While it's open, everything in it counts as seen (and once more on leaving).
   const newest = msgs.length ? msgs[msgs.length - 1]!.at : 0;
-  useEffect(() => { markSeen(account, friend.uid, Math.max(Date.now(), newest)); }, [account, friend.uid, newest]);
+  useEffect(() => { markSeen(account, friend.uid, serverNow()); }, [account, friend.uid, newest]);
   // While the chat is on screen, it's marked open (renewed); hidden or closed, not.
   useEffect(() => {
     const tick = () => markOpen(account, friend.uid, document.visibilityState === "visible");

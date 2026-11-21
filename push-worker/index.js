@@ -261,7 +261,9 @@ async function pushChat(env, { to, from, id, at, name, photo, text }) {
   await new Promise((r) => setTimeout(r, SEEN_WAIT_MS));
   const seen = await adminGet(env, `chats/${chatId(to, from)}/seen/${to}`).catch(() => null);
   const msgAt = Number(at ?? Date.now());
-  if (seen && (Number(seen.at ?? 0) >= msgAt || Number(seen.open ?? 0) > Date.now())) return 0;
+  // (A "seen" later than now came from a device clock running ahead: it doesn't count.)
+  const seenAt = Number(seen?.at ?? 0), open = Number(seen?.open ?? 0), now = Date.now();
+  if (seen && ((seenAt <= now + 5000 && seenAt >= msgAt) || (open > now && open < now + 60e3))) return 0;
   const reply = await replyToken(env, to, from);
   const short = text.length > MSG_CHARS ? `${text.slice(0, MSG_CHARS)}…` : text;
   return push(env, to, (sub) => ({
@@ -327,6 +329,8 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(origin) });
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/") return json({ ok: true, service: "bellmont-push" }, 200, origin);
+    // (The server's clock: the game stamps chat messages with it, never a device's own clock, which can be off.)
+    if (request.method === "GET" && url.pathname === "/time") return json({ now: Date.now() }, 200, origin);
     // (A health check: whether the service-account key is there and signs in — never the key itself.)
     if (request.method === "GET" && url.pathname === "/health") {
       const check = async (scope) => { try { await fcmAccessToken(env, scope); return "ok"; } catch (e) { return String(e?.message ?? e).slice(0, 200); } };

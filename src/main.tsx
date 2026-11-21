@@ -13,6 +13,7 @@ import { GuestGame } from "@/game/GuestGame";
 import { RoomEntry, type RoomRequest } from "@/multiplayer/RoomGame";
 import { setInGame, watchForUpdates } from "@/lib/updates";
 import { appKind, backgroundPage } from "@/lib/appKind";
+import { syncServerTime } from "@/lib/serverTime";
 import { isSignedIn, signOutAccount, watchAccount, type Account } from "@/platform/account";
 import { normalizeRoomCode } from "@/platform/rooms";
 import "./styles.css";
@@ -93,6 +94,7 @@ function Background() {
   return null;
 }
 
+syncServerTime();
 if (!backgroundPage()) startCityBackdrop();
 listenForInstall();
 guardBackButton();

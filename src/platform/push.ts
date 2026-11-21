@@ -8,6 +8,7 @@ import { auth, firestore } from "./firebase";
 import { appKind, backgroundPage, browserNotifications, fcmToken } from "@/lib/appKind";
 import { currentLang, tr } from "@/i18n";
 import { inAppToast, removeInAppToast } from "@/lib/inAppToast";
+import { serverNow } from "@/lib/serverTime";
 
 const PUSH_SERVER = "https://bellmont-push.bellmont-city.workers.dev";
 /** The sender's public key (VAPID): browsers only accept pushes signed with its private half. */
@@ -159,7 +160,7 @@ const pairId = (a: string, b: string) => (a < b ? `${a}_${b}` : `${b}_${a}`);
 
 /** Watches for new requests, accepted requests, invitations and chat messages (only ones that arrive from now on). */
 export function watchNotifications(me: Account) {
-  const since = Date.now() - 5000;
+  const since = Date.now() - 5000, chatSince = serverNow() - 5000; // (chat messages carry the server's time)
   // (Decided once; until the sender answers, nothing is shown — anything arriving in that moment is old anyway.)
   let allowed = false;
   void mayNotifyHere().then((ok) => { allowed = ok; });
@@ -195,14 +196,16 @@ export function watchNotifications(me: Account) {
     const entry = { name, photo, stop: () => {} };
     const pair = pairId(me.id, friend), seenRef = doc(firestore, "chats", pair, "seen", me.id);
     let seenAt = 0;
-    const stopMsgs = onSnapshot(query(collection(firestore, "chats", pair, "messages"), where("at", ">", since)), (s) => s.docChanges().forEach((c) => {
+    const stopMsgs = onSnapshot(query(collection(firestore, "chats", pair, "messages"), where("at", ">", chatSince)), (s) => s.docChanges().forEach((c) => {
       const d = c.doc.data(), at = Number(d["at"] ?? 0);
       if (c.type !== "added" || d["to"] !== me.id || c.doc.metadata.hasPendingWrites) return;
       if (chatOpen === friend && document.visibilityState === "visible") return;
       const text = String(d["text"] ?? "");
       // Only while the chat is closed everywhere: a moment later, if it was seen (open on some device), nothing.
       window.setTimeout(() => void getDoc(seenRef).then((sn) => {
-        if (Math.max(seenAt, Number(sn.data()?.["at"] ?? 0)) >= at || Number(sn.data()?.["open"] ?? 0) > Date.now()) return;
+        // (A "seen" later than now came from a device clock running ahead: it doesn't count.)
+        const now = serverNow(), seen = Math.max(seenAt, Number(sn.data()?.["at"] ?? 0));
+        if ((seen <= now + 5000 && seen >= at) || Number(sn.data()?.["open"] ?? 0) > now) return;
         show(`Message from ${entry.name || "A friend"}`, text.length > 300 ? `${text.slice(0, 300)}…` : text, `msg-${friend}`, `/?chat=${friend}`, entry.photo, entry.name, true, friend);
       }).catch(() => {}), 500);
     }), () => {});

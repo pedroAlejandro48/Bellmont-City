@@ -7,6 +7,7 @@ import { addDoc, collection, deleteDoc, doc, limitToLast, onSnapshot, orderBy, q
 import { firestore } from "./firebase";
 import type { Account } from "./account";
 import { notifyMessage, notifyUnsend } from "./push";
+import { serverNow } from "@/lib/serverTime";
 
 /** The longest message (WhatsApp's limit). */
 export const MAX_MESSAGE = 65536;
@@ -29,7 +30,7 @@ export function watchChat(me: Account, friend: string, on: (msgs: ChatMessage[])
 export async function sendMessage(me: Account, friend: string, text: string, fwd = false) {
   const t = text.slice(0, MAX_MESSAGE);
   if (!t.trim()) return;
-  const ref = await addDoc(messages(me.id, friend), { from: me.id, to: friend, text: t, at: Date.now(), ...(fwd ? { fwd: true } : {}) });
+  const ref = await addDoc(messages(me.id, friend), { from: me.id, to: friend, text: t, at: serverNow(), ...(fwd ? { fwd: true } : {}) });
   notifyMessage(friend, ref.id);
 }
 
@@ -40,7 +41,7 @@ export async function unsendMessage(me: Account, friend: string, id: string) {
 }
 
 /** This player has seen the chat with `friend` up to `at` (now, by default). */
-export function markSeen(me: Account, friend: string, at = Date.now()) {
+export function markSeen(me: Account, friend: string, at = serverNow()) {
   void setDoc(doc(firestore, "chats", chatId(me.id, friend), "seen", me.id), { at }, { merge: true }).catch(() => {});
 }
 
@@ -49,14 +50,14 @@ export const OPEN_FOR_MS = 20000, OPEN_RENEW_MS = 10000;
 /** This player has the chat with `friend` open on screen (until a little later), or not any more: while it's open,
  * their messages need no notification at all. */
 export function markOpen(me: Account, friend: string, open: boolean) {
-  void setDoc(doc(firestore, "chats", chatId(me.id, friend), "seen", me.id), { open: open ? Date.now() + OPEN_FOR_MS : 0 }, { merge: true }).catch(() => {});
+  void setDoc(doc(firestore, "chats", chatId(me.id, friend), "seen", me.id), { open: open ? serverNow() + OPEN_FOR_MS : 0 }, { merge: true }).catch(() => {});
 }
 
 /** How many messages from `friend` arrived since this player last had the chat open. */
 export function watchUnread(me: Account, friend: string, on: (n: number) => void) {
   let stopMsgs: (() => void) | null = null;
   const stopSeen = onSnapshot(doc(firestore, "chats", chatId(me.id, friend), "seen", me.id), (s) => {
-    const seen = Number(s.data()?.["at"] ?? 0);
+    const seen = Math.min(Number(s.data()?.["at"] ?? 0), serverNow()); // (never later than now: see serverTime.ts)
     stopMsgs?.();
     stopMsgs = onSnapshot(query(messages(me.id, friend), where("at", ">", seen)), (m) => on(m.docs.filter((d) => d.data()["to"] === me.id).length), () => on(0));
   }, () => on(0));
