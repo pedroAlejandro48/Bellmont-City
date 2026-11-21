@@ -41,7 +41,15 @@ export async function unsendMessage(me: Account, friend: string, id: string) {
 
 /** This player has seen the chat with `friend` up to `at` (now, by default). */
 export function markSeen(me: Account, friend: string, at = Date.now()) {
-  void setDoc(doc(firestore, "chats", chatId(me.id, friend), "seen", me.id), { at }).catch(() => {});
+  void setDoc(doc(firestore, "chats", chatId(me.id, friend), "seen", me.id), { at }, { merge: true }).catch(() => {});
+}
+
+/** How long one "the chat is open" mark lasts (it's renewed every OPEN_RENEW_MS while the chat is on screen). */
+export const OPEN_FOR_MS = 20000, OPEN_RENEW_MS = 10000;
+/** This player has the chat with `friend` open on screen (until a little later), or not any more: while it's open,
+ * their messages need no notification at all. */
+export function markOpen(me: Account, friend: string, open: boolean) {
+  void setDoc(doc(firestore, "chats", chatId(me.id, friend), "seen", me.id), { open: open ? Date.now() + OPEN_FOR_MS : 0 }, { merge: true }).catch(() => {});
 }
 
 /** How many messages from `friend` arrived since this player last had the chat open. */

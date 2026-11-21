@@ -103,7 +103,9 @@ service cloud.firestore {
     match /chats/{chat}/seen/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
       allow write: if signedIn() && request.auth.uid == uid && chat.split('_').hasAny([uid])
-        && request.resource.data.keys().hasOnly(['at']) && request.resource.data.at is number;
+        && request.resource.data.keys().hasOnly(['at', 'open'])
+        && (!('at' in request.resource.data) || request.resource.data.at is number)
+        && (!('open' in request.resource.data) || request.resource.data.open is number);
     }
 
     // Where to send a player's push notifications (one entry per device/browser): only they write them; the

@@ -254,12 +254,14 @@ async function checkReplyToken(env, token) {
   return ok ? { me: to, friend: from } : null;
 }
 /** Tells `to` about a message from `from` (named `name`): their phones get it with a way to answer. */
-const SEEN_WAIT_MS = 2000;
+const SEEN_WAIT_MS = 500;
 async function pushChat(env, { to, from, id, at, name, photo, text }) {
-  // Only while the chat is closed: a moment later, if the friend has it open (seen at or after this message), nothing.
+  // Only while the chat is closed: if the friend has it open on screen ("open" is renewed while it is), or saw this
+  // message (half a second covers a chat opened just now), nothing.
   await new Promise((r) => setTimeout(r, SEEN_WAIT_MS));
   const seen = await adminGet(env, `chats/${chatId(to, from)}/seen/${to}`).catch(() => null);
-  if (seen && Number(seen.at) >= Number(at ?? Date.now())) return 0;
+  const msgAt = Number(at ?? Date.now());
+  if (seen && (Number(seen.at ?? 0) >= msgAt || Number(seen.open ?? 0) > Date.now())) return 0;
   const reply = await replyToken(env, to, from);
   const short = text.length > MSG_CHARS ? `${text.slice(0, MSG_CHARS)}…` : text;
   return push(env, to, (sub) => ({

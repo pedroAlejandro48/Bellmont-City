@@ -3,7 +3,7 @@ import { Check, ChevronLeft, Send } from "lucide-react";
 import type { Account } from "@/platform/account";
 import { Avatar } from "@/components/Avatar";
 import { LiveName } from "@/platform/liveNames";
-import { MAX_MESSAGE, markSeen, sendMessage, unsendMessage, watchChat, type ChatMessage } from "@/platform/chat";
+import { MAX_MESSAGE, OPEN_RENEW_MS, markOpen, markSeen, sendMessage, unsendMessage, watchChat, type ChatMessage } from "@/platform/chat";
 import type { Friend } from "@/platform/friends";
 import { notifySeen, setOpenChat } from "@/platform/push";
 
@@ -43,6 +43,14 @@ export function Chat({ account, friend, friends, onBack }: { account: Account; f
   // While it's open, everything in it counts as seen (and once more on leaving).
   const newest = msgs.length ? msgs[msgs.length - 1]!.at : 0;
   useEffect(() => { markSeen(account, friend.uid, Math.max(Date.now(), newest)); }, [account, friend.uid, newest]);
+  // While the chat is on screen, it's marked open (renewed); hidden or closed, not.
+  useEffect(() => {
+    const tick = () => markOpen(account, friend.uid, document.visibilityState === "visible");
+    tick();
+    const timer = window.setInterval(tick, OPEN_RENEW_MS);
+    document.addEventListener("visibilitychange", tick);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", tick); markOpen(account, friend.uid, false); };
+  }, [account, friend.uid]);
   // Opening the chat takes its notifications away on the player's phones (and computers watch "seen" themselves).
   useEffect(() => { setOpenChat(friend.uid); notifySeen(friend.uid); return () => { setOpenChat(null); markSeen(account, friend.uid); }; }, [account, friend.uid]);
   // (Kept at the newest message, unless the player scrolled up to read.)

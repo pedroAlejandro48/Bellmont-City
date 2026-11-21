@@ -202,9 +202,9 @@ export function watchNotifications(me: Account) {
       const text = String(d["text"] ?? "");
       // Only while the chat is closed everywhere: a moment later, if it was seen (open on some device), nothing.
       window.setTimeout(() => void getDoc(seenRef).then((sn) => {
-        if (Math.max(seenAt, Number(sn.data()?.["at"] ?? 0)) >= at) return;
+        if (Math.max(seenAt, Number(sn.data()?.["at"] ?? 0)) >= at || Number(sn.data()?.["open"] ?? 0) > Date.now()) return;
         show(`Message from ${entry.name || "A friend"}`, text.length > 300 ? `${text.slice(0, 300)}…` : text, `msg-${friend}`, `/?chat=${friend}`, entry.photo, entry.name, true, friend);
-      }).catch(() => {}), 1800);
+      }).catch(() => {}), 500);
     }), () => {});
     // The chat read (opened on any device): its notification goes.
     const stopSeen = onSnapshot(seenRef, (sn) => {
