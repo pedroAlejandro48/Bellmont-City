@@ -314,6 +314,13 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(origin) });
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/") return json({ ok: true, service: "bellmont-push" }, 200, origin);
+    // (A health check: whether the service-account key is there and signs in — never the key itself.)
+    if (request.method === "GET" && url.pathname === "/health") {
+      const check = async (scope) => { try { await fcmAccessToken(env, scope); return "ok"; } catch (e) { return String(e?.message ?? e).slice(0, 200); } };
+      let keyShape = "missing";
+      if (env.FCM_SERVICE_ACCOUNT) { try { const k = JSON.parse(env.FCM_SERVICE_ACCOUNT); keyShape = k.private_key && k.client_email ? `json, project ${k.project_id}` : "json without key fields"; } catch { keyShape = "not valid JSON"; } }
+      return json({ key: keyShape, fcm: env.FCM_SERVICE_ACCOUNT ? await check(SCOPE_FCM) : "-", firestore: env.FCM_SERVICE_ACCOUNT ? await check(SCOPE_FS) : "-" }, 200, origin);
+    }
     if (request.method === "GET" && url.pathname === "/broadcast") {
       const b = await currentBroadcast(env);
       return json(b ? { id: b.id, title: b.title, body: b.body, link: b.link ?? "/", at: b.at } : {}, 200, origin);

@@ -3,7 +3,7 @@
 //    push-worker/), and whoever asks, accepts or invites tells the sender, which checks it and pushes to the other
 //    player's devices;
 //  • while the game is open, the friend lists are also watched here (same tags, so one notification shows).
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { auth, firestore } from "./firebase";
 import { appKind, browserNotifications, fcmToken } from "@/lib/appKind";
 import { currentLang, tr } from "@/i18n";
@@ -84,10 +84,10 @@ async function roundIcon(photo: string | null, who: string): Promise<string | un
 }
 
 // (The small status-bar icon is the game's badge; a big picture only when another player is involved: theirs, round.)
-async function showNow(title: string, body: string, tag: string, link = "/", photo?: unknown, who?: string) {
+async function showNow(title: string, body: string, tag: string, link = "/", photo?: unknown, who?: string, asTyped = false) {
   if (pushPermission() !== "granted") return;
   const pic = typeof photo === "string" && photo ? photo : null;
-  title = tr(title); body = tr(body); // (in the game's language)
+  title = tr(title); if (!asTyped) body = tr(body); // (in the game's language; a player's message stays as typed)
   const icon = who !== undefined ? await roundIcon(pic, who || "?") : undefined;
   try {
     const reg = await navigator.serviceWorker.getRegistration("/");
@@ -100,7 +100,12 @@ async function showNow(title: string, body: string, tag: string, link = "/", pho
   } catch { /* (Nothing shown: the menu's badges still say so.) */ }
 }
 
-/** Watches for new requests, accepted requests and invitations (only ones that arrive from now on). */
+/** The friend whose chat is open on screen (their messages then need no notification here). */
+let chatOpen: string | null = null;
+export const setOpenChat = (uid: string | null) => { chatOpen = uid; };
+const pairId = (a: string, b: string) => (a < b ? `${a}_${b}` : `${b}_${a}`);
+
+/** Watches for new requests, accepted requests, invitations and chat messages (only ones that arrive from now on). */
 export function watchNotifications(me: Account) {
   const since = Date.now() - 5000;
   // (Decided once; until the sender answers, nothing is shown — anything arriving in that moment is old anyway.)
@@ -111,6 +116,7 @@ export function watchNotifications(me: Account) {
   let poll: ReturnType<typeof setInterval> | undefined;
   if (appKind() === "windows") { void checkBroadcast(); poll = setInterval(() => void checkBroadcast(), 3 * 60e3); }
   const fresh = (at: unknown) => typeof at === "number" && at > since;
+  const chats = new Map<string, { name: string; photo: unknown; stop: () => void }>();
   const base = (name: string) => collection(firestore, "friends", me.id, name);
   const stops = [
     onSnapshot(base("requests"), (s) => s.docChanges().forEach((c) => {
@@ -119,6 +125,7 @@ export function watchNotifications(me: Account) {
     }), () => {}),
     onSnapshot(base("list"), (s) => s.docChanges().forEach((c) => {
       const d = c.doc.data();
+      watchMessages(c.doc.id, c.type === "removed" ? null : String(d["name"] ?? ""), d["photo"]);
       if (c.type === "added" && fresh(d["at"]) && d["by"] && d["by"] !== me.id) show("Friend request accepted", `${d["name"] || "Your friend"} accepted your friend request.`, `acc-${c.doc.id}`, "/", d["photo"], String(d["name"] ?? ""));
     }), () => {}),
     onSnapshot(base("invites"), (s) => s.docChanges().forEach((c) => {
@@ -126,7 +133,23 @@ export function watchNotifications(me: Account) {
       if (c.type === "added" && fresh(d["at"])) show("Room invitation", `${d["name"] || "A friend"} invited you to room ${c.doc.id}.`, `inv-${c.doc.id}`, `/?room=${c.doc.id}`, d["photo"], String(d["name"] ?? ""));
     }), () => {}),
   ];
-  return () => { stops.forEach((f) => f()); if (poll) clearInterval(poll); };
+  return () => { stops.forEach((f) => f()); chats.forEach((c) => c.stop()); if (poll) clearInterval(poll); };
+
+  // New chat messages from each friend (the Windows app has no push: this is how it hears about them while open).
+  function watchMessages(friend: string, name: string | null, photo: unknown) {
+    const had = chats.get(friend);
+    if (name === null) { had?.stop(); chats.delete(friend); return; }
+    if (had) { had.name = name; had.photo = photo; return; }
+    const entry = { name, photo, stop: () => {} };
+    entry.stop = onSnapshot(query(collection(firestore, "chats", pairId(me.id, friend), "messages"), where("at", ">", since)), (s) => s.docChanges().forEach((c) => {
+      const d = c.doc.data();
+      if (c.type !== "added" || d["to"] !== me.id || c.doc.metadata.hasPendingWrites) return;
+      if (chatOpen === friend && document.visibilityState === "visible") return;
+      const text = String(d["text"] ?? "");
+      show(`Message from ${entry.name || "A friend"}`, text.length > 300 ? `${text.slice(0, 300)}…` : text, `msg-${friend}`, `/?chat=${friend}`, entry.photo, entry.name, true);
+    }), () => {});
+    chats.set(friend, entry);
+  }
 }
 
 const SEEN = "bellmont-news-seen";
