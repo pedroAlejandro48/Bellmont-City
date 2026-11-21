@@ -41,10 +41,10 @@ public class ReplyReceiver extends BroadcastReceiver {
                 try (OutputStream out = con.getOutputStream()) { out.write(body); }
                 ok = con.getResponseCode() == 200;
                 if (ok) {
-                    try (java.io.InputStream in = con.getInputStream()) {
+                    try (java.io.InputStream answer = con.getInputStream()) {
                         java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
                         byte[] b = new byte[1024];
-                        for (int n; (n = in.read(b)) > 0; ) buf.write(b, 0, n);
+                        for (int n; (n = answer.read(b)) > 0; ) buf.write(b, 0, n);
                         id = new JSONObject(buf.toString("UTF-8")).optString("id", "");
                     } catch (Exception ignored) { /* (then it can't be taken out if unsent) */ }
                 }
