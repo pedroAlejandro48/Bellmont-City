@@ -93,7 +93,7 @@ async function roundIcon(photo: string | null, who: string): Promise<string | un
 const shown = new Map<string, Notification>();
 
 /** The Windows app's bridge (desktop/preload.js), when the page runs inside it. */
-type AppBridge = { notify: (n: { tag: string; title: string; body: string; icon?: string | undefined; link: string; reply?: string | undefined }) => void; close: (tag: string) => void; onReply: (f: (r: { friend: string; text: string }) => void) => void; gameFocused: () => boolean };
+type AppBridge = { notify: (n: { tag: string; title: string; body: string; icon?: string | undefined; link: string; reply?: string | undefined; you?: string | undefined }) => void; close: (tag: string) => void; onReply: (f: (r: { friend: string; text: string }) => void) => void; gameFocused: () => boolean };
 export const appBridge = (): AppBridge | null => (typeof window !== "undefined" ? (window as unknown as { bellmontApp?: AppBridge }).bellmontApp ?? null : null);
 
 // `reply`: for a chat message, the friend's id (the Windows app then gives the notification a text box to answer).
@@ -108,7 +108,7 @@ async function showNow(title: string, body: string, tag: string, link = "/", pho
     // (through the app, so a message's has a text box to reply) — unless the game is in front, showing the card.
     if (!backgroundPage()) { inAppToast(title, body, tag, icon, link); return; }
     const bridge = appBridge();
-    if (bridge) { if (!bridge.gameFocused()) bridge.notify({ tag, title, body, icon, link, reply }); return; }
+    if (bridge) { if (!bridge.gameFocused()) bridge.notify({ tag, title, body, icon, link, reply, you: tr("You replied:") }); return; }
     if (pushPermission() !== "granted") return;
   } else try {
     const reg = await navigator.serviceWorker.getRegistration("/");

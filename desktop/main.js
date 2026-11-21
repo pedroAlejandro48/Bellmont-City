@@ -107,11 +107,23 @@ function openBackground() {
 }
 
 /*
- * Windows notifications, shown by the app itself (SnoreToast, through node-notifier) so a message's can have a text
- * box: what's typed there is answered to that friend right away (the hidden page, which is signed in, sends it).
- * Clicking one opens the game there. While the game's window is in front, the game shows its own cards instead.
+ * Windows notifications, shown by the app itself with SnoreToast (the helper node-notifier ships), so a message's can
+ * have a text box. Windows only hands what's typed there to an app registered as the notification's "activator":
+ * the first time, SnoreToast installs a Start-menu shortcut (Bellmont City\Bellmont City) under the app id
+ * TOAST_ID that carries its activator, and from then on every answer — from the pop-up or later from the
+ * notification centre — is written to this app's named pipe (it's always running: the hidden listener). The answer
+ * is sent by the hidden page (signed in) and the notification comes back showing it under the friend's message, as on
+ * Android (the latest two lines). Clicking a notification opens the game there.
  */
-// What happened to each notification (for finding problems): %APPDATA%\\Bellmont City\\notifications.log, last 200 lines.
+const TOAST_ID = "app.bellmont.city.notify";
+const PIPE = "\\\\.\\pipe\\bellmont-city-notify";
+const snore = () => {
+  try {
+    const exe = path.join(path.dirname(require.resolve("node-notifier")), "vendor", "snoreToast", `snoretoast-${process.arch === "ia32" ? "x86" : "x64"}.exe`).replace("app.asar", "app.asar.unpacked");
+    return fs.existsSync(exe) ? exe : null;
+  } catch { return null; }
+};
+// What happened to each notification (for finding problems): %APPDATA%\Bellmont City\notifications.log, last 200 lines.
 function logLine(...parts) {
   try {
     const file = path.join(app.getPath("userData"), "notifications.log");
@@ -120,20 +132,21 @@ function logLine(...parts) {
     fs.writeFileSync(file, old.join("\n"));
   } catch { /* */ }
 }
-let toaster = null;
-function getToaster() {
-  if (toaster) return toaster;
-  try {
-    const { WindowsToaster } = require("node-notifier");
-    const exe = path.join(path.dirname(require.resolve("node-notifier")), "vendor", "snoreToast", `snoretoast-${process.arch === "ia32" ? "x86" : "x64"}.exe`);
-    const real = exe.replace("app.asar", "app.asar.unpacked");
-    logLine("toaster", real, fs.existsSync(real) ? "exists" : "MISSING");
-    toaster = new WindowsToaster({ withFallback: false, customPath: real });
-  } catch (e) { logLine("toaster failed", String(e)); toaster = null; }
-  return toaster;
+const { execFile } = require("child_process");
+const run = (args) => new Promise((done) => { const exe = snore(); if (!exe) return done(-2); execFile(exe, args, { windowsHide: true }, (err) => done(err ? (typeof err.code === "number" ? err.code : -1) : 0)); });
+let installed = false;
+async function installActivator() {
+  if (installed) return;
+  installed = true;
+  const code = await run(["-install", path.join("Bellmont City", "Bellmont City"), process.execPath, TOAST_ID]);
+  logLine("install activator", code);
 }
 const toastIds = new Map(); // tag → number
-const toastId = (tag) => { if (!toastIds.has(tag)) toastIds.set(tag, 1 + (crypto.createHash("md5").update(tag).digest().readUInt32BE(0) % 2000000000)); return toastIds.get(tag); };
+const toastId = (tag) => { if (!toastIds.has(tag)) toastIds.set(tag, String(1 + (crypto.createHash("md5").update(tag).digest().readUInt32BE(0) % 2000000000))); return toastIds.get(tag); };
+/** id → what that notification is (its link, and for a message the friend and its lines). */
+const toasts = new Map();
+/** friend → { lines: [{ me, text }], title, icon, you, link } — a message notification's content. */
+const chats = new Map();
 /** A picture from the page (a data: URL) as a file the notification can show. */
 function iconFile(icon) {
   try {
@@ -144,26 +157,71 @@ function iconFile(icon) {
     return file;
   } catch { return path.join(__dirname, "icon.png"); }
 }
-ipcMain.on("bellmont-game-focused", (e) => { e.returnValue = !!(main && !main.isDestroyed() && main.isVisible() && main.isFocused()); if (e.returnValue) logLine("game in front: in-game card only"); });
+async function showToast({ tag, title, body, icon, link, reply, silent }) {
+  await installActivator();
+  const id = toastId(tag);
+  toasts.set(id, { link, reply });
+  const args = ["-t", title, "-m", body || " ", "-p", iconFile(icon), "-appID", TOAST_ID, "-id", id, "-pipeName", PIPE, "-application", process.execPath];
+  if (reply) args.push("-tb");
+  if (silent) args.push("-silent");
+  const code = await run(args);
+  logLine("shown", { tag, reply: !!reply, exit: code });
+  if (code === -2 || code === -1 || code === 4294967295) { try { new (require("electron").Notification)({ title, body, icon: iconFile(icon) }).on("click", () => openMain(link)).show(); } catch { /* */ } }
+}
+function showChat(friend, silent) {
+  const c = chats.get(friend);
+  if (!c) return;
+  const body = c.lines.map((l) => (l.me ? `${c.you} ${l.text}` : l.text)).join("\n");
+  void showToast({ tag: `msg-${friend}`, title: c.title, body, icon: c.icon, link: c.link, reply: friend, silent });
+}
+// Answers and clicks, from SnoreToast (always to this pipe, also long after the pop-up went).
+const handled = new Set();
+function onToastData(raw) {
+  const data = raw.replace(/\0+$/, "");
+  const at = data.indexOf("text=");
+  const head = at >= 0 ? data.slice(0, at) : data;
+  const text = at >= 0 ? data.slice(at + 5).replace(/\0/g, "") : "";
+  const kv = Object.fromEntries(head.split(";").map((x) => x.split("=")).filter((x) => x.length === 2));
+  const t = toasts.get(kv.notificationId);
+  logLine("activated", { action: kv.action, id: kv.notificationId, known: !!t, chars: text.length });
+  const key = `${kv.notificationId}|${kv.action}|${text}`;
+  if (handled.has(key)) return; // (the same activation can arrive twice)
+  handled.add(key); setTimeout(() => handled.delete(key), 5000);
+  if (kv.action === "textEntered" && t?.reply && text.trim()) {
+    if (bg && !bg.isDestroyed()) bg.webContents.send("bellmont-reply", { friend: t.reply, text });
+    const c = chats.get(t.reply);
+    if (c) { c.lines = [...c.lines, { me: true, text }].slice(-2); showChat(t.reply, true); }
+  } else if (kv.action === "clicked") openMain(t?.link || "/");
+}
+function listenForToasts() {
+  try {
+    const server = require("net").createServer((sock) => {
+      const parts = [];
+      sock.on("data", (d) => parts.push(d));
+      sock.on("end", () => onToastData(Buffer.concat(parts).toString("utf16le")));
+      sock.on("error", () => {});
+    });
+    server.on("error", (e) => logLine("pipe error", String(e)));
+    server.listen(PIPE);
+  } catch (e) { logLine("pipe failed", String(e)); }
+}
+ipcMain.on("bellmont-game-focused", (e) => { e.returnValue = !!(main && !main.isDestroyed() && main.isVisible() && main.isFocused()); });
 ipcMain.on("bellmont-notify", (_e, n) => {
   if (!n || typeof n.title !== "string") return;
-  const t = getToaster();
-  const fallback = () => { try { new (require("electron").Notification)({ title: n.title, body: n.body || "", icon: iconFile(n.icon) }).on("click", () => openMain(n.link)).show(); } catch { /* */ } };
-  logLine("notify", { tag: n.tag, reply: !!n.reply, toaster: !!t, version: app.getVersion() });
-  if (!t) return fallback();
-  t.notify({
-    title: n.title, message: n.body || " ", icon: iconFile(n.icon), appID: "app.bellmont.city", id: toastId(n.tag || n.title),
-    wait: true, ...(n.reply ? { tb: true } : {}),
-  }, (err, response, meta) => {
-    logLine("result", { tag: n.tag, err: err ? String(err) : null, response, meta });
-    if (err) return;
-    const text = meta && typeof meta.text === "string" ? meta.text : "";
-    if (n.reply && (response === "textentered" || meta?.action === "textEntered") && text.trim()) {
-      if (bg && !bg.isDestroyed()) bg.webContents.send("bellmont-reply", { friend: n.reply, text });
-    } else if (response === "activate" || response === "click") openMain(n.link);
-  });
+  logLine("notify", { tag: n.tag, reply: !!n.reply, version: app.getVersion() });
+  if (n.reply) {
+    // A friend's message: their box holds the latest two lines (theirs, and "You replied: …" for answers).
+    const c = chats.get(n.reply) ?? { lines: [] };
+    chats.set(n.reply, { ...c, title: n.title, icon: n.icon, you: n.you || "You replied:", link: n.link, lines: [...c.lines, { me: false, text: n.body || "" }].slice(-2) });
+    return showChat(n.reply, false);
+  }
+  void showToast(n);
 });
-ipcMain.on("bellmont-close", (_e, tag) => { const t = getToaster(); if (t && typeof tag === "string") t.notify({ close: toastId(tag), appID: "app.bellmont.city" }, () => {}); });
+ipcMain.on("bellmont-close", (_e, tag) => {
+  if (typeof tag !== "string") return;
+  if (tag.startsWith("msg-")) chats.delete(tag.slice(4));
+  void run(["-close", toastId(tag), "-appID", TOAST_ID]);
+});
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
@@ -180,6 +238,7 @@ else {
     });
     // Starts with Windows, hidden (just the notification listener).
     if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: true, args: ["--hidden"] });
+    listenForToasts();
     openBackground();
     if (!process.argv.includes("--hidden")) openMain();
   });
