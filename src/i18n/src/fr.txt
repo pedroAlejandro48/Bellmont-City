@@ -1071,3 +1071,5 @@
 1123|Pas encore d'autres amis.
 1124|Transféré
 1125|{0} nouveaux
+1126|Désactivées : les demandes d'ami, les messages et les invitations aux salons n'arriveront pas sur cet appareil.
+1127|Activées : les demandes d'ami, les messages et les invitations aux salons arrivent sur cet appareil, même quand le jeu est fermé.

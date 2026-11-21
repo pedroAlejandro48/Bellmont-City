@@ -8,10 +8,11 @@ import { removeFriend } from "@/platform/friends";
 import { usernameSchema } from "@/lib/usernames";
 import { LANGS, LANGS_SORTED, currentLang, setLang } from "@/i18n";
 import { QUALITIES, readQuality, saveQuality, type Quality } from "@/game/quality";
-import { enablePush, pushPermission, registerDevice } from "@/platform/push";
+import { notificationsHere, notificationsOn, pushPermission, setNotificationsOn } from "@/platform/push";
 import type { useFriends } from "@/components/Friends";
 import { exitApp, inMobileApp, inWindowsApp } from "@/components/InstallApp";
 import { playPullRefresh } from "@/lib/pullRefresh";
+import { appKind } from "@/lib/appKind";
 import { setThemePref, themePref, type ThemePref } from "@/lib/theme";
 
 /**
@@ -172,6 +173,7 @@ function Settings({ account, onSignOut, onClose }: { account: Account; onSignOut
   const [quality, setQuality] = useState<Quality>(readQuality);
   const [theme, setTheme] = useState<ThemePref>(themePref);
   const [perm, setPerm] = useState(pushPermission());
+  const [notify, setNotify] = useState(notificationsOn);
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false), [delPw, setDelPw] = useState(""), [delMsg, setDelMsg] = useState<string | null>(null);
   async function remove() {
@@ -186,10 +188,16 @@ function Settings({ account, onSignOut, onClose }: { account: Account; onSignOut
     <Segments value={theme} options={THEMES} onPick={(t) => { setThemePref(t); setTheme(t); }} />
     <p className="sheet-label">Graphics</p>
     <Segments value={quality} options={QUALITIES.map((q) => ({ id: q, label: QLABEL[q] }))} onPick={(q) => { saveQuality(q); setQuality(q); }} />
-    {perm !== "unsupported" && <><p className="sheet-label">Notifications</p>
-    {perm === "granted" ? <p className="text-sm">On: friend requests and room invitations reach you, even with the game closed.</p>
-      : perm === "denied" ? <p className="text-sm text-muted-foreground">Blocked. Turn them on in your browser's or phone's settings for this site.</p>
-      : <Button type="button" className="w-full" onClick={() => void enablePush().then((p) => { setPerm(p); if (p === "granted") void registerDevice(); })}>Turn on notifications</Button>}</>}
+    {notificationsHere() && <>
+      <div className="setting-row">
+        <p className="sheet-label">Notifications</p>
+        <button type="button" role="switch" aria-checked={notify} aria-label="Notifications" className={`switch${notify ? " on" : ""}`}
+          onClick={() => { const next = !notify; setNotify(next); void setNotificationsOn(next).then(() => setPerm(pushPermission())); }}><span /></button>
+      </div>
+      <p className="text-sm text-muted-foreground">{!notify ? "Off: friend requests, messages and room invitations won't reach this device."
+        : perm === "denied" && !appKind() ? "Blocked. Turn them on in your browser's or phone's settings for this site."
+        : "On: friend requests, messages and room invitations reach this device, even with the game closed."}</p>
+    </>}
     <p className="sheet-label danger">Delete account</p>
     {!deleting ? <Button type="button" variant="destructive" className="w-full" onClick={() => setDeleting(true)}>Delete my account</Button> : <div className="space-y-2">
       <p className="text-xs">This deletes your account, your progress, your username and your friends, for good. It can't be undone.</p>

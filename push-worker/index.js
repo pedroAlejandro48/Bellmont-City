@@ -20,6 +20,7 @@
 // POST /notify { type: "message", to, id }  (a chat message: read from chats/<pair>/messages/<id> to check it)
 // POST /reply { token, text }  (an answer typed into a message notification on Android: the token, sent with that
 //   notification, lets its player message that one friend; saved with the service account, then notified)
+// POST /unsubscribe { fcm? | endpoint? }  (notifications turned off on one of the caller's devices)
 // POST /subscribe-fcm { token, lang }  (the Android app's Firebase Cloud Messaging token, passed in by the app)
 // Android phones get notifications only through FCM (shown by the app itself); browser Web Push only reaches
 // browsers on Windows (os: "windows").
@@ -341,7 +342,7 @@ export default {
       const r = await replyFromNotification(env, body).catch((e) => ({ error: String(e?.message ?? e), status: 500 }));
       return json(r, r.status, origin);
     }
-    if (request.method !== "POST" || !["/notify", "/subscribe", "/subscribe-fcm", "/app", "/status"].includes(url.pathname)) return json({ error: "not found" }, 404, origin);
+    if (request.method !== "POST" || !["/notify", "/subscribe", "/subscribe-fcm", "/unsubscribe", "/app", "/status"].includes(url.pathname)) return json({ error: "not found" }, 404, origin);
     const idToken = (request.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
     let from;
     try { from = await verifyIdToken(idToken); } catch { return json({ error: "unauthorized" }, 401, origin); }
@@ -376,6 +377,14 @@ export default {
       await saveSubs(env, from, subs);
       if (owner !== from) await env.SUBS.put(`fcm:${token}`, from);
       await markApp(env, from, "android");
+      return json({ ok: true }, 200, origin);
+    }
+    // (Notifications turned off on one of the caller's devices: it's taken off their list.)
+    if (url.pathname === "/unsubscribe") {
+      const fcm = typeof body?.fcm === "string" ? body.fcm : null, endpoint = typeof body?.endpoint === "string" ? body.endpoint : null;
+      if (!fcm && !endpoint) return json({ error: "bad request" }, 400, origin);
+      await saveSubs(env, from, (await subsOf(env, from)).filter((s) => (fcm ? s.fcm !== fcm : true) && (endpoint ? s.endpoint !== endpoint : true)));
+      if (fcm && (await env.SUBS.get(`fcm:${fcm}`)) === from) await env.SUBS.delete(`fcm:${fcm}`);
       return json({ ok: true }, 200, origin);
     }
     if (url.pathname === "/app") { await markApp(env, from, body?.app); return json({ ok: true }, 200, origin); }

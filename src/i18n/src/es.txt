@@ -1124,3 +1124,5 @@
 1123|Aún no tienes otros amigos.
 1124|Reenviado
 1125|{0} nuevos
+1126|Desactivadas: las solicitudes de amistad, los mensajes y las invitaciones a salas no llegarán a este dispositivo.
+1127|Activadas: las solicitudes de amistad, los mensajes y las invitaciones a salas llegan a este dispositivo, incluso con el juego cerrado.

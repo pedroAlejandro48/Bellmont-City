@@ -21,8 +21,29 @@ async function callServer(path: string, body: unknown): Promise<Record<string, u
   const res = await fetch(`${PUSH_SERVER}${path}`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(body), keepalive: true }).catch(() => null);
   return res?.ok ? await res.json().catch(() => null) as Record<string, unknown> | null : null;
 }
+// Settings → Notifications: on or off on this device (on by default). Off: this device is taken off the sender's list
+// and the game shows none here (no cards, no Windows notifications); on again: registered again.
+const NOTIFY_KEY = "bellmont-notify";
+export const notificationsOn = () => { try { return localStorage.getItem(NOTIFY_KEY) !== "off"; } catch { return true; } };
+/** Whether this device can get notifications at all (the apps, or a browser on Windows). */
+export const notificationsHere = () => !!appKind() || browserNotifications();
+export async function setNotificationsOn(on: boolean) {
+  try { localStorage.setItem(NOTIFY_KEY, on ? "on" : "off"); } catch { /* */ }
+  if (on) { if (pushPermission() === "default") await enablePush(); await registerDevice(); }
+  else await unregisterDevice();
+}
+async function unregisterDevice() {
+  if (appKind() === "android") { const token = fcmToken(); if (token) await callServer("/unsubscribe", { fcm: token }); return; }
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration("/");
+    const sub = await reg?.pushManager?.getSubscription();
+    if (sub) { await callServer("/unsubscribe", { endpoint: sub.endpoint }); await sub.unsubscribe(); }
+  } catch { /* */ }
+}
+
 /** This device gets the signed-in player's notifications, even with the game closed (when they're allowed). */
 export async function registerDevice() {
+  if (!notificationsOn()) { await unregisterDevice(); return; }
   // The Android app: its own notifications (Firebase Cloud Messaging), to this phone's token.
   if (appKind() === "android") { const token = fcmToken(); if (token) await callServer("/subscribe-fcm", { token, lang: currentLang() }); return; }
   // Other browsers than on Windows: no browser notifications (an old registration here is dropped).
@@ -142,7 +163,7 @@ export function watchNotifications(me: Account) {
   // (Decided once; until the sender answers, nothing is shown — anything arriving in that moment is old anyway.)
   let allowed = false;
   void mayNotifyHere().then((ok) => { allowed = ok; });
-  const show = (...a: Parameters<typeof showNow>) => { if (allowed) void showNow(...a); };
+  const show = (...a: Parameters<typeof showNow>) => { if (allowed && notificationsOn()) void showNow(...a); };
   // The Windows app has no Web Push: it checks for news sent to everyone (broadcasts) every few minutes.
   let poll: ReturnType<typeof setInterval> | undefined;
   if (backgroundPage()) { void checkBroadcast(); poll = setInterval(() => void checkBroadcast(), 3 * 60e3); }
@@ -203,6 +224,6 @@ async function checkBroadcast() {
     if (!b.id || !b.at || Date.now() - b.at > 864e5 || localStorage.getItem(SEEN) === b.id) return;
     localStorage.setItem(SEEN, b.id);
     const lang = currentLang(), pick = (t?: Record<string, string>) => (t?.[lang] || t?.["en"] || "");
-    void showNow(pick(b.title), pick(b.body), `news-${b.id}`, b.link ?? "/");
+    if (notificationsOn()) void showNow(pick(b.title), pick(b.body), `news-${b.id}`, b.link ?? "/");
   } catch { /* (offline: next time) */ }
 }
