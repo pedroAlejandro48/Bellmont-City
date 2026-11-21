@@ -1,7 +1,8 @@
 import { InstallApp, listenForInstall } from "@/components/InstallApp";
 import { guardBackButton } from "@/lib/backGuard";
 import { loadLang } from "@/i18n";
-import { watchNotifications } from "@/platform/push";
+import { appBridge, watchNotifications } from "@/platform/push";
+import { sendMessage } from "@/platform/chat";
 import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Button } from "@/components/ui/button";
@@ -37,8 +38,8 @@ function App() {
   const [menuMessage, setMenuMessage] = useState<string>();
   const [pendingRoom, setPendingRoom] = useState(linkedRoom);
   // Friend requests, accepted requests and room invitations pop up as notifications while the game is open.
-  // (Not in the Windows app's game window: its hidden listener shows them, even with the game closed.)
-  useEffect(() => (account?.username && appKind() !== "windows" ? watchNotifications(account) : undefined), [account]);
+  // (In the Windows app's game window they're cards in its corner; its hidden listener shows Windows notifications.)
+  useEffect(() => (account?.username ? watchNotifications(account) : undefined), [account]);
   const toMenu = useCallback((message?: string) => { setMenuMessage(message); setView({ name: "menu" }); }, []);
 
   useEffect(() => watchAccount(
@@ -85,11 +86,17 @@ function App() {
   return <><InstallApp /><MainMenu account={account} onAccount={setAccount} username={account.username} message={menuMessage} onSignOut={() => void signOut()} onCity={() => setView({ name: "city" })} onRoom={(request) => { setMenuMessage(undefined); setView({ name: "room", request }); }} /></>;
 }
 
+// (Registered once: whoever is signed in at the time sends the answer.)
+let replyAs: Account | null = null;
+if (backgroundPage()) appBridge()?.onReply(({ friend, text }) => { if (replyAs && text.trim()) void sendMessage(replyAs, friend, text).catch(() => {}); });
+
 /** The Windows app's hidden page: no game, just the signed-in player's notifications (shown by Windows). */
 function Background() {
   const [account, setAccount] = useState<Account | null>(null);
   useEffect(() => watchAccount(setAccount, () => {}), []);
   useEffect(() => (account?.username ? watchNotifications(account) : undefined), [account]);
+  // Answers typed into a message's Windows notification: sent from here (this page is signed in).
+  useEffect(() => { replyAs = account; }, [account]);
   return null;
 }
 

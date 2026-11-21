@@ -7,6 +7,7 @@ import { collection, doc, getDoc, onSnapshot, query, where } from "firebase/fire
 import { auth, firestore } from "./firebase";
 import { appKind, backgroundPage, browserNotifications, fcmToken } from "@/lib/appKind";
 import { currentLang, tr } from "@/i18n";
+import { inAppToast, removeInAppToast } from "@/lib/inAppToast";
 
 const PUSH_SERVER = "https://bellmont-push.bellmont-city.workers.dev";
 /** The sender's public key (VAPID): browsers only accept pushes signed with its private half. */
@@ -50,7 +51,7 @@ async function mayNotifyHere(): Promise<boolean> {
   const app = appKind();
   if (app && !backgroundPage()) void callServer("/app", { app });
   // (The Windows app: only its hidden listener shows them, never the game's window too.)
-  if (app === "windows") return backgroundPage();
+  if (app === "windows") return true; // (the game's window: cards; the hidden listener: Windows notifications)
   return browserNotifications();
 }
 import type { Account } from "./account";
@@ -91,14 +92,25 @@ async function roundIcon(photo: string | null, who: string): Promise<string | un
 /** Notifications shown by this page, by tag (so a chat's can be taken away once it's read). */
 const shown = new Map<string, Notification>();
 
-async function showNow(title: string, body: string, tag: string, link = "/", photo?: unknown, who?: string, asTyped = false) {
-  if (pushPermission() !== "granted") return;
+/** The Windows app's bridge (desktop/preload.js), when the page runs inside it. */
+type AppBridge = { notify: (n: { tag: string; title: string; body: string; icon?: string | undefined; link: string; reply?: string | undefined }) => void; close: (tag: string) => void; onReply: (f: (r: { friend: string; text: string }) => void) => void; gameFocused: () => boolean };
+export const appBridge = (): AppBridge | null => (typeof window !== "undefined" ? (window as unknown as { bellmontApp?: AppBridge }).bellmontApp ?? null : null);
+
+// `reply`: for a chat message, the friend's id (the Windows app then gives the notification a text box to answer).
+async function showNow(title: string, body: string, tag: string, link = "/", photo?: unknown, who?: string, asTyped = false, reply?: string) {
+  const app = appKind() === "windows";
+  if (!app && pushPermission() !== "granted") return;
   const pic = typeof photo === "string" && photo ? photo : null;
   title = tr(title); if (!asTyped) body = tr(body); // (in the game's language; a player's message stays as typed)
   const icon = who !== undefined ? await roundIcon(pic, who || "?") : undefined;
-  // (The Windows app shows nothing from service-worker notifications: it uses the plain kind below, which it turns
-  // into Windows notifications.)
-  if (appKind() !== "windows") try {
+  if (app) {
+    // The Windows app: the game's window shows a card in its corner; the hidden listener a Windows notification
+    // (through the app, so a message's has a text box to reply) — unless the game is in front, showing the card.
+    if (!backgroundPage()) { inAppToast(title, body, tag, icon, link); return; }
+    const bridge = appBridge();
+    if (bridge) { if (!bridge.gameFocused()) bridge.notify({ tag, title, body, icon, link, reply }); return; }
+    if (pushPermission() !== "granted") return;
+  } else try {
     const reg = await navigator.serviceWorker.getRegistration("/");
     if (reg) { await reg.showNotification(title, { body, tag, ...(icon ? { icon } : {}), badge: "/badge-96.png", data: { link } }); return; }
   } catch { /* (then a plain one below) */ }
@@ -115,6 +127,7 @@ async function showNow(title: string, body: string, tag: string, link = "/", pho
 /** Takes away the notification of a chat that has been read (here, and the browser's own on this device). */
 async function clearShown(tag: string) {
   shown.get(tag)?.close(); shown.delete(tag);
+  removeInAppToast(tag); appBridge()?.close(tag);
   try { const reg = await navigator.serviceWorker?.getRegistration("/"); for (const n of (await reg?.getNotifications({ tag })) ?? []) n.close(); } catch { /* */ }
 }
 
@@ -132,7 +145,7 @@ export function watchNotifications(me: Account) {
   const show = (...a: Parameters<typeof showNow>) => { if (allowed) void showNow(...a); };
   // The Windows app has no Web Push: it checks for news sent to everyone (broadcasts) every few minutes.
   let poll: ReturnType<typeof setInterval> | undefined;
-  if (appKind() === "windows") { void checkBroadcast(); poll = setInterval(() => void checkBroadcast(), 3 * 60e3); }
+  if (backgroundPage()) { void checkBroadcast(); poll = setInterval(() => void checkBroadcast(), 3 * 60e3); }
   const fresh = (at: unknown) => typeof at === "number" && at > since;
   const chats = new Map<string, { name: string; photo: unknown; stop: () => void }>();
   const base = (name: string) => collection(firestore, "friends", me.id, name);
@@ -169,7 +182,7 @@ export function watchNotifications(me: Account) {
       // Only while the chat is closed everywhere: a moment later, if it was seen (open on some device), nothing.
       window.setTimeout(() => void getDoc(seenRef).then((sn) => {
         if (Math.max(seenAt, Number(sn.data()?.["at"] ?? 0)) >= at) return;
-        show(`Message from ${entry.name || "A friend"}`, text.length > 300 ? `${text.slice(0, 300)}…` : text, `msg-${friend}`, `/?chat=${friend}`, entry.photo, entry.name, true);
+        show(`Message from ${entry.name || "A friend"}`, text.length > 300 ? `${text.slice(0, 300)}…` : text, `msg-${friend}`, `/?chat=${friend}`, entry.photo, entry.name, true, friend);
       }).catch(() => {}), 1800);
     }), () => {});
     // The chat read (opened on any device): its notification goes.

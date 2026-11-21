@@ -1,7 +1,8 @@
 // Bellmont City for Windows: a window that opens https://bellmont-city.web.app, so it always runs the latest
 // version of the game (this wrapper rarely needs rebuilding). Built by .github/workflows/apps.yml.
 const { app, BrowserWindow, dialog, session, shell } = require("electron");
-const fs = require("fs"), path = require("path");
+const fs = require("fs"), path = require("path"), os = require("os"), crypto = require("crypto");
+const { ipcMain } = require("electron");
 
 // Notifications show as "Bellmont City" with the game's icon (Windows matches this id to the installed shortcut).
 app.setAppUserModelId("app.bellmont.city");
@@ -65,7 +66,7 @@ function openMain(link) {
   const win = main = new BrowserWindow({
     width: 1280, height: 800, minWidth: 640, minHeight: 400,
     fullscreen: true, backgroundColor: "#0b1231", autoHideMenuBar: true, title: "Bellmont City", icon: __dirname + "/icon.png",
-    webPreferences: { contextIsolation: true, sandbox: true },
+    webPreferences: { contextIsolation: true, sandbox: true, preload: path.join(__dirname, "preload.js") },
   });
   win.on("closed", () => { if (main === win) main = null; });
   win.webContents.setUserAgent(UA(win.webContents.getUserAgent()));
@@ -92,7 +93,7 @@ function openMain(link) {
 
 function openBackground() {
   if (bg && !bg.isDestroyed()) return;
-  const win = bg = new BrowserWindow({ show: false, skipTaskbar: true, width: 400, height: 300, webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false } });
+  const win = bg = new BrowserWindow({ show: false, skipTaskbar: true, width: 400, height: 300, webPreferences: { contextIsolation: true, sandbox: true, backgroundThrottling: false, preload: path.join(__dirname, "preload.js") } });
   win.webContents.setUserAgent(UA(win.webContents.getUserAgent()));
   win.webContents.on("will-navigate", (e, url) => {
     const link = new URL(url).searchParams.get("app-open");
@@ -104,6 +105,52 @@ function openBackground() {
   win.on("closed", () => { if (bg === win) bg = null; });
   win.loadURL(HOME + "?app=windows&bg=1");
 }
+
+/*
+ * Windows notifications, shown by the app itself (SnoreToast, through node-notifier) so a message's can have a text
+ * box: what's typed there is answered to that friend right away (the hidden page, which is signed in, sends it).
+ * Clicking one opens the game there. While the game's window is in front, the game shows its own cards instead.
+ */
+let toaster = null;
+function getToaster() {
+  if (toaster) return toaster;
+  try {
+    const { WindowsToaster } = require("node-notifier");
+    const exe = path.join(path.dirname(require.resolve("node-notifier")), "vendor", "snoreToast", `snoretoast-${process.arch === "ia32" ? "x86" : "x64"}.exe`);
+    toaster = new WindowsToaster({ withFallback: false, customPath: exe.replace("app.asar", "app.asar.unpacked") });
+  } catch { toaster = null; }
+  return toaster;
+}
+const toastIds = new Map(); // tag → number
+const toastId = (tag) => { if (!toastIds.has(tag)) toastIds.set(tag, 1 + (crypto.createHash("md5").update(tag).digest().readUInt32BE(0) % 2000000000)); return toastIds.get(tag); };
+/** A picture from the page (a data: URL) as a file the notification can show. */
+function iconFile(icon) {
+  try {
+    if (typeof icon !== "string" || !icon.startsWith("data:image/png;base64,")) return path.join(__dirname, "icon.png");
+    const buf = Buffer.from(icon.slice(22), "base64");
+    const file = path.join(os.tmpdir(), `bellmont-${crypto.createHash("md5").update(buf).digest("hex")}.png`);
+    if (!fs.existsSync(file)) fs.writeFileSync(file, buf);
+    return file;
+  } catch { return path.join(__dirname, "icon.png"); }
+}
+ipcMain.on("bellmont-game-focused", (e) => { e.returnValue = !!(main && !main.isDestroyed() && main.isVisible() && main.isFocused()); });
+ipcMain.on("bellmont-notify", (_e, n) => {
+  if (!n || typeof n.title !== "string") return;
+  const t = getToaster();
+  const fallback = () => { try { new (require("electron").Notification)({ title: n.title, body: n.body || "", icon: iconFile(n.icon) }).on("click", () => openMain(n.link)).show(); } catch { /* */ } };
+  if (!t) return fallback();
+  t.notify({
+    title: n.title, message: n.body || " ", icon: iconFile(n.icon), appID: "app.bellmont.city", id: toastId(n.tag || n.title),
+    wait: true, ...(n.reply ? { tb: true } : {}),
+  }, (err, response, meta) => {
+    if (err) return;
+    const text = meta && typeof meta.text === "string" ? meta.text : "";
+    if (n.reply && (response === "textentered" || meta?.action === "textEntered") && text.trim()) {
+      if (bg && !bg.isDestroyed()) bg.webContents.send("bellmont-reply", { friend: n.reply, text });
+    } else if (response === "activate" || response === "click") openMain(n.link);
+  });
+});
+ipcMain.on("bellmont-close", (_e, tag) => { const t = getToaster(); if (t && typeof tag === "string") t.notify({ close: toastId(tag), appID: "app.bellmont.city" }, () => {}); });
 
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
