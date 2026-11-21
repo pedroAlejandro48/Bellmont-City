@@ -22,6 +22,16 @@ export function playPullRefresh() {
   };
   requestAnimationFrame(step);
 }
+/** Whether the element is inside something that scrolls (or is a text box). */
+function inScroller(el: Element | null) {
+  for (let n = el; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+    if (n instanceof HTMLTextAreaElement || n instanceof HTMLInputElement || n instanceof HTMLSelectElement) return true;
+    const oy = getComputedStyle(n).overflowY;
+    if ((oy === "auto" || oy === "scroll") && n.scrollHeight > n.clientHeight + 1) return true;
+  }
+  return false;
+}
+
 export function usePullToRefresh() {
   useEffect(() => {
     let startY: number | null = null, dy = 0;
@@ -36,10 +46,9 @@ export function usePullToRefresh() {
       ring.classList.toggle("ready", d >= PULL);
     };
     const down = (e: TouchEvent) => {
-      const t = e.target as HTMLElement | null;
-      // (Not from inside something that scrolls on its own and isn't at its top: the friends list.)
-      const inner = t?.closest(".friends-list") as HTMLElement | null;
-      startY = e.touches.length === 1 && (!inner || inner.scrollTop <= 0) ? e.touches[0]!.clientY : null; dy = 0;
+      // Only from a part of the page that doesn't scroll: a touch inside anything that scrolls (a chat, a list, the
+      // languages, a text box) only scrolls it.
+      startY = e.touches.length === 1 && !inScroller(e.target as Element | null) ? e.touches[0]!.clientY : null; dy = 0;
     };
     const move = (e: TouchEvent) => { if (startY === null) return; dy = Math.max(0, e.touches[0]!.clientY - startY); if (dy > 4) set(dy); };
     const up = () => {
