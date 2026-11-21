@@ -81,7 +81,7 @@ export function Chat({ account, friend, friends, onBack }: { account: Account; f
     const t = text;
     setText(""); setFailed(false); atEnd.current = true;
     sendMessage(account, friend.uid, t).catch(() => { setFailed(true); setText((now) => now || t); });
-    if (!matchMedia("(pointer: coarse)").matches || document.activeElement === box.current) box.current?.focus();
+    box.current?.focus({ preventScroll: true }); // (still in the box, ready for the next one)
   }
   // Enter sends (Shift+Enter: a new line); on touch screens Enter is a new line and the plane sends.
   function key(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -119,7 +119,8 @@ export function Chat({ account, friend, friends, onBack }: { account: Account; f
     {failed && <p className="chat-failed">Could not send. Please try again.</p>}
     <form className="chat-send" onSubmit={send}>
       <textarea ref={box} rows={1} aria-label="Message" placeholder="Message" maxLength={MAX_MESSAGE} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={key} />
-      <button type="submit" aria-label="Send" disabled={!ok}><Send size={19} strokeWidth={2.3} /></button>
+      {/* (Pressing it doesn't take the focus from the text box: the cursor stays, and a phone's keyboard stays up.) */}
+      <button type="submit" aria-label="Send" disabled={!ok} onPointerDown={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()}><Send size={19} strokeWidth={2.3} /></button>
     </form>
     {picked && <>
       <div className="chat-dim" onClick={close} onContextMenu={(e) => { e.preventDefault(); close(); }} />
