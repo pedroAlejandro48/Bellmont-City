@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { appKind } from "@/lib/appKind";
-import { Share, SquarePlus, X, LogOut } from "lucide-react";
+import { Download, Share, SquarePlus, X, LogOut } from "lucide-react";
 
 // Installing the game as an app from the browser. Android browsers built on Chrome (Chrome, Brave, Edge, Samsung
 // Internet…) offer it straight away: the button opens their install dialog. iPhones and iPads have no such dialog
@@ -47,6 +47,9 @@ function desktopBrowser() {
 
 /** "Install app" on the home pages, in any browser (not once it's installed): at the bottom on a phone or tablet, in
  * the top-right corner on a computer (the device-speed picker moves left for it). */
+const RELEASE = "https://github.com/pedroAlejandro48/Bellmont-City/releases/download/latest";
+const APK_URL = `${RELEASE}/Bellmont-City.apk`, EXE_URL = `${RELEASE}/Bellmont-City-Setup.exe`;
+
 export function InstallApp() {
   const [, tick] = useState(0);
   const [help, setHelp] = useState(false);
@@ -71,10 +74,14 @@ export function InstallApp() {
     setHelp(true);
   };
   const ios = isIOS(), browser = ios ? iosBrowser() : null;
+  // Android phones and Windows computers get the real app: the button downloads its file (the APK / the installer).
+  const download = /Android/i.test(ua()) ? APK_URL : !mobile && /Windows/.test(ua()) ? EXE_URL : null;
   const copy = async () => { try { await navigator.clipboard.writeText(window.location.origin); setCopied(true); } catch { /* shown below anyway */ } };
 
   return <>
-    <button type="button" className={`install-app ${mobile ? "" : "pc"}`} onClick={() => void install()}><SquarePlus size={mobile ? 20 : 16} /> Install app</button>
+    {download
+      ? <a className={`install-app ${mobile ? "" : "pc"}`} href={download} download><Download size={mobile ? 20 : 16} /> Download app</a>
+      : <button type="button" className={`install-app ${mobile ? "" : "pc"}`} onClick={() => void install()}><SquarePlus size={mobile ? 20 : 16} /> Install app</button>}
     {help && <div className="install-help" role="dialog" aria-label="Install the app" onClick={() => setHelp(false)}>
       <div className="install-card" onClick={(e) => e.stopPropagation()}>
         <button type="button" className="install-x" aria-label="Close" onClick={() => setHelp(false)}><X size={18} /></button>

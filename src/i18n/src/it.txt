@@ -1073,3 +1073,4 @@
 1125|{0} nuovi
 1126|Disattivate: richieste di amicizia, messaggi e inviti nelle stanze non arriveranno su questo dispositivo.
 1127|Attivate: richieste di amicizia, messaggi e inviti nelle stanze arrivano su questo dispositivo, anche a gioco chiuso.
+1128|Scarica l'app

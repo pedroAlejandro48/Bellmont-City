@@ -1073,3 +1073,4 @@
 1125|{0} neu
 1126|Aus: Freundschaftsanfragen, Nachrichten und Raumeinladungen erreichen dieses Gerät nicht.
 1127|An: Freundschaftsanfragen, Nachrichten und Raumeinladungen erreichen dieses Gerät, auch wenn das Spiel geschlossen ist.
+1128|App herunterladen

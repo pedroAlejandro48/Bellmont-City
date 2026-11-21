@@ -872,3 +872,4 @@ input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-sele
 .switch span { position: absolute; top: 0.15rem; left: 0.15rem; width: 1.2rem; height: 1.2rem; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.35); transition: transform 0.2s; }
 .switch.on { background: #ffb547; }
 .switch.on span { transform: translateX(1.1rem); }
+a.install-app { text-decoration: none; }

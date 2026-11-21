@@ -1073,3 +1073,4 @@
 1125|{0} novas
 1126|Desativadas: pedidos de amizade, mensagens e convites para salas não chegarão a este dispositivo.
 1127|Ativadas: pedidos de amizade, mensagens e convites para salas chegam a este dispositivo, mesmo com o jogo fechado.
+1128|Baixar o app

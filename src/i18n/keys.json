@@ -1126,5 +1126,6 @@
   "Forwarded",
   "{0} new",
   "Off: friend requests, messages and room invitations won't reach this device.",
-  "On: friend requests, messages and room invitations reach this device, even with the game closed."
+  "On: friend requests, messages and room invitations reach this device, even with the game closed.",
+  "Download app"
 ]
