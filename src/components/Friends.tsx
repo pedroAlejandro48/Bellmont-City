@@ -28,6 +28,12 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
   const [chatting, setChatting] = useState<string | null>(null);
   const { friends, requests, sent } = data;
   const chatFriend = chatting ? friends.find((f) => f.uid === chatting) ?? null : null;
+  // Clicking a message card in the Windows app opens that chat.
+  useEffect(() => {
+    const open = (e: Event) => { const uid = (e as CustomEvent<string>).detail; if (friends.some((f) => f.uid === uid)) { setChatting(uid); setOpen(true); } };
+    window.addEventListener("bellmont-open-chat", open);
+    return () => window.removeEventListener("bellmont-open-chat", open);
+  }, [friends]);
   // A message notification's link (?chat=<uid>) opens that chat.
   useEffect(() => {
     const want = new URLSearchParams(location.search).get("chat");

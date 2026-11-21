@@ -7,6 +7,7 @@ import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { auth, firestore } from "./firebase";
 import { appKind, browserNotifications, fcmToken } from "@/lib/appKind";
 import { currentLang, tr } from "@/i18n";
+import { inAppToast } from "@/lib/inAppToast";
 
 const PUSH_SERVER = "https://bellmont-push.bellmont-city.workers.dev";
 /** The sender's public key (VAPID): browsers only accept pushes signed with its private half. */
@@ -85,10 +86,14 @@ async function roundIcon(photo: string | null, who: string): Promise<string | un
 
 // (The small status-bar icon is the game's badge; a big picture only when another player is involved: theirs, round.)
 async function showNow(title: string, body: string, tag: string, link = "/", photo?: unknown, who?: string, asTyped = false) {
-  if (pushPermission() !== "granted") return;
+  const inApp = appKind() === "windows";
+  if (pushPermission() !== "granted" && !inApp) return;
   const pic = typeof photo === "string" && photo ? photo : null;
   title = tr(title); if (!asTyped) body = tr(body); // (in the game's language; a player's message stays as typed)
   const icon = who !== undefined ? await roundIcon(pic, who || "?") : undefined;
+  // The Windows app is always full screen, and Windows doesn't pop notifications up over full-screen apps: the game
+  // shows them in its own window too (the Windows one still goes to the notification centre).
+  if (inApp) { inAppToast(title, body, tag, icon, link); if (pushPermission() !== "granted") return; }
   // (The Windows app shows nothing from service-worker notifications: it uses the plain kind below, which it turns
   // into Windows notifications.)
   if (appKind() !== "windows") try {

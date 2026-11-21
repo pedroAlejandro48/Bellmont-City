@@ -849,3 +849,13 @@ input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-sele
 .chat-forward-send { padding: 0.5rem; border-top: 1px solid rgba(255,255,255,0.08); }
 .chat-forward-send button { width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.45rem; padding: 0.55rem; border-radius: 0.6rem; background: #ffb547; color: #1a1205; font-weight: 800; }
 .chat-forward-send button:disabled { opacity: 0.4; }
+/* Notifications inside the game's window (the Windows app): cards in the top-right corner (lib/inAppToast.ts). */
+.app-toasts { position: fixed; top: 0.9rem; right: 0.9rem; z-index: 2000; display: flex; flex-direction: column; gap: 0.5rem; width: min(22rem, calc(100vw - 1.8rem)); pointer-events: none; }
+.app-toast { pointer-events: auto; display: flex; align-items: flex-start; gap: 0.7rem; padding: 0.75rem 0.85rem; border-radius: 0.9rem; background: rgba(23,26,36,0.96); color: #f2f3f7; text-align: left; font-family: Manrope, Arial, sans-serif; box-shadow: 0 12px 30px rgba(0,0,0,0.45); border: 1px solid rgba(255,255,255,0.08); animation: app-toast-in 0.25s ease-out; transition: opacity 0.25s, transform 0.25s; cursor: pointer; }
+.app-toast.leaving { opacity: 0; transform: translateX(1.5rem); }
+@keyframes app-toast-in { from { opacity: 0; transform: translateX(1.5rem); } }
+.app-toast img { flex: none; width: 2.6rem; height: 2.6rem; border-radius: 0.6rem; object-fit: cover; }
+.app-toast img.round { border-radius: 50%; }
+.app-toast span { min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.app-toast b { font-size: 0.9rem; }
+.app-toast small { font-size: 0.8rem; opacity: 0.85; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
