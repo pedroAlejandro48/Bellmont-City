@@ -111,14 +111,25 @@ function openBackground() {
  * box: what's typed there is answered to that friend right away (the hidden page, which is signed in, sends it).
  * Clicking one opens the game there. While the game's window is in front, the game shows its own cards instead.
  */
+// What happened to each notification (for finding problems): %APPDATA%\\Bellmont City\\notifications.log, last 200 lines.
+function logLine(...parts) {
+  try {
+    const file = path.join(app.getPath("userData"), "notifications.log");
+    const old = fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\n").slice(-200) : [];
+    old.push(`${new Date().toISOString()} ${parts.map((x) => (typeof x === "string" ? x : JSON.stringify(x))).join(" ")}`);
+    fs.writeFileSync(file, old.join("\n"));
+  } catch { /* */ }
+}
 let toaster = null;
 function getToaster() {
   if (toaster) return toaster;
   try {
     const { WindowsToaster } = require("node-notifier");
     const exe = path.join(path.dirname(require.resolve("node-notifier")), "vendor", "snoreToast", `snoretoast-${process.arch === "ia32" ? "x86" : "x64"}.exe`);
-    toaster = new WindowsToaster({ withFallback: false, customPath: exe.replace("app.asar", "app.asar.unpacked") });
-  } catch { toaster = null; }
+    const real = exe.replace("app.asar", "app.asar.unpacked");
+    logLine("toaster", real, fs.existsSync(real) ? "exists" : "MISSING");
+    toaster = new WindowsToaster({ withFallback: false, customPath: real });
+  } catch (e) { logLine("toaster failed", String(e)); toaster = null; }
   return toaster;
 }
 const toastIds = new Map(); // tag → number
@@ -133,16 +144,18 @@ function iconFile(icon) {
     return file;
   } catch { return path.join(__dirname, "icon.png"); }
 }
-ipcMain.on("bellmont-game-focused", (e) => { e.returnValue = !!(main && !main.isDestroyed() && main.isVisible() && main.isFocused()); });
+ipcMain.on("bellmont-game-focused", (e) => { e.returnValue = !!(main && !main.isDestroyed() && main.isVisible() && main.isFocused()); if (e.returnValue) logLine("game in front: in-game card only"); });
 ipcMain.on("bellmont-notify", (_e, n) => {
   if (!n || typeof n.title !== "string") return;
   const t = getToaster();
   const fallback = () => { try { new (require("electron").Notification)({ title: n.title, body: n.body || "", icon: iconFile(n.icon) }).on("click", () => openMain(n.link)).show(); } catch { /* */ } };
+  logLine("notify", { tag: n.tag, reply: !!n.reply, toaster: !!t, version: app.getVersion() });
   if (!t) return fallback();
   t.notify({
     title: n.title, message: n.body || " ", icon: iconFile(n.icon), appID: "app.bellmont.city", id: toastId(n.tag || n.title),
     wait: true, ...(n.reply ? { tb: true } : {}),
   }, (err, response, meta) => {
+    logLine("result", { tag: n.tag, err: err ? String(err) : null, response, meta });
     if (err) return;
     const text = meta && typeof meta.text === "string" ? meta.text : "";
     if (n.reply && (response === "textentered" || meta?.action === "textEntered") && text.trim()) {
