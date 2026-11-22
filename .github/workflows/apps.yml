@@ -1,5 +1,6 @@
 # Builds the installable apps on every push to main and publishes them on the repository's "latest" release:
 #   Bellmont-City.apk            Android (a Trusted Web Activity, android/)
+#   Bellmont-City.aab            the same, as an Android App Bundle (what Google Play takes)
 #   Bellmont-City-Setup.exe      Windows (Electron, desktop/)
 # Both open https://bellmont-city.web.app, so they always run the newest game; a rebuild only refreshes the shell.
 # Signing the APK the same way every time (so updates install over it, and it opens without an address bar) needs
@@ -22,7 +23,7 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: "17" }
       - uses: gradle/actions/setup-gradle@v4
-        with: { gradle-version: "8.9" }
+        with: { gradle-version: "8.11.1" }
       - name: Signing key
         env:
           KS_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
@@ -41,10 +42,11 @@ jobs:
           VERSION_CODE: ${{ github.run_number }}
           VERSION_NAME: 1.0.${{ github.run_number }}
         run: |
-          gradle -p android assembleRelease --no-daemon
+          gradle -p android assembleRelease bundleRelease --no-daemon
           mkdir -p out && cp android/app/build/outputs/apk/release/app-release.apk out/Bellmont-City.apk
+          cp android/app/build/outputs/bundle/release/app-release.aab out/Bellmont-City.aab
       - uses: actions/upload-artifact@v4
-        with: { name: android, path: out/Bellmont-City.apk }
+        with: { name: android, path: "out/Bellmont-City.*" }
 
   windows:
     runs-on: windows-latest
@@ -74,6 +76,6 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest out/Bellmont-City.apk out/Bellmont-City-Setup.exe \
+          gh release create latest out/Bellmont-City.apk out/Bellmont-City.aab out/Bellmont-City-Setup.exe \
             --title "Bellmont City apps" --latest --target "${{ github.sha }}" \
             --notes "Install once: the apps open https://bellmont-city.web.app, so they always have the newest version of the game. Android: download Bellmont-City.apk and open it (allow installing from your browser). Windows: run Bellmont-City-Setup.exe (if Windows warns, click More info → Run anyway)."

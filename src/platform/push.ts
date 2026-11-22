@@ -42,6 +42,9 @@ async function unregisterDevice() {
   } catch { /* */ }
 }
 
+/** The account is being deleted: the sender forgets all of its devices. */
+export const forgetDevices = () => callServer("/forget", {}).then(() => {});
+
 /** This device gets the signed-in player's notifications, even with the game closed (when they're allowed). */
 export async function registerDevice() {
   if (!notificationsOn()) { await unregisterDevice(); return; }

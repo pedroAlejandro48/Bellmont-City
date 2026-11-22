@@ -5,7 +5,8 @@ import {
   createUserWithEmailAndPassword, EmailAuthProvider, GoogleAuthProvider, linkWithCredential, onAuthStateChanged, reauthenticateWithCredential, reauthenticateWithPopup,
   sendPasswordResetEmail, signInWithEmailAndPassword, signInWithPopup, signOut, type User,
 } from "firebase/auth";
-import { collection, deleteDoc, doc, getDoc, getDocs, runTransaction, setDoc, updateDoc } from "firebase/firestore";
+import { collection, deleteDoc, doc, getDoc, getDocs, query, runTransaction, setDoc, updateDoc, where } from "firebase/firestore";
+import { forgetDevices } from "./push";
 import { deleteUser } from "firebase/auth";
 import { auth, firestore } from "./firebase";
 import { isEmailLock, lockEmail, unlockEmail } from "./emailLock";
@@ -126,6 +127,14 @@ export async function deleteAccount(account: Account, password: string | null) {
   const user = await confirmIdentity(account, password);
   const mine = (path: string[]) => getDocs(collection(firestore, ...(path as [string, ...string[]]))).catch(() => null);
   const list = await mine(["friends", account.id, "list"]);
+  // The messages this player sent (and their "seen" marks), in the chat with each friend.
+  for (const f of list?.docs ?? []) {
+    const pair = account.id < f.id ? `${account.id}_${f.id}` : `${f.id}_${account.id}`;
+    const sent = await getDocs(query(collection(firestore, "chats", pair, "messages"), where("from", "==", account.id))).catch(() => null);
+    for (const m of sent?.docs ?? []) await deleteDoc(m.ref).catch(() => {});
+    await deleteDoc(doc(firestore, "chats", pair, "seen", account.id)).catch(() => {});
+  }
+  await forgetDevices(); // (the notification sender drops this player's phones and computers)
   for (const f of list?.docs ?? []) { await deleteDoc(doc(firestore, "friends", f.id, "list", account.id)).catch(() => {}); await deleteDoc(f.ref).catch(() => {}); }
   for (const sub of ["requests", "sent", "invites"]) for (const d of (await mine(["friends", account.id, sub]))?.docs ?? []) {
     if (sub === "sent") await deleteDoc(doc(firestore, "friends", d.id, "requests", account.id)).catch(() => {});

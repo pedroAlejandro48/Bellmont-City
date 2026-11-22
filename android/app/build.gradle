@@ -9,11 +9,11 @@ plugins {
 def host = "bellmont-city.web.app"
 android {
     namespace "app.bellmont.city"
-    compileSdk 34
+    compileSdk 36
     defaultConfig {
         applicationId "app.bellmont.city"
         minSdk 21
-        targetSdk 34
+        targetSdk 36
         versionCode Integer.parseInt(System.getenv("VERSION_CODE") ?: "1")
         versionName System.getenv("VERSION_NAME") ?: "1.0"
         manifestPlaceholders = [hostName: host, launchUrl: "https://" + host + "/?app=android"]  // (StartActivity adds the FCM token)
