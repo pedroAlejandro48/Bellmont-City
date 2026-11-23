@@ -116,11 +116,19 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
+    // The keyboard's height, where the browser says (Chrome on Android: the app runs full screen, and there the page
+    // isn't shrunk when the keyboard comes up — so it's measured and the chat sits right on top of it).
+    type VK = EventTarget & { overlaysContent: boolean; boundingRect: DOMRect };
+    const vk = phone ? (navigator as Navigator & { virtualKeyboard?: VK }).virtualKeyboard : undefined;
+    const before = vk?.overlaysContent;
+    if (vk) vk.overlaysContent = true;
     const fit = () => {
       if (phone) {
         const vv = window.visualViewport;
-        el.style.height = `${vv ? vv.height : window.innerHeight}px`;
-        el.style.top = `${vv ? vv.offsetTop : 0}px`;
+        const kb = vk ? vk.boundingRect.height : Math.max(0, window.innerHeight - (vv ? vv.height + vv.offsetTop : window.innerHeight));
+        el.style.top = `${vk ? 0 : vv?.offsetTop ?? 0}px`;
+        el.style.height = `${(vk ? window.innerHeight : vv?.height ?? window.innerHeight) - (vk ? kb : 0)}px`;
+        el.classList.toggle("kb-up", kb > 40);
         return;
       }
       el.style.height = "";
@@ -130,10 +138,19 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
       el.style.height = `${Math.max(220, Math.min(448, (window.innerHeight - top - 12) / scale))}px`;
     };
     fit();
+    // (Some phones report the keyboard a moment after the text box is tapped: looked at again shortly after.)
+    const later = () => { for (const ms of [80, 250, 500]) window.setTimeout(fit, ms); };
     window.addEventListener("resize", fit);
     window.visualViewport?.addEventListener("resize", fit);
     window.visualViewport?.addEventListener("scroll", fit);
-    return () => { window.removeEventListener("resize", fit); window.visualViewport?.removeEventListener("resize", fit); window.visualViewport?.removeEventListener("scroll", fit); };
+    vk?.addEventListener("geometrychange", fit);
+    el.addEventListener("focusin", later); el.addEventListener("focusout", later);
+    return () => {
+      window.removeEventListener("resize", fit); window.visualViewport?.removeEventListener("resize", fit); window.visualViewport?.removeEventListener("scroll", fit);
+      vk?.removeEventListener("geometrychange", fit);
+      el.removeEventListener("focusin", later); el.removeEventListener("focusout", later);
+      if (vk && before !== undefined) vk.overlaysContent = before;
+    };
   }, [phone]);
   if (phone) return createPortal(<div ref={ref} className="chat-full">{children}</div>, document.body);
   return <div ref={ref} className="friends-popup chat-popup">{children}</div>;

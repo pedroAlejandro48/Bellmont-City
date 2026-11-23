@@ -874,12 +874,15 @@ input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-sele
 .switch.on span { transform: translateX(1.1rem); }
 a.install-app { text-decoration: none; }
 /* Chat: each message's time in its bubble's bottom-right corner; the day's date above the day's first message. */
-.chat-time { float: right; margin: 0.35rem 0 -0.15rem 0.6rem; font-size: 0.64rem; line-height: 1; opacity: 0.62; white-space: nowrap; }
+.chat-time { float: right; position: relative; top: 0.32rem; margin: 0.35rem -0.15rem 0 0.6rem; font-size: 0.64rem; line-height: 1; opacity: 0.62; white-space: nowrap; }
 .chat-date { align-self: center; margin: 0.4rem 0 0.1rem; font-size: 0.72rem; color: #9aa3b5; }
 [data-backdrop="day"] .chat-time { opacity: 0.55; }
 /* A phone: the chat fills the screen (text box and send button at the bottom, above the keyboard when it's up). */
 .chat-full { position: fixed; left: 0; right: 0; top: 0; height: 100dvh; z-index: 90; display: flex; flex-direction: column; background: #171a24; color: #f2f3f7; padding-top: env(safe-area-inset-top, 0px); }
 .chat-full .chat { height: 100%; }
 .chat-full .chat-head { padding: 0.6rem 0.75rem 0.6rem 0.35rem; }
-.chat-full .chat-send { padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px)); }
+/* (Room under the text box for the phone's swipe bar or back/home/recents buttons, which sit over the page in the
+   full-screen app; with the keyboard up it rests right on the keyboard instead.) */
+.chat-full .chat-send { padding-bottom: max(1.9rem, calc(0.6rem + env(safe-area-inset-bottom, 0px))); }
+.chat-full.kb-up .chat-send { padding-bottom: 0.5rem; }
 .chat-full .chat-bubble { font-size: 0.95rem; }
