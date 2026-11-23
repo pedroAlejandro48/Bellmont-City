@@ -887,3 +887,4 @@ a.install-app { text-decoration: none; }
 .chat-full .chat-send { padding-bottom: max(1.9rem, calc(0.6rem + env(safe-area-inset-bottom, 0px))); }
 .chat-full.kb-up .chat-send { padding-bottom: 0.5rem; }
 .chat-full .chat-bubble { font-size: 0.95rem; }
+.kb-debug { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 3.4rem); left: 0.5rem; z-index: 3; font: 600 0.58rem/1.2 ui-monospace, monospace; color: #7f89a8; pointer-events: none; }

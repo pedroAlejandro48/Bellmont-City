@@ -118,6 +118,11 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
     if (!el) return;
     // The keyboard's height, where the browser says (Chrome on Android: the app runs full screen, and there the page
     // isn't shrunk when the keyboard comes up — so it's measured and the chat sits right on top of it).
+    // While a chat is open on a phone, the page covers the whole screen — the camera cutout's strip too — so the page,
+    // the keyboard and the screen all measure from the same top edge (the chat's header keeps clear of the camera).
+    const meta = phone ? document.querySelector<HTMLMetaElement>('meta[name="viewport"]') : null;
+    const metaBefore = meta?.content ?? "";
+    if (meta && !/viewport-fit=cover/.test(metaBefore)) meta.content = `${metaBefore}, viewport-fit=cover`;
     type VK = EventTarget & { overlaysContent: boolean; boundingRect: DOMRect };
     const vk = phone ? (navigator as Navigator & { virtualKeyboard?: VK }).virtualKeyboard : undefined;
     const before = vk?.overlaysContent;
@@ -128,14 +133,24 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
         // runs on under the system's bar below the keyboard), or the visible part of the screen, whichever is
         // higher; the chat ends a little above it.
         const vv = window.visualViewport, H = window.innerHeight;
-        let bottom = vv ? vv.offsetTop + vv.height : H;
+        // Each way of finding the keyboard's top edge is wrong on some phones (too low or far too high): of the
+        // readings that say a keyboard is up, the lowest one is used, so the chat never ends far above the keyboard.
         const r = vk?.boundingRect;
-        if (r && r.height > 0) bottom = Math.min(bottom, r.y > 0 ? r.y : H - r.height);
+        const reads = [vv ? vv.offsetTop + vv.height : H];
+        if (r && r.height > 0) reads.push(r.y > 0 ? r.y : H - r.height, H - r.height);
+        const up = reads.filter((b) => b < H - 80 && b > H * 0.3);
+        let bottom = up.length ? Math.max(...up) : H;
         const kbUp = H - bottom > 80;
         const top = vk ? 0 : vv?.offsetTop ?? 0;
         el.style.top = `${top}px`;
         el.style.height = `${Math.max(200, bottom - top - (kbUp ? 6 : 0))}px`;
         el.classList.toggle("kb-up", kbUp);
+        // (While the keyboard is up: the measurements in a small line, for fixing this on phones that report oddly.)
+        const dbg = el.querySelector<HTMLElement>(".kb-debug");
+        if (dbg) {
+          const ta = el.querySelector("textarea")?.getBoundingClientRect();
+          dbg.textContent = kbUp ? `H${Math.round(H)} vv${Math.round(vv?.height ?? -1)}+${Math.round(vv?.offsetTop ?? -1)} kb${r ? `${Math.round(r.y)}/${Math.round(r.height)}` : "-"} scr${screen.height} dpr${devicePixelRatio} ta${ta ? Math.round(ta.bottom) : "-"} end${Math.round(bottom)}` : "";
+        }
         return;
       }
       el.style.height = "";
@@ -157,9 +172,10 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
       vk?.removeEventListener("geometrychange", fit);
       el.removeEventListener("focusin", later); el.removeEventListener("focusout", later);
       if (vk && before !== undefined) vk.overlaysContent = before;
+      if (meta) meta.content = metaBefore;
     };
   }, [phone]);
-  if (phone) return createPortal(<div ref={ref} className="chat-full">{children}</div>, document.body);
+  if (phone) return createPortal(<div ref={ref} className="chat-full"><span className="kb-debug" aria-hidden />{children}</div>, document.body);
   return <div ref={ref} className="friends-popup chat-popup">{children}</div>;
 }
 
