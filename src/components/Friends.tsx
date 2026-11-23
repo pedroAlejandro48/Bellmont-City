@@ -124,11 +124,18 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
     if (vk) vk.overlaysContent = true;
     const fit = () => {
       if (phone) {
-        const vv = window.visualViewport;
-        const kb = vk ? vk.boundingRect.height : Math.max(0, window.innerHeight - (vv ? vv.height + vv.offsetTop : window.innerHeight));
-        el.style.top = `${vk ? 0 : vv?.offsetTop ?? 0}px`;
-        el.style.height = `${(vk ? window.innerHeight : vv?.height ?? window.innerHeight) - (vk ? kb : 0)}px`;
-        el.classList.toggle("kb-up", kb > 40);
+        // Where the free screen ends: the keyboard's top edge (not just its height — in the full-screen app the page
+        // runs on under the system's bar below the keyboard), or the visible part of the screen, whichever is
+        // higher; the chat ends a little above it.
+        const vv = window.visualViewport, H = window.innerHeight;
+        let bottom = vv ? vv.offsetTop + vv.height : H;
+        const r = vk?.boundingRect;
+        if (r && r.height > 0) bottom = Math.min(bottom, r.y > 0 ? r.y : H - r.height);
+        const kbUp = H - bottom > 80;
+        const top = vk ? 0 : vv?.offsetTop ?? 0;
+        el.style.top = `${top}px`;
+        el.style.height = `${Math.max(200, bottom - top - (kbUp ? 6 : 0))}px`;
+        el.classList.toggle("kb-up", kbUp);
         return;
       }
       el.style.height = "";
