@@ -128,12 +128,15 @@ export class LiftSystem {
       if (got && got.n !== this.lastN) {
         this.lastN = got.n;
         for (const [b, c] of Object.entries(got.snap.cars)) {
-          const was = this.shownY(b), next: Car = { ...c, stops: [...c.stops] };
+          // (The live database drops empty lists — an elevator with no floors asked has no "stops" at all — and may
+          // hand a list back as an object: always a real list here.)
+          const raw = (c as { stops?: unknown }).stops, stops = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? Object.values(raw) : [];
+          const was = this.shownY(b), next: Car = { ...c, stops: stops.filter((f): f is number => typeof f === "number") };
           followCar(next, 0.08);
           this.cars.set(b, next);
           if (Math.abs(was - next.y) < 1.5) this.yErr.set(b, was - next.y); else this.yErr.delete(b);
         }
-        this.riders = got.snap.riders;
+        this.riders = Array.isArray(got.snap.riders) ? got.snap.riders : [];
         this.aptDoors = new Map(Object.entries(got.snap.aptDoors ?? {}));
       } else for (const c of this.cars.values()) followCar(c, dt);
       this.noteDoors(now);

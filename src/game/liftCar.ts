@@ -5,10 +5,26 @@
 // anyone in it. Up to three people ride at once (players and residents alike).
 import { floorY } from "./apartments";
 
-export const LIFT_SPEED = 1, DOOR_T = 0.8, DWELL = 8, CLEAR = 1, CAPACITY = 4;
+/** Top speed: 2 s a floor. It speeds up and slows down at LIFT_ACCEL (floors/s²), arriving gently, not with a jolt. */
+export const LIFT_SPEED = 0.5, LIFT_ACCEL = 0.9, DOOR_T = 0.8, DWELL = 8, PRESSED_DWELL = 2.5, CLEAR = 1, CAPACITY = 4;
 export type CarPhase = "idle" | "moving" | "opening" | "open" | "closing";
-export type Car = { y: number; dir: -1 | 0 | 1; stops: number[]; phase: CarPhase; t: number; dwell: number; clear: number };
-export const newCar = (): Car => ({ y: 1, dir: 0, stops: [], phase: "idle", t: 0, dwell: 0, clear: 0 });
+export type Car = { y: number; dir: -1 | 0 | 1; stops: number[]; phase: CarPhase; t: number; dwell: number; clear: number; v?: number };
+export const newCar = (): Car => ({ y: 1, dir: 0, stops: [], phase: "idle", t: 0, dwell: 0, clear: 0, v: 0 });
+/**
+ * One step of travel toward `next`: speeding up from a stop, at most LIFT_SPEED, and slowing so it comes to rest
+ * exactly at the floor (the speed it could still brake from over the distance left). True once it's there.
+ */
+function travel(c: Car, next: number, dt: number) {
+  const left = Math.abs(next - c.y);
+  const brake = Math.sqrt(2 * LIFT_ACCEL * left);
+  const want = Math.max(0.04, Math.min(LIFT_SPEED, brake));
+  const v = c.v ?? 0;
+  c.v = v < want ? Math.min(want, v + LIFT_ACCEL * dt) : want;
+  const step = c.v * dt;
+  if (step >= left - 1e-4) { c.y = next; c.v = 0; return true; }
+  c.y += c.dir * step;
+  return false;
+}
 
 const smooth = (t: number) => { const c = Math.max(0, Math.min(1, t)); return c * c * (3 - 2 * c); };
 /** How open its doors are (0..1). */
@@ -41,6 +57,8 @@ export function request(c: Car, floor: number) {
     return;
   }
   if (!c.stops.includes(floor)) c.stops.push(floor);
+  // (Stopped with its doors open and somewhere else to go now: they close soon, not after the full wait.)
+  if (c.phase === "open") c.dwell = Math.min(c.dwell, PRESSED_DWELL);
 }
 // (A floor only just short of, by rounding, is still ahead.)
 const ahead = (c: Car, dir: number) => c.stops.filter((s) => (s - c.y) * dir > -1e-4 && Math.abs(s - c.y) > 1e-9 || (s - c.y) * dir > 0);
@@ -62,8 +80,7 @@ export function followCar(c: Car, dt: number) {
   if (c.phase === "moving") {
     const next = ahead(c, c.dir).sort((a, b) => (a - b) * c.dir)[0];
     if (next === undefined) return;
-    const y = c.y + c.dir * LIFT_SPEED * dt;
-    c.y = (next - y) * c.dir <= 0 ? next : y;
+    travel(c, next, dt);
     return;
   }
   if (c.phase === "opening" || c.phase === "closing") c.t = Math.min(DOOR_T, c.t + dt);
@@ -79,11 +96,10 @@ export function stepCar(c: Car, dt: number, blocked: boolean) {
   if (c.phase === "moving") {
     if (!ahead(c, c.dir).length) { pickDir(c); if (c.dir === 0) { c.phase = "idle"; return; } }
     const next = ahead(c, c.dir).sort((a, b) => (a - b) * c.dir)[0]!;
-    const y = c.y + c.dir * LIFT_SPEED * dt;
-    if ((next - y) * c.dir <= 1e-4) {
-      c.y = next; c.stops = c.stops.filter((s) => s !== next);
+    if (travel(c, next, dt)) {
+      c.stops = c.stops.filter((s) => s !== next);
       c.phase = "opening"; c.t = 0;
-    } else c.y = y;
+    }
     return;
   }
   c.t += dt;

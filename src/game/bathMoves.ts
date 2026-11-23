@@ -109,9 +109,11 @@ export function toiletAt(fl: AptFloor, u: number, link: BathLink, now: number): 
 }
 
 // ---------- the shower ----------
+// (Stepping in and out over the curb: 1.75× the original 2 s pace.)
+const SHOWER_STEP = 2.0 / 1.75;
 export const SHOWER = cum({
-  reach: 0.55, open: 1.2, let: 0.3, stepIn: 2.0, turn: 0.8, reachC: 0.45, close: 1.2, let2: 0.3, face: 0.8, valve: 0.6,
-  wash: 8.5, valveOff: 0.6, turn2: 0.8, reachO: 0.45, open2: 1.2, let3: 0.3, stepOut: 2.0, turn3: 0.9, reachC2: 0.45, close2: 1.2, let4: 0.4,
+  reach: 0.55, open: 1.2, let: 0.3, stepIn: SHOWER_STEP, turn: 0.8, reachC: 0.45, close: 1.2, let2: 0.3, face: 0.8, valve: 0.6,
+  wash: 8.5, valveOff: 0.6, turn2: 0.8, reachO: 0.45, open2: 1.2, let3: 0.3, stepOut: SHOWER_STEP, turn3: 0.9, reachC2: 0.45, close2: 1.2, let4: 0.4,
 });
 /** Outside the shower (where one walks to) and inside it. */
 export const showerSpots = (fl: AptFloor) => {

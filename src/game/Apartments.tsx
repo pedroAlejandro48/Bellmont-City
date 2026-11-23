@@ -614,7 +614,6 @@ function FloorInterior({ actorsAt, fl, state, m, door, bedDoor, fridgeDoor, clos
   const leaf = useRef<THREE.Group>(null), bedLeaf = useRef<THREE.Group>(null), fridgeLeaf = useRef<THREE.Group>(null), closetL = useRef<THREE.Group>(null), closetR = useRef<THREE.Group>(null);
   const closet = fl.furniture.find((f) => f.type === "closet")!;
   // Only your own apartment's doors move (and only its fridge shows your food).
-  const mineHere = () => { const h = state.life.home; return !!h && h.building === fl.key.split("#")[0] && h.floor === fl.upper && state.level?.floor === fl.upper; };
   useFrame(() => {
     if (leaf.current) leaf.current.rotation.y = -door();
     if (bedLeaf.current) bedLeaf.current.rotation.y = -bedDoor();
@@ -624,9 +623,10 @@ function FloorInterior({ actorsAt, fl, state, m, door, bedDoor, fridgeDoor, clos
     if (bedLamp.current) bedLamp.current.material = lt.bedroom ? m.lamp : m.lampOff;
     if (bedToggle.current) bedToggle.current.position.y = lt.bedroom ? 0.012 : -0.012;
     if (bathToggle.current) bathToggle.current.position.y = lt.bathroom ? 0.012 : -0.012;
-    const own = mineHere();
-    if (fridgeLeaf.current) fridgeLeaf.current.rotation.y = own ? fridgeDoor() : 0;
-    const c = own ? closetDoor() : 0;
+    // (The fridge and the closet move for everyone on the floor — the tenant, guests, and whoever is watching
+    // someone else use them: fridgeDoor/closetDoor carry the other players' moves too.)
+    if (fridgeLeaf.current) fridgeLeaf.current.rotation.y = fridgeDoor();
+    const c = closetDoor();
     if (closetL.current) closetL.current.rotation.y = -c;
     if (closetR.current) closetR.current.rotation.y = c;
   });
