@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { Check, ChevronLeft, Send } from "lucide-react";
 import type { Account } from "@/platform/account";
 import { Avatar } from "@/components/Avatar";
@@ -7,6 +7,13 @@ import { MAX_MESSAGE, OPEN_RENEW_MS, markOpen, markSeen, sendMessage, unsendMess
 import type { Friend } from "@/platform/friends";
 import { notifySeen, setOpenChat } from "@/platform/push";
 import { serverNow } from "@/lib/serverTime";
+import { currentLang } from "@/i18n";
+
+// A message's time (in its bubble's corner) and the date shown above the first message of each day that has any —
+// "November 23, 2026" — both from the server's time each message carries, shown in this device's time zone.
+const timeOf = (at: number) => { try { return new Intl.DateTimeFormat(currentLang(), { hour: "numeric", minute: "2-digit" }).format(at); } catch { return new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); } };
+const dateOf = (at: number) => { try { return new Intl.DateTimeFormat(currentLang(), { month: "long", day: "numeric", year: "numeric" }).format(at); } catch { return new Date(at).toDateString(); } };
+const dayOf = (at: number) => { const d = new Date(at); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
 
 /** Copies text to the clipboard (with an older way for browsers without the Clipboard API). */
 async function copyText(text: string) {
@@ -109,13 +116,17 @@ export function Chat({ account, friend, friends, onBack }: { account: Account; f
     </div>
     <div className="chat-log" ref={log} onScroll={(e) => { const el = e.currentTarget; atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}>
       {!msgs.length && <p className="chat-empty">No messages yet. Say hi!</p>}
-      {msgs.map((m) => <div key={m.id}
-        className={`chat-bubble ${m.from === account.id ? "mine" : "theirs"}${picked?.id === m.id ? " picked" : ""}`}
-        onContextMenu={(e) => { e.preventDefault(); up(); pick(m); }}
-        onPointerDown={(e) => down(m, e)} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onPointerLeave={up}>
-        {m.fwd && <span className="chat-fwd">Forwarded</span>}
-        <span data-no-translate>{m.text}</span>
-      </div>)}
+      {msgs.map((m, i) => <Fragment key={m.id}>
+        {(i === 0 || dayOf(msgs[i - 1]!.at) !== dayOf(m.at)) && <p className="chat-date" data-no-translate>{dateOf(m.at)}</p>}
+        <div
+          className={`chat-bubble ${m.from === account.id ? "mine" : "theirs"}${picked?.id === m.id ? " picked" : ""}`}
+          onContextMenu={(e) => { e.preventDefault(); up(); pick(m); }}
+          onPointerDown={(e) => down(m, e)} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onPointerLeave={up}>
+          {m.fwd && <span className="chat-fwd">Forwarded</span>}
+          <span data-no-translate>{m.text}</span>
+          <span className="chat-time" data-no-translate>{timeOf(m.at)}</span>
+        </div>
+      </Fragment>)}
     </div>
     {failed && <p className="chat-failed">Could not send. Please try again.</p>}
     <form className="chat-send" onSubmit={send}>

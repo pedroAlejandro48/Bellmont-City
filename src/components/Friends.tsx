@@ -1,4 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { Check, ChevronDown, MessageCircle, Plus, User, UserPlus, X } from "lucide-react";
 import { Chat } from "@/components/Chat";
 import { watchUnread } from "@/platform/chat";
@@ -70,7 +71,7 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
           <span>Friends{requests.length ? <span className="friends-badge">{requests.length}</span> : null}</span>
           <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
         </Button>
-        {open && chatFriend && <div className="friends-popup chat-popup"><Chat account={account} friend={chatFriend} friends={friends} onBack={() => setChatting(null)} /></div>}
+        {open && chatFriend && <ChatPopup><Chat account={account} friend={chatFriend} friends={friends} onBack={() => setChatting(null)} /></ChatPopup>}
         {open && !chatFriend && <ul className="friends-list friends-popup">
           {requests.map((r) => <li key={`r${r.uid}`} className="friends-row request">
             <Avatar uid={r.uid} photo={r.photo} name={r.name} />
@@ -99,6 +100,43 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
     </form>}
     {msg && <p data-extra className="mt-1 text-center text-xs text-accent">{msg}</p>}
   </div>;
+}
+
+/** A phone: the chat takes the whole screen there. */
+const phoneScreen = () => typeof window !== "undefined" && matchMedia("(pointer: coarse)").matches && Math.min(window.innerWidth, window.innerHeight) < 700;
+
+/**
+ * Where an open chat shows. On a phone: the whole screen (over everything), its text box and send button at the
+ * bottom — kept above the keyboard when it's up (the visible part of the screen is followed). On a computer: under
+ * the Friends button, as tall as fits — never past the bottom of the window.
+ */
+function ChatPopup({ children }: { children: React.ReactNode }) {
+  const [phone] = useState(phoneScreen);
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const fit = () => {
+      if (phone) {
+        const vv = window.visualViewport;
+        el.style.height = `${vv ? vv.height : window.innerHeight}px`;
+        el.style.top = `${vv ? vv.offsetTop : 0}px`;
+        return;
+      }
+      el.style.height = "";
+      const top = el.getBoundingClientRect().top;
+      // (The page's layout may be scaled down to fit: heights are set in its own units.)
+      const scale = el.getBoundingClientRect().height / Math.max(1, el.offsetHeight) || 1;
+      el.style.height = `${Math.max(220, Math.min(448, (window.innerHeight - top - 12) / scale))}px`;
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    window.visualViewport?.addEventListener("resize", fit);
+    window.visualViewport?.addEventListener("scroll", fit);
+    return () => { window.removeEventListener("resize", fit); window.visualViewport?.removeEventListener("resize", fit); window.visualViewport?.removeEventListener("scroll", fit); };
+  }, [phone]);
+  if (phone) return createPortal(<div ref={ref} className="chat-full">{children}</div>, document.body);
+  return <div ref={ref} className="friends-popup chat-popup">{children}</div>;
 }
 
 /** A friend row's message icon, with a yellow count of the messages from them not seen yet (gone once opened). */
