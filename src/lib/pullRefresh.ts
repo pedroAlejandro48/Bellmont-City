@@ -24,6 +24,8 @@ export function playPullRefresh() {
 }
 /** Whether the element is inside something that scrolls (or is a text box). */
 function inScroller(el: Element | null) {
+  // (Never from inside a chat, or a box open over the page — Settings, Profile, pickers.)
+  if (el?.closest(".chat-full, .chat-popup, .chat, .install-help, [data-no-pull]")) return true;
   for (let n = el; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
     if (n instanceof HTMLTextAreaElement || n instanceof HTMLInputElement || n instanceof HTMLSelectElement) return true;
     const oy = getComputedStyle(n).overflowY;

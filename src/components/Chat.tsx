@@ -124,6 +124,8 @@ export function Chat({ account, friend, friends, onBack }: { account: Account; f
           onPointerDown={(e) => down(m, e)} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onPointerLeave={up}>
           {m.fwd && <span className="chat-fwd">Forwarded</span>}
           <span data-no-translate>{m.text}</span>
+          {/* (An invisible copy keeps room for the time at the end of the text; the time itself sits on the bubble's bottom edge.) */}
+          <span className="chat-time-room" aria-hidden data-no-translate>{timeOf(m.at)}</span>
           <span className="chat-time" data-no-translate>{timeOf(m.at)}</span>
         </div>
       </Fragment>)}
