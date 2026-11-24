@@ -136,12 +136,15 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
     // and isn't shrunk for the keyboard, so the keyboard is measured; with the phone's bars showing, it works like a
     // browser.
     const fullScreen = appKind() === "android" && window.innerHeight >= screen.height - 4;
-    const vk = phone && fullScreen ? (navigator as Navigator & { virtualKeyboard?: VK }).virtualKeyboard : undefined;
+    // Brave with its toolbar along the bottom: it hides that bar under the keyboard yet still counts it, so it thinks
+    // the box is under the keyboard and keeps scrolling the page while you type. There the page handles the keyboard
+    // itself too (nothing scrolls), with the toolbar's height given back (48 px on two phones, +13 tuned by eye).
+    const braveBar = phone && !fullScreen && "brave" in navigator && window.outerHeight - window.innerHeight >= 140;
+    const vk = phone && (fullScreen || braveBar) ? (navigator as Navigator & { virtualKeyboard?: VK }).virtualKeyboard : undefined;
     el.classList.toggle("in-app", fullScreen);
     const before = vk?.overlaysContent;
     if (vk) vk.overlaysContent = true;
-    // (The page's height before the keyboard: a browser with a bar along the bottom of the screen — Brave's —
-    // hides that bar under the keyboard, yet still counts it, so the space it says is left is short by about the bar.)
+    // (The page's height before the keyboard.)
     const baseH = window.innerHeight;
     const fit = () => {
       if (phone) {
@@ -150,7 +153,12 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
         // higher; the chat ends a little above it.
         const vv = window.visualViewport, H = window.innerHeight;
         let bottom: number, kbUp: boolean, lift = 0;
-        if (vk) {
+        if (vk && braveBar) {
+          const r = vk.boundingRect;
+          kbUp = !!r && r.height > 80;
+          if (kbUp) lift = 61;
+          bottom = kbUp ? H - r.height + lift : H;
+        } else if (vk) {
           // The full-screen app. Each way of finding the keyboard's top edge is wrong on some phones (too low or far
           // too high): of the readings that say a keyboard is up, the lowest one is used.
           const r = vk.boundingRect;
@@ -165,17 +173,12 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
           const vh = vv?.height ?? H;
           bottom = (vv?.offsetTop ?? 0) + vh;
           kbUp = baseH - vh > 80;
-          // Brave with its toolbar along the bottom hides that bar under the keyboard yet still takes it off the
-          // visible part (measured on two phones: 48 px short): given back, plus what looked right on a real phone.
-          const brave = "brave" in navigator, toolbar = window.outerHeight - baseH >= 140;
-          if (kbUp && brave && toolbar) lift = 61;
-          bottom += lift;
         }
         const dbg = el.querySelector<HTMLElement>(".kb-debug");
         if (dbg) dbg.textContent = `H${Math.round(H)} b${baseH} vv${Math.round(vv?.height ?? -1)}+${Math.round(vv?.offsetTop ?? -1)} o${window.outerHeight} s${screen.height}/${screen.availHeight} br${"brave" in navigator ? 1 : 0} lift${lift} end${Math.round(bottom)} up${kbUp ? 1 : 0}`;
         const top = vk ? 0 : vv?.offsetTop ?? 0;
         el.style.top = `${top}px`;
-        el.style.height = `${Math.max(200, bottom - top - (kbUp ? (vk ? 14 : 11) : 0))}px`;
+        el.style.height = `${Math.max(200, bottom - top - (kbUp ? (vk && !braveBar ? 14 : 11) : 0))}px`;
         el.classList.toggle("kb-up", kbUp);
         return;
       }
