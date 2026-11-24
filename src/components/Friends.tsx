@@ -134,7 +134,9 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
     el.classList.toggle("in-app", appKind() === "android");
     const before = vk?.overlaysContent;
     if (vk) vk.overlaysContent = true;
-    let base = { H: 0, vv: 0, o: 0 };
+    // (The page's height before the keyboard: a browser with a bar along the bottom of the screen — Brave's —
+    // hides that bar under the keyboard, yet still counts it, so the space it says is left is short by about the bar.)
+    const baseH = window.innerHeight;
     const fit = () => {
       if (phone) {
         // Where the free screen ends: the keyboard's top edge (not just its height — in the full-screen app the page
@@ -149,17 +151,11 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
         const up = reads.filter((b) => b < H - 80 && b > H * 0.3);
         let bottom = up.length ? Math.max(...up) : H;
         const kbUp = H - bottom > 80;
+        if (kbUp && !vk) bottom = Math.min(H, bottom + Math.min(80, Math.max(0, window.outerHeight - baseH - 110)));
         const top = vk ? 0 : vv?.offsetTop ?? 0;
         el.style.top = `${top}px`;
         el.style.height = `${Math.max(200, bottom - top - (kbUp ? 11 : 0))}px`;
         el.classList.toggle("kb-up", kbUp);
-        // (Temporary, browsers only: what the browser reports, for fixing the chat's bottom with a bottom toolbar.)
-        const dbg = el.querySelector<HTMLElement>(".kb-debug");
-        if (dbg) {
-          if (!kbUp) base = { H, vv: vv?.height ?? -1, o: window.outerHeight };
-          const ta = el.querySelector("textarea")?.getBoundingClientRect();
-          dbg.textContent = `H${Math.round(H)} vv${Math.round(vv?.height ?? -1)}+${Math.round(vv?.offsetTop ?? -1)} o${window.outerHeight} s${screen.height}/${screen.availHeight} b${Math.round(base.H)}/${Math.round(base.vv)}/${base.o} ta${ta ? Math.round(ta.bottom) : "-"} end${Math.round(bottom)} up${kbUp ? 1 : 0}`;
-        }
         return;
       }
       el.style.height = "";
@@ -184,7 +180,7 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
       if (meta) meta.content = metaBefore;
     };
   }, [phone]);
-  if (phone) return createPortal(<div ref={ref} className="chat-full">{appKind() !== "android" && <span className="kb-debug" aria-hidden />}{children}</div>, document.body);
+  if (phone) return createPortal(<div ref={ref} className="chat-full">{children}</div>, document.body);
   return <div ref={ref} className="friends-popup chat-popup">{children}</div>;
 }
 
