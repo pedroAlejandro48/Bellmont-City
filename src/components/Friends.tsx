@@ -145,21 +145,30 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
         // runs on under the system's bar below the keyboard), or the visible part of the screen, whichever is
         // higher; the chat ends a little above it.
         const vv = window.visualViewport, H = window.innerHeight;
-        // Each way of finding the keyboard's top edge is wrong on some phones (too low or far too high): of the
-        // readings that say a keyboard is up, the lowest one is used, so the chat never ends far above the keyboard.
-        const r = vk?.boundingRect;
-        const reads = [vv ? vv.offsetTop + vv.height : H];
-        if (r && r.height > 0) { const h = r.height + keyboardNavExtra(); reads.push(r.y > 0 ? r.y - keyboardNavExtra() : H - h, H - h); }
-        const up = reads.filter((b) => b < H - 80 && b > H * 0.3);
-        let bottom = up.length ? Math.max(...up) : H;
-        const kbUp = H - bottom > 80;
-        // (Only where the browser's window reaches the screen's bottom — a phone with the swipe line, not the back ·
-        // home · recents buttons, whose bar also makes the window's outside taller than its page and isn't a toolbar.)
-        const edge = screen.height - window.outerHeight < 8;
-        const lift = kbUp && !vk && edge ? Math.min(80, Math.max(0, window.outerHeight - baseH - 95)) : 0;
-        bottom = Math.min(H, bottom + lift);
+        let bottom: number, kbUp: boolean, lift = 0;
+        if (vk) {
+          // The full-screen app. Each way of finding the keyboard's top edge is wrong on some phones (too low or far
+          // too high): of the readings that say a keyboard is up, the lowest one is used.
+          const r = vk.boundingRect;
+          const reads = [vv ? vv.offsetTop + vv.height : H];
+          if (r && r.height > 0) { const h = r.height + keyboardNavExtra(); reads.push(r.y > 0 ? r.y - keyboardNavExtra() : H - h, H - h); }
+          const up = reads.filter((b) => b < H - 80 && b > H * 0.3);
+          bottom = up.length ? Math.max(...up) : H;
+          kbUp = H - bottom > 80;
+        } else {
+          // A browser: the part of the page it says is visible (it may also scroll the page up to show the box, so
+          // "keyboard up" is the visible part being much shorter than before, not where it ends).
+          const vh = vv?.height ?? H;
+          bottom = (vv?.offsetTop ?? 0) + vh;
+          kbUp = baseH - vh > 80;
+          // Brave with its toolbar along the bottom hides that bar under the keyboard yet still takes it off the
+          // visible part (measured on two phones: 48 px short): given back, plus what looked right on a real phone.
+          const brave = "brave" in navigator, toolbar = window.outerHeight - baseH >= 140;
+          if (kbUp && brave && toolbar) lift = 61;
+          bottom += lift;
+        }
         const dbg = el.querySelector<HTMLElement>(".kb-debug");
-        if (dbg) dbg.textContent = `H${Math.round(H)} b${baseH} vv${Math.round(vv?.height ?? -1)}+${Math.round(vv?.offsetTop ?? -1)} o${window.outerHeight} s${screen.height}/${screen.availHeight} lift${lift} end${Math.round(bottom)} up${kbUp ? 1 : 0}`;
+        if (dbg) dbg.textContent = `H${Math.round(H)} b${baseH} vv${Math.round(vv?.height ?? -1)}+${Math.round(vv?.offsetTop ?? -1)} o${window.outerHeight} s${screen.height}/${screen.availHeight} br${"brave" in navigator ? 1 : 0} lift${lift} end${Math.round(bottom)} up${kbUp ? 1 : 0}`;
         const top = vk ? 0 : vv?.offsetTop ?? 0;
         el.style.top = `${top}px`;
         el.style.height = `${Math.max(200, bottom - top - (kbUp ? (vk ? 14 : 11) : 0))}px`;
