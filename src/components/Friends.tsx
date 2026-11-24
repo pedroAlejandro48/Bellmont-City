@@ -10,6 +10,8 @@ import type { Account } from "@/platform/account";
 import { LiveName } from "@/platform/liveNames";
 import { Avatar } from "@/components/Avatar";
 import { acceptRequest, cancelRequest, discardInvite, discardRequest, findPlayer, inviteToRoom, removeFriend, sendRequest, watchFriends, type Friend, type FriendRequest, type RoomInvite } from "@/platform/friends";
+// (Open the site with ?kbdebug=1 to see, in a chat on a phone, what the browser says about its screen and keyboard.)
+const kbDebug = (() => { try { if (new URLSearchParams(location.search).has("kbdebug")) sessionStorage.setItem("kbdebug", "1"); return sessionStorage.getItem("kbdebug") === "1"; } catch { return false; } })();
 
 /** This player's friends, requests and invitations, kept up to date. */
 export function useFriends(account: Account | null) {
@@ -151,7 +153,13 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
         const up = reads.filter((b) => b < H - 80 && b > H * 0.3);
         let bottom = up.length ? Math.max(...up) : H;
         const kbUp = H - bottom > 80;
-        if (kbUp && !vk) bottom = Math.min(H, bottom + Math.min(80, Math.max(0, window.outerHeight - baseH - 95)));
+        // (Only where the browser's window reaches the screen's bottom — a phone with the swipe line, not the back ·
+        // home · recents buttons, whose bar also makes the window's outside taller than its page and isn't a toolbar.)
+        const edge = screen.height - window.outerHeight < 8;
+        const lift = kbUp && !vk && edge ? Math.min(80, Math.max(0, window.outerHeight - baseH - 95)) : 0;
+        bottom = Math.min(H, bottom + lift);
+        const dbg = el.querySelector<HTMLElement>(".kb-debug");
+        if (dbg) dbg.textContent = `H${Math.round(H)} b${baseH} vv${Math.round(vv?.height ?? -1)}+${Math.round(vv?.offsetTop ?? -1)} o${window.outerHeight} s${screen.height}/${screen.availHeight} lift${lift} end${Math.round(bottom)} up${kbUp ? 1 : 0}`;
         const top = vk ? 0 : vv?.offsetTop ?? 0;
         el.style.top = `${top}px`;
         el.style.height = `${Math.max(200, bottom - top - (kbUp ? (vk ? 14 : 11) : 0))}px`;
@@ -180,7 +188,7 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
       if (meta) meta.content = metaBefore;
     };
   }, [phone]);
-  if (phone) return createPortal(<div ref={ref} className="chat-full">{children}</div>, document.body);
+  if (phone) return createPortal(<div ref={ref} className="chat-full">{kbDebug && <span className="kb-debug" aria-hidden />}{children}</div>, document.body);
   return <div ref={ref} className="friends-popup chat-popup">{children}</div>;
 }
 
