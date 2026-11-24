@@ -31,7 +31,7 @@
             <meta-data android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR" android:resource="@color/background" />
             <meta-data android:name="android.support.customtabs.trusted.SPLASH_IMAGE_DRAWABLE" android:resource="@mipmap/ic_launcher" />
             <meta-data android:name="android.support.customtabs.trusted.SPLASH_SCREEN_BACKGROUND_COLOR" android:resource="@color/background" />
-            <meta-data android:name="android.support.customtabs.trusted.DISPLAY_MODE" android:value="sticky-immersive" />
+            <meta-data android:name="android.support.customtabs.trusted.DISPLAY_MODE" android:value="default" />
             <meta-data android:name="android.support.customtabs.trusted.SCREEN_ORIENTATION" android:value="any" />
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />

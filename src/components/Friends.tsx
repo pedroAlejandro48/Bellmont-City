@@ -132,8 +132,12 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
     type VK = EventTarget & { overlaysContent: boolean; boundingRect: DOMRect };
     // (Only in the full-screen Android app: an ordinary browser shrinks its visible area for the keyboard itself, and
     // there the keyboard's reported height also counts the browser's own bottom bar it covers — too much.)
-    const vk = phone && appKind() === "android" ? (navigator as Navigator & { virtualKeyboard?: VK }).virtualKeyboard : undefined;
-    el.classList.toggle("in-app", appKind() === "android");
+    // The app is full screen only in a game now (and in older installs everywhere): there the page fills the screen
+    // and isn't shrunk for the keyboard, so the keyboard is measured; with the phone's bars showing, it works like a
+    // browser.
+    const fullScreen = appKind() === "android" && window.innerHeight >= screen.height - 4;
+    const vk = phone && fullScreen ? (navigator as Navigator & { virtualKeyboard?: VK }).virtualKeyboard : undefined;
+    el.classList.toggle("in-app", fullScreen);
     const before = vk?.overlaysContent;
     if (vk) vk.overlaysContent = true;
     // (The page's height before the keyboard: a browser with a bar along the bottom of the screen — Brave's —

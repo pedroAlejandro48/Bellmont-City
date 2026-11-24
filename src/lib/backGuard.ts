@@ -4,6 +4,8 @@
 const WINDOW_MS = 2000;
 // What back does first, newest last: each open thing (a chat, Settings, Profile, a game) adds how it closes.
 const handlers: Array<() => void> = [];
+/** Does what the back button does now (for a back press the page can't see as one: Android leaving full screen). */
+export function pressBack() { const top = handlers[handlers.length - 1]; if (top) top(); }
 export function onBack(close: () => void): () => void {
   const fn = () => close();
   handlers.push(fn);

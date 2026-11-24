@@ -1,4 +1,5 @@
 import { MoonTalk } from "@/components/MoonTalk";
+import { useGameFullscreen } from "@/lib/gameFullscreen";
 import { useBack } from "@/lib/useBack";
 import { touchMode } from "./touchMode";
 import * as THREE from "three";
@@ -184,6 +185,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
   const [dead, setDead] = useState(state.health === 0);
   // The phone's back button: out of the game to the menu (saved on the way, as Exit does).
   useBack(!dead, onSignOut);
+  useGameFullscreen(true);
   const [cash, setCash] = useState(state.cash);
   // First person with the pointer not yet locked: a hint to click (turning is then unlimited).
   const [fpHint, setFpHint] = useState(false);
