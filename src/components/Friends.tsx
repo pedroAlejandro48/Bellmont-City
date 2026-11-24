@@ -151,7 +151,7 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
         const up = reads.filter((b) => b < H - 80 && b > H * 0.3);
         let bottom = up.length ? Math.max(...up) : H;
         const kbUp = H - bottom > 80;
-        if (kbUp && !vk) bottom = Math.min(H, bottom + Math.min(80, Math.max(0, window.outerHeight - baseH - 105)));
+        if (kbUp && !vk) bottom = Math.min(H, bottom + Math.min(80, Math.max(0, window.outerHeight - baseH - 100)));
         const top = vk ? 0 : vv?.offsetTop ?? 0;
         el.style.top = `${top}px`;
         el.style.height = `${Math.max(200, bottom - top - (kbUp ? 11 : 0))}px`;
