@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { Check, ChevronDown, MessageCircle, Plus, User, UserPlus, X } from "lucide-react";
 import { Chat } from "@/components/Chat";
 import { watchUnread } from "@/platform/chat";
-import { keyboardNavExtra } from "@/lib/appKind";
+import { appKind, keyboardNavExtra } from "@/lib/appKind";
 import { Button } from "@/components/ui/button";
 import type { Account } from "@/platform/account";
 import { LiveName } from "@/platform/liveNames";
@@ -128,7 +128,10 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
     const metaBefore = meta?.content ?? "";
     if (meta && !/viewport-fit=cover/.test(metaBefore)) meta.content = `${metaBefore}, viewport-fit=cover`;
     type VK = EventTarget & { overlaysContent: boolean; boundingRect: DOMRect };
-    const vk = phone ? (navigator as Navigator & { virtualKeyboard?: VK }).virtualKeyboard : undefined;
+    // (Only in the full-screen Android app: an ordinary browser shrinks its visible area for the keyboard itself, and
+    // there the keyboard's reported height also counts the browser's own bottom bar it covers — too much.)
+    const vk = phone && appKind() === "android" ? (navigator as Navigator & { virtualKeyboard?: VK }).virtualKeyboard : undefined;
+    el.classList.toggle("in-app", appKind() === "android");
     const before = vk?.overlaysContent;
     if (vk) vk.overlaysContent = true;
     const fit = () => {

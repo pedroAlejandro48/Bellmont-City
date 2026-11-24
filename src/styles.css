@@ -884,7 +884,9 @@ a.install-app { text-decoration: none; }
 .chat-full .chat-head { padding: 0.6rem 0.75rem 0.6rem 0.35rem; }
 /* (Room under the text box for the phone's swipe bar or back/home/recents buttons, which sit over the page in the
    full-screen app; with the keyboard up it rests right on the keyboard instead.) */
-.chat-full .chat-send { padding-bottom: max(1.9rem, calc(0.6rem + env(safe-area-inset-bottom, 0px))); }
+.chat-full .chat-send { padding-bottom: calc(0.6rem + env(safe-area-inset-bottom, 0px)); }
+/* (The full-screen Android app: its swipe bar / buttons sit over the page's bottom, so the box stays above them.) */
+.chat-full.in-app .chat-send { padding-bottom: max(1.9rem, calc(0.6rem + env(safe-area-inset-bottom, 0px))); }
 .chat-full.kb-up .chat-send { padding-bottom: 0.5rem; }
 .chat-full .chat-bubble { font-size: 0.95rem; }
 /* The menu on a phone on its side: the picture + Refresh (top left) and Device speed (top right) get a strip of their
