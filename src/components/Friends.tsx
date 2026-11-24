@@ -143,14 +143,8 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
         const kbUp = H - bottom > 80;
         const top = vk ? 0 : vv?.offsetTop ?? 0;
         el.style.top = `${top}px`;
-        el.style.height = `${Math.max(200, bottom - top - (kbUp ? 6 : 0))}px`;
+        el.style.height = `${Math.max(200, bottom - top - (kbUp ? 11 : 0))}px`;
         el.classList.toggle("kb-up", kbUp);
-        // (While the keyboard is up: the measurements in a small line, for fixing this on phones that report oddly.)
-        const dbg = el.querySelector<HTMLElement>(".kb-debug");
-        if (dbg) {
-          const ta = el.querySelector("textarea")?.getBoundingClientRect();
-          dbg.textContent = kbUp ? `H${Math.round(H)} vv${Math.round(vv?.height ?? -1)}+${Math.round(vv?.offsetTop ?? -1)} kb${r ? `${Math.round(r.y)}/${Math.round(r.height)}` : "-"} scr${screen.height} dpr${devicePixelRatio} ta${ta ? Math.round(ta.bottom) : "-"} end${Math.round(bottom)}` : "";
-        }
         return;
       }
       el.style.height = "";
@@ -175,7 +169,7 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
       if (meta) meta.content = metaBefore;
     };
   }, [phone]);
-  if (phone) return createPortal(<div ref={ref} className="chat-full"><span className="kb-debug" aria-hidden />{children}</div>, document.body);
+  if (phone) return createPortal(<div ref={ref} className="chat-full">{children}</div>, document.body);
   return <div ref={ref} className="friends-popup chat-popup">{children}</div>;
 }
 
