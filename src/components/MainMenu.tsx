@@ -66,6 +66,20 @@ export function MainMenu({ account, username, message, onCity, onRoom, onSignOut
   }, []);
   // (On a phone the keyboard doesn't pop up by itself: the code box is tapped first.)
   const coarse = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
+  // Lists that drop down (Friends, Join a room): as tall as they need, but never past the screen's bottom (a few
+  // pixels above it) — longer ones scroll inside; the page itself never scrolls.
+  useEffect(() => {
+    const fitAll = () => document.querySelectorAll<HTMLElement>(".friends-popup:not(.chat-popup)").forEach((el) => {
+      const top = el.getBoundingClientRect().top, vh = window.visualViewport?.height ?? window.innerHeight;
+      el.style.maxHeight = `${Math.max(96, vh - top - 8)}px`;
+    });
+    fitAll();
+    const mo = new MutationObserver(fitAll);
+    mo.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("resize", fitAll);
+    window.visualViewport?.addEventListener("resize", fitAll);
+    return () => { mo.disconnect(); window.removeEventListener("resize", fitAll); window.visualViewport?.removeEventListener("resize", fitAll); };
+  }, []);
   useTitleBetweenObeliskAndForm();
   usePullToRefresh();
   return (
@@ -82,16 +96,21 @@ export function MainMenu({ account, username, message, onCity, onRoom, onSignOut
         <div className="auth-box-slot" style={slotH ? { height: slotH } : undefined}>
         <div ref={boxRef} className="auth-box hud-panel mt-8 space-y-4 p-6">
           <Button type="button" className="w-full" onClick={onCity}>Go to my city</Button>
-          <div className="flex overflow-hidden rounded-md border border-input">
+          <div className="relative">
+          <div className={`flex overflow-hidden border border-input ${joining ? "rounded-t-md" : "rounded-md"}`}>
             <Button type="button" variant="outline" className="flex-1 rounded-none border-0 border-r border-input" onClick={() => onRoom({ mode: "create" })}>Create a room</Button>
             <Button type="button" variant={joining ? "secondary" : "outline"} className="flex-1 rounded-none border-0" aria-expanded={joining} onClick={() => { setJoining((v) => !v); setMsg(null); }}>Join a room{friends.invites.length ? <span className="friends-badge">{friends.invites.length}</span> : null}</Button>
           </div>
-          {joining && <form data-extra onSubmit={join} className="flex gap-2">
-            <input aria-label="Room code" className="auth-input flex-1 uppercase placeholder:normal-case" autoFocus={!coarse} autoComplete="off" spellCheck={false} maxLength={6} placeholder="Enter the room code" value={code} onChange={(e) => setCode(e.target.value)} />
-            <Button type="submit" className="h-auto self-stretch">Join</Button>
-          </form>}
-          {joining && <SavedRooms account={account} onJoin={(c) => onRoom({ mode: "join", code: c })} />}
-          {joining && friends.invites.length > 0 && <div data-extra><RoomInvites account={account} invites={friends.invites} onJoin={(c) => onRoom({ mode: "join", code: c })} /></div>}
+          {/* Join a room: a list that drops down over what's below, like Friends — the code, your rooms, invitations. */}
+          {joining && <div className="friends-popup join-popup">
+            <form onSubmit={join} className="flex gap-2">
+              <input aria-label="Room code" className="auth-input flex-1 uppercase placeholder:normal-case" autoFocus={!coarse} autoComplete="off" spellCheck={false} maxLength={6} placeholder="Enter the room code" value={code} onChange={(e) => setCode(e.target.value)} />
+              <Button type="submit" className="h-auto self-stretch">Join</Button>
+            </form>
+            <SavedRooms account={account} onJoin={(c) => onRoom({ mode: "join", code: c })} />
+            {friends.invites.length > 0 && <RoomInvites account={account} invites={friends.invites} onJoin={(c) => onRoom({ mode: "join", code: c })} />}
+          </div>}
+          </div>
           <FriendsMenu account={account} data={friends} />
           {!account.usesPassword && account.email && <button type="button" onClick={() => { setPwOpen((v) => !v); setMsg(null); }} className="w-full text-center text-xs text-muted-foreground underline-offset-2 hover:underline">Add a password (sign in with your username)</button>}
           {!account.usesPassword && account.email && pwOpen && <form data-extra onSubmit={savePassword} className="space-y-2">

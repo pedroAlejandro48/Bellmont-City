@@ -892,7 +892,7 @@ a.install-app { text-decoration: none; }
 /* The menu on a phone on its side: the picture + Refresh (top left) and Device speed (top right) get a strip of their
    own, and the title and box sit centred together in the space under it, like the sign-in page. */
 @media (orientation: landscape) and (max-height: 560px) {
-  .menu-page { padding-top: 3.4rem; overflow-y: auto; }
+  .menu-page { padding-top: 3.4rem; }
   .menu-page.items-center { align-items: center; }
   .menu-page .auth-split { margin: auto; width: auto; max-width: min(46rem, 100%); grid-template-columns: auto minmax(17rem, 21rem); align-items: center; justify-content: center; padding-block: 0; }
   .menu-page .auth-split .auth-titles { padding-top: 0; justify-self: center; }
@@ -910,3 +910,7 @@ html:has(.fit-screen), body:has(.fit-screen) { overflow: hidden; height: 100%; }
   .auth-page { padding-top: 3.4rem; }
   .auth-page:not(.menu-page) .auth-split { margin-top: 0; }
 }
+/* Join a room's drop-down: the code box, your rooms and invitations in one list that scrolls inside. */
+.join-popup { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.5rem; overflow-y: auto; overscroll-behavior: contain; max-height: none; }
+.join-popup .saved-rooms, .join-popup .friends-list { max-height: none; overflow: visible; }
+.join-popup .auth-input { height: 2.4rem; }
