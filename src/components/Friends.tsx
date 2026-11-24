@@ -154,7 +154,7 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
         if (kbUp && !vk) bottom = Math.min(H, bottom + Math.min(80, Math.max(0, window.outerHeight - baseH - 95)));
         const top = vk ? 0 : vv?.offsetTop ?? 0;
         el.style.top = `${top}px`;
-        el.style.height = `${Math.max(200, bottom - top - (kbUp ? 11 : 0))}px`;
+        el.style.height = `${Math.max(200, bottom - top - (kbUp ? (vk ? 14 : 11) : 0))}px`;
         el.classList.toggle("kb-up", kbUp);
         return;
       }
