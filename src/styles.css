@@ -897,3 +897,4 @@ a.install-app { text-decoration: none; }
   .menu-page .auth-split { margin: auto; width: auto; max-width: min(46rem, 100%); grid-template-columns: auto minmax(17rem, 21rem); align-items: center; justify-content: center; padding-block: 0; }
   .menu-page .auth-split .auth-titles { padding-top: 0; justify-self: center; }
 }
+.kb-debug { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 3.4rem); left: 0.5rem; z-index: 3; font: 600 0.58rem/1.2 ui-monospace, monospace; color: #7f89a8; pointer-events: none; }
