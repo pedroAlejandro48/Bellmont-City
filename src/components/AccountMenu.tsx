@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useBack } from "@/lib/useBack";
 import { ArrowLeft, ChevronDown, Pencil, RotateCw, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LiveName } from "@/platform/liveNames";
@@ -22,6 +23,8 @@ import { setThemePref, themePref, type ThemePref } from "@/lib/theme";
 export function AccountMenu({ account, friends, onAccount, onSignOut }: { account: Account; friends: ReturnType<typeof useFriends>; onAccount: (a: Account) => void; onSignOut: () => void }) {
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<"profile" | "settings" | null>(null);
+  // The phone's back button closes Profile / Settings (or the account list), back to the page under it.
+  useBack(panel !== null || open, () => { setPanel(null); setOpen(false); });
   const name = account.username ?? "";
   return <>
     <div className="account-menu">

@@ -1,4 +1,5 @@
 import { MoonTalk } from "@/components/MoonTalk";
+import { useBack } from "@/lib/useBack";
 import { touchMode } from "./touchMode";
 import * as THREE from "three";
 import { Canvas, useThree } from "@react-three/fiber";
@@ -181,6 +182,8 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
   const [riding, setRiding] = useState(state.scooter.riding);
   const [speed, setSpeed] = useState(0);
   const [dead, setDead] = useState(state.health === 0);
+  // The phone's back button: out of the game to the menu (saved on the way, as Exit does).
+  useBack(!dead, onSignOut);
   const [cash, setCash] = useState(state.cash);
   // First person with the pointer not yet locked: a hint to click (turning is then unlimited).
   const [fpHint, setFpHint] = useState(false);

@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { useBack } from "@/lib/useBack";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, MessageCircle, Plus, User, UserPlus, X } from "lucide-react";
 import { Chat } from "@/components/Chat";
@@ -28,6 +29,8 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
   const [unadding, setUnadding] = useState<string | null>(null);
   /** The friend whose chat is open in the list's place (or null). */
   const [chatting, setChatting] = useState<string | null>(null);
+  // The phone's back button: out of a chat (and the friends list) straight back to the menu.
+  useBack(chatting !== null, () => { setChatting(null); setOpen(false); });
   const { friends, requests, sent } = data;
   const chatFriend = chatting ? friends.find((f) => f.uid === chatting) ?? null : null;
   // Clicking a message card in the Windows app opens that chat.
