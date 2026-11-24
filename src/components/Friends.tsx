@@ -182,7 +182,7 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
         if (dbg) dbg.textContent = `H${Math.round(H)} b${baseH} vv${Math.round(vv?.height ?? -1)}+${Math.round(vv?.offsetTop ?? -1)} o${window.outerHeight} s${screen.height}/${screen.availHeight} br${"brave" in navigator ? 1 : 0} lift${lift} end${Math.round(bottom)} up${kbUp ? 1 : 0}`;
         const top = vk ? 0 : vv?.offsetTop ?? 0;
         el.style.top = `${top}px`;
-        el.style.height = `${Math.max(200, bottom - top - (kbUp ? (vk && !braveBar ? 14 : braveBar ? 11 : swipeBrowser ? 8 : 0) : 0))}px`;
+        el.style.height = `${Math.max(200, bottom - top - (kbUp ? (vk && !braveBar ? 14 : braveBar ? 11 : swipeBrowser ? 9 : 0) : 0))}px`;
         el.classList.toggle("kb-up", kbUp);
         return;
       }
