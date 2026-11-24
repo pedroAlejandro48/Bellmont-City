@@ -6,10 +6,31 @@ import { obeliskRight } from "./cityBackdrop";
  * and the form box, centred there, with the main title shrunk to fit on one line if the space is narrow (a phone on
  * its side). Upright screens are left as they are.
  */
+/** A phone (or small tablet) on its side. */
+export const HALVES = "(orientation: landscape) and (max-height: 560px)";
 export function useTitleBetweenObeliskAndForm() {
   useLayoutEffect(() => {
+    // A phone on its side: the screen split at exactly half — the titles centred (as one block) in the left half
+    // and the middle of the screen's height, the box's left side on the halfway line (CSS); the box only shrinks
+    // (from its top-left corner) if it's taller than the room under the top row.
+    const halves = () => {
+      const split = document.querySelector<HTMLElement>(".auth-split"), page = document.querySelector<HTMLElement>(".auth-page");
+      const titles = split?.querySelector<HTMLElement>(".auth-titles"), h1 = titles?.querySelector<HTMLElement>("h1");
+      const right = split?.children[1] as HTMLElement | undefined;
+      if (!split || !page || !titles || !h1 || !right) return;
+      split.style.transform = ""; titles.style.marginLeft = ""; titles.style.width = ""; h1.style.fontSize = ""; h1.style.whiteSpace = "nowrap";
+      const room = titles.clientWidth - 32, wide = h1.scrollWidth, natural = parseFloat(getComputedStyle(h1).fontSize);
+      if (wide > room) h1.style.fontSize = `${Math.max(16, natural * room / wide)}px`;
+      right.style.transform = "";
+      const top = right.getBoundingClientRect().top, space = page.getBoundingClientRect().bottom - top - 8;
+      const s = Math.min(1, space / Math.max(1, right.offsetHeight));
+      if (s < 1) { right.style.transform = `scale(${s})`; right.style.transformOrigin = "left top"; }
+    };
     const fit = () => {
       const split = document.querySelector<HTMLElement>(".auth-split");
+      if (window.matchMedia(HALVES).matches) { halves(); return; }
+      const right = split?.children[1] as HTMLElement | undefined;
+      if (right) right.style.transform = "";
       if (split) split.style.transform = "";
       fitTitle();
       // The whole page on the screen, however short (a browser's bars take room): shrunk to fit, never scrolled.

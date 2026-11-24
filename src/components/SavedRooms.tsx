@@ -53,12 +53,12 @@ export function SavedRooms({ account, onJoin }: { account: Account; onJoin: (cod
           <button type="button" className="saved-room-people" aria-expanded={open === r.code} aria-label="Who has this room" onClick={() => setOpen((v) => (v === r.code ? null : r.code))}>
             <Users size={15} aria-hidden /><span className="tabular-nums">{ms ? ms.length : "…"}</span><ChevronDown size={13} className={open === r.code ? "rotate-180" : ""} aria-hidden />
           </button>
-          <button type="button" className="pill red" disabled={busy === r.code || !ms} onClick={() => (alone ? setSure(r.code) : void discard(r.code, false))}>{alone ? "Delete room" : "Discard room"}</button>
+          <button type="button" className="pill red" disabled={busy === r.code || !ms} onClick={() => setSure(r.code)}>{alone ? "Delete room" : "Discard room"}</button>
         </div>
         {sure === r.code && <div className="friend-actions">
           <span>Are you sure?</span>
           <button type="button" className="pill grey" onClick={() => setSure(null)}>No</button>
-          <button type="button" className="pill red" onClick={() => void discard(r.code, true)}>Yes</button>
+          <button type="button" className="pill red" onClick={() => void discard(r.code, alone)}>Yes</button>
         </div>}
         {open === r.code && ms && <ul className="saved-room-members">
           {ms.map((m) => <li key={m.uid}><Avatar uid={m.uid} photo={m.photo} name={m.name || "?"} size={22} /><LiveName uid={m.uid} fallback={m.name || "Player"} />{m.uid === account.id && <span className="text-muted-foreground"> (you)</span>}</li>)}

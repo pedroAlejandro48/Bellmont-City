@@ -1,3 +1,4 @@
+import { ChevronDown } from "lucide-react";
 import { usePullToRefresh } from "@/lib/pullRefresh";
 import { useTitleBetweenObeliskAndForm } from "@/lib/fitTitle";
 import { QualityPicker } from "@/components/QualityPicker";
@@ -99,7 +100,7 @@ export function MainMenu({ account, username, message, onCity, onRoom, onSignOut
           <div className="relative">
           <div className={`flex overflow-hidden border border-input ${joining ? "rounded-t-md" : "rounded-md"}`}>
             <Button type="button" variant="outline" className="flex-1 rounded-none border-0 border-r border-input" onClick={() => onRoom({ mode: "create" })}>Create a room</Button>
-            <Button type="button" variant={joining ? "secondary" : "outline"} className="flex-1 rounded-none border-0" aria-expanded={joining} onClick={() => { setJoining((v) => !v); setMsg(null); }}>Join a room{friends.invites.length ? <span className="friends-badge">{friends.invites.length}</span> : null}</Button>
+            <Button type="button" variant={joining ? "secondary" : "outline"} className="flex-1 rounded-none border-0" aria-expanded={joining} onClick={() => { setJoining((v) => !v); setMsg(null); }}><span>Join a room{friends.invites.length ? <span className="friends-badge">{friends.invites.length}</span> : null}</span><ChevronDown className={`ml-1.5 h-4 w-4 shrink-0 transition-transform ${joining ? "rotate-180" : ""}`} aria-hidden /></Button>
           </div>
           {/* Join a room: a list that drops down over what's below, like Friends — the code, your rooms, invitations. */}
           {joining && <div className="friends-popup join-popup">

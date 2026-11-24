@@ -914,3 +914,19 @@ html:has(.fit-screen), body:has(.fit-screen) { overflow: hidden; height: 100%; }
 .join-popup { display: flex; flex-direction: column; gap: 0.5rem; padding: 0.5rem; overflow-y: auto; overscroll-behavior: contain; max-height: none; }
 .join-popup .saved-rooms, .join-popup .friends-list { max-height: none; overflow: visible; }
 .join-popup .auth-input { height: 2.4rem; }
+/* A phone on its side (fitTitle.ts HALVES): the screen split at exactly half. Left: the title and its line as one
+   block, centred in the left half and in the screen's height. Right: the box, its left side on the halfway line,
+   reaching to just short of the right edge, centred in the room under the top row. */
+@media (orientation: landscape) and (max-height: 560px) {
+  .auth-page { display: block !important; padding: 3.4rem 0 0.5rem 0 !important; }
+  .auth-page .auth-split { display: grid !important; grid-template-columns: 50% 50% !important; width: 100% !important; max-width: none !important; height: 100%; margin: 0 !important; column-gap: 0 !important; align-items: center !important; justify-content: stretch !important; padding: 0 !important; }
+  .auth-page .auth-split > :last-child { grid-column: 2; justify-self: stretch; width: auto; min-width: 0; margin-right: 0.75rem; }
+  .auth-page .auth-split .auth-titles { position: fixed; left: 0; top: 50%; width: 50vw; transform: translateY(-50%); padding: 0 1rem !important; margin: 0 !important; justify-self: auto !important; z-index: 1; }
+  .auth-page .auth-split .auth-titles p { margin-top: 0.35rem; }
+}
+/* Your rooms: picture · code · people · discard never overlap — the picture and code give way first, and on a very
+   narrow box the buttons drop under them. */
+.saved-room { flex-wrap: wrap; }
+.saved-room-go { flex: 1 1 7.5rem; min-width: 0; }
+.saved-room-go img, .saved-room-go .saved-room-blank { width: clamp(2.8rem, 30%, 4.2rem); }
+.saved-room-go b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
