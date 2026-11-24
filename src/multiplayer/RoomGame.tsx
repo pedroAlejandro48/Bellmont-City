@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useBack } from "@/lib/useBack";
 import { useFrame } from "@react-three/fiber";
 import { ChevronDown, Crown, User } from "lucide-react";
 import { LiveName } from "@/platform/liveNames";
@@ -217,6 +218,7 @@ const accountOf = (p: Peer) => p.by ?? (typeof p.presence["uid"] === "string" ? 
  */
 function OnlinePanel({ account, channel, meta, code }: { account: Account; channel: NamedRoom; meta: MetaStore; code: string }) {
   const [open, setOpen] = useState(false);
+  useBack(open, () => setOpen(false)); // (the phone's back button closes the list, staying in the game)
   const [peers, setPeers] = useState<readonly Peer[]>(() => channel.peers());
   useEffect(() => channel.onPeers(({ peers: next, joined, left }) => {
     // Pose updates arrive many times a second; only arrivals and departures change this list.

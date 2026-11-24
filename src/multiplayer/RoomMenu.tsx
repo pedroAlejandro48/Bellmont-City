@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useBack } from "@/lib/useBack";
 import { Settings, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { roomLink } from "@/platform/rooms";
@@ -13,6 +14,7 @@ export function RoomMenu({ code, canDelete, onDelete, account }: { code: string;
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useBack(open, () => { setOpen(false); setInviting(false); setConfirming(false); }); // (back closes it, staying in the game)
 
   const toggle = () => { setOpen((v) => !v); setCopied(false); setInviting(false); };
   async function share() {
