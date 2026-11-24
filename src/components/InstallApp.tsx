@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { appKind } from "@/lib/appKind";
 import { Download, Share, SquarePlus, X, LogOut } from "lucide-react";
 
@@ -45,8 +45,9 @@ function desktopBrowser() {
   return "chrome";
 }
 
-/** "Install app" on the home pages, in any browser (not once it's installed): at the bottom on a phone or tablet, in
- * the top-right corner on a computer (the device-speed picker moves left for it). */
+/** "Install app" on the home pages, in any browser (not once it's installed): in the top row on a phone or tablet
+ * (left of Device speed; on the menu between your picture and it), in the top-right corner on a computer (the
+ * device-speed picker moves left for it). */
 const RELEASE = "https://github.com/pedroAlejandro48/Bellmont-City/releases/download/latest";
 const APK_URL = `${RELEASE}/Bellmont-City.apk`, EXE_URL = `${RELEASE}/Bellmont-City-Setup.exe`;
 
@@ -57,9 +58,35 @@ export function InstallApp() {
   useEffect(() => { const f = () => tick((n) => n + 1); listeners.add(f); return () => { listeners.delete(f); }; }, []);
   const mobile = isMobile(), show = !installed();
   useEffect(() => {
-    document.body.classList.toggle("has-install", show && mobile); document.body.classList.toggle("has-install-pc", show && !mobile);
-    return () => { document.body.classList.remove("has-install"); document.body.classList.remove("has-install-pc"); };
+    document.body.classList.toggle("has-install-pc", show && !mobile);
+    return () => { document.body.classList.remove("has-install-pc"); };
   }, [show, mobile]);
+  // Phones and tablets: in the top row, as tall as Device speed — just left of it (sign-in pages), or halfway between
+  // your picture and it (the menu).
+  const btn = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (!show || !mobile) return;
+    const place = () => {
+      const el = btn.current, qp = document.querySelector(".quality-toggle")?.getBoundingClientRect();
+      if (!el || !qp || !qp.width) return;
+      const w = el.offsetWidth, pic = document.querySelector(".account-menu")?.getBoundingClientRect();
+      let left = qp.left - 8 - w;
+      if (pic && pic.width) left = Math.min(left, Math.max(pic.right + 8, (pic.right + qp.left - w) / 2));
+      el.style.left = `${Math.max(8, left)}px`;
+      el.style.top = `${qp.top}px`;
+      el.style.height = `${qp.height}px`;
+      el.style.visibility = "visible";
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(document.body);
+    const q = document.querySelector(".quality-toggle"), a = document.querySelector(".account-menu");
+    if (q) ro.observe(q);
+    if (a) ro.observe(a);
+    const timers = [100, 400, 1200].map((ms) => window.setTimeout(place, ms));
+    window.addEventListener("resize", place);
+    return () => { ro.disconnect(); timers.forEach(clearTimeout); window.removeEventListener("resize", place); };
+  });
   if (!show) return null;
 
   const install = async () => {
@@ -80,8 +107,8 @@ export function InstallApp() {
 
   return <>
     {download
-      ? <a className={`install-app ${mobile ? "" : "pc"}`} href={download} download><Download size={mobile ? 20 : 16} /> Download app</a>
-      : <button type="button" className={`install-app ${mobile ? "" : "pc"}`} onClick={() => void install()}><SquarePlus size={mobile ? 20 : 16} /> Install app</button>}
+      ? <a ref={(e) => { btn.current = e; }} className={`install-app ${mobile ? "top" : "pc"}`} href={download} download><Download size={16} /> Download app</a>
+      : <button ref={(e) => { btn.current = e; }} type="button" className={`install-app ${mobile ? "top" : "pc"}`} onClick={() => void install()}><SquarePlus size={16} /> Install app</button>}
     {help && <div className="install-help" role="dialog" aria-label="Install the app" onClick={() => setHelp(false)}>
       <div className="install-card" onClick={(e) => e.stopPropagation()}>
         <button type="button" className="install-x" aria-label="Close" onClick={() => setHelp(false)}><X size={18} /></button>

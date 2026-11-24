@@ -902,3 +902,11 @@ a.install-app { text-decoration: none; }
    never taller than the browser's visible part, so the background fits with nothing to scroll. */
 .fit-screen { height: 100vh; height: 100dvh; overflow: hidden; box-sizing: border-box; }
 html:has(.fit-screen), body:has(.fit-screen) { overflow: hidden; height: 100%; }
+/* Phones and tablets: Install / Download app in the top row, placed beside Device speed (InstallApp measures it). */
+.install-app.top { top: 0.875rem; bottom: auto; transform: none; height: 2.5rem; padding: 0 0.9rem; font-size: 0.82rem; gap: 0.4rem; box-shadow: 0 4px 14px rgba(0,0,0,0.4); visibility: hidden; }
+.install-app.top:active { transform: scale(0.96); }
+/* Sign-in pages on a phone on its side: the top row (Download app, Device speed) gets a strip of its own too. */
+@media (orientation: landscape) and (max-height: 560px) and (pointer: coarse) {
+  .auth-page { padding-top: 3.4rem; }
+  .auth-page:not(.menu-page) .auth-split { margin-top: 0; }
+}
