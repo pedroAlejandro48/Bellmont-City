@@ -145,6 +145,10 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
     const before = vk?.overlaysContent;
     if (vk) vk.overlaysContent = true;
     // (The page's height before the keyboard.)
+    // A browser (not the app) on a phone with the swipe line rather than buttons: the browser's bars around the page
+    // add up to little (status + address bar + the thin line, under ~125 px; the buttons' bar makes it more), and
+    // there the keyboard's top sits a few pixels higher than the browser says.
+    const swipeBrowser = phone && appKind() !== "android" && !braveBar && window.outerHeight - window.innerHeight < 125;
     const baseH = window.innerHeight;
     const fit = () => {
       if (phone) {
@@ -178,7 +182,7 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
         if (dbg) dbg.textContent = `H${Math.round(H)} b${baseH} vv${Math.round(vv?.height ?? -1)}+${Math.round(vv?.offsetTop ?? -1)} o${window.outerHeight} s${screen.height}/${screen.availHeight} br${"brave" in navigator ? 1 : 0} lift${lift} end${Math.round(bottom)} up${kbUp ? 1 : 0}`;
         const top = vk ? 0 : vv?.offsetTop ?? 0;
         el.style.top = `${top}px`;
-        el.style.height = `${Math.max(200, bottom - top - (kbUp ? (vk && !braveBar ? 14 : braveBar ? 11 : 0) : 0))}px`;
+        el.style.height = `${Math.max(200, bottom - top - (kbUp ? (vk && !braveBar ? 14 : braveBar ? 11 : swipeBrowser ? 5 : 0) : 0))}px`;
         el.classList.toggle("kb-up", kbUp);
         return;
       }
