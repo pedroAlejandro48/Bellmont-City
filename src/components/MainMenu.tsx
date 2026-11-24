@@ -69,7 +69,7 @@ export function MainMenu({ account, username, message, onCity, onRoom, onSignOut
   useTitleBetweenObeliskAndForm();
   usePullToRefresh();
   return (
-    <div className="auth-bg auth-page flex items-center justify-center px-4">
+    <div className="auth-bg auth-page menu-page flex items-center justify-center px-4">
       <QualityPicker />
       <PushPrompt account={account} />
       <AccountMenu account={account} friends={friends} onAccount={onAccount} onSignOut={onSignOut} />

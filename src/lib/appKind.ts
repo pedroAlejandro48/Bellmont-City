@@ -29,3 +29,16 @@ const FCM = typeof window === "undefined" ? null : detectFcm();
 export const fcmToken = () => FCM;
 /** Browser notifications only on Windows (in a browser or the Windows app); the Android app has its own. */
 export const browserNotifications = () => typeof navigator !== "undefined" && appKind() !== "android" && /Windows/.test(navigator.userAgent);
+/** The Android app's navigation bar (?nav=b48 buttons / g24 gesture line, in dp): how much higher the chat's text box
+ *  must sit than the keyboard's reported height says, since the buttons' bar under the keyboard isn't counted. */
+function detectNav(): number {
+  try {
+    const q = new URLSearchParams(location.search).get("nav");
+    if (q) localStorage.setItem("bellmont-nav", q);
+    const v = q ?? localStorage.getItem("bellmont-nav") ?? "";
+    const m = /^([bg])(\d{1,3})$/.exec(v);
+    return m && m[1] === "b" ? Math.max(0, Number(m[2]) - 6) : 0;
+  } catch { return 0; }
+}
+const NAV = typeof window === "undefined" ? 0 : detectNav();
+export const keyboardNavExtra = () => NAV;

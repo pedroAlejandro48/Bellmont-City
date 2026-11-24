@@ -887,3 +887,11 @@ a.install-app { text-decoration: none; }
 .chat-full .chat-send { padding-bottom: max(1.9rem, calc(0.6rem + env(safe-area-inset-bottom, 0px))); }
 .chat-full.kb-up .chat-send { padding-bottom: 0.5rem; }
 .chat-full .chat-bubble { font-size: 0.95rem; }
+/* The menu on a phone on its side: the picture + Refresh (top left) and Device speed (top right) get a strip of their
+   own, and the title and box sit centred together in the space under it, like the sign-in page. */
+@media (orientation: landscape) and (max-height: 560px) {
+  .menu-page { padding-top: 3.4rem; overflow-y: auto; }
+  .menu-page.items-center { align-items: center; }
+  .menu-page .auth-split { margin: auto; width: auto; max-width: min(46rem, 100%); grid-template-columns: auto minmax(17rem, 21rem); align-items: center; justify-content: center; padding-block: 0; }
+  .menu-page .auth-split .auth-titles { padding-top: 0; justify-self: center; }
+}

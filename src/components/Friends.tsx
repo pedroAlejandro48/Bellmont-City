@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Check, ChevronDown, MessageCircle, Plus, User, UserPlus, X } from "lucide-react";
 import { Chat } from "@/components/Chat";
 import { watchUnread } from "@/platform/chat";
+import { keyboardNavExtra } from "@/lib/appKind";
 import { Button } from "@/components/ui/button";
 import type { Account } from "@/platform/account";
 import { LiveName } from "@/platform/liveNames";
@@ -137,7 +138,7 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
         // readings that say a keyboard is up, the lowest one is used, so the chat never ends far above the keyboard.
         const r = vk?.boundingRect;
         const reads = [vv ? vv.offsetTop + vv.height : H];
-        if (r && r.height > 0) reads.push(r.y > 0 ? r.y : H - r.height, H - r.height);
+        if (r && r.height > 0) { const h = r.height + keyboardNavExtra(); reads.push(r.y > 0 ? r.y - keyboardNavExtra() : H - h, H - h); }
         const up = reads.filter((b) => b < H - 80 && b > H * 0.3);
         let bottom = up.length ? Math.max(...up) : H;
         const kbUp = H - bottom > 80;

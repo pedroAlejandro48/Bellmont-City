@@ -65,6 +65,15 @@ public class StartActivity extends Activity {
         Uri.Builder url = Uri.parse(HOST + link).buildUpon().appendQueryParameter("app", "android");
         String token = getSharedPreferences(PREFS, MODE_PRIVATE).getString("fcm", null);
         if (token != null) url.appendQueryParameter("fcm", token);
+        // The phone's navigation bar: buttons (back · home · recents) or a gesture line, and its height in dp. In the
+        // full-screen app it shows under the keyboard but isn't counted in the keyboard's height the page is given,
+        // so the chat lifts its text box by it.
+        try {
+            int mode = android.provider.Settings.Secure.getInt(getContentResolver(), "navigation_mode", 0);
+            int id = getResources().getIdentifier("navigation_bar_height", "dimen", "android");
+            float dp = id > 0 ? getResources().getDimensionPixelSize(id) / getResources().getDisplayMetrics().density : 0;
+            url.appendQueryParameter("nav", (mode == 2 ? "g" : "b") + Math.round(dp));
+        } catch (Exception ignored) { }
         Intent game = new Intent(Intent.ACTION_VIEW, url.build(), this, LauncherActivity.class);
         startActivity(game);
         finish();
