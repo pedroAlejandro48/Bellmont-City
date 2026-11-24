@@ -63,8 +63,8 @@ function App() {
   }, []);
 
   if (view.name === "guest") return <GuestGame onExit={() => setView({ name: "menu" })} />;
-  if (loading) return <div className="auth-bg flex min-h-screen items-center justify-center font-display text-2xl text-foreground">Loading…</div>;
-  if (loadFailed) return <div className="auth-bg flex min-h-screen flex-col items-center justify-center gap-4 text-foreground">
+  if (loading) return <div className="auth-bg fit-screen flex items-center justify-center font-display text-2xl text-foreground">Loading…</div>;
+  if (loadFailed) return <div className="auth-bg fit-screen flex flex-col items-center justify-center gap-4 text-foreground">
     <p>Could not reach the Bellmont server.</p>
     <Button onClick={() => window.location.reload()}>Try again</Button>
   </div>;

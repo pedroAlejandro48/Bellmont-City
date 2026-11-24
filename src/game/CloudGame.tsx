@@ -126,14 +126,14 @@ function useCloudGame(account: Account, world?: WorldSlot) {
 /** The signed-in game screen; `onExit` leaves the game after its final save. */
 export function CloudGame({ account, onExit, world, extras }: { account: Account; onExit: () => void; world?: WorldSlot; extras?: GameExtras }) {
   const { state, saving, round, loadError, saveError, setSaveError, save, reset, retryLoad } = useCloudGame(account, world);
-  if (loadError) return <div className="auth-bg flex min-h-screen flex-col items-center justify-center gap-4 text-foreground">
+  if (loadError) return <div className="auth-bg fit-screen flex flex-col items-center justify-center gap-4 text-foreground">
     <p>Could not load your progress. Your saved game has not been changed.</p>
     <Button onClick={() => retryLoad()}>Retry loading</Button>
   </div>;
 
   if (!state)
     return (
-      <div className="auth-bg flex min-h-screen items-center justify-center font-display text-2xl text-foreground">
+      <div className="auth-bg fit-screen flex items-center justify-center font-display text-2xl text-foreground">
         Loading your city…
       </div>
     );

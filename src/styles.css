@@ -898,3 +898,7 @@ a.install-app { text-decoration: none; }
   .menu-page .auth-split .auth-titles { padding-top: 0; justify-self: center; }
 }
 .kb-debug { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 3.4rem); left: 0.5rem; z-index: 3; font: 600 0.58rem/1.2 ui-monospace, monospace; color: #7f89a8; pointer-events: none; }
+/* The loading / error pages before the menu or a game: exactly the screen's visible height (like the sign-in page),
+   never taller than the browser's visible part, so the background fits with nothing to scroll. */
+.fit-screen { height: 100vh; height: 100dvh; overflow: hidden; box-sizing: border-box; }
+html:has(.fit-screen), body:has(.fit-screen) { overflow: hidden; height: 100%; }

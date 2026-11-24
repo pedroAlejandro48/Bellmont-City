@@ -245,3 +245,4 @@ Done on our side: CI builds Bellmont-City.aab (release "latest"), targetSdk 36, 
 - Bubble times: the visible time is absolutely placed 2 px above the bubble's bottom edge (right corner); an invisible floated copy (.chat-time-room) reserves its room at the end of the text. Pull to refresh never starts inside a chat (.chat-full/.chat-popup/.chat) or an open box (.install-help) or anything marked data-no-pull.
 
 - Menu on a phone on its side (.menu-page, landscape ≤560 px tall): a 3.4rem strip at the top for the picture + Refresh and Device speed; the title and the box centred together under it.
+- Loading / error pages (Loading…, Loading your city…, room joining, load failures): .fit-screen — 100dvh, nothing scrolls (min-h-screen was 100vh, taller than a phone browser's visible part).
