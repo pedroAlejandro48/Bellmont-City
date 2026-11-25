@@ -23,16 +23,16 @@ describe("life: money", () => {
     expect(life.loan).toBeGreaterThan(limit);
     life.bank = 10000; expect(repay(life, 10000, 3)).toBe(true); expect(life.loan).toBe(0);
   });
-  it("rents an apartment with the first week free, then charges the week's rent every seventh day", () => {
+  it("rents an apartment with the first week free, then charges the rent every 30 days", () => {
     const life = newLife(1);
     life.bank = 2000;
     expect(rentApartment(life, "56:-72", 9, 950, 1)).toBe("ok");
     expect(life.inventory).toContain("key");
     const bank = life.bank;
     dailyBills(life, 7);
-    expect(life.bank).toBeGreaterThan(bank - 7 * 3 - 1);
+    expect(life.bank).toBeGreaterThanOrEqual(bank);
     dailyBills(life, 8);
-    expect(life.home?.nextRent).toBe(15);
+    expect(life.home?.nextRent).toBe(38);
     expect(life.ledger.some((t) => t.label.startsWith("Rent") && t.amount === -950)).toBe(true);
     moveOut(life, 9);
     expect(life.home).toBeNull();

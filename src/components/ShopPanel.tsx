@@ -184,8 +184,12 @@ function Hospital({ state, refresh }: Props) {
       state.health = 100; toast(state, "You feel much better", "info", "Health is full."); refresh();
     }}>Get treated · {cost ? money(cost) : "free with your plan"}</button>
     <p className="phone-label">Health plan (B9)</p>
-    <div className="phone-job"><div><b>{life.insured ? "You're covered" : "Bellmont Care"}</b><p>{money(HEALTH_PLAN)} a day from your bank. Treatment is free while it's on.</p></div>
-      <button type="button" className={`phone-btn ${life.insured ? "ghost" : ""}`} onClick={() => { life.insured = !life.insured; toast(state, life.insured ? "Health plan started" : "Health plan cancelled", "info"); refresh(); }}>{life.insured ? "Cancel" : "Sign up"}</button></div>
+    <div className="phone-job"><div><b>{life.insured ? "You're covered" : "Bellmont Care"}</b><p>{money(HEALTH_PLAN)} a week from your bank (the first week when you sign up). Treatment is free while it's on.</p></div>
+      <button type="button" className={`phone-btn ${life.insured ? "ghost" : ""}`} onClick={() => {
+        if (life.insured) { life.insured = false; toast(state, "Health plan cancelled", "info"); refresh(); return; }
+        if (!pay(state, HEALTH_PLAN, "Health plan (first week)")) return;
+        life.insured = true; life.insuredDay = today(state); toast(state, "Health plan started", "info", `${money(HEALTH_PLAN)} a week from your bank.`); refresh();
+      }}>{life.insured ? "Cancel" : "Sign up"}</button></div>
   </>;
 }
 
@@ -197,16 +201,16 @@ function Reception({ state, refresh }: Props) {
   const free = freeFloors(state.worldSeed, building, day).filter((f) => !theirs.has(f)), home = life.home;
   const mineHere = home?.building === building;
   return <>
-    {mineHere && home && <div className="bank-card home"><span>You live here</span><b>Floor {home.floor}</b><span>{money(home.weekly)} a week · next payment on day {home.nextRent}</span></div>}
+    {mineHere && home && <div className="bank-card home"><span>You live here</span><b>Floor {home.floor}</b><span>{money(home.weekly)} every 30 days · next payment on day {home.nextRent}</span></div>}
     {mineHere && <p className="phone-note">Take the elevator (in the corner) to your floor. Your key (its number) locks and unlocks your door; open it with an empty hand. While it's unlocked anyone can come in.</p>}
     <p className="phone-label">{HOME_NAME}s · free floors today</p>
-    <p className="phone-note">The first week is free; then the week's rent comes out of your bank every seven days. Higher floors cost less. Which floors are free changes every two days.</p>
+    <p className="phone-note">The first week is free; then the rent comes out of your bank every 30 days. Higher floors cost less. Which floors are free changes every two days.</p>
     <ul className="phone-list">{Array.from({ length: APT_FLOORS - 1 }, (_, k) => APT_FLOORS - k).map((f) => {
       const open = free.includes(f) && !(mineHere && home?.floor === f);
       return <li key={f} className={open ? "" : "taken"}>
-        <span>Floor {f}<small>{money(rentFor(f))} a week{mineHere && home?.floor === f ? " · yours" : open ? "" : " · taken"}</small></span>
+        <span>Floor {f}<small>{money(rentFor(f))} / 30 days{mineHere && home?.floor === f ? " · yours" : open ? "" : " · taken"}</small></span>
         <button type="button" className="phone-btn" disabled={!open || (!!home && !canMoveOut(life))} onClick={() => {
-          if (home && !canMoveOut(life)) { toast(state, "Not during your free week", "warn", "You can move out once you've paid a week's rent."); return; }
+          if (home && !canMoveOut(life)) { toast(state, "Not during your free week", "warn", "You can move out once you've paid your first rent."); return; }
           if (home && !mineHere && !window.confirm(`Move out of your apartment on floor ${home.floor} elsewhere?`)) return;
           if (home) moveOut(life, day);
           const r = rentApartment(life, building, f, rentFor(f), day);
@@ -218,7 +222,7 @@ function Reception({ state, refresh }: Props) {
     })}</ul>
     {mineHere && (canMoveOut(life)
       ? <button type="button" className="phone-btn ghost" onClick={() => { if (window.confirm("Move out and hand back your key?")) { moveOut(life, day); toast(state, "You moved out", "info"); refresh(); } }}>Move out</button>
-      : <p className="phone-note">You can move out once you've paid your first week's rent (day {home?.nextRent}). If the rent can't be paid from your bank, you'll be evicted and lose everything in the apartment.</p>)}
+      : <p className="phone-note">You can move out once you've paid your first rent (day {home?.nextRent}). If the rent can't be paid from your bank, you'll be evicted and lose everything in the apartment.</p>)}
   </>;
 }
 

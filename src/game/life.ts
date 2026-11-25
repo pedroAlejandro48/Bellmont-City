@@ -47,8 +47,9 @@ export type Life = {
   fines: Fine[];
   /** Convictions: overdue fines; each one lowers what the bank will lend. */
   record: number;
-  /** The health plan (a daily premium; hospital care is free while it's on). */
+  /** The health plan (a weekly premium; hospital care is free while it's on), and the day it was started. */
   insured: boolean;
+  insuredDay: number;
   /** The character's outfit colour and the bike's paint, once bought (null: as they came). */
   outfit: string | null;
   bikePaint: string | null;
@@ -72,7 +73,7 @@ export function newLife(day = 1): Life {
     bank: 300, loan: 0, credit: 650, xp: 0,
     skills: { fitness: 0, riding: 0, work: 0, charm: 0 },
     quests: rollQuests(day), questDay: day, guide: 0, home: null, billedDay: day, fridge: [], ledger: [],
-    earned: 0, jobsDone: 0, fines: [], record: 0, insured: false, outfit: null, bikePaint: null, workoutDay: 0, inventory: newInventory(), closet: [], kitchen: newKitchen(), moon: newMoonBond(),
+    earned: 0, jobsDone: 0, fines: [], record: 0, insured: false, insuredDay: 0, outfit: null, bikePaint: null, workoutDay: 0, inventory: newInventory(), closet: [], kitchen: newKitchen(), moon: newMoonBond(),
   };
 }
 
@@ -96,7 +97,7 @@ export function readLife(value: unknown, day = 1): Life {
     ledger: Array.isArray(v["ledger"]) ? (v["ledger"] as Txn[]).filter((t) => t && typeof t.amount === "number").slice(0, 30) : [],
     earned: num("earned", 0, 1e12, 0), jobsDone: num("jobsDone", 0, 1e9, 0),
     fines: Array.isArray(v["fines"]) ? (v["fines"] as Fine[]).filter((f) => f && typeof f.amount === "number" && typeof f.day === "number").slice(0, 20) : [],
-    record: num("record", 0, 100, 0), insured: v["insured"] === true,
+    record: num("record", 0, 100, 0), insured: v["insured"] === true, insuredDay: num("insuredDay", 0, 1e9, day),
     outfit: typeof v["outfit"] === "string" && /^#[0-9a-f]{6}$/i.test(v["outfit"]) ? v["outfit"] : null,
     bikePaint: typeof v["bikePaint"] === "string" && /^#[0-9a-f]{6}$/i.test(v["bikePaint"]) ? v["bikePaint"] : null,
     workoutDay: num("workoutDay", 0, 1e9, 0),
@@ -185,22 +186,24 @@ export function repay(life: Life, amount: number, day: number) {
 // ---------- homes and bills ----------
 /** What renting is called (one kind of home for now). */
 export const HOME_NAME = "Small apartment";
-/** Phone bill and the like, for everyone. */
-export const BASE_BILL = 3;
+/** Rent is charged every RENT_DAYS days (the first FREE_DAYS are free). */
+export const RENT_DAYS = 30;
 
-/** Each new game day (at 6 am): rent, utilities and loan interest come out of the bank, savings earn interest. */
+/** Each new game day (at 6 am): rent (every 30 days), the health plan (every 7 days) and loan interest come out of
+ * the bank, savings earn interest. (No phone or utility bills.) */
 export function dailyBills(life: Life, day: number) {
   const lines: Txn[] = [];
   for (let d = life.billedDay + 1; d <= day; d++) {
     const interest = round(life.bank * SAVINGS_RATE);
     if (interest > 0) { life.bank = round(life.bank + interest); lines.push({ day: d, label: "Savings interest", amount: interest }); }
-    const charges: [string, number][] = [["Phone plan", BASE_BILL]];
-    if (life.insured) charges.push(["Health plan", HEALTH_PLAN]);
-    // The week's rent, every seventh day (the first week was free) — from the bank only: if it can't be paid, you're
+    const charges: [string, number][] = [];
+    // The health plan's week, every seventh day after signing up (the first week is paid when signing up).
+    if (life.insured && d > life.insuredDay && (d - life.insuredDay) % 7 === 0) charges.push(["Health plan (week)", HEALTH_PLAN]);
+    // The rent, every 30 days (the first week was free) — from the bank only: if it can't be paid, you're
     // evicted, and everything in the apartment (the fridge's food, the kitchen, the closet) is lost.
     if (life.home && d >= life.home.nextRent) {
       const rent = life.home.weekly, floor = life.home.floor;
-      if (life.bank >= rent) { life.bank = round(life.bank - rent); lines.push({ day: d, label: `Rent (week, floor ${floor})`, amount: -rent }); life.home.nextRent += 7; life.home.paid = (life.home.paid ?? 0) + 1; life.credit = Math.min(850, life.credit + 1); }
+      if (life.bank >= rent) { life.bank = round(life.bank - rent); lines.push({ day: d, label: `Rent (30 days, floor ${floor})`, amount: -rent }); life.home.nextRent += RENT_DAYS; life.home.paid = (life.home.paid ?? 0) + 1; life.credit = Math.min(850, life.credit + 1); }
       else { evict(life); lines.push({ day: d, label: `Evicted: rent unpaid (floor ${floor})`, amount: 0 }); life.credit = Math.max(300, life.credit - 40); }
     }
     if (life.loan > 0) charges.push(["Loan interest", round(life.loan * LOAN_RATE)]);
@@ -225,8 +228,8 @@ export function dailyBills(life: Life, day: number) {
   if (life.ledger.length > 30) life.ledger.length = 30;
   return lines;
 }
-/** The health plan's daily premium, and how many days a ticket can wait before it goes on the record. */
-export const HEALTH_PLAN = 4;
+/** The health plan's weekly premium, and how many days a ticket can wait before it goes on the record. */
+export const HEALTH_PLAN = 45;
 export const FINE_DAYS = 3;
 
 // ---------- law ----------

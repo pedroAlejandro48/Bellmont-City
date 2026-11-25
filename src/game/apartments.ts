@@ -15,7 +15,7 @@ export const parseFloorKey = (key: string) => { const [k, f] = key.split("#"); r
 
 /** Rent per week: $800 on the lowest floor (2), $25 more for each floor up — the top floor costs the most. */
 export const rentFor = (floor: number) => 800 + (Math.max(2, Math.min(APT_FLOORS, floor)) - 2) * 25;
-/** The first week is free; rent is charged every seventh day after moving in. */
+/** The first week is free; rent is then charged every 30 days (life.ts RENT_DAYS). */
 export const FREE_DAYS = 7;
 
 function hash(n: number) {
