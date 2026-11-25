@@ -149,13 +149,15 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
     // add up to little (status + address bar + the thin line, under ~125 px; the buttons' bar makes it more), and
     // there the keyboard's top sits a few pixels higher than the browser says.
     const swipeBrowser = phone && appKind() !== "android" && !braveBar && window.outerHeight - window.innerHeight < 125;
-    const baseH = window.innerHeight;
+    let baseH = window.innerHeight;
     const fit = () => {
       if (phone) {
         // Where the free screen ends: the keyboard's top edge (not just its height — in the full-screen app the page
         // runs on under the system's bar below the keyboard), or the visible part of the screen, whichever is
         // higher; the chat ends a little above it.
         const vv = window.visualViewport, H = window.innerHeight;
+        // (The height without a keyboard, again whenever nothing is being typed in — the phone may have turned.)
+        if (!(document.activeElement instanceof HTMLTextAreaElement || document.activeElement instanceof HTMLInputElement)) baseH = H;
         let bottom: number, kbUp: boolean, lift = 0;
         if (vk && braveBar) {
           const r = vk.boundingRect;
@@ -182,7 +184,11 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
         if (dbg) dbg.textContent = `H${Math.round(H)} b${baseH} vv${Math.round(vv?.height ?? -1)}+${Math.round(vv?.offsetTop ?? -1)} o${window.outerHeight} s${screen.height}/${screen.availHeight} br${"brave" in navigator ? 1 : 0} lift${lift} end${Math.round(bottom)} up${kbUp ? 1 : 0}`;
         const top = vk ? 0 : vv?.offsetTop ?? 0;
         el.style.top = `${top}px`;
-        el.style.height = `${Math.max(200, bottom - top - (kbUp ? (vk && !braveBar ? 14 : braveBar ? 11 : swipeBrowser ? 12 : 0) : 0))}px`;
+        // (A phone on its side leaves only a strip above the keyboard: the chat shrinks to it — no minimum height that would
+        // push the box under the keyboard — and in a very short strip the header steps aside for the messages and box.)
+        const h = Math.max(72, bottom - top - (kbUp ? (vk && !braveBar ? 14 : braveBar ? 11 : swipeBrowser ? 12 : 0) : 0));
+        el.style.height = `${h}px`;
+        el.classList.toggle("kb-tight", kbUp && h < 240);
         el.classList.toggle("kb-up", kbUp);
         return;
       }
