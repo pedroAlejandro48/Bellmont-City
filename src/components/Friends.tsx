@@ -144,7 +144,7 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
     const before = vkApi?.overlaysContent;
     // (Looked at again whenever nothing is being typed in — the phone may have turned: Brave shows its bottom toolbar
     // only upright, so on its side it's an ordinary browser.)
-    let braveBar = false, swipeBrowser = false, sideways = false, vk: VK | undefined;
+    let braveBar = false, swipeBrowser = false, sideways = false, sideButtons = false, vk: VK | undefined;
     const browserKind = () => {
       const bars = window.outerHeight - window.innerHeight;
       braveBar = phone && !fullScreen && "brave" in navigator && bars >= 140 && window.innerHeight > window.innerWidth;
@@ -156,6 +156,9 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
       // height), and takes the highest of what it's told — the box always shows above the keyboard.
       sideways = phone && !fullScreen && appKind() !== "android" && window.innerWidth > window.innerHeight;
       vk = fullScreen || braveBar || sideways ? vkApi : undefined;
+      // (On its side, a phone with back · home · recents has them along a side edge — the browser's window is narrower
+      // than the screen; with the swipe line the window spans the screen. By eye: 10 px lower / 10 px higher.)
+      sideButtons = sideways && screen.width - window.outerWidth > 16;
       if (vkApi) vkApi.overlaysContent = !!vk;
     };
     browserKind();
@@ -209,7 +212,7 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
         el.style.top = `${top}px`;
         // (A phone on its side leaves only a strip above the keyboard: the chat shrinks to it — no minimum height that would
         // push the box under the keyboard — and in a very short strip the header steps aside for the messages and box.)
-        const h = Math.max(72, bottom - top - (kbUp ? (sideways ? 4 : vk && !braveBar ? 14 : braveBar ? 11 : swipeBrowser ? 12 : 0) : 0));
+        const h = Math.max(72, bottom - top - (kbUp ? (sideways ? (sideButtons ? -6 : 14) : vk && !braveBar ? 14 : braveBar ? 11 : swipeBrowser ? 12 : 0) : 0));
         el.style.height = `${h}px`;
         el.classList.toggle("kb-tight", kbUp && h < 240);
         el.classList.toggle("kb-up", kbUp);
