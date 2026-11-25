@@ -252,3 +252,4 @@ Done on our side: CI builds Bellmont-City.aab (release "latest"), targetSdk 36, 
 - Menu on a phone on its side (.menu-page, landscape ≤560 px tall): a 3.4rem strip at the top for the picture + Refresh and Device speed; the title and the box centred together under it.
 - Loading / error pages (Loading…, Loading your city…, room joining, load failures): .fit-screen — 100dvh, nothing scrolls (min-h-screen was 100vh, taller than a phone browser's visible part).
 - The sign-in / menu titles (Bellmont city + its line) have the light theme's soft dark text-shadow in every theme.
+- Upright: the title + line are shifted (position: relative; top: --title-drop) so they sit centred between the top row (ends 3.375rem down) and the box; the box doesn't move; identical on sign-in pages and the menu (measured: equal gaps at 360×640, 411×736, 390×844).

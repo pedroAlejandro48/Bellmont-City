@@ -937,3 +937,12 @@ html:has(.fit-screen), body:has(.fit-screen) { overflow: hidden; height: 100%; }
 .chat-full.kb-tight .kb-debug { top: 0.2rem; }
 /* The titles' soft dark shadow in every theme (the dark one too), as in the light theme. */
 .auth-titles :is(h1, p) { text-shadow: 0 2px 4px rgba(10,20,45,0.55), 0 0 18px rgba(10,20,45,0.45); }
+/* Upright: the title and its line sit centred between the top row (picture / Download app / Device speed, ending
+   3.375rem down) and the box — the box itself stays exactly where it was (sign-in pages and menu alike). The room
+   above the title is the page's 3.6rem top padding + the split's margin (as set above) − 3.375rem; below, the box's
+   2rem margin: the title moves down by half the difference, and the box's margin shrinks by as much. */
+@media (orientation: portrait) {
+  .auth-split { --title-drop: calc((2rem - 0.225rem - max(0px, calc((100dvh - 7.1rem - 38rem) / 2))) / 2); }
+  .auth-split .auth-titles { position: relative; top: var(--title-drop); }
+  .auth-split .auth-box { position: relative; }
+}
