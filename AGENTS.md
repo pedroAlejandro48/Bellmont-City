@@ -251,3 +251,4 @@ Done on our side: CI builds Bellmont-City.aab (release "latest"), targetSdk 36, 
 - Menu drop-downs: Join a room opens a .friends-popup.join-popup under the Create/Join row (code box, your rooms, invitations; scrolls inside), like Friends. MainMenu caps every .friends-popup (not the chat) at the screen's bottom − 8 px (visualViewport, re-fitted on DOM changes and resizes); the page itself never scrolls (no overflow-y on .menu-page).
 - Menu on a phone on its side (.menu-page, landscape ≤560 px tall): a 3.4rem strip at the top for the picture + Refresh and Device speed; the title and the box centred together under it.
 - Loading / error pages (Loading…, Loading your city…, room joining, load failures): .fit-screen — 100dvh, nothing scrolls (min-h-screen was 100vh, taller than a phone browser's visible part).
+- The sign-in / menu titles (Bellmont city + its line) have the light theme's soft dark text-shadow in every theme.

@@ -935,3 +935,5 @@ html:has(.fit-screen), body:has(.fit-screen) { overflow: hidden; height: 100%; }
 .chat-full.kb-tight .chat-head { display: none; }
 .chat-full.kb-tight { padding-top: 0; }
 .chat-full.kb-tight .kb-debug { top: 0.2rem; }
+/* The titles' soft dark shadow in every theme (the dark one too), as in the light theme. */
+.auth-titles :is(h1, p) { text-shadow: 0 2px 4px rgba(10,20,45,0.55), 0 0 18px rgba(10,20,45,0.45); }
