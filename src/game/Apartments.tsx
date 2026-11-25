@@ -903,6 +903,8 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   const buildings = useMemo(() => city.buildings.filter((b) => b.venue === "apartments"), [city]);
   const m = useFloorMats();
   const move = useRef<Move | null>(null);
+  /** Asleep (or getting into or out of bed) from first person: the view's distance to go back to. */
+  const bedFp = useRef<number | null>(null);
   const doorAngle = useRef(0), bedAngle = useRef(0), fridgeAngle = useRef(0), closetAngle = useRef(0), bathAngle = useRef(0);
   const baths = useRef(new Map<string, BathLink>());
   /** The kitchen in play (your own apartment's): its moves, what its things show. */
@@ -1541,6 +1543,10 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     }
     if (!(mv?.kind === "sit" && mv.phase === "seated")) state.seatSurface = null;
     // This building's moves drive the body; when they end it's the player's again.
+    // Going to bed in first person: the camera steps out behind (third person) till you're up again, then back.
+    const inBed = move.current?.kind === "bed";
+    if (inBed && state.firstPerson) { bedFp.current = state.camDistance; state.firstPerson = false; state.camDistance = 3.4; state.camPitch = 0.35; }
+    else if (!inBed && bedFp.current !== null) { state.firstPerson = true; state.camDistance = bedFp.current; bedFp.current = null; }
     if (script) { state.foodScript = script; ownScript.current = true; }
     else if (ownScript.current) { state.foodScript = null; ownScript.current = false; }
 
