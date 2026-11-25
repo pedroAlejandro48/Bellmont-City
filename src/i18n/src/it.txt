@@ -1074,3 +1074,34 @@
 1126|Disattivate: richieste di amicizia, messaggi e inviti nelle stanze non arriveranno su questo dispositivo.
 1127|Attivate: richieste di amicizia, messaggi e inviti nelle stanze arrivano su questo dispositivo, anche a gioco chiuso.
 1128|Scarica l'app
+1129|CURE
+1130|Prenditi cura di te
+1131|Siediti
+1132|Un'infermiera verrà a prenderti quando sarà il tuo turno.
+1133|Sei in lista ({0} prima di te). Siediti: l'infermiera verrà a prenderti.
+1134|Siediti: l'infermiera verrà a prenderti.
+1135|L'infermiera sta venendo a prenderti.
+1136|Cure annullate
+1137|Sei andato via prima dell'infermiera: ${0} restituiti.
+1138|Sei andato via prima che arrivasse l'infermiera.
+1139|a settimana dalla tua banca (la prima settimana all'iscrizione). Le cure sono gratuite finché è attivo.
+1140|${0} a settimana dalla tua banca.
+1141|ogni 30 giorni · prossimo pagamento il giorno
+1142|La prima settimana è gratis; poi l'affitto esce dalla tua banca ogni 30 giorni. I piani alti costano meno. I piani liberi cambiano ogni due giorni.
+1143|/ 30 giorni
+1144|Puoi traslocare dopo aver pagato il primo affitto.
+1145|Puoi traslocare dopo aver pagato il primo affitto (giorno
+1146|L'affitto e il tuo piano sanitario, dalla tua banca.
+1147|Candidati
+1148|Candidato
+1149|Candidatura in esame · circa {0} ore di gioco rimaste
+1150|Suonare nel parco non richiede candidatura. Gli altri si chiedono qui (il commesso al banco di Fresh Market) e sono accettati dopo 24 ore di gioco.
+1151|Prima candidati
+1152|Candidati al banco di Fresh Market
+1153|Candidatura in esame
+1154|Candidatura in esame: risposta entro 24 ore di gioco.
+1155|Candidatura inviata
+1156|Fresh Market ti farà sapere entro 24 ore di gioco.
+1157|Candidatura accettata!
+1158|Hai ottenuto il lavoro: {0}. Inizialo dall'app Lavori del telefono.
+1159|Suonare nel parco non richiede candidatura; candidati per gli altri.

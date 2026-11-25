@@ -1074,3 +1074,34 @@
 1126|Désactivées : les demandes d'ami, les messages et les invitations aux salons n'arriveront pas sur cet appareil.
 1127|Activées : les demandes d'ami, les messages et les invitations aux salons arrivent sur cet appareil, même quand le jeu est fermé.
 1128|Télécharger l'appli
+1129|SOINS
+1130|Prenez soin de vous
+1131|Asseyez-vous
+1132|Une infirmière viendra vous chercher quand ce sera votre tour.
+1133|Vous êtes sur la liste ({0} avant vous). Asseyez-vous : l'infirmière viendra vous chercher.
+1134|Asseyez-vous : l'infirmière viendra vous chercher.
+1135|L'infirmière vient vous chercher.
+1136|Soins annulés
+1137|Vous êtes parti avant l'infirmière : ${0} remboursés.
+1138|Vous êtes parti avant l'arrivée de l'infirmière.
+1139|par semaine depuis votre banque (la première semaine à l'inscription). Les soins sont gratuits tant qu'il est actif.
+1140|${0} par semaine depuis votre banque.
+1141|tous les 30 jours · prochain paiement le jour
+1142|La première semaine est gratuite ; ensuite le loyer est prélevé tous les 30 jours. Les étages élevés coûtent moins cher. Les étages libres changent tous les deux jours.
+1143|/ 30 jours
+1144|Vous pourrez déménager après votre premier loyer.
+1145|Vous pourrez déménager après votre premier loyer (jour
+1146|Le loyer et votre mutuelle, depuis votre banque.
+1147|Postuler
+1148|Candidature envoyée
+1149|Candidature à l'étude · environ {0} heures de jeu restantes
+1150|Jouer de la musique au parc ne demande pas de candidature. Les autres se demandent ici (vendeur au comptoir de Fresh Market) et sont acceptés après 24 heures de jeu.
+1151|Postulez d'abord
+1152|Postulez au comptoir de Fresh Market
+1153|Candidature à l'étude
+1154|Candidature à l'étude : réponse sous 24 heures de jeu.
+1155|Candidature envoyée
+1156|Fresh Market vous répondra sous 24 heures de jeu.
+1157|Candidature acceptée !
+1158|Vous avez le poste : {0}. Commencez-le depuis l'app Emplois du téléphone.
+1159|Jouer de la musique au parc ne demande pas de candidature ; postulez pour les autres.

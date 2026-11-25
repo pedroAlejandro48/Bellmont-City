@@ -1074,3 +1074,34 @@
 1126|Aus: Freundschaftsanfragen, Nachrichten und Raumeinladungen erreichen dieses Gerät nicht.
 1127|An: Freundschaftsanfragen, Nachrichten und Raumeinladungen erreichen dieses Gerät, auch wenn das Spiel geschlossen ist.
 1128|App herunterladen
+1129|BEHANDLUNG
+1130|Pass auf dich auf
+1131|Nimm Platz
+1132|Eine Pflegekraft holt dich, wenn du dran bist.
+1133|Du stehst auf der Liste ({0} vor dir). Nimm Platz: die Pflegekraft holt dich.
+1134|Nimm Platz: die Pflegekraft holt dich.
+1135|Die Pflegekraft kommt dich holen.
+1136|Behandlung abgebrochen
+1137|Du bist gegangen, bevor die Pflegekraft kam: ${0} zurück.
+1138|Du bist gegangen, bevor die Pflegekraft kam.
+1139|pro Woche von deinem Konto (die erste Woche bei der Anmeldung). Behandlung ist kostenlos, solange er läuft.
+1140|${0} pro Woche von deinem Konto.
+1141|alle 30 Tage · nächste Zahlung am Tag
+1142|Die erste Woche ist kostenlos; danach wird die Miete alle 30 Tage abgebucht. Höhere Stockwerke kosten weniger. Welche Stockwerke frei sind, ändert sich alle zwei Tage.
+1143|/ 30 Tage
+1144|Du kannst ausziehen, sobald du deine erste Miete bezahlt hast.
+1145|Du kannst ausziehen, sobald du deine erste Miete bezahlt hast (Tag
+1146|Miete und Krankenversicherung, von deinem Konto.
+1147|Bewerben
+1148|Beworben
+1149|Bewerbung wird geprüft · noch etwa {0} Spielstunden
+1150|Musik im Park braucht keine Bewerbung. Für die anderen bewirbst du dich hier (als Verkäufer an der Theke von Fresh Market); angenommen nach 24 Spielstunden.
+1151|Erst bewerben
+1152|Bewirb dich an der Theke von Fresh Market
+1153|Bewerbung wird geprüft
+1154|Bewerbung wird geprüft: Antwort innerhalb von 24 Spielstunden.
+1155|Bewerbung gesendet
+1156|Fresh Market meldet sich innerhalb von 24 Spielstunden.
+1157|Bewerbung angenommen!
+1158|Du hast den Job: {0}. Starte ihn in der Jobs-App des Handys.
+1159|Musik im Park braucht keine Bewerbung; bewirb dich für die anderen.

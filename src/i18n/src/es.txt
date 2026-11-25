@@ -1127,3 +1127,34 @@
 1126|Desactivadas: las solicitudes de amistad, los mensajes y las invitaciones a salas no llegarán a este dispositivo.
 1127|Activadas: las solicitudes de amistad, los mensajes y las invitaciones a salas llegan a este dispositivo, incluso con el juego cerrado.
 1128|Descargar la app
+1129|TRATAMIENTO
+1130|Cuídate
+1131|Toma asiento
+1132|Una enfermera vendrá a por ti cuando sea tu turno.
+1133|Estás en la lista ({0} delante de ti). Toma asiento: la enfermera vendrá a por ti.
+1134|Toma asiento: la enfermera vendrá a por ti.
+1135|La enfermera viene a por ti.
+1136|Tratamiento cancelado
+1137|Te fuiste antes de que llegara la enfermera: te devolvemos ${0}.
+1138|Te fuiste antes de que llegara la enfermera.
+1139|a la semana desde tu banco (la primera semana al darte de alta). El tratamiento es gratis mientras esté activo.
+1140|${0} a la semana desde tu banco.
+1141|cada 30 días · próximo pago el día
+1142|La primera semana es gratis; luego el alquiler sale de tu banco cada 30 días. Los pisos más altos cuestan menos. Los pisos libres cambian cada dos días.
+1143|/ 30 días
+1144|Puedes mudarte cuando hayas pagado tu primer alquiler.
+1145|Puedes mudarte cuando hayas pagado tu primer alquiler (día
+1146|El alquiler y tu plan de salud, desde tu banco.
+1147|Solicitar
+1148|Solicitado
+1149|Solicitud en revisión · faltan unas {0} horas de juego
+1150|Tocar música en el parque no necesita solicitud. Los demás se solicitan aquí (el de dependiente en el mostrador de Fresh Market) y se aceptan tras 24 horas de juego.
+1151|Solicítalo primero
+1152|Solicítalo en el mostrador de Fresh Market
+1153|Solicitud en revisión
+1154|Solicitud en revisión: te responderán en 24 horas de juego.
+1155|Solicitud enviada
+1156|Fresh Market te avisará en 24 horas de juego.
+1157|¡Solicitud aceptada!
+1158|Conseguiste el trabajo: {0}. Empiézalo desde la app Trabajos del teléfono.
+1159|Tocar música en el parque no necesita solicitud; solicita los demás.

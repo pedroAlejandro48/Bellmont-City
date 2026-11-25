@@ -1074,3 +1074,34 @@
 1126|Desativadas: pedidos de amizade, mensagens e convites para salas não chegarão a este dispositivo.
 1127|Ativadas: pedidos de amizade, mensagens e convites para salas chegam a este dispositivo, mesmo com o jogo fechado.
 1128|Baixar o app
+1129|TRATAMENTO
+1130|Cuide-se
+1131|Sente-se
+1132|Uma enfermeira virá buscá-lo quando for a sua vez.
+1133|Você está na lista ({0} à sua frente). Sente-se: a enfermeira virá buscá-lo.
+1134|Sente-se: a enfermeira virá buscá-lo.
+1135|A enfermeira está vindo buscá-lo.
+1136|Tratamento cancelado
+1137|Você saiu antes da enfermeira chegar: ${0} devolvidos.
+1138|Você saiu antes da enfermeira chegar.
+1139|por semana do seu banco (a primeira semana ao assinar). O tratamento é grátis enquanto estiver ativo.
+1140|${0} por semana do seu banco.
+1141|a cada 30 dias · próximo pagamento no dia
+1142|A primeira semana é grátis; depois o aluguel sai do seu banco a cada 30 dias. Andares mais altos custam menos. Os andares livres mudam a cada dois dias.
+1143|/ 30 dias
+1144|Você pode se mudar depois de pagar o primeiro aluguel.
+1145|Você pode se mudar depois de pagar o primeiro aluguel (dia
+1146|Aluguel e seu plano de saúde, do seu banco.
+1147|Candidatar-se
+1148|Candidatado
+1149|Candidatura em análise · faltam cerca de {0} horas de jogo
+1150|Tocar música no parque não precisa de candidatura. Os outros se pedem aqui (o de balconista no balcão do Fresh Market) e são aceitos após 24 horas de jogo.
+1151|Candidate-se primeiro
+1152|Candidate-se no balcão do Fresh Market
+1153|Candidatura em análise
+1154|Candidatura em análise: resposta em até 24 horas de jogo.
+1155|Candidatura enviada
+1156|O Fresh Market avisará em até 24 horas de jogo.
+1157|Candidatura aceita!
+1158|Você conseguiu o emprego: {0}. Comece pelo app Empregos do celular.
+1159|Tocar música no parque não precisa de candidatura; candidate-se aos outros.
