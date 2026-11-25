@@ -240,7 +240,8 @@ function HoledSlab({ x0, x1, z0, z1, y0, y1, holes, mat }: { x0: number; x1: num
 const shaftHole = (minX: number, minZ: number): Rect => ({ x0: minX + 0.03, x1: minX + SHAFT - 0.03, z0: minZ + 0.03, z1: minZ + SHAFT - 0.03 });
 const SLOT = 0.7, SLOT_J = 0.03;
 /** The stairwell's way through a floor's slab (its walls stand in it; its landings are its own). */
-const stairHole = (p: StairPlan): Rect => ({ x0: p.x0 + 0.004, x1: p.xe + 0.15, z0: p.z0 + 0.004, z1: p.z1 + SW });
+// (Its edges inside the stairwell's walls: they never show, and never share a plane with a wall's face.)
+const stairHole = (p: StairPlan): Rect => ({ x0: p.x0 - 0.06, x1: p.xe + 0.1, z0: p.z0 - 0.06, z1: p.z1 + SW - 0.05 });
 /** The window slot's way through a floor's slab (from the outside face in to the shaft): no slab edge shows across
  * the car's window, only the slot's own metal bar at each floor. */
 const slotHole = (minX: number, minZ: number, outer: number): Rect => ({ x0: minX + SHAFT / 2 - SLOT / 2 - SLOT_J - 0.005, x1: minX + SHAFT / 2 + SLOT / 2 + SLOT_J + 0.005, z0: outer - 0.01, z1: minZ + 0.03 });

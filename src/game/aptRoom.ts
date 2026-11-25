@@ -87,7 +87,7 @@ export function aptFloor(b: Building, floor: number): AptFloor {
   solids.push(...shaft.walls, shaft.door);
   // The stairwell right of the shaft (its walls; the floor's landing open to the hallway), the storage beyond it.
   const st = stairPlan(bounds);
-  solids.push(...stairWalls(st));
+  solids.push(...stairWalls(st, true, floor === APT_FLOORS));
   box(st.xe + 0.15, maxX, minZ, hall0);
   // The top floor: the ladder up to the roof, against the hallway's back wall.
   const ladder = floor === APT_FLOORS ? roofPlan(b) : undefined;

@@ -9,65 +9,76 @@ import { APT_FLOORS, aptKey, floorKey, floorY } from "./apartments";
 import { FLOOR_CLEAR, aptFloorOf } from "./aptRoom";
 import type { Building, City } from "./config";
 import { toLocal, type Box } from "./restaurantRoom";
-import { LAND_W, RISERS, RUN, SW, TREAD, floorAtHeight, footNow, legsToFeet, stairGround, stairPlan, stepFeet, type Feet, type StairPlan } from "./stairs";
+import { LAND_W, SW, TREAD, flightUnder, floorAtHeight, footNow, legsToFeet, legsToFeetAt, stairGround, stairPlan, stepFeet, treadMiddle, type Feet, type StairPlan } from "./stairs";
 import type { GameState } from "./state";
 import { venueLayout, type VenueLayout } from "./venueRoom";
 
 /** The top of the stairwell (the top floor's ceiling), world height. */
 const topOf = () => floorY(APT_FLOORS) + FLOOR_CLEAR;
 
-/** The stairwell's parts as three geometries (steps and landings; walls; handrails), in the building's frame. */
+/** A floor's number for the plate over its landing (drawn once per number). */
+const plates = new Map<number, THREE.CanvasTexture>();
+function plateTexture(n: number) {
+  let t = plates.get(n);
+  if (t) return t;
+  const c = document.createElement("canvas"); c.width = 128; c.height = 128;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#fbf8f1"; g.fillRect(0, 0, 128, 128);
+  g.strokeStyle = "#b9b2a4"; g.lineWidth = 6; g.strokeRect(3, 3, 122, 122);
+  g.fillStyle = "#2b2d33"; g.font = "800 76px Manrope, Arial, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+  g.fillText(n === 1 ? "L" : String(n), 64, 70);
+  t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; plates.set(n, t);
+  return t;
+}
+
+/** The stairwell's parts as geometries (steps and landings; walls; handrails and step edges; lights), in the
+ * building's frame. Every wall is solid and reaches past the floors' slab edges, so no slab edge or face shares a
+ * plane with anything (no lines, no flicker). */
 function stairGeometry(p: StairPlan) {
   const steps: THREE.BufferGeometry[] = [], walls: THREE.BufferGeometry[] = [], rails: THREE.BufferGeometry[] = [], lights: THREE.BufferGeometry[] = [];
   const box = (into: THREE.BufferGeometry[], x0: number, x1: number, y0: number, y1: number, z0: number, z1: number) => {
     if (x1 - x0 < 1e-4 || y1 - y0 < 1e-4 || z1 - z0 < 1e-4) return;
     const g = new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0); g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); into.push(g);
   };
-  const bottom = floorY(1), top = topOf();
+  const bottom = floorY(1), top = topOf(), topFloor = floorY(APT_FLOORS);
   const zA: [number, number] = [p.zm + SW / 2, p.z1], zB: [number, number] = [p.z0, p.zm - SW / 2];
   // The flights: each tread a block down to under the one before (a stepped underside, no gaps).
   for (const f of p.flights) {
-    const riser = f.rise / RISERS, [z0, z1] = f.dir === 1 ? zA : zB;
-    for (let i = 0; i < RISERS - 1; i++) {
-      const xa = f.dir === 1 ? p.xa + i * TREAD : p.xb - (i + 1) * TREAD, y = f.y + (i + 1) * riser;
+    const riser = f.rise / f.n, [z0, z1] = f.dir === 1 ? zA : zB;
+    for (let i = 0; i < f.n - 1; i++) {
+      const xa = f.dir === 1 ? p.xa + i * TREAD : p.xa + f.run - (i + 1) * TREAD, y = f.y + (i + 1) * riser;
       box(steps, xa, xa + TREAD, y - riser - 0.2, y, z0, z1);
-      // The step's front edge (a nosing strip), a shade darker.
+      // The step's front edge (a darker strip, just proud of it).
       const nose = f.dir === 1 ? xa : xa + TREAD - 0.03;
-      box(rails, nose, nose + 0.03, y - 0.004, y + 0.003, z0 + 0.02, z1 - 0.02);
+      box(rails, nose, nose + 0.03, y + 0.001, y + 0.006, z0 + 0.02, z1 - 0.02);
     }
-    // A handrail along each side of the flight (on the walls), 0.9 above the steps' front edges.
-    const len = Math.hypot(RUN + TREAD, f.rise), ang = Math.atan2(f.rise, RUN + TREAD) * f.dir;
+    // A handrail along each side of the flight (on the walls), 0.9 above the steps' front edges, with brackets.
+    const len = Math.hypot(f.run + TREAD, f.rise), ang = Math.atan2(f.rise, f.run + TREAD) * f.dir;
     for (const [z, w0, w1] of [[z0 + 0.06, z0, z0 + 0.05], [z1 - 0.06, z1 - 0.05, z1]] as const) {
       const g = new THREE.BoxGeometry(len, 0.045, 0.045);
-      g.rotateZ(ang); g.translate((p.xa + p.xb) / 2, f.y + f.rise / 2 + 0.9, z); rails.push(g);
-      // Small brackets from the rail back to the wall.
-      for (const k of [0.15, 0.5, 0.85]) { const x = p.xa + (p.xb - p.xa) * k, y = f.y + f.rise * (f.dir === 1 ? k : 1 - k) + 0.9; box(rails, x - 0.015, x + 0.015, y - 0.06, y - 0.02, w0, w1); }
+      g.rotateZ(ang); g.translate(p.xa + f.run / 2, f.y + f.rise / 2 + 0.9, z); rails.push(g);
+      for (const k of [0.15, 0.5, 0.85]) { const x = p.xa + f.run * k, y = f.y + f.rise * (f.dir === 1 ? k : 1 - k) + 0.9; box(rails, x - 0.015, x + 0.015, y - 0.06, y - 0.02, w0, w1); }
     }
   }
-  // The landings: by the shaft (the floors' run through to the hallway under the doorway), and at the far end.
-  const floorsY = new Set(Array.from({ length: APT_FLOORS }, (_, i) => floorY(i + 1).toFixed(3)));
-  for (const y of p.west) {
-    if (Math.abs(y - bottom) < 1e-3) continue;
-    const isFloor = floorsY.has(y.toFixed(3));
-    box(steps, p.x0, p.xa, y - 0.2, y, p.z0, isFloor ? p.z1 + SW : p.z1);
-  }
-  for (const y of p.east) box(steps, p.xb, p.xe, y - 0.2, y, p.z0, p.z1);
-  // The walls: the back and the shaft's side (inside faces, all the way up), the far end, the wall between the
-  // flights, and the hallway's wall with each floor's doorway.
-  box(walls, p.x0, p.xe, bottom, top, p.z0 - 0.02, p.z0 + 0.004);
-  box(walls, p.x0 - 0.02, p.x0 + 0.004, bottom, top, p.z0, p.z1);
-  box(walls, p.xe, p.xe + 0.15, bottom, top, p.z0, p.z1 + SW);
+  // The landings: the floors' by the shaft (up to the hallway's slab under the doorway), and the half-way ones.
+  for (const y of p.west) if (y > bottom + 1e-3) box(steps, p.x0, p.xa, y - 0.2, y, p.z0, p.z1 + SW - 0.05);
+  for (const e of p.east) box(steps, e.x, p.xe, e.y - 0.2, e.y, p.z0, p.z1);
+  // The walls: the back and the shaft's side, the far end, the wall between the flights, the hallway's wall with
+  // each floor's doorway; on the top floor, a wall where the next flight up would be.
+  box(walls, p.x0, p.xe, bottom, top, p.z0 - 0.1, p.z0 + 0.01);
+  box(walls, p.x0 - 0.1, p.x0 + 0.01, bottom, top, p.z0 + 0.01, p.z1);
+  box(walls, p.xe, p.xe + 0.15, bottom, top, p.z0 + 0.01, p.z1 + SW);
   box(walls, p.xa, p.xb, bottom, top, p.zm - SW / 2, p.zm + SW / 2);
+  box(walls, p.xa, p.xa + SW, topFloor, top, p.zm + SW / 2, p.z1);
   const o0 = p.x0 + 0.05, o1 = p.x0 + LAND_W - 0.05;
-  box(walls, p.x0, o0, bottom, top, p.z1, p.z1 + SW);
-  box(walls, o1, p.xe + 0.15, bottom, top, p.z1, p.z1 + SW);
+  box(walls, p.x0 + 0.01, o0, bottom, top, p.z1, p.z1 + SW);
+  box(walls, o1, p.xe, bottom, top, p.z1, p.z1 + SW);
   for (let f = 1; f <= APT_FLOORS; f++) {
     const y = floorY(f), next = f < APT_FLOORS ? floorY(f + 1) : top;
     box(walls, o0, o1, y + 2.3, next, p.z1, p.z1 + SW);
   }
-  // Lights on the walls over each landing.
-  for (const y of p.west) box(lights, p.x0 + 0.004, p.x0 + 0.02, y + 2.05, y + 2.25, (p.z0 + p.z1) / 2 - 0.25, (p.z0 + p.z1) / 2 + 0.25);
-  for (const y of p.east) box(lights, p.xe - 0.016, p.xe, y + 2.05, y + 2.25, (p.z0 + p.z1) / 2 - 0.25, (p.z0 + p.z1) / 2 + 0.25);
+  // Lights over the half-way landings (the floors' have their number plates).
+  for (const e of p.east) box(lights, p.xe - 0.016, p.xe, e.y + 2.05, e.y + 2.25, (p.z0 + p.z1) / 2 - 0.25, (p.z0 + p.z1) / 2 + 0.25);
   const merge = (gs: THREE.BufferGeometry[]) => { const g = mergeGeometries(gs.map((x) => x.toNonIndexed()))!; gs.forEach((x) => x.dispose()); return g; };
   return { steps: merge(steps), walls: merge(walls), rails: merge(rails), lights: merge(lights) };
 }
@@ -78,8 +89,9 @@ function Stairwell({ b }: { b: Building }) {
   const geo = useMemo(() => stairGeometry(plan), [plan]);
   const mats = useMemo(() => ({
     steps: new THREE.MeshStandardMaterial({ color: "#c9c3b8", roughness: 0.85 }),
-    walls: new THREE.MeshStandardMaterial({ color: "#e6e0d4", roughness: 0.9 }),
-    rails: new THREE.MeshStandardMaterial({ color: "#8a8f96", roughness: 0.35, metalness: 0.6 }),
+    // (The same paint as the hallway's walls: one wall, one colour.)
+    walls: new THREE.MeshStandardMaterial({ color: "#e3dccf", roughness: 0.9, side: THREE.DoubleSide }),
+    rails: new THREE.MeshStandardMaterial({ color: "#5a5f66", roughness: 0.35, metalness: 0.6 }),
     lights: new THREE.MeshStandardMaterial({ color: "#fffaf0", emissive: new THREE.Color("#fff3d6"), emissiveIntensity: 1.2 }),
   }), []);
   useEffect(() => () => { Object.values(geo).forEach((g) => g.dispose()); Object.values(mats).forEach((m) => m.dispose()); }, [geo, mats]);
@@ -89,6 +101,10 @@ function Stairwell({ b }: { b: Building }) {
     <mesh geometry={geo.walls} material={mats.walls} receiveShadow />
     <mesh geometry={geo.rails} material={mats.rails} />
     <mesh geometry={geo.lights} material={mats.lights} />
+    {/* Each floor's number on a plate on the shaft's wall, by its landing (lit a little). */}
+    {Array.from({ length: APT_FLOORS }, (_, i) => <mesh key={i} position={[plan.x0 + 0.012, floorY(i + 1) + 1.65, (plan.z0 + plan.z1) / 2]} rotation-y={Math.PI / 2}>
+      <planeGeometry args={[0.3, 0.3]} /><meshStandardMaterial map={plateTexture(i + 1)} emissive="#ffffff" emissiveIntensity={0.25} emissiveMap={plateTexture(i + 1)} roughness={0.6} />
+    </mesh>)}
   </group>;
 }
 
@@ -109,7 +125,10 @@ export function Stairs({ state, city }: { state: GameState; city: City }) {
 
   useFrame((_, raw) => {
     const dt = Math.min(raw, 0.1), b = buildingIn(state, byKey);
-    if (b !== shown) setShown(b);
+    // Drawn for the building you're in — or, outside, the nearest one close by (seen through its door and windows).
+    let draw = b;
+    if (!draw) { let best = 45; for (const c of buildings) { const d = Math.hypot(c.x - state.pos.x, c.z - state.pos.z); if (d < best) { best = d; draw = c; } } }
+    if (draw !== shown) setShown(draw);
     state.stairGround = null; state.stairFeet = null;
     if (!b) { feet.current = null; return; }
     const { plan, layout } = of(b), f = layout.frame, p = state.pos;
@@ -129,8 +148,8 @@ export function Stairs({ state, city }: { state: GameState; city: City }) {
       if (fl <= 1) { state.level = null; state.interior.key = aptKey(b); }
       else { aptFloorOf(b, fl); state.level = { building: aptKey(b), floor: fl, y: floorY(fl) }; state.interior.key = floorKey(b, fl); }
     }
-    // The feet, tread to tread (only where there are steps near).
-    const onFlight = lx > plan.xa - 0.5 && lx < plan.xb + 0.5;
+    // The feet, tread to tread — only on a flight (on the landings you stand and walk as on any floor).
+    const onFlight = flightUnder(plan, lx, lz, p.y);
     if (!onFlight || state.foodScript || state.script || state.health <= 0) { feet.current = null; return; }
     const vel = state.bodyVel ?? { x: 0, z: 0 };
     const yaw = state.rotY;
@@ -141,12 +160,17 @@ export function Stairs({ state, city }: { state: GameState; city: City }) {
     const body = { x: lx, y: p.y, z: lz, yaw: ly, vx: lv.x, vz: lv.z };
     if (!feet.current) {
       const rx = Math.cos(ly), rz = -Math.sin(ly);
-      const put = (side: -1 | 1) => { const x = lx + rx * side * 0.1, z = lz + rz * side * 0.1; return { x, y: stairGround(plan, x, z, p.y + 0.3, true) ?? p.y, z, from: null, k: 1, dur: 0.3 }; };
-      feet.current = { L: put(1), R: put(-1), next: "L" };
+      const put = (side: -1 | 1) => { const x = treadMiddle(plan, lx + rx * side * 0.1), z = lz + rz * side * 0.1; return { x, y: stairGround(plan, x, z, p.y + 0.35, true) ?? p.y, z, from: null, k: 1, dur: 0.3 }; };
+      feet.current = { L: put(1), R: put(-1), next: "L", hip: null };
     }
     feet.current = stepFeet(plan, feet.current, body, dt);
-    const legs = legsToFeet({ x: lx, z: lz, yaw: ly }, p.y + 0.95, footNow(feet.current.L), footNow(feet.current.R));
-    state.stairFeet = legs;
+    const legs = legsToFeet({ x: lx, z: lz, yaw: ly }, footNow(feet.current.L), footNow(feet.current.R));
+    // The hips (eased): as high as the lower-reaching foot allows — that leg straight, the other bent as its step
+    // needs. Standing on one step both legs are straight.
+    const fc = feet.current;
+    fc.hip = fc.hip === null ? legs.top : fc.hip + (legs.top - fc.hip) * (1 - Math.exp(-16 * dt));
+    const settled = legsToFeetAt({ x: lx, z: lz, yaw: ly }, footNow(fc.L), footNow(fc.R), fc.hip);
+    state.stairFeet = { ...settled, drop: p.y + 0.95 - fc.hip };
   }, -0.85);
 
   return shown ? <Stairwell b={shown} /> : null;

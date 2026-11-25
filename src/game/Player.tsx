@@ -311,7 +311,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       // First person: backing up or stepping aside is slower than walking ahead.
       const fpOnFoot = state.firstPerson;
       const fpPace = fpOnFoot ? (direction < -0.1 ? 0.62 : Math.abs(sideways) > Math.abs(direction) ? 0.75 : 1) : 1;
-      const pace = Math.min(exhausted ? TIRED_WALK : Infinity, (useStick && !running ? WALK * Math.min(1, 0.35 + stickPush * 0.75) : running ? run : WALK) * fpPace);
+      const pace = Math.min(exhausted ? TIRED_WALK : Infinity, (useStick && !running ? WALK * Math.min(1, 0.35 + stickPush * 0.75) : running ? run : WALK) * fpPace) * (state.stairFeet ? 0.5 : 1);
       const [vx, vz] = cameraRelativeVelocity(state.camYaw, direction, sideways, pace);
       s.vel.set(damp(s.vel.x, vx, ACCEL, dt), 0, damp(s.vel.z, vz, ACCEL, dt));
       // In first person the body always faces where the view does (the camera turns it); it walks backward or
