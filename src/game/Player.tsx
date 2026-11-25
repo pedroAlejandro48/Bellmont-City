@@ -651,8 +651,10 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     if (root.current && tk > 0.001 && !dead) root.current.rotation.z += tk * 0.035 * Math.sin(ph) * mv;
     const splay = bed ? 0.15 : 1;
     const sideL = script || usingBike ? 0 : -sideSwing * (0.5 + 0.5 * Math.sin(ph)), sideR = script || usingBike ? 0 : -sideSwing * (0.5 - 0.5 * Math.sin(ph));
-    thighL.current?.rotation.set(hipL, 0, (0.13 + Math.max(0, -legSwing) + Math.max(0, plantSwing) + 0.32 * straddle) * splay + sideL);
-    thighR.current?.rotation.set(hipR, 0, (-0.13 - Math.max(0, legSwing) + Math.min(0, plantSwing) - 0.32 * straddle) * splay + sideR);
+    // (On the ladder the knees go a little apart: legs.spread.)
+    const apart = legs?.spread ?? 0;
+    thighL.current?.rotation.set(hipL, 0, (0.13 + Math.max(0, -legSwing) + Math.max(0, plantSwing) + 0.32 * straddle) * splay + sideL + apart);
+    thighR.current?.rotation.set(hipR, 0, (-0.13 - Math.max(0, legSwing) + Math.min(0, plantSwing) - 0.32 * straddle) * splay + sideR - apart);
     shinL.current?.rotation.set(kneeL, 0, 0);
     shinR.current?.rotation.set(kneeR, 0, 0);
     armL.current?.rotation.set(shL, 0, (0.12 + air * 0.2) * (1 - sitHands) - 0.1 * sitHands);

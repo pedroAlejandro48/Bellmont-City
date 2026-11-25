@@ -120,7 +120,7 @@ export function CameraRig({ state }: { state: GameState }) {
   const firstPerson = (dt: number) => {
     const head = state.avatar.body[3];
     if (!head) return false;
-    const onFoot = !state.script && !state.bench && !state.scooter.riding && !state.scooter.action && !state.accident && state.health > 0;
+    const onFoot = !state.script && !state.ladder && !state.bench && !state.scooter.riding && !state.scooter.action && !state.accident && state.health > 0;
     const forward = state.rotY;
     let lookYaw = state.camYaw + Math.PI;
     const onBike = state.scooter.riding || state.scooter.action === "mount";

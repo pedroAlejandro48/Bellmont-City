@@ -84,7 +84,9 @@ export function RoofAccess({ state, city }: { state: GameState; city: City }) {
       }
       // The camera: behind and under the climber going up, above going down; following; back in its place before
       // the end.
-      if (tc < dur - CAM_BACK) {
+      // (Only a camera already behind the climber is held there: in first person the view stays free, from his eyes.)
+      if (state.firstPerson) { if (state.camLock?.by === "ladder") state.camLock = null; }
+      else if (tc < dur - CAM_BACK) {
         const y = pose.y;
         const cam = L.dir === "up"
           ? { pos: [plan.ladX + 0.3, Math.max(0.5, y + 0.1), outZ(plan, 0.84)] as const, at: [plan.ladX, y + 1.55, outZ(plan, 0.3)] as const }

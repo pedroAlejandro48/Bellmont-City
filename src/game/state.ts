@@ -67,7 +67,7 @@ export type Script = { x: number; z: number; yaw: number; walk: number; sit: num
   /** Getting into bed: sat on its edge (sit), each leg up straight on it (legL, legR), lying back flat (lie); 0..1. */
   bed?: { sit: number; lie: number; legL: number; legR: number };
   /** Each leg set outright (a high step over a shower's curb): thigh forward (negative) and knee bend, radians. */
-  legs?: { hipL: number; kneeL: number; hipR: number; kneeR: number; /** The hips this much lower (negative: higher). */ drop?: number };
+  legs?: { hipL: number; kneeL: number; hipR: number; kneeR: number; /** The hips this much lower (negative: higher). */ drop?: number; /** The knees this far apart (radians each side). */ spread?: number };
   /** Up off the floor (climbing a ladder): the feet's level, world height. */
   y?: number };
 /** Someone's use of an apartment building's elevator: the car going `from` → `to` (the same: standing there), `at`
