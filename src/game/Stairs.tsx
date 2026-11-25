@@ -4,6 +4,7 @@
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { stairsTexture } from "./Signs";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { APT_FLOORS, aptKey, floorKey, floorY } from "./apartments";
 import { FLOOR_CLEAR, aptFloorOf } from "./aptRoom";
@@ -72,7 +73,8 @@ function stairGeometry(p: StairPlan) {
   box(walls, p.xa, p.xb, bottom, top, p.zm - SW / 2, p.zm + SW / 2);
   box(walls, p.xa, p.xa + SW, topFloor, top, p.zm + SW / 2, p.z1);
   const o0 = p.x0 + 0.05, o1 = p.x0 + LAND_W - 0.05;
-  box(walls, p.x0 + 0.01, o0, bottom, top, p.z1, p.z1 + SW);
+  // (From the elevator's own wall to the hallway on: no gap at the corner.)
+  box(walls, p.x0, o0, bottom, top, p.z1, p.z1 + SW);
   box(walls, o1, p.xe, bottom, top, p.z1, p.z1 + SW);
   for (let f = 1; f <= APT_FLOORS; f++) {
     const y = floorY(f), next = f < APT_FLOORS ? floorY(f + 1) : top;
@@ -102,6 +104,10 @@ function Stairwell({ b }: { b: Building }) {
     <mesh geometry={geo.walls} material={mats.walls} receiveShadow />
     <mesh geometry={geo.rails} material={mats.rails} />
     <mesh geometry={geo.lights} material={mats.lights} />
+    {/* Over the doorway onto the stairs, on the hallway's side of floors 2–15: the green stairs sign. */}
+    {Array.from({ length: APT_FLOORS - 1 }, (_, i) => <mesh key={`s${i}`} position={[plan.x0 + LAND_W / 2, floorY(i + 2) + 2.56, plan.z1 + SW + 0.006]}>
+      <planeGeometry args={[0.4, 0.4]} /><meshBasicMaterial map={stairsTexture()} toneMapped={false} />
+    </mesh>)}
     {/* Each floor's number on a plate on the shaft's wall, by its landing (lit a little). */}
     {Array.from({ length: APT_FLOORS }, (_, i) => <mesh key={i} position={[plan.x0 + 0.012, floorY(i + 1) + 1.65, (plan.z0 + plan.z1) / 2]} rotation-y={Math.PI / 2}>
       <planeGeometry args={[0.3, 0.3]} /><meshStandardMaterial map={plateTexture(i + 1)} emissive="#ffffff" emissiveIntensity={0.25} emissiveMap={plateTexture(i + 1)} roughness={0.6} />

@@ -3,6 +3,7 @@ import { stairPlan } from "./stairs";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import { ExitSign } from "./Signs";
 import { CharacterBody, useBodyRig } from "./CharacterBody";
 import { BUILDING_ENTRANCE, SIDEWALK_H, type Building, type VenueKind } from "./config";
 import { quality } from "./quality";
@@ -579,6 +580,8 @@ export function Venue({ b, mats, state }: { b: Building; mats: Materials; state:
     {/* The double glass door, opening out like the restaurants'. */}
     {[-1, 1].map((s) => <mesh key={s} position={[s * (LEAF + 0.04), DOOR_H / 2, (SKIN - WALL) / 2]} material={own.metal} castShadow><boxGeometry args={[0.08, DOOR_H + 0.04, WALL + SKIN + 0.02]} /></mesh>)}
     <mesh position={[0, DOOR_H + 0.04, (SKIN - WALL) / 2]} material={own.metal}><boxGeometry args={[2 * LEAF + 0.16, 0.08, WALL + SKIN + 0.02]} /></mesh>
+    {/* Inside, over the way out: the lit red EXIT sign. */}
+    <ExitSign position={[0, DOOR_H + 0.3, -WALL - 0.035]} rotationY={Math.PI} />
     <Leaf side={1} frame={own.metal} mats={mats} at={(g) => { leaves.current.right = g; }} />
     <Leaf side={-1} frame={own.metal} mats={mats} at={(g) => { leaves.current.left = g; }} />
     {[1, -1].map((s) => <mesh key={s} position={[s * (LEAF - 0.48), DOOR_H - 0.01, 0.07]} material={mats.closer}><boxGeometry args={[0.06, 0.05, 0.06]} /></mesh>)}

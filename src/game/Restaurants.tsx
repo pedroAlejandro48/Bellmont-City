@@ -2,6 +2,7 @@ import { useFrame } from "@react-three/fiber";
 import { quality } from "./quality";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { ExitSign } from "./Signs";
 import { BUILDING_ENTRANCE, RESTAURANTS, SIDEWALK_H, restaurantOpen, businessOpen, timeInfo, type Building, type City, type RestaurantKind, openGroundFloor } from "./config";
 import { canvas, groundY, makeBlankWall, tex } from "./textures";
 import { Venue } from "./Venues";
@@ -659,6 +660,8 @@ function Restaurant({ b, mats, state, ready }: { b: Building; mats: Materials; s
     {/* The doorway: frame, two glass leaves opening outward, and their closers. */}
     {[-1, 1].map((s) => <mesh key={s} position={[s * (LEAF + 0.04), DOOR_H / 2, (SKIN - WALL) / 2]} material={own.metal} castShadow><boxGeometry args={[0.08, DOOR_H + 0.04, WALL + SKIN + 0.02]} /></mesh>)}
     <mesh position={[0, DOOR_H + 0.04, (SKIN - WALL) / 2]} material={own.metal}><boxGeometry args={[2 * LEAF + 0.16, 0.08, WALL + SKIN + 0.02]} /></mesh>
+    {/* Inside, over the way out: the lit red EXIT sign. */}
+    <ExitSign position={[0, DOOR_H + 0.3, -WALL - 0.035]} rotationY={Math.PI} />
     <Leaf side={1} frame={own.metal} mats={mats} at={(g) => { leaves.current.right = g; }} />
     <Leaf side={-1} frame={own.metal} mats={mats} at={(g) => { leaves.current.left = g; }} />
     {[1, -1].map((s) => <mesh key={s} position={[s * (LEAF - 0.48), DOOR_H - 0.01, 0.07]} material={mats.closer}><boxGeometry args={[0.06, 0.05, 0.06]} /></mesh>)}
