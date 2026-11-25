@@ -1,4 +1,5 @@
 import { PantryShelf } from "./PantryModels";
+import { stairPlan } from "./stairs";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
@@ -590,7 +591,8 @@ export function Venue({ b, mats, state }: { b: Building; mats: Materials; state:
         // (An apartment lobby's ceiling is open over the elevator's shaft: the car goes up through it.)
         const sh = fixtures.find((f) => f.type === "shaft");
         if (!sh) return <mesh position={[0, CEILING, -depth / 2]} rotation-x={Math.PI / 2} material={own.ceiling}><planeGeometry args={[width, depth]} /></mesh>;
-        const x0 = -width / 2, x1 = width / 2, z0 = -depth, z1 = 0, hx0 = sh.x - sh.w / 2, hx1 = sh.x + sh.w / 2, hz0 = sh.z - sh.d / 2, hz1 = sh.z + sh.d / 2;
+        // (…and over the stairwell beside it: the stairs go up through it.)
+        const x0 = -width / 2, x1 = width / 2, z0 = -depth, z1 = 0, hx0 = sh.x - sh.w / 2, hx1 = stairPlan(bounds).xe + 0.15, hz0 = sh.z - sh.d / 2, hz1 = sh.z + sh.d / 2;
         const parts: [number, number, number, number][] = [[x0, x1, z0, hz0], [x0, x1, hz1, z1], [x0, hx0, hz0, hz1], [hx1, x1, hz0, hz1]];
         return parts.filter(([a0, a1, b0, b1]) => a1 - a0 > 0.001 && b1 - b0 > 0.001).map(([a0, a1, b0, b1], i) => <mesh key={`c${i}`} position={[(a0 + a1) / 2, CEILING, (b0 + b1) / 2]} rotation-x={Math.PI / 2} material={own.ceiling}><planeGeometry args={[a1 - a0, b1 - b0]} /></mesh>);
       })()}

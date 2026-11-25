@@ -4,6 +4,7 @@
 // fixtures; the solid ones are what people bump into, and the renderer draws each by its type.
 import { buildingLayout, type Building, type VenueKind } from "./config";
 import { LEAF, WALL, roomKey, type Box, type Frame, type RoomLayout } from "./restaurantRoom";
+import { SW, landingOpening, stairPlan, stairWalls } from "./stairs";
 
 export type FixtureType =
   | "desk" | "chairOffice" | "bench" | "waitChair" | "flag" | "board" | "redCross" | "bed" | "curtain"
@@ -19,6 +20,8 @@ export type Fixture = { type: FixtureType; x: number; z: number; rot: number; w:
 export type VenueLayout = RoomLayout & {
   /** Apartments' lobby: the elevator doorway's box (solid while the doors are shut). */
   liftDoor?: Box;
+  /** Apartments' lobby: the stairs' opening's gate (shut while up the stairs; its `home` is where it goes). */
+  stairGate?: Box;
   /** Apartments' lobby: the shaft's walls (the camera stays in front of them). */
   walls?: Box[];
   venue: VenueKind;
@@ -160,7 +163,8 @@ export function venueLayout(b: Building): VenueLayout {
     add("armchair", maxX - 1.7, midZ - 1.35, 0, 0.85, 0.8);
     add("armchair", maxX - 1.7, midZ + 1.35, Math.PI, 0.85, 0.8);
     add("mailboxes", maxX - 0.03, -2.2, -Math.PI / 2, 1.6, 0.05, false);
-    add("painting", 1.2, minZ + 0.03, 0, 1.6, 0.05, false);
+    // (The painting on the back wall past the stairwell.)
+    add("painting", Math.min(maxX - 1.4, stairPlan(bounds).xe + 1.6), minZ + 0.03, 0, 1.6, 0.05, false);
   } else {
     // The grocery: the checkout on the right, its register at its left end; fruit crates along the left wall,
     // shelving aisles in the middle, the baskets by the door.
@@ -187,7 +191,18 @@ export function venueLayout(b: Building): VenueLayout {
   }
   // The lobby's elevator shaft: walls you can't pass, a doorway you walk through while the doors are open.
   let liftDoor: Box | undefined, walls: Box[] | undefined;
-  if (venue === "apartments") { const sh = shaftSolids(minX, minZ); solids.push(...sh.walls, sh.door); liftDoor = sh.door; walls = sh.walls.map((w) => ({ ...w })); }
+  let stairGate: Box | undefined;
+  if (venue === "apartments") {
+    const sh = shaftSolids(minX, minZ); solids.push(...sh.walls, sh.door); liftDoor = sh.door;
+    // The stairwell beside the shaft (open onto the lobby at its landing); its opening has a gate that shuts while
+    // you're up on the stairs (the lobby's landings in between are open to nothing).
+    const st = stairPlan(bounds), sw = stairWalls(st);
+    solids.push(...sw);
+    const [a, c] = landingOpening(st);
+    stairGate = { x: 1e6, z: 1e6, hx: (c - a) / 2, hz: SW / 2, home: [(a + c) / 2, st.z1 + SW / 2] } as Box;
+    solids.push(stairGate);
+    walls = [...sh.walls, ...sw].map((w) => ({ ...w }));
+  }
   const plants: [number, number][] = venue === "gym" || venue === "grocery" ? [[windowSide * (maxX - 0.4), -0.65]] : [[maxX - 0.4, -0.65], [minX + 0.4, -0.65]];
   // (The hospital's reception has another, in its corner by the wall and the door.)
   if (ward) plants.push([-windowSide * (maxX - 0.45), ward.z + 0.5]);
@@ -199,6 +214,6 @@ export function venueLayout(b: Building): VenueLayout {
   return {
     key: roomKey(b), kind: "cafe", venue, frame, width, depth, bounds, counter: fixtureBox(counterFix), windowSide,
     // No divider: the lights hang over the front and back halves.
-    divider: { z: midZ, doorX: 0 }, frontWindows, sideWindows, solids, plants, fixtures: F, service, staff, ...(liftDoor ? { liftDoor } : {}), ...(walls ? { walls } : {}), ...(ward ? { ward } : {}),
+    divider: { z: midZ, doorX: 0 }, frontWindows, sideWindows, solids, plants, fixtures: F, service, staff, ...(liftDoor ? { liftDoor } : {}), ...(stairGate ? { stairGate } : {}), ...(walls ? { walls } : {}), ...(ward ? { ward } : {}),
   };
 }

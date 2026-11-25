@@ -10,6 +10,7 @@ import { TABLE, type Box, type Item, type Room } from "./restaurantRoom";
 import { SHAFT, shaftSolids, venueLayout } from "./venueRoom";
 import { APT_FLOORS } from "./apartments";
 import { outZ, roofPlan, type RoofPlan } from "./roof";
+import { stairPlan, stairWalls, type StairPlan } from "./stairs";
 
 export const HALL = 1.6;
 export const INNER_WALL = 0.14;
@@ -32,6 +33,8 @@ export type AptFloor = Room & {
   liftDoor: Box;
   /** The top floor: the ladder up to the roof (on the hallway's back wall), and where one stands in front of it. */
   ladder?: RoofPlan; roofSpot?: [number, number];
+  /** The stairs (the same in every floor of the building). */
+  stairs: StairPlan;
   /**
    * The bathroom, between the living room and the bedroom: from the bedroom's wall (x0) to the TV's wall (x1), from
    * the short wall with its door (z0, its inner face; the door from dx0 to dx1) to the front. In it the shower (the
@@ -82,7 +85,10 @@ export function aptFloor(b: Building, floor: number): AptFloor {
   // (The shaft: walls round the car, its doorway solid only while the doors are shut.)
   const shaft = shaftSolids(minX, minZ);
   solids.push(...shaft.walls, shaft.door);
-  box(minX + SHAFT, maxX, minZ, hall0);
+  // The stairwell right of the shaft (its walls; the floor's landing open to the hallway), the storage beyond it.
+  const st = stairPlan(bounds);
+  solids.push(...stairWalls(st));
+  box(st.xe + 0.15, maxX, minZ, hall0);
   // The top floor: the ladder up to the roof, against the hallway's back wall.
   const ladder = floor === APT_FLOORS ? roofPlan(b) : undefined;
   if (ladder) box(ladder.ladX - 0.3, ladder.ladX + 0.3, Math.min(ladder.wallZ, outZ(ladder, 0.22)), Math.max(ladder.wallZ, outZ(ladder, 0.22)));
@@ -166,7 +172,7 @@ export function aptFloor(b: Building, floor: number): AptFloor {
   return {
     ...base, items, doors: { left: 0, right: 0 },
     key: floorKey(b, floor), upper: floor, y: floorY(floor),
-    solids, walls, plants: [], hallZ: [hall0, hall1], wallZ, divX, door: { x: doorX, z: wallZ }, bedroomDoor: [bd0, bd1], furniture: F, front, side,
+    solids, walls, plants: [], stairs: st, hallZ: [hall0, hall1], wallZ, divX, door: { x: doorX, z: wallZ }, bedroomDoor: [bd0, bd1], furniture: F, front, side,
     // (The bedroom door opens into the bedroom, toward −x: its frame's +z is the room's −x.)
     // (The bathroom door opens into the bathroom, toward +z, like the apartment's.)
     hinged: { apartment: { ox: doorX, oz: inside0, theta: 0 }, bedroom: { ox: divX - INNER_WALL / 2, oz: bd1, theta: -Math.PI / 2 }, bathroom: { ox: bdx1, oz: sw1, theta: 0 } },
@@ -187,4 +193,13 @@ export function aptFloor(b: Building, floor: number): AptFloor {
       }),
     },
   };
+}
+
+/** Each floor's plan, made once (shared by everything that needs it: the same objects, the same doors' boxes). */
+const floors = new Map<string, AptFloor>();
+export function aptFloorOf(b: Building, floor: number): AptFloor {
+  const k = floorKey(b, floor);
+  let f = floors.get(k);
+  if (!f) { f = aptFloor(b, floor); floors.set(k, f); }
+  return f;
 }

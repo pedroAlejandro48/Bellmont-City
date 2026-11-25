@@ -270,6 +270,12 @@ export type GameState = {
   hospital: { key: string; req: number; start: number | null; spot: [number, number] | null; paid: number; h0?: number } | null;
   /** Others in the room at the hospital (from presence). */
   hospitalPeers: { id: string; key: string; req: number; start: number | null; spot: [number, number] | null }[];
+  /** On an apartment building's stairs: what's underfoot there (Stairs sets it each frame; null elsewhere). */
+  stairGround: ((x: number, z: number) => number) | null;
+  /** On the stairs' steps: the legs reaching the feet planted tread to tread (null: the usual walk). */
+  stairFeet: { hipL: number; kneeL: number; rollL: number; hipR: number; kneeR: number; rollR: number; drop: number } | null;
+  /** The body's ground velocity (Player keeps it). */
+  bodyVel: { x: number; z: number } | null;
   venueSeatLeave: boolean;
   /** 0 clear .. 1 black: the fade between outside and inside. */
   fade: number;
@@ -383,7 +389,7 @@ export function createState(save: SaveData): GameState {
     inCar: false, liftView: null, liftPress: [], liftShown: null, liftShut: null, liftBridge: null, aptHere: null,
     uiLock: null, fridgeLoad: [], camLock: null, ladder: null, ladderPrompt: false, noJump: false, kitchenAsk: null, meal: null, kitchenQ: false,
     keys: new Set(),
-    jumpQueued: false, venueSeat: null, venueSeatLeave: false, hospital: null, hospitalPeers: [],
+    jumpQueued: false, venueSeat: null, venueSeatLeave: false, hospital: null, hospitalPeers: [], stairGround: null, stairFeet: null, bodyVel: null,
     simulationTime: 0,
     accident: save.accident ? { phase: save.accident.phase, startedAt: -(KNOCKDOWN_SECONDS - save.accident.remaining), riseStartedAt: save.accident.phase === "rising" ? -(GET_UP_SECONDS - save.accident.remaining) : null, vehicleId: null, direction: save.accident.direction, launchSpeed: 0, seed: save.accident.seed } : null,
     incidents: [],
@@ -443,7 +449,7 @@ export function uiCaptured(s: GameState) {
 }
 
 /** The height of the ground under (x, z): an apartment building's floor while up there, else the street's. */
-export const groundAt = (s: GameState, x: number, z: number) => (s.level ? s.level.y : floorHeight(x, z));
+export const groundAt = (s: GameState, x: number, z: number) => (s.stairGround ? s.stairGround(x, z) : s.level ? s.level.y : floorHeight(x, z));
 
 export function toast(state: GameState, title: string, kind: GameState["toasts"][number]["kind"] = "info", body?: string) {
   // The same notice again replaces the one showing (its time starts over); different ones stack.

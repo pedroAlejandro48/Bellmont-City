@@ -325,7 +325,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       if (state.jumpQueued && !state.noJump) {
         // Under a ceiling (an apartment building's floors — hall and apartments — and its elevator), a jump only goes
         // as high as leaves the top of the head just short of it.
-        const lv = state.level, clear = state.inCar ? p.y + CAR_CLEAR : lv && lv.floor >= 2 && lv.floor <= APT_FLOORS ? lv.y + FLOOR_CLEAR : Infinity;
+        const lv = state.level, clear = state.stairGround ? p.y + 2.5 : state.inCar ? p.y + CAR_CLEAR : lv && lv.floor >= 2 && lv.floor <= APT_FLOORS ? lv.y + FLOOR_CLEAR : Infinity;
         const rise = Math.max(0.05, clear - 0.03 - (p.y + HEAD_TOP));
         s.vy = Math.min(JUMP_V, Math.sqrt(2 * GRAVITY * rise));
         s.grounded = false;
@@ -335,6 +335,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     if (!s.grounded || dead || incapacitated) s.turnRate = 0;
     state.movingForward = !script && (fwdKey && !back && !left && !right || (!!stick && stickPush > 0.12 && stick.y > 0)) && s.grounded && !dead && !incapacitated && !usingBike && !sitting && Math.hypot(s.vel.x, s.vel.z) > 0.1;
     state.jumpQueued = false;
+    state.bodyVel = { x: s.vel.x, z: s.vel.z };
     // airborne: horizontal velocity frozen (no steering, same speed)
 
     p.x += s.vel.x * dt;
@@ -650,6 +651,9 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     // Each leg set outright (stepping high over something).
     const legs = script?.legs;
     if (legs) { hipL = legs.hipL; kneeL = legs.kneeL; hipR = legs.hipR; kneeR = legs.kneeR; bob = -(legs.drop ?? 0); }
+    // On the stairs' steps: the legs reach each foot where it's planted on its tread (or on its way to the next).
+    const sf = !script && s.grounded && !dead ? state.stairFeet : null;
+    if (sf) { hipL = sf.hipL; kneeL = sf.kneeL; hipR = sf.hipR; kneeR = sf.kneeR; bob = -sf.drop; }
     if (hips.current) { hips.current.position.y = 0.95 + bob + riderOffset; hips.current.rotation.x = bed ? -Math.PI / 2 * bed.lie : 0; }
     // Leaning in over the counter while reaching for food.
     if (grabbing && !script && !usingBike && !lowGrab) lean = Math.max(lean, 0.3 * grabReach(grabT));
@@ -661,8 +665,14 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     const sideL = script || usingBike ? 0 : -sideSwing * (0.5 + 0.5 * Math.sin(ph)), sideR = script || usingBike ? 0 : -sideSwing * (0.5 - 0.5 * Math.sin(ph));
     // (On the ladder the knees go a little apart: legs.spread.)
     const apart = legs?.spread ?? 0;
+    if (sf) {
+      // (On the steps each thigh leans out or in just as far as its foot is to the side.)
+      thighL.current?.rotation.set(hipL, 0, 0.04 - sf.rollL);
+      thighR.current?.rotation.set(hipR, 0, -0.04 - sf.rollR);
+    } else {
     thighL.current?.rotation.set(hipL, 0, (0.13 + Math.max(0, -legSwing) + Math.max(0, plantSwing) + 0.32 * straddle) * splay + sideL + apart);
     thighR.current?.rotation.set(hipR, 0, (-0.13 - Math.max(0, legSwing) + Math.min(0, plantSwing) - 0.32 * straddle) * splay + sideR - apart);
+    }
     shinL.current?.rotation.set(kneeL, 0, 0);
     shinR.current?.rotation.set(kneeR, 0, 0);
     armL.current?.rotation.set(shL, 0, (0.12 + air * 0.2) * (1 - sitHands) - 0.1 * sitHands);

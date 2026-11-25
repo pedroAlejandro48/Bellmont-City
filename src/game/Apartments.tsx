@@ -1,11 +1,12 @@
 import { needFreeHands } from "./handsHeld";
+import { SW, stairPlan, type StairPlan } from "./stairs";
 import { AptShare, fridgeAt, fridgeOf } from "./aptShare";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { APT_FLOORS, STOREY, aptKey, floorKey, floorY, freeFloors } from "./apartments";
-import { aptFloor, FLOOR_CLEAR, INNER_WALL, type AptFloor, type AptFurniture } from "./aptRoom";
+import { aptFloor, aptFloorOf, FLOOR_CLEAR, INNER_WALL, type AptFloor, type AptFurniture } from "./aptRoom";
 import { CharacterBody, useBodyRig } from "./CharacterBody";
 import { BUILDING_ENTRANCE, SIDEWALK_H, timeInfo, type Building, type City } from "./config";
 import { plan as makePlan, planAt, walkSeg, type GPose, type Plan } from "./groceryRun";
@@ -204,7 +205,7 @@ function AptExterior({ b, state }: { b: Building; state: GameState }) {
     })}
     <RoofTop b={b} mat={faces.roof} y={H(UPPER)} />
     {/* The slab between the lobby and the first floor (seen from the open band, and from the lobby's windows). */}
-    <HoledSlab x0={-width / 2 + 0.01} x1={width / 2 - 0.01} z0={-depth + 0.01} z1={-0.01} y0={-0.12} y1={0} holes={[shaftHole(layout.bounds.minX, layout.bounds.minZ), slotHole(layout.bounds.minX, layout.bounds.minZ, -depth + 0.01)]} mat={faces.roof} />
+    <HoledSlab x0={-width / 2 + 0.01} x1={width / 2 - 0.01} z0={-depth + 0.01} z1={-0.01} y0={-0.12} y1={0} holes={[shaftHole(layout.bounds.minX, layout.bounds.minZ), slotHole(layout.bounds.minX, layout.bounds.minZ, -depth + 0.01), stairHole(stairPlan(layout.bounds))]} mat={faces.roof} />
     {/* The elevator's window slot up the back: dark glass, a mullion at every floor. */}
     {(() => { const x = layout.bounds.minX + SHAFT / 2, top = H(UPPER), sx = x; return <group>
       {/* The shaft inside, all the way up (seen through the slot): its sides, and its front with each floor's
@@ -238,6 +239,8 @@ function HoledSlab({ x0, x1, z0, z1, y0, y1, holes, mat }: { x0: number; x1: num
  * back of the building it looks out through (the car's window), in a building's frame. */
 const shaftHole = (minX: number, minZ: number): Rect => ({ x0: minX + 0.03, x1: minX + SHAFT - 0.03, z0: minZ + 0.03, z1: minZ + SHAFT - 0.03 });
 const SLOT = 0.7, SLOT_J = 0.03;
+/** The stairwell's way through a floor's slab (its walls stand in it; its landings are its own). */
+const stairHole = (p: StairPlan): Rect => ({ x0: p.x0 + 0.004, x1: p.xe + 0.15, z0: p.z0 + 0.004, z1: p.z1 + SW });
 /** The window slot's way through a floor's slab (from the outside face in to the shaft): no slab edge shows across
  * the car's window, only the slot's own metal bar at each floor. */
 const slotHole = (minX: number, minZ: number, outer: number): Rect => ({ x0: minX + SHAFT / 2 - SLOT / 2 - SLOT_J - 0.005, x1: minX + SHAFT / 2 + SLOT / 2 + SLOT_J + 0.005, z0: outer - 0.01, z1: minZ + 0.03 });
@@ -662,8 +665,9 @@ function FloorInterior({ actorsAt, fl, state, m, door, bedDoor, fridgeDoor, clos
         two floors are drawn they coincide exactly, same faces, same materials; and they stop just inside the outside
         walls, so their edges never share a plane with a wall's face. */}
     {/* (Open over the elevator's shaft: the car goes through.) */}
-    <HoledSlab x0={minX - 0.19} x1={maxX + 0.19} z0={minZ - 0.19} z1={maxZ + 0.19} y0={H - STOREY} y1={0} holes={[shaftHole(minX, minZ), slotHole(minX, minZ, minZ - 0.19)]} mat={m.slabFaces} />
-    <HoledSlab x0={minX - 0.19} x1={maxX + 0.19} z0={minZ - 0.19} z1={maxZ + 0.19} y0={H} y1={STOREY} holes={[shaftHole(minX, minZ), slotHole(minX, minZ, minZ - 0.19), ...(fl.ladder ? [fl.ladder.hatch] : [])]} mat={m.slabFaces} />
+    {/* (Open over the stairwell too: its landings and flights are the stairwell's own; the top floor's ceiling closes it.) */}
+    <HoledSlab x0={minX - 0.19} x1={maxX + 0.19} z0={minZ - 0.19} z1={maxZ + 0.19} y0={H - STOREY} y1={0} holes={[shaftHole(minX, minZ), slotHole(minX, minZ, minZ - 0.19), stairHole(fl.stairs)]} mat={m.slabFaces} />
+    <HoledSlab x0={minX - 0.19} x1={maxX + 0.19} z0={minZ - 0.19} z1={maxZ + 0.19} y0={H} y1={STOREY} holes={[shaftHole(minX, minZ), slotHole(minX, minZ, minZ - 0.19), ...(fl.ladder ? [fl.ladder.hatch] : []), ...(fl.upper < APT_FLOORS ? [stairHole(fl.stairs)] : [])]} mat={m.slabFaces} />
     {fl.ladder && <RoofLadder plan={fl.ladder} m={m} ceiling={H} />}
     <mesh position={[(minX + maxX) / 2, 0.002, (hallZ[1] + wallZ + INNER_WALL) / 2]} rotation-x={-Math.PI / 2} material={m.carpet}><planeGeometry args={[maxX - minX, INNER_WALL + 0.02]} /></mesh>
     {/* Floors: carpet in the hallway, wood in the apartment (the ceiling is the slab's underside). */}
@@ -689,7 +693,8 @@ function FloorInterior({ actorsAt, fl, state, m, door, bedDoor, fridgeDoor, clos
     </group>)}
     {/* The shaft and the storage behind the hallway: their walls to the hallway. */}
     {/* (Side by side with no overlap, and up into the slab above, so no two faces share a plane.) */}
-    <mesh position={[(minX + SHAFT + maxX) / 2, HT / 2, hallZ[0] - 0.06]} material={m.hallWall}>{B([maxX - minX - SHAFT, HT, 0.12])}</mesh>
+    {/* (Past the stairwell: the stairwell draws its own wall to the hallway, with the doorway onto its landing.) */}
+    <mesh position={[(fl.stairs.xe + 0.15 + maxX) / 2, HT / 2, hallZ[0] - 0.06]} material={m.hallWall}>{B([maxX - fl.stairs.xe - 0.15, HT, 0.12])}</mesh>
     {[-1, 1].map((s) => <mesh key={s} position={[minX + SHAFT / 2 + s * (LIFT_DOOR / 2 + (SHAFT / 2 - LIFT_DOOR / 2) / 2), HT / 2, hallZ[0] - 0.06]} material={m.hallWall}>{B([SHAFT / 2 - LIFT_DOOR / 2, HT, 0.12])}</mesh>)}
     <mesh position={[minX + SHAFT / 2, (HT + 2.3) / 2, hallZ[0] - 0.06]} material={m.hallWall}>{B([LIFT_DOOR, HT - 2.3, 0.12])}</mesh>
     <group position={[minX + SHAFT / 2, 0, hallZ[0]]}>
@@ -972,7 +977,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     const floorOf = (b: Building, n: number) => {
       const k = floorKey(b, n);
       let f = cache.current.get(k);
-      if (!f) { f = aptFloor(b, n); cache.current.set(k, f); }
+      if (!f) { f = aptFloorOf(b, n); cache.current.set(k, f); }
       if (!state.rooms.has(k)) state.rooms.set(k, f);
       return f;
     };
@@ -985,6 +990,9 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     // (Riding: the floors the car is passing, so the one it stops at is already there.)
     const ls = state.liftShown, lsb = ls ? byKey.get(ls.b) : undefined;
     if (ls && lsb) for (const n of ls.floors) if (n >= 2 && n <= APT_FLOORS) { const f = floorOf(lsb, n); if (!want.includes(f)) want.push(f); }
+    // (On the stairs: the floors just above and below too — seen through the stairwell's doorways.)
+    if (lvl && fb && state.stairGround) for (const n of [lvl.floor - 1, lvl.floor + 1]) if (n >= 2 && n <= APT_FLOORS) { const f = floorOf(fb, n); if (!want.includes(f)) want.push(f); }
+    if (!lvl && lobby && state.stairGround) { const f = floorOf(lobby.b, 2); if (!want.includes(f)) want.push(f); }
     const keys = want.map((f) => f.key).sort().join();
     if (keys !== shownKeys.current) { shownKeys.current = keys; setShown(want); }
 
