@@ -131,7 +131,7 @@ const treadOf = (p: StairPlan, x: number) => Math.floor((x - p.xa) / TREAD);
  * or down, or (walking sideways) beside the other foot, never across it. Standing still: facing along the stairs the
  * two feet come together on one step (once — then nothing moves); turned across them each foot stays on its own.
  */
-export function stepFeet(p: StairPlan, feet: Feet, body: { x: number; y: number; z: number; yaw: number; vx: number; vz: number }, dt: number): Feet {
+export function stepFeet(p: StairPlan, feet: Feet, body: { x: number; y: number; z: number; yaw: number; vx: number; vz: number }, dt: number, hipY?: number): Feet {
   const fx = Math.sin(body.yaw), fz = Math.cos(body.yaw), rx = Math.cos(body.yaw), rz = -Math.sin(body.yaw);
   const speed = Math.hypot(body.vx, body.vz), moving = speed > 0.12;
   const ground = (x: number, z: number) => stairGround(p, x, z, body.y + 0.35, true) ?? body.y;
@@ -167,10 +167,14 @@ export function stepFeet(p: StairPlan, feet: Feet, body: { x: number; y: number;
     } else {
       // Up or down (forward or backward): the foot that's furthest behind goes onto the next tread ahead of the body.
       const behind = (f: FootPlant) => -((f.x - body.x) * ux + (f.z - body.z) * uz);
-      const bl = behind(L), br = behind(R);
-      if (Math.max(bl, br) > TREAD * 0.45) {
-        const which = bl > br ? "L" : "R", side = which === "L" ? 1 : -1, [hx, hz] = hipAt(side);
-        plant(which, hx + ux * TREAD * 0.75, hz + uz * TREAD * 0.75, Math.max(0.3, Math.min(0.55, (TREAD * 1.4) / Math.max(0.25, speed))));
+      const bl = behind(L), br = behind(R), last = bl > br ? "L" : "R";
+      // (Going up with the hips on the slope: the foot behind also goes as soon as it can no longer reach them.)
+      const lost = hipY !== undefined && footReach(body, last === "L" ? L : R, last === "L" ? 1 : -1) < hipY + 0.005;
+      if (Math.max(bl, br) > TREAD * 0.45 || lost) {
+        const which = last, side = which === "L" ? 1 : -1, [hx, hz] = hipAt(side);
+        // (Climbing: a little further ahead and quicker, so the foot that stays keeps up with the hips.)
+        const reach = hipY !== undefined ? 0.95 : 0.75, dur = hipY !== undefined ? Math.max(0.26, Math.min(0.4, TREAD / Math.max(0.25, speed))) : Math.max(0.3, Math.min(0.55, (TREAD * 1.4) / Math.max(0.25, speed)));
+        plant(which, hx + ux * TREAD * reach, hz + uz * TREAD * reach, dur);
       }
     }
   } else if (Math.abs(fx) > 0.7 && treadOf(p, L.x) !== treadOf(p, R.x)) {
@@ -195,6 +199,12 @@ export function footNow(f: FootPlant): [number, number, number] {
 }
 
 const THIGH = 0.46, SHIN = 0.46, ANKLE = 0.03, REACH = THIGH + SHIN - 0.0006;
+/** How high (world) the hip on that side can be with the leg still reaching the foot where it is now. */
+export function footReach(body: { x: number; z: number; yaw: number }, f: FootPlant, side: 1 | -1) {
+  const [x, y, z] = footNow(f), fx = Math.sin(body.yaw), fz = Math.cos(body.yaw), rx = Math.cos(body.yaw), rz = -Math.sin(body.yaw);
+  const dx = x - (body.x + rx * side * HIP_W), dz = z - (body.z + rz * side * HIP_W), fwd = dx * fx + dz * fz, lat = dx * rx + dz * rz;
+  return y + ANKLE + Math.sqrt(Math.max(0, REACH * REACH - fwd * fwd - lat * lat));
+}
 /**
  * The legs reaching the feet (2-bone, in the body's frame: thigh forward angle and knee bend for each, the thighs'
  * roll to the side) and where the hips are: as high as the lower-reaching foot allows — that leg straight, the other

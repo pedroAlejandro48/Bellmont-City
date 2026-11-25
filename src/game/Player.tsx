@@ -32,6 +32,8 @@ const HEAD_TOP = 1.9, CAR_CLEAR = 2.4;
 const RADIUS = 0.35;
 /** Exhausted (hunger, thirst or energy at 0): a slow, struggling walk. */
 const TIRED_WALK = WALK * 0.5;
+/** On a flight of stairs: this much of the usual pace (a tread at a time, up or down). */
+const STAIR_PACE = 0.375;
 /** Hand height leaning on something (above the feet): about the bent-over head's. */
 const LEAN_HAND = 1.42;
 type Plant = { side: 1 | -1; mode: "side" | "front"; at: THREE.Vector3; from: THREE.Vector3 | null; k: number; blend: number; lost: boolean };
@@ -311,7 +313,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       // First person: backing up or stepping aside is slower than walking ahead.
       const fpOnFoot = state.firstPerson;
       const fpPace = fpOnFoot ? (direction < -0.1 ? 0.62 : Math.abs(sideways) > Math.abs(direction) ? 0.75 : 1) : 1;
-      const pace = Math.min(exhausted ? TIRED_WALK : Infinity, (useStick && !running ? WALK * Math.min(1, 0.35 + stickPush * 0.75) : running ? run : WALK) * fpPace) * (state.stairFeet ? 0.5 : 1);
+      const pace = Math.min(exhausted ? TIRED_WALK : Infinity, (useStick && !running ? WALK * Math.min(1, 0.35 + stickPush * 0.75) : running ? run : WALK) * fpPace) * (state.stairFeet ? STAIR_PACE : 1);
       const [vx, vz] = cameraRelativeVelocity(state.camYaw, direction, sideways, pace);
       s.vel.set(damp(s.vel.x, vx, ACCEL, dt), 0, damp(s.vel.z, vz, ACCEL, dt));
       // In first person the body always faces where the view does (the camera turns it); it walks backward or

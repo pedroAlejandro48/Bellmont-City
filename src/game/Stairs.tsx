@@ -9,7 +9,7 @@ import { APT_FLOORS, aptKey, floorKey, floorY } from "./apartments";
 import { FLOOR_CLEAR, aptFloorOf } from "./aptRoom";
 import type { Building, City } from "./config";
 import { toLocal, type Box } from "./restaurantRoom";
-import { LAND_W, SW, TREAD, flightUnder, floorAtHeight, footNow, legsToFeet, legsToFeetAt, stairGround, stairPlan, stepFeet, treadMiddle, type Feet, type StairPlan } from "./stairs";
+import { LAND_W, SW, TREAD, flightUnder, floorAtHeight, footNow, footReach, legsToFeet, legsToFeetAt, stairGround, stairPlan, stepFeet, treadMiddle, type Feet, type StairPlan } from "./stairs";
 import type { GameState } from "./state";
 import { venueLayout, type VenueLayout } from "./venueRoom";
 
@@ -116,6 +116,11 @@ function buildingIn(state: GameState, byKey: Map<string, Building>) {
   return byKey.get(key.split("#")[0]!) ?? null;
 }
 
+/** How much lower than standing the hips are while climbing (the knees a little bent all the way up). */
+const CLIMB_CROUCH = 0.07;
+/** How far a planted foot's heel may come up as the body goes over it on the way up. */
+const TOE_RISE = 0.05;
+
 export function Stairs({ state, city }: { state: GameState; city: City }) {
   const buildings = useMemo(() => city.buildings.filter((b) => b.venue === "apartments"), [city]);
   const byKey = useMemo(() => new Map(buildings.map((b) => [aptKey(b), b])), [buildings]);
@@ -164,12 +169,19 @@ export function Stairs({ state, city }: { state: GameState; city: City }) {
       const put = (side: -1 | 1) => { const x = treadMiddle(plan, lx + rx * side * 0.1), z = lz + rz * side * 0.1; return { x, y: stairGround(plan, x, z, p.y + 0.35, true) ?? p.y, z, from: null, k: 1, dur: 0.3 }; };
       feet.current = { L: put(1), R: put(-1), next: "L", hip: null };
     }
-    feet.current = stepFeet(plan, feet.current, body, dt);
+    // Going up: the hips ride up the slope with the body (a little lower than standing, the knees soft) — one
+    // diagonal movement, never held back by the foot behind (it steps as soon as it can't reach them).
+    const sp = Math.hypot(lv.x, lv.z), ahead = sp > 0.12 ? stairGround(plan, lx + (lv.x / sp) * 0.2, lz + (lv.z / sp) * 0.2, p.y + 0.35, true) : null;
+    const up = ahead !== null && ahead > p.y + 0.02, slope = p.y + 0.95 - CLIMB_CROUCH;
+    feet.current = stepFeet(plan, feet.current, body, dt, up ? slope : undefined);
     const legs = legsToFeet({ x: lx, z: lz, yaw: ly }, footNow(feet.current.L), footNow(feet.current.R));
-    // The hips (eased): as high as the lower-reaching foot allows — that leg straight, the other bent as its step
-    // needs. Standing on one step both legs are straight.
-    const fc = feet.current;
-    fc.hip = fc.hip === null ? legs.top : fc.hip + (legs.top - fc.hip) * (1 - Math.exp(-16 * dt));
+    // The hips (eased). Going up: on the slope, as far as the planted feet still reach. Otherwise as high as the
+    // lower-reaching foot allows — that leg straight, the other bent as its step needs (on one step both straight).
+    const fc = feet.current, where = { x: lx, z: lz, yaw: ly };
+    const planted = [...(fc.L.from ? [] : [footReach(where, fc.L, 1)]), ...(fc.R.from ? [] : [footReach(where, fc.R, -1)])];
+    // (The foot that stays pushes up onto its toes at the end — its heel leaves the step a little.)
+    const target = up ? Math.min(slope, ...planted.map((h) => h + TOE_RISE)) : legs.top;
+    fc.hip = fc.hip === null ? target : fc.hip + (target - fc.hip) * (1 - Math.exp(-(up ? 12 : 16) * dt));
     const settled = legsToFeetAt({ x: lx, z: lz, yaw: ly }, footNow(fc.L), footNow(fc.R), fc.hip);
     state.stairFeet = { ...settled, drop: p.y + 0.95 - fc.hip };
   }, -0.85);
