@@ -934,3 +934,4 @@ html:has(.fit-screen), body:has(.fit-screen) { overflow: hidden; height: 100%; }
    and the box fit above the keyboard. */
 .chat-full.kb-tight .chat-head { display: none; }
 .chat-full.kb-tight { padding-top: 0; }
+.chat-full.kb-tight .kb-debug { top: 0.2rem; }

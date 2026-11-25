@@ -139,16 +139,23 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
     // Brave with its toolbar along the bottom: it hides that bar under the keyboard yet still counts it, so it thinks
     // the box is under the keyboard and keeps scrolling the page while you type. There the page handles the keyboard
     // itself too (nothing scrolls), with the toolbar's height given back (48 px on two phones, +13 tuned by eye).
-    const braveBar = phone && !fullScreen && "brave" in navigator && window.outerHeight - window.innerHeight >= 140;
-    const vk = phone && (fullScreen || braveBar) ? (navigator as Navigator & { virtualKeyboard?: VK }).virtualKeyboard : undefined;
+    const vkApi = phone ? (navigator as Navigator & { virtualKeyboard?: VK }).virtualKeyboard : undefined;
     el.classList.toggle("in-app", fullScreen);
-    const before = vk?.overlaysContent;
-    if (vk) vk.overlaysContent = true;
-    // (The page's height before the keyboard.)
-    // A browser (not the app) on a phone with the swipe line rather than buttons: the browser's bars around the page
-    // add up to little (status + address bar + the thin line, under ~125 px; the buttons' bar makes it more), and
-    // there the keyboard's top sits a few pixels higher than the browser says.
-    const swipeBrowser = phone && appKind() !== "android" && !braveBar && window.outerHeight - window.innerHeight < 125;
+    const before = vkApi?.overlaysContent;
+    // (Looked at again whenever nothing is being typed in — the phone may have turned: Brave shows its bottom toolbar
+    // only upright, so on its side it's an ordinary browser.)
+    let braveBar = false, swipeBrowser = false, vk: VK | undefined;
+    const browserKind = () => {
+      const bars = window.outerHeight - window.innerHeight;
+      braveBar = phone && !fullScreen && "brave" in navigator && bars >= 140;
+      // A browser (not the app) on a phone with the swipe line rather than buttons: the browser's bars around the page
+      // add up to little (status + address bar + the thin line, under ~125 px; the buttons' bar makes it more), and
+      // there the keyboard's top sits a few pixels higher than the browser says.
+      swipeBrowser = phone && appKind() !== "android" && !braveBar && bars < 125 && window.innerHeight > window.innerWidth;
+      vk = fullScreen || braveBar ? vkApi : undefined;
+      if (vkApi) vkApi.overlaysContent = !!vk;
+    };
+    browserKind();
     let baseH = window.innerHeight;
     const fit = () => {
       if (phone) {
@@ -157,7 +164,7 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
         // higher; the chat ends a little above it.
         const vv = window.visualViewport, H = window.innerHeight;
         // (The height without a keyboard, again whenever nothing is being typed in — the phone may have turned.)
-        if (!(document.activeElement instanceof HTMLTextAreaElement || document.activeElement instanceof HTMLInputElement)) baseH = H;
+        if (!(document.activeElement instanceof HTMLTextAreaElement || document.activeElement instanceof HTMLInputElement)) { baseH = H; browserKind(); }
         let bottom: number, kbUp: boolean, lift = 0;
         if (vk && braveBar) {
           const r = vk.boundingRect;
@@ -210,7 +217,7 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
       window.removeEventListener("resize", fit); window.visualViewport?.removeEventListener("resize", fit); window.visualViewport?.removeEventListener("scroll", fit);
       vk?.removeEventListener("geometrychange", fit);
       el.removeEventListener("focusin", later); el.removeEventListener("focusout", later);
-      if (vk && before !== undefined) vk.overlaysContent = before;
+      if (vkApi && before !== undefined) vkApi.overlaysContent = before;
       if (meta) meta.content = metaBefore;
     };
   }, [phone]);
