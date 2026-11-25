@@ -264,7 +264,12 @@ export type GameState = {
   script: Script | null;
   standQueued: boolean;
   /** Sitting (or on the way to sitting) on a venue's seat (VenueSeats), and a request to get up from it now. */
-  venueSeat: { key: string; x: number; z: number } | null;
+  venueSeat: { key: string; x: number; z: number; ax: number; az: number } | null;
+  /** This player's hospital visit: asked for treatment (server ms), the round's start (server ms; null: waiting),
+   * where they were when it started (the hospital's frame), what was paid, their health on the bed. */
+  hospital: { key: string; req: number; start: number | null; spot: [number, number] | null; paid: number; h0?: number } | null;
+  /** Others in the room at the hospital (from presence). */
+  hospitalPeers: { id: string; key: string; req: number; start: number | null; spot: [number, number] | null }[];
   venueSeatLeave: boolean;
   /** 0 clear .. 1 black: the fade between outside and inside. */
   fade: number;
@@ -378,7 +383,7 @@ export function createState(save: SaveData): GameState {
     inCar: false, liftView: null, liftPress: [], liftShown: null, liftShut: null, liftBridge: null, aptHere: null,
     uiLock: null, fridgeLoad: [], camLock: null, ladder: null, ladderPrompt: false, noJump: false, kitchenAsk: null, meal: null, kitchenQ: false,
     keys: new Set(),
-    jumpQueued: false, venueSeat: null, venueSeatLeave: false,
+    jumpQueued: false, venueSeat: null, venueSeatLeave: false, hospital: null, hospitalPeers: [],
     simulationTime: 0,
     accident: save.accident ? { phase: save.accident.phase, startedAt: -(KNOCKDOWN_SECONDS - save.accident.remaining), riseStartedAt: save.accident.phase === "rising" ? -(GET_UP_SECONDS - save.accident.remaining) : null, vehicleId: null, direction: save.accident.direction, launchSpeed: 0, seed: save.accident.seed } : null,
     incidents: [],

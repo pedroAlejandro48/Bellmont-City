@@ -100,6 +100,47 @@ type VMats = ReturnType<typeof useVenueMaterials>;
 
 const box = (args: [number, number, number]) => <boxGeometry args={args} />;
 
+/** A small sign's lettering (white on the hospital's red), drawn once per text. */
+const signs = new Map<string, THREE.CanvasTexture>();
+function signTexture(text: string) {
+  let t = signs.get(text);
+  if (t) return t;
+  const c = document.createElement("canvas"); c.width = 256; c.height = 72;
+  const g = c.getContext("2d")!; g.fillStyle = "#d62f3a"; g.fillRect(0, 0, 256, 72);
+  g.fillStyle = "#ffffff"; g.font = "800 34px Manrope, Arial, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(text, 128, 38);
+  t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; signs.set(text, t);
+  return t;
+}
+/** The hospital's mural: a big heart with a heartbeat line across it, fruit, a runner, a water drop, a moon to sleep
+ * by, and "Take care of yourself" (drawn once). */
+let mural: THREE.CanvasTexture | null = null;
+function muralTexture() {
+  if (mural) return mural;
+  const c = document.createElement("canvas"); c.width = 1024; c.height = 452;
+  const g = c.getContext("2d")!;
+  const bg = g.createLinearGradient(0, 0, 1024, 452); bg.addColorStop(0, "#d9f1f2"); bg.addColorStop(1, "#bfe3f0");
+  g.fillStyle = bg; g.fillRect(0, 0, 1024, 452);
+  g.fillStyle = "#e9f7f3"; for (let i = 0; i < 6; i++) { g.beginPath(); g.arc(80 + i * 180, 420, 120, 0, Math.PI * 2); g.fill(); }
+  // The heart.
+  g.save(); g.translate(512, 205); g.scale(1.25, 1.25); g.fillStyle = "#e0485a";
+  g.beginPath(); g.moveTo(0, 70); g.bezierCurveTo(-120, -10, -80, -110, 0, -55); g.bezierCurveTo(80, -110, 120, -10, 0, 70); g.fill(); g.restore();
+  // The heartbeat across it.
+  g.strokeStyle = "#ffffff"; g.lineWidth = 9; g.lineJoin = "round"; g.beginPath();
+  g.moveTo(300, 200); g.lineTo(440, 200); g.lineTo(470, 150); g.lineTo(505, 265); g.lineTo(540, 120); g.lineTo(570, 220); g.lineTo(600, 200); g.lineTo(724, 200); g.stroke();
+  // An apple, a water drop, a runner, a moon.
+  const apple = (x: number, y: number) => { g.fillStyle = "#4caf50"; g.beginPath(); g.arc(x, y, 42, 0, Math.PI * 2); g.fill(); g.fillStyle = "#6b4226"; g.fillRect(x - 3, y - 58, 6, 20); g.fillStyle = "#7cc96f"; g.beginPath(); g.ellipse(x + 16, y - 50, 16, 8, -0.5, 0, Math.PI * 2); g.fill(); };
+  apple(140, 150);
+  g.fillStyle = "#3aa0e0"; g.beginPath(); g.moveTo(140, 255); g.bezierCurveTo(105, 310, 110, 345, 140, 345); g.bezierCurveTo(170, 345, 175, 310, 140, 255); g.fill();
+  g.strokeStyle = "#2f6f8f"; g.lineWidth = 12; g.lineCap = "round";
+  const run = [[884, 112], [870, 170], [840, 220], [900, 225]] as const;
+  g.fillStyle = "#2f6f8f"; g.beginPath(); g.arc(890, 90, 20, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.moveTo(run[0][0], run[0][1]); g.lineTo(run[1][0], run[1][1]); g.lineTo(run[2][0], run[2][1]); g.moveTo(run[1][0], run[1][1]); g.lineTo(run[3][0], run[3][1]); g.lineTo(915, 262); g.moveTo(884, 125); g.lineTo(850, 150); g.moveTo(884, 125); g.lineTo(925, 140); g.stroke();
+  g.fillStyle = "#f2c94c"; g.beginPath(); g.arc(880, 320, 38, 0, Math.PI * 2); g.fill(); g.fillStyle = "#bfe3f0"; g.beginPath(); g.arc(898, 308, 34, 0, Math.PI * 2); g.fill();
+  g.fillStyle = "#1f4e66"; g.font = "700 54px Manrope, Arial, sans-serif"; g.textAlign = "center"; g.fillText("Take care of yourself", 512, 410);
+  mural = new THREE.CanvasTexture(c); mural.colorSpace = THREE.SRGBColorSpace; mural.anisotropy = 4;
+  return mural;
+}
+
 /** One fixture, drawn by its type, in its own frame (front toward +z). */
 function FixtureModel({ f, m, kind }: { f: Fixture; m: VMats; kind: VenueKind }) {
   const { w, d } = f, look = LOOK[kind];
@@ -259,13 +300,13 @@ function FixtureModel({ f, m, kind }: { f: Fixture; m: VMats; kind: VenueKind })
         <mesh position={[half + 0.3, 1.15, d / 2 + 0.03]} material={m.lamp}><circleGeometry args={[0.025, 12]} /></mesh>
       </group>;
     }
-    case "sofa": return <group>
-      <mesh position={[0, 0.22, 0.05]} material={m.solid("#5a4a6e", 0.85)} castShadow>{box([w, 0.28, d - 0.1])}</mesh>
-      <mesh position={[0, 0.42, 0.08]} material={m.solid("#6d5a85", 0.9)}>{box([w - 0.3, 0.14, d - 0.25])}</mesh>
-      <mesh position={[0, 0.62, -d / 2 + 0.12]} material={m.solid("#5a4a6e", 0.85)} castShadow>{box([w, 0.6, 0.22])}</mesh>
-      {[-1, 1].map((s) => <mesh key={s} position={[s * (w / 2 - 0.1), 0.45, 0.02]} material={m.solid("#5a4a6e", 0.85)}>{box([0.2, 0.36, d - 0.1])}</mesh>)}
+    case "sofa": { const [c1, c2] = f.tag === "teal" ? ["#2f7f86", "#3b9aa1"] : ["#5a4a6e", "#6d5a85"]; return <group>
+      <mesh position={[0, 0.22, 0.05]} material={m.solid(c1, 0.85)} castShadow>{box([w, 0.28, d - 0.1])}</mesh>
+      <mesh position={[0, 0.42, 0.08]} material={m.solid(c2, 0.9)}>{box([w - 0.3, 0.14, d - 0.25])}</mesh>
+      <mesh position={[0, 0.62, -d / 2 + 0.12]} material={m.solid(c1, 0.85)} castShadow>{box([w, 0.6, 0.22])}</mesh>
+      {[-1, 1].map((s) => <mesh key={s} position={[s * (w / 2 - 0.1), 0.45, 0.02]} material={m.solid(c1, 0.85)}>{box([0.2, 0.36, d - 0.1])}</mesh>)}
       {[-0.5, 0.5].map((x) => <mesh key={x} position={[x, 0.62, -d / 2 + 0.3]} rotation-x={-0.3} material={m.solid("#e0c36a", 0.9)}>{box([0.4, 0.36, 0.1])}</mesh>)}
-    </group>;
+    </group>; }
     case "armchair": return <group>
       <mesh position={[0, 0.22, 0.03]} material={m.solid("#8a6f5a", 0.85)} castShadow>{box([w, 0.3, d - 0.06])}</mesh>
       <mesh position={[0, 0.42, 0.06]} material={m.solid("#a3876f", 0.9)}>{box([w - 0.25, 0.12, d - 0.25])}</mesh>
@@ -282,6 +323,23 @@ function FixtureModel({ f, m, kind }: { f: Fixture; m: VMats; kind: VenueKind })
     case "mailboxes": return <group position={[0, 1.2, 0.08]}>
       <mesh material={m.solid("#8f8a80", 0.4, 0.6)}>{box([w, 0.9, 0.16])}</mesh>
       {Array.from({ length: 15 }, (_, k) => <mesh key={k} position={[-w / 2 + 0.18 + (k % 5) * (w - 0.36) / 4, 0.28 - Math.floor(k / 5) * 0.28, 0.085]} material={m.solid("#b9b3a8", 0.35, 0.7)}>{box([0.24, 0.2, 0.01])}</mesh>)}
+    </group>;
+    case "mural": return <group position={[0, 1.95, 0.03]}>
+      <mesh material={m.white}>{box([w + 0.08, 1.58, 0.03])}</mesh>
+      <mesh position-z={0.02}><planeGeometry args={[w, 1.5]} /><meshStandardMaterial map={muralTexture()} roughness={0.85} /></mesh>
+    </group>;
+    case "cooler": return <group>
+      <mesh position={[0, 0.5, 0]} material={m.white} castShadow>{box([w, 1.0, d])}</mesh>
+      <mesh position={[0, 1.02, 0]} material={m.grey}>{box([w * 0.9, 0.04, d * 0.9])}</mesh>
+      <mesh position={[0, 1.27, 0]}><cylinderGeometry args={[0.13, 0.13, 0.46, 16]} /><meshStandardMaterial color="#7fc4ec" transparent opacity={0.6} roughness={0.1} /></mesh>
+      <mesh position={[0, 0.75, d / 2 + 0.02]} material={m.solid("#2b6fd6", 0.4)}>{box([0.05, 0.05, 0.05])}</mesh>
+      <mesh position={[0.07, 0.75, d / 2 + 0.02]} material={m.solid("#d62f3a", 0.4)}>{box([0.05, 0.05, 0.05])}</mesh>
+    </group>;
+    case "cabinet": return <group>
+      <mesh position={[0, 0.9, 0]} material={m.white} castShadow>{box([w, 1.8, d])}</mesh>
+      {[-1, 1].map((s) => <mesh key={s} position={[s * w / 4, 1.2, d / 2 + 0.005]}><planeGeometry args={[w / 2 - 0.06, 1.0]} /><meshStandardMaterial color="#b9d7e6" transparent opacity={0.55} roughness={0.1} /></mesh>)}
+      <mesh position={[0, 1.2, d / 2 + 0.012]} material={m.solid("#d62f3a", 0.4)}>{box([0.16, 0.04, 0.005])}</mesh>
+      <mesh position={[0, 1.2, d / 2 + 0.013]} material={m.solid("#d62f3a", 0.4)}>{box([0.04, 0.16, 0.005])}</mesh>
     </group>;
     case "painting": return <group position={[0, 2.3, 0.03]}>
       <mesh material={m.darkWood}>{box([w + 0.1, 1.1, 0.04])}</mesh>
@@ -481,7 +539,7 @@ export function Venue({ b, mats, state }: { b: Building; mats: Materials; state:
 
   const leaves = useRef<{ left: THREE.Group | null; right: THREE.Group | null }>({ left: null, right: null });
   const arms = useRef<(THREE.Mesh | null)[]>([]);
-  const inner = useRef<THREE.Group>(null), proxy = useRef<THREE.Mesh>(null);
+  const inner = useRef<THREE.Group>(null), proxy = useRef<THREE.Mesh>(null), wardDoor = useRef<THREE.Group>(null);
   useFrame(() => {
     const near = state.interior?.key === layout.key || Math.hypot(state.pos.x - frame.ox, state.pos.z - frame.oz) < INTERIOR_REACH * quality().detail;
     if (inner.current) inner.current.visible = near;
@@ -490,6 +548,8 @@ export function Venue({ b, mats, state }: { b: Building; mats: Materials; state:
     own.inside.emissiveIntensity = state.darkness * 0.3;
     const room = state.rooms.get(layout.key);
     const doors = room?.doors ?? { left: 0, right: 0 };
+    // (The hospital's inner door: as open as the nurse's round has it — Hospital sets it on the room.)
+    if (wardDoor.current) wardDoor.current.rotation.y = (room as { wardDoor?: number } | undefined)?.wardDoor ?? 0;
     leaves.current.right?.rotation.set(0, doors.right, 0);
     leaves.current.left?.rotation.set(0, -doors.left, 0);
     ([1, -1] as const).forEach((side, k) => closerArms(side, side === 1 ? doors.right : doors.left).forEach(([x0, z0, x1, z1], j) => {
@@ -543,6 +603,23 @@ export function Venue({ b, mats, state }: { b: Building; mats: Materials; state:
       {/* (The grocery's basket pile and its cashier are drawn by Grocery, which moves them.) */}
       {fixtures.filter((f) => !(kind === "grocery" && f.type === "baskets")).map((f, i) => <group key={i} position={[f.x, 0, f.z]} rotation-y={f.rot}><FixtureModel f={f} m={m} kind={kind} /></group>)}
       {kind !== "grocery" && <Staff layout={layout} kind={kind} m={m} />}
+      {layout.ward && (() => {
+        // The hospital's wall across the room, both faces, with its door (a frame round it, the leaf swinging in).
+        const W = layout.ward, a = W.doorX - W.doorW / 2, c = W.doorX + W.doorW / 2, DH = 2.15, T = 0.12;
+        return <group>
+          <mesh position={[(minX + a) / 2, CEILING / 2, W.z]} material={own.wall} castShadow receiveShadow><boxGeometry args={[a - minX, CEILING, T]} /></mesh>
+          <mesh position={[(c + maxX) / 2, CEILING / 2, W.z]} material={own.wall} castShadow receiveShadow><boxGeometry args={[maxX - c, CEILING, T]} /></mesh>
+          <mesh position={[W.doorX, (CEILING + DH) / 2, W.z]} material={own.wall}><boxGeometry args={[W.doorW, CEILING - DH, T]} /></mesh>
+          {[a - 0.03, c + 0.03].map((x) => <mesh key={x} position={[x, DH / 2, W.z]} material={m.white}><boxGeometry args={[0.06, DH, T + 0.04]} /></mesh>)}
+          <mesh position={[W.doorX, DH + 0.03, W.z]} material={m.white}><boxGeometry args={[W.doorW + 0.12, 0.06, T + 0.04]} /></mesh>
+          <group ref={wardDoor} position={[a, 0, W.z]}>
+            <mesh position={[W.doorW / 2 - 0.01, DH / 2 - 0.01, 0]} material={m.solid("#cfe3ea", 0.6)} castShadow><boxGeometry args={[W.doorW - 0.03, DH - 0.03, 0.045]} /></mesh>
+            <mesh position={[W.doorW / 2, 1.55, 0.024]}><planeGeometry args={[0.32, 0.4]} /><meshStandardMaterial color="#a9c7d3" transparent opacity={0.5} roughness={0.1} /></mesh>
+            {[1, -1].map((sd) => <mesh key={sd} position={[W.doorW - 0.12, 1.0, sd * 0.05]} material={m.steel}><boxGeometry args={[0.14, 0.025, 0.025]} /></mesh>)}
+          </group>
+          <mesh position={[W.doorX, DH + 0.3, W.z + T / 2 + 0.01]}><planeGeometry args={[0.8, 0.22]} /><meshStandardMaterial map={signTexture("TREATMENT")} roughness={0.6} /></mesh>
+        </group>;
+      })()}
     </group>
   </group>;
 }

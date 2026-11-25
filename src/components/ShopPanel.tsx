@@ -1,4 +1,5 @@
 import { needFreeHands } from "@/game/handsHeld";
+import { queueAhead, requestTreatment } from "@/game/Hospital";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { timeInfo } from "@/game/config";
@@ -180,14 +181,19 @@ function Gym({ state, refresh }: Props) {
 }
 
 function Hospital({ state, refresh }: Props) {
-  const life = state.life, cost = life.insured ? 0 : TREATMENT_PRICE;
+  const life = state.life, cost = life.insured ? 0 : TREATMENT_PRICE, waiting = state.hospital;
   return <>
     <div className="phone-stat"><span>Health</span><b className={state.health < 50 ? "bad" : "good"}>{Math.round(state.health)}%</b></div>
-    <button type="button" className="phone-btn" disabled={state.health >= 99.5} onClick={() => {
-      if (cost > 0 && !pay(state, cost, "Hospital treatment")) return;
-      if (cost === 0) record(life, today(state), "Hospital treatment (insured)", 0);
-      state.health = 100; toast(state, "You feel much better", "info", "Health is full."); refresh();
-    }}>Get treated · {cost ? money(cost) : "free with your plan"}</button>
+    {waiting
+      ? <p className="phone-note">{waiting.start === null ? (queueAhead(state) > 0 ? `You're on the list (${queueAhead(state)} ahead of you). Take a seat: the nurse will come for you.` : "Take a seat: the nurse will come for you.") : "The nurse is coming for you."}</p>
+      : <button type="button" className="phone-btn" disabled={state.health >= 99.5} onClick={() => {
+        if (cost > 0 && !pay(state, cost, "Hospital treatment")) return;
+        if (cost === 0) record(life, today(state), "Hospital treatment (insured)", 0);
+        requestTreatment(state, state.interior?.key ?? "", cost);
+        state.shop = null;
+        toast(state, "Take a seat", "info", "A nurse will come for you when it's your turn.");
+        refresh();
+      }}>Get treated · {cost ? money(cost) : "free with your plan"}</button>}
     <p className="phone-label">Health plan (B9)</p>
     <div className="phone-job"><div><b>{life.insured ? "You're covered" : "Bellmont Care"}</b><p>{money(HEALTH_PLAN)} a week from your bank (the first week when you sign up). Treatment is free while it's on.</p></div>
       <button type="button" className={`phone-btn ${life.insured ? "ghost" : ""}`} onClick={() => {

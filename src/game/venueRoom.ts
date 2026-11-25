@@ -11,7 +11,8 @@ export type FixtureType =
   | "rack" | "shelfClothes" | "fittingRoom"
   | "bikeDisplay" | "toolWall" | "tireRack" | "workbench"
   | "shelf" | "crate" | "baskets" | "checkout"
-  | "shaft" | "sofa" | "armchair" | "coffeeTable" | "rug" | "mailboxes" | "painting";
+  | "shaft" | "sofa" | "armchair" | "coffeeTable" | "rug" | "mailboxes" | "painting"
+  | "mural" | "cooler" | "cabinet";
 /** A fixture: centre (x, z), its front facing local yaw `rot` (0 = toward the entrance, +z), its size across (`w`,
  * along its front) and deep (`d`), and whether people bump into it. `tag` picks a variant (a fruit, a paint…). */
 export type Fixture = { type: FixtureType; x: number; z: number; rot: number; w: number; d: number; solid: boolean; tag?: string };
@@ -26,7 +27,11 @@ export type VenueLayout = RoomLayout & {
   service: { x: number; z: number; yaw: number };
   /** Where the staff member stands or sits, facing the customer. */
   staff: { x: number; z: number; yaw: number; sit: boolean };
+  /** The hospital: the wall across the room (at `z`) with its door (`doorX`, `doorW` wide), the reception in front
+   * of it and the treatment room behind; the bed (its middle, along z), where the nurse waits. */
+  ward?: HospitalWard;
 };
+export type HospitalWard = { z: number; doorX: number; doorW: number; bed: { x: number; z: number }; nurse: [number, number] };
 
 /** Where a venue room's customer is served (its layout keeps it; a room from it too). */
 export const venueService = (room: RoomLayout) => (room as VenueLayout).service;
@@ -85,6 +90,7 @@ export function venueLayout(b: Building): VenueLayout {
     return { service: { x: 0, z: z + 0.4 + 0.5, yaw: Math.PI }, staff: { x: 0, z: z - 0.4 - 0.45, yaw: 0, sit: false } };
   };
   let service = { x: 0, z: -3, yaw: Math.PI }, staff = { x: 0, z: -4, yaw: 0, sit: false };
+  let ward: HospitalWard | undefined;
   const midZ = (minZ + -WALL) / 2;
 
   if (venue === "police") {
@@ -99,13 +105,23 @@ export function venueLayout(b: Building): VenueLayout {
     add("board", minX + 0.03, midZ - 2.4, Math.PI / 2, 1.8, 0.05, false, "wanted");
     add("board", maxX - 0.03, midZ - 2.4, -Math.PI / 2, 1.8, 0.05, false, "notices");
   } else if (venue === "hospital") {
-    ({ service, staff } = backDesk(2.6));
-    // Waiting chairs along the left wall, a bed behind a curtain at the back right, the red cross above the desk.
-    for (let k = 0; k < 4; k++) add("waitChair", minX + 0.35, -3.2 - k * 0.65, Math.PI / 2, 0.55, 0.55);
-    for (let k = 0; k < 3; k++) add("waitChair", minX + 2.0, -3.5 - k * 0.65, -Math.PI / 2, 0.55, 0.55);
-    add("bed", maxX - 0.7, minZ + 1.4, -Math.PI / 2, 1.0, 2.05);
-    add("curtain", maxX - 1.45, minZ + 1.4, -Math.PI / 2, 2.6, 0.04, false);
-    add("redCross", 0, minZ + 0.03, 0, 1.2, 0.05, false);
+    // A wall across the room: the reception in front (the desk brought forward, couches either side, a plant, a
+    // water cooler, a mural on the wall without windows), the treatment room behind it through a door.
+    const wz = minZ + 4.4, doorW = 1.0, doorX = Math.min(maxX - 1.5, 2.7);
+    const z = wz + 2.3;
+    add("desk", -0.7, z, 0, 2.6, 0.8);
+    service = { x: -0.7, z: z + 0.4 + 0.5, yaw: Math.PI }; staff = { x: -0.7, z: z - 0.4 - 0.45, yaw: 0, sit: false };
+    add("redCross", -0.7, wz + 0.09, 0, 1.0, 0.05, false);
+    const front = (wz + -WALL) / 2 + 0.3, plainSide = -windowSide;
+    add("sofa", windowSide * (maxX - 0.48), front, windowSide * -Math.PI / 2, 2.2, 0.85, true, "teal");
+    add("sofa", plainSide * (maxX - 0.48), front, plainSide * -Math.PI / 2, 2.2, 0.85, true, "teal");
+    add("mural", plainSide * (maxX - 0.03), front, plainSide * -Math.PI / 2, 3.4, 0.05, false);
+    add("cooler", windowSide * (maxX - 0.35), wz + 0.55, 0, 0.36, 0.36);
+    // The treatment room: the bed along the back wall's middle, a cabinet by it, the nurse waiting beside the bed.
+    const bed = { x: -1.3, z: minZ + 1.12 };
+    add("bed", bed.x, bed.z, 0, 1.0, 2.05);
+    add("cabinet", bed.x - 1.35, minZ + 0.3, 0, 0.9, 0.45);
+    ward = { z: wz, doorX, doorW, bed, nurse: [bed.x + 1.6, bed.z - 0.3] };
   } else if (venue === "gym") {
     ({ service, staff } = backDesk(2.4));
     add("mats", 0.5, midZ, 0, width - 3.5, depth - 5.5, false);
@@ -163,10 +179,18 @@ export function venueLayout(b: Building): VenueLayout {
   }
 
   const solids: Box[] = F.filter((f) => f.solid && f.type !== "shaft").map(fixtureBox);
+  // The hospital's wall across the room (either side of its door), and the door's opening — always closed to
+  // walking through: only the nurse and the patient she takes in go through it.
+  if (ward) {
+    const t = 0.06, a = ward.doorX - ward.doorW / 2, c = ward.doorX + ward.doorW / 2;
+    solids.push({ x: (minX + a) / 2, z: ward.z, hx: (a - minX) / 2, hz: t }, { x: (c + maxX) / 2, z: ward.z, hx: (maxX - c) / 2, hz: t }, { x: ward.doorX, z: ward.z, hx: ward.doorW / 2, hz: t });
+  }
   // The lobby's elevator shaft: walls you can't pass, a doorway you walk through while the doors are open.
   let liftDoor: Box | undefined, walls: Box[] | undefined;
   if (venue === "apartments") { const sh = shaftSolids(minX, minZ); solids.push(...sh.walls, sh.door); liftDoor = sh.door; walls = sh.walls.map((w) => ({ ...w })); }
   const plants: [number, number][] = venue === "gym" || venue === "grocery" ? [[windowSide * (maxX - 0.4), -0.65]] : [[maxX - 0.4, -0.65], [minX + 0.4, -0.65]];
+  // (The hospital's reception has another, in its corner by the wall and the door.)
+  if (ward) plants.push([-windowSide * (maxX - 0.45), ward.z + 0.5]);
   for (const [x, z] of plants) solids.push({ x, z, hx: 0.28, hz: 0.28 });
   const counterFix = F.find((f) => f.type === "desk" || f.type === "checkout")!;
   const frontWindows: [number, number][] = [[-width / 2 + 0.7, -LEAF - 0.75], [LEAF + 0.75, width / 2 - 0.7]];
@@ -175,6 +199,6 @@ export function venueLayout(b: Building): VenueLayout {
   return {
     key: roomKey(b), kind: "cafe", venue, frame, width, depth, bounds, counter: fixtureBox(counterFix), windowSide,
     // No divider: the lights hang over the front and back halves.
-    divider: { z: midZ, doorX: 0 }, frontWindows, sideWindows, solids, plants, fixtures: F, service, staff, ...(liftDoor ? { liftDoor } : {}), ...(walls ? { walls } : {}),
+    divider: { z: midZ, doorX: 0 }, frontWindows, sideWindows, solids, plants, fixtures: F, service, staff, ...(liftDoor ? { liftDoor } : {}), ...(walls ? { walls } : {}), ...(ward ? { ward } : {}),
   };
 }

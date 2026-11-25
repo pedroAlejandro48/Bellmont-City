@@ -118,13 +118,13 @@ export function VenueSeats({ state }: { state: GameState }) {
           state.interactQueued = false;
           const [ax, az] = toWorld(room.frame, best.ax, best.az);
           sit.current = { key: room.key, seat: best, phase: "walk", t0: now, from: [p.x, p.z, state.rotY], walk: Math.max(0.12, Math.hypot(ax - p.x, az - p.z) / WALK) };
-          state.venueSeat = { key: room.key, x: best.x, z: best.z };
+          state.venueSeat = { key: room.key, x: best.x, z: best.z, ax: best.ax, az: best.az };
           state.keys.clear();
         }
       }
     }
     if (script) { state.foodScript = script; own.current = true; }
     else if (own.current) { state.foodScript = null; own.current = false; }
-  });
+  }, -0.62);
   return <InteractionPrompt sample={() => prompt.current} />;
 }
