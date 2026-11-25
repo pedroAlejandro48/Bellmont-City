@@ -61,7 +61,8 @@ function stairGeometry(p: StairPlan) {
     }
   }
   // The landings: the floors' by the shaft (up to the hallway's slab under the doorway), and the half-way ones.
-  for (const y of p.west) if (y > bottom + 1e-3) box(steps, p.x0, p.xa, y - 0.2, y, p.z0, p.z1 + SW - 0.05);
+  // (A floor's landing reaches 2 cm under the hallway's carpet: its edge is the only seam, and nothing overlaps.)
+  for (const y of p.west) if (y > bottom + 1e-3) box(steps, p.x0, p.xa, y - 0.2, y, p.z0, p.z1 + SW + 0.02);
   for (const e of p.east) box(steps, e.x, p.xe, e.y - 0.2, e.y, p.z0, p.z1);
   // The walls: the back and the shaft's side, the far end, the wall between the flights, the hallway's wall with
   // each floor's doorway; on the top floor, a wall where the next flight up would be.

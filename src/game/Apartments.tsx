@@ -1,5 +1,5 @@
 import { needFreeHands } from "./handsHeld";
-import { SW, stairPlan, type StairPlan } from "./stairs";
+import { SW, landingOpening, stairPlan, type StairPlan } from "./stairs";
 import { AptShare, fridgeAt, fridgeOf } from "./aptShare";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -241,7 +241,7 @@ const shaftHole = (minX: number, minZ: number): Rect => ({ x0: minX + 0.03, x1: 
 const SLOT = 0.7, SLOT_J = 0.03;
 /** The stairwell's way through a floor's slab (its walls stand in it; its landings are its own). */
 // (Its edges inside the stairwell's walls: they never show, and never share a plane with a wall's face.)
-const stairHole = (p: StairPlan): Rect => ({ x0: p.x0 - 0.06, x1: p.xe + 0.1, z0: p.z0 - 0.06, z1: p.z1 + SW - 0.05 });
+const stairHole = (p: StairPlan): Rect => ({ x0: p.x0 - 0.06, x1: p.xe + 0.1, z0: p.z0 - 0.06, z1: p.z1 + SW + 0.02 });
 /** The window slot's way through a floor's slab (from the outside face in to the shaft): no slab edge shows across
  * the car's window, only the slot's own metal bar at each floor. */
 const slotHole = (minX: number, minZ: number, outer: number): Rect => ({ x0: minX + SHAFT / 2 - SLOT / 2 - SLOT_J - 0.005, x1: minX + SHAFT / 2 + SLOT / 2 + SLOT_J + 0.005, z0: outer - 0.01, z1: minZ + 0.03 });
@@ -671,6 +671,9 @@ function FloorInterior({ actorsAt, fl, state, m, door, bedDoor, fridgeDoor, clos
     <HoledSlab x0={minX - 0.19} x1={maxX + 0.19} z0={minZ - 0.19} z1={maxZ + 0.19} y0={H} y1={STOREY} holes={[shaftHole(minX, minZ), slotHole(minX, minZ, minZ - 0.19), ...(fl.ladder ? [fl.ladder.hatch] : []), ...(fl.upper < APT_FLOORS ? [stairHole(fl.stairs)] : [])]} mat={m.slabFaces} />
     {fl.ladder && <RoofLadder plan={fl.ladder} m={m} ceiling={H} />}
     <mesh position={[(minX + maxX) / 2, 0.002, (hallZ[1] + wallZ + INNER_WALL) / 2]} rotation-x={-Math.PI / 2} material={m.carpet}><planeGeometry args={[maxX - minX, INNER_WALL + 0.02]} /></mesh>
+    {/* The hallway's carpet goes on through the stairwell's doorway, up to the landing inside (one clean edge, at the
+        stairwell wall's face). */}
+    {(() => { const [o0, o1] = landingOpening(fl.stairs); return <mesh position={[(o0 + o1) / 2, 0.004, (fl.stairs.z1 + hallZ[0]) / 2]} rotation-x={-Math.PI / 2} material={m.carpet} receiveShadow><planeGeometry args={[o1 - o0, hallZ[0] - fl.stairs.z1]} /></mesh>; })()}
     {/* Floors: carpet in the hallway, wood in the apartment (the ceiling is the slab's underside). */}
     <mesh position={[(minX + maxX) / 2, 0.004, (hallZ[0] + hallZ[1]) / 2]} rotation-x={-Math.PI / 2} material={m.carpet} receiveShadow><planeGeometry args={[maxX - minX, hallZ[1] - hallZ[0]]} /></mesh>
     {/* The apartment: wooden planks in the main room, carpet in the bedroom (tiles in the bathroom, over these). */}
