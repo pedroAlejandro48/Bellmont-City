@@ -144,15 +144,18 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
     const before = vkApi?.overlaysContent;
     // (Looked at again whenever nothing is being typed in — the phone may have turned: Brave shows its bottom toolbar
     // only upright, so on its side it's an ordinary browser.)
-    let braveBar = false, swipeBrowser = false, vk: VK | undefined;
+    let braveBar = false, swipeBrowser = false, sideways = false, vk: VK | undefined;
     const browserKind = () => {
       const bars = window.outerHeight - window.innerHeight;
-      braveBar = phone && !fullScreen && "brave" in navigator && bars >= 140;
+      braveBar = phone && !fullScreen && "brave" in navigator && bars >= 140 && window.innerHeight > window.innerWidth;
       // A browser (not the app) on a phone with the swipe line rather than buttons: the browser's bars around the page
       // add up to little (status + address bar + the thin line, under ~125 px; the buttons' bar makes it more), and
       // there the keyboard's top sits a few pixels higher than the browser says.
       swipeBrowser = phone && appKind() !== "android" && !braveBar && bars < 125 && window.innerHeight > window.innerWidth;
-      vk = fullScreen || braveBar ? vkApi : undefined;
+      // A browser on its side: the page reads where the keyboard is itself (the keyboard's own top edge, and its
+      // height), and takes the highest of what it's told — the box always shows above the keyboard.
+      sideways = phone && !fullScreen && appKind() !== "android" && window.innerWidth > window.innerHeight;
+      vk = fullScreen || braveBar || sideways ? vkApi : undefined;
       if (vkApi) vkApi.overlaysContent = !!vk;
     };
     browserKind();
@@ -166,11 +169,24 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
         // (The height without a keyboard, again whenever nothing is being typed in — the phone may have turned.)
         if (!(document.activeElement instanceof HTMLTextAreaElement || document.activeElement instanceof HTMLInputElement)) { baseH = H; browserKind(); }
         let bottom: number, kbUp: boolean, lift = 0;
-        if (vk && braveBar) {
+        if (vk && sideways) {
+          const r = vk.boundingRect;
+          kbUp = !!r && r.height > 40;
+          const reads = [H];
+          if (kbUp) {
+            reads.push(H - r.height);
+            if (r.y > H * 0.1 && r.y < H) reads.push(r.y);
+          }
+          if (vv && vv.height < H - 40) reads.push(vv.offsetTop + vv.height);
+          bottom = Math.min(...reads);
+          kbUp = kbUp || H - bottom > 40;
+        } else if (vk && braveBar) {
           const r = vk.boundingRect;
           kbUp = !!r && r.height > 80;
           if (kbUp) lift = 61;
           bottom = kbUp ? H - r.height + lift : H;
+          // (Never lower than where the browser itself says the visible part ends, plus that toolbar.)
+          if (kbUp && vv && vv.height < H - 80) bottom = Math.min(bottom, vv.offsetTop + vv.height + lift);
         } else if (vk) {
           // The full-screen app. Each way of finding the keyboard's top edge is wrong on some phones (too low or far
           // too high): of the readings that say a keyboard is up, the lowest one is used.
@@ -193,7 +209,7 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
         el.style.top = `${top}px`;
         // (A phone on its side leaves only a strip above the keyboard: the chat shrinks to it — no minimum height that would
         // push the box under the keyboard — and in a very short strip the header steps aside for the messages and box.)
-        const h = Math.max(72, bottom - top - (kbUp ? (vk && !braveBar ? 14 : braveBar ? 11 : swipeBrowser ? 12 : 0) : 0));
+        const h = Math.max(72, bottom - top - (kbUp ? (sideways ? 4 : vk && !braveBar ? 14 : braveBar ? 11 : swipeBrowser ? 12 : 0) : 0));
         el.style.height = `${h}px`;
         el.classList.toggle("kb-tight", kbUp && h < 240);
         el.classList.toggle("kb-up", kbUp);
