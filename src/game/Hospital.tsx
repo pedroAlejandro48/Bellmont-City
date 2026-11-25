@@ -73,6 +73,15 @@ export function Hospital({ state, city }: { state: GameState; city: City }) {
         root.updateMatrixWorld(true);
         reachArm(rig.armR.current, rig.foreR.current, tmp.set(hx, SIDEWALK_H + 1.0, hz), POLES.out(-1), Math.min(1, n.hand * 1.6));
       }
+      if (n.hands && n.hands.blend > 0.001) {
+        // Both hands on the patient (the chest, the shoulders, the face), and her head bent to them a little.
+        root.updateMatrixWorld(true);
+        const [lx, lz] = toWorld(f, n.hands.left[0], n.hands.left[2]), [rx, rz] = toWorld(f, n.hands.right[0], n.hands.right[2]);
+        reachArm(rig.armL.current, rig.foreL.current, tmp.set(lx, SIDEWALK_H + n.hands.left[1], lz), POLES.low(1), n.hands.blend);
+        root.updateMatrixWorld(true);
+        reachArm(rig.armR.current, rig.foreR.current, tmp.set(rx, SIDEWALK_H + n.hands.right[1], rz), POLES.low(-1), n.hands.blend);
+        rig.torso.current?.rotation.set(0.12 * n.hands.blend, 0, 0); rig.head.current?.rotation.set(0.15 * n.hands.blend, 0, 0);
+      }
     }
 
     // ---- this player's visit ----
@@ -104,6 +113,15 @@ export function Hospital({ state, city }: { state: GameState; city: City }) {
           const [x, z] = toWorld(f, pp.at[0], pp.at[1]);
           const bed = pp.sit > 0 ? (0.6 - CHAIR.seatTop) * pp.sit : 0;
           script = { x, z, yaw: worldYaw(f, pp.yaw), walk: pp.walking ? 1.1 : 0, sit: pp.sit, shuffle: 0, lean: 0, left: null, right: null, ...(bed > 0 ? { y: SIDEWALK_H + bed } : {}) };
+          // Sitting down onto the bed and getting up like from a couch (only higher): leaning forward on the way, the
+          // hands coming to rest on the knees.
+          if (pp.sit > 0.02) {
+            const yw = worldYaw(f, pp.yaw), fx = Math.sin(yw), fz = Math.cos(yw), lx = Math.cos(yw), lz = -Math.sin(yw);
+            const [sx, sz] = toWorld(f, r.q.seat[0], r.q.seat[1]), k = pp.sit * pp.sit * (3 - 2 * pp.sit);
+            const knee = (side: 1 | -1) => ({ at: new THREE.Vector3(sx + fx * 0.42 + lx * side * 0.12, SIDEWALK_H + 0.6 + 0.16, sz + fz * 0.42 + lz * side * 0.12), blend: k, pole: "out" as const });
+            script.lean = pp.sit < 0.98 ? 0.25 * Math.sin(Math.PI * pp.sit) : 0.06;
+            script.left = knee(1); script.right = knee(-1);
+          }
           if (pp.hand > 0.001) {
             const [hx, hz] = toWorld(f, r.handle[0], r.handle[1] - 0.06);
             script.right = { at: new THREE.Vector3(hx, SIDEWALK_H + 1.0, hz), blend: Math.min(1, pp.hand * 1.6), pole: "out" };

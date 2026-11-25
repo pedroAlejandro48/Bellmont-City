@@ -210,7 +210,8 @@ export function venueLayout(b: Building): VenueLayout {
   const counterFix = F.find((f) => f.type === "desk" || f.type === "checkout")!;
   const frontWindows: [number, number][] = [[-width / 2 + 0.7, -LEAF - 0.75], [LEAF + 0.75, width / 2 - 0.7]];
   const from = minZ + 0.6, to = -WALL - 0.6, half = (to - from - 0.6) / 2;
-  const sideWindows: [number, number][] = [[from, from + half], [to - half, to]];
+  // (The hospital's: one in the treatment room and one in the reception, each its own side of the wall between.)
+  const sideWindows: [number, number][] = ward ? [[from, ward.z - 0.5], [ward.z + 0.5, to]] : [[from, from + half], [to - half, to]];
   return {
     key: roomKey(b), kind: "cafe", venue, frame, width, depth, bounds, counter: fixtureBox(counterFix), windowSide,
     // No divider: the lights hang over the front and back halves.

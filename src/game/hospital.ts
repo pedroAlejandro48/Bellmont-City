@@ -35,7 +35,9 @@ export function wardPoints(w: HospitalWard) {
   const out: P2 = [w.doorX + 0.3, w.z + 0.75], inn: P2 = [w.doorX + 0.3, w.z - 0.66];
   const seat: P2 = [w.bed.x + 0.42, w.bed.z + 0.25], front: P2 = [w.bed.x + 1.05, w.bed.z + 0.25];
   const rest = w.nurse, beside: P2 = [w.bed.x + 1.35, w.bed.z + 1.0];
-  return { out, inn, seat, front, rest, beside, exit: [w.doorX, w.z + 1.9] as P2 };
+  // (Where the nurse stands to see to the patient: right in front of them on the bed, facing them.)
+  const care: P2 = [seat[0] + 0.62, seat[1]];
+  return { out, inn, seat, front, rest, beside, care, exit: [w.doorX, w.z + 1.9] as P2 };
 }
 
 /** One round's timetable (seconds from its start), for the patient waiting at `spot`. */
@@ -80,19 +82,41 @@ export function doorAt(r: RoundPlan, t: number) {
 }
 
 /** The nurse `t` seconds into a round (null `t`: no round, at her place): where, facing, walking, a hand out. */
-export function nurseAt(w: HospitalWard, r: RoundPlan | null, t: number): { at: P2; yaw: number; walking: boolean; hand: number } {
+export type NurseHands = { left: [number, number, number]; right: [number, number, number]; blend: number } | null;
+const STEP_IN = 0.7;
+/** The nurse `t` seconds into a round (null `t`: no round, at her place): where, facing, walking, a hand out to the
+ * door, and both hands on the patient while she sees to them (local x, height above the floor, local z). */
+export function nurseAt(w: HospitalWard, r: RoundPlan | null, t: number): { at: P2; yaw: number; walking: boolean; hand: number; hands: NurseHands } {
   const q = r?.q ?? wardPoints(w), restYaw = Math.atan2(q.seat[0] - q.rest[0], q.seat[1] - q.rest[1]);
-  if (!r || t < 0 || t >= r.end) return { at: q.rest, yaw: restYaw, walking: false, hand: 0 };
-  if (t < r.toDoor) return { ...along([q.rest, q.inn], t), hand: 0 };
-  if (t < r.opened) return { at: q.inn, yaw: 0, walking: false, hand: Math.sin(Math.PI * (t - r.toDoor) / DOOR) };
-  if (t < r.met) return { ...along(r.outPath, t - r.opened), hand: 0 };
-  if (t < r.go) { const toward = Math.atan2(r.follow[0]![0] - r.meet[0], r.follow[0]![1] - r.meet[1]); return { at: r.meet, yaw: toward, walking: false, hand: 0 }; }
+  const none = { hand: 0, hands: null as NurseHands };
+  if (!r || t < 0 || t >= r.end) return { at: q.rest, yaw: restYaw, walking: false, ...none };
+  if (t < r.toDoor) return { ...along([q.rest, q.inn], t), ...none };
+  if (t < r.opened) return { at: q.inn, yaw: 0, walking: false, hand: Math.sin(Math.PI * (t - r.toDoor) / DOOR), hands: null };
+  if (t < r.met) return { ...along(r.outPath, t - r.opened), ...none };
+  if (t < r.go) { const toward = Math.atan2(r.follow[0]![0] - r.meet[0], r.follow[0]![1] - r.meet[1]); return { at: r.meet, yaw: toward, walking: false, ...none }; }
   const lead = along(r.lead, t - r.go);
-  if (lead.walking) return { ...lead, hand: 0 };
-  // Beside the bed while the patient is there; back to her place once they're up and going.
-  if (t < r.up) return { at: q.beside, yaw: Math.atan2(q.seat[0] - q.beside[0], q.seat[1] - q.beside[1]), walking: false, hand: 0 };
+  if (lead.walking) return { ...lead, ...none };
+  const facing = Math.atan2(q.seat[0] - q.care[0], q.seat[1] - q.care[1]);
+  const besideYaw = Math.atan2(q.seat[0] - q.beside[0], q.seat[1] - q.beside[1]);
+  // Beside the bed while the patient sits down; then in front of them, seeing to them — hands on the chest, then the
+  // shoulders, then the face — while their health comes back; a step back before they get up.
+  if (t < r.seated) return { at: q.beside, yaw: besideYaw, walking: false, ...none };
+  if (t < r.seated + STEP_IN) { const k = (t - r.seated) / STEP_IN; return { at: lerp(q.beside, q.care, smooth(k)), yaw: facing, walking: k < 0.95, ...none }; }
+  if (t < r.treated - STEP_IN) {
+    const span = r.treated - STEP_IN - (r.seated + STEP_IN), u = (t - r.seated - STEP_IN) / span, part = Math.min(2, Math.floor(u * 3)), k = u * 3 - part;
+    const s = q.seat, H = 0.6;
+    const spots: [[number, number, number], [number, number, number]][] = [
+      [[s[0] + 0.15, H + 0.42, s[1] - 0.1], [s[0] + 0.15, H + 0.42, s[1] + 0.1]],
+      [[s[0] + 0.05, H + 0.62, s[1] - 0.19], [s[0] + 0.05, H + 0.62, s[1] + 0.19]],
+      [[s[0] + 0.13, H + 0.86, s[1] - 0.08], [s[0] + 0.13, H + 0.86, s[1] + 0.08]],
+    ];
+    const [l, rr] = spots[part]!;
+    return { at: q.care, yaw: facing, walking: false, hand: 0, hands: { left: l, right: rr, blend: Math.sin(Math.PI * Math.max(0, Math.min(1, k))) ** 0.6 } };
+  }
+  if (t < r.treated) { const k = (t - (r.treated - STEP_IN)) / STEP_IN; return { at: lerp(q.care, q.beside, smooth(k)), yaw: facing, walking: k < 0.95, ...none }; }
+  if (t < r.up) return { at: q.beside, yaw: besideYaw, walking: false, ...none };
   const back = along([q.beside, q.rest], t - r.up);
-  return { ...back, yaw: back.walking ? back.yaw : restYaw, hand: 0 };
+  return { ...back, yaw: back.walking ? back.yaw : restYaw, ...none };
 }
 
 /** The patient `t` seconds into their round, from the moment the nurse reaches them: where, facing, walking,
