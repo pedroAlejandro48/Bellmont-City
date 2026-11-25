@@ -947,3 +947,7 @@ html:has(.fit-screen), body:has(.fit-screen) { overflow: hidden; height: 100%; }
   .auth-split .auth-box { position: relative; }
 }
 .phone-job small.muted { display: block; margin-top: 0.2rem; color: #9aa3b5; }
+/* Asleep: Zzz…, how many are asleep in a room, and Get up under it. */
+.home-sleep-inner { display: flex; flex-direction: column; align-items: center; gap: 1.1rem; }
+.home-sleep-wait { font: 600 0.9rem/1.3 Manrope, Arial, sans-serif; letter-spacing: 0.02em; color: #9aa6d6; }
+.home-sleep-up { letter-spacing: 0.02em; font-size: 0.95rem; min-width: 8rem; }

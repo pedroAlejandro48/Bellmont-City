@@ -15,7 +15,9 @@ export const ROOM_CAPACITY = 10;
 export const ROOM_LIFETIME_DAYS = 30;
 const LIFETIME_MS = ROOM_LIFETIME_DAYS * 24 * 60 * 60 * 1000;
 
-export type RoomInfo = { code: string; seed: number; createdAt: number; createdBy: string; key: string; admin: string };
+/** A room's clock: the game time it had (`base`) at `at` (server ms) — it runs on from there only while someone's in. */
+export type RoomClock = { base: number; at: number };
+export type RoomInfo = { code: string; seed: number; createdAt: number; createdBy: string; key: string; admin: string; clock?: RoomClock };
 
 const roomKey = (code: string, createdAt: number) => `${code}-${createdAt}`;
 const activity = (now: number) => ({ lastActiveAt: now, expiresAt: Timestamp.fromMillis(now + LIFETIME_MS) });
@@ -47,7 +49,7 @@ export function roomExpired(body: Record<string, unknown> | undefined, now = Dat
 function readRoom(code: string, body: Record<string, unknown> | undefined): RoomInfo | null {
   const seed = body?.["seed"], createdAt = body?.["createdAt"], createdBy = body?.["createdBy"], admin = body?.["admin"];
   return typeof seed === "number" && typeof createdAt === "number" && typeof createdBy === "string"
-    ? { code, seed, createdAt, createdBy, key: roomKey(code, createdAt), admin: typeof admin === "string" ? admin : createdBy } : null;
+    ? { code, seed, createdAt, createdBy, key: roomKey(code, createdAt), admin: typeof admin === "string" ? admin : createdBy, ...(isClock(body?.["clock"]) ? { clock: body!["clock"] as RoomClock } : {}) } : null;
 }
 
 /** Draws codes until `claim` takes one that no live room has. */
@@ -80,6 +82,16 @@ export async function findRoom(code: string): Promise<RoomInfo | null> {
   if (!snap.exists()) return null;
   // (Rooms don't expire: a room lasts as long as someone has it, and goes when the last one deletes it.)
   return readRoom(code, snap.data());
+}
+
+const isClock = (v: unknown): v is RoomClock => typeof v === "object" && v !== null && typeof (v as RoomClock).base === "number" && typeof (v as RoomClock).at === "number";
+/** Keeps the room's clock: its game time `base` as of `at` (server ms). */
+export function setRoomClock(code: string, clock: RoomClock) {
+  return updateDoc(doc(firestore, "rooms", code), { clock });
+}
+/** Calls back with the room's clock whenever it's set. */
+export function watchRoomClock(code: string, onClock: (c: RoomClock) => void) {
+  return onSnapshot(doc(firestore, "rooms", code), (snap) => { const c = snap.data()?.["clock"]; if (isClock(c)) onClock(c); }, () => {});
 }
 
 /** Someone is in the room: it lives another ROOM_LIFETIME_DAYS from now. */

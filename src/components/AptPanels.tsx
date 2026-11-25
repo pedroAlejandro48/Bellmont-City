@@ -45,7 +45,7 @@ export function AptPanels({ state }: { state: GameState }) {
     {lock === "rack" && <div className="fridge-wrap"><RackPanel state={state} onClose={() => { state.uiLock = null; tick((n) => n + 1); }} /></div>}
     {lock === "cook" && <div className="fridge-wrap"><CookPanel state={state} onClose={() => { state.uiLock = null; tick((n) => n + 1); }} /></div>}
     {lock === "cupboard" && <div className="cupboard-hint" role="dialog" aria-label="Cupboard"><span>Click a pot or pan to take it</span><button type="button" onClick={() => { state.uiLock = null; tick((n) => n + 1); }}>Close</button></div>}
-    <div className={`home-sleep ${lock === "sleep" ? "on" : ""}`}><span>Zzz…</span></div>
+    <SleepScreen state={state} on={lock === "sleep"} />
   </>;
 }
 
@@ -81,5 +81,19 @@ function CookPanel({ state, onClose }: { state: GameState; onClose: () => void }
     {pick.length ? <div className="kitchen-picks">{pick.map((c, i) => <button key={i} type="button" className="kitchen-pick" onClick={() => drop(i)}>{CAN_INFO[c].name} ✕</button>)}</div> : <p className="phone-note">Nothing yet.</p>}
     {pick.length > 0 && <p className="phone-note">Fills {Math.round(fill.hunger)}% hunger, +{fill.thirst}% thirst, +{fill.energy}% energy.</p>}
     <button type="button" className="phone-btn" disabled={!pick.length} onClick={() => { state.kitchenAsk = { cans: pick, burner }; onClose(); }}>Open the cans and cook</button>
+  </div>;
+}
+
+/** Asleep: "Zzz…" (in a room, how many are asleep of everyone there — the night passes once all are), and Get up. */
+function SleepScreen({ state, on }: { state: GameState; on: boolean }) {
+  const [, tick] = useState(0);
+  useEffect(() => { if (!on) return; const id = window.setInterval(() => tick((n) => n + 1), 500); return () => window.clearInterval(id); }, [on]);
+  const w = state.sleepWait;
+  return <div className={`home-sleep ${on ? "on" : ""}`}>
+    <div className="home-sleep-inner">
+      <span>Zzz…</span>
+      {on && w && w.total > 1 && w.asleep < w.total && <p className="home-sleep-wait">{`Waiting for everyone to sleep (${w.asleep}/${w.total})`}</p>}
+      {on && <button type="button" className="phone-btn ghost home-sleep-up" onClick={() => { state.bedGetUp = true; }}>Get up</button>}
+    </div>
   </div>;
 }

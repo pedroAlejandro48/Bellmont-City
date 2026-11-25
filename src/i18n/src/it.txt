@@ -1105,3 +1105,7 @@
 1157|Candidatura accettata!
 1158|Hai ottenuto il lavoro: {0}. Inizialo dall'app Lavori del telefono.
 1159|Suonare nel parco non richiede candidatura; candidati per gli altri.
+1160|In attesa che tutti dormano ({0}/{1})
+1161|Alzati
+1162|E DORMI · SPAZIO ALZATI
+1163|E ALZATI

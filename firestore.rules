@@ -133,7 +133,12 @@ service cloud.firestore {
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.get('admin', request.auth.uid) == request.auth.uid
         && request.resource.data.keys().hasOnly(['seed', 'createdAt', 'createdBy', 'admin', 'lastActiveAt', 'expiresAt']);
+      // (Its clock — the time of day where it was last left, and when — kept by whoever's in it: time stands still
+      // while nobody is.)
       allow update: if signedIn() && (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastActiveAt', 'expiresAt'])
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clock'])
+          && request.resource.data.clock.keys().hasOnly(['base', 'at'])
+          && request.resource.data.clock.base is number && request.resource.data.clock.at is number)
         || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['admin'])
           && resource.data.get('admin', resource.data.createdBy) == request.auth.uid
           && exists(/databases/$(database)/documents/rooms/$(code)/members/$(request.resource.data.admin))));

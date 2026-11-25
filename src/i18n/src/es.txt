@@ -1158,3 +1158,7 @@
 1157|¡Solicitud aceptada!
 1158|Conseguiste el trabajo: {0}. Empiézalo desde la app Trabajos del teléfono.
 1159|Tocar música en el parque no necesita solicitud; solicita los demás.
+1160|Esperando a que todos duerman ({0}/{1})
+1161|Levantarse
+1162|E DORMIR · ESPACIO LEVANTARSE
+1163|E LEVANTARSE

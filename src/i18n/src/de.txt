@@ -1105,3 +1105,7 @@
 1157|Bewerbung angenommen!
 1158|Du hast den Job: {0}. Starte ihn in der Jobs-App des Handys.
 1159|Musik im Park braucht keine Bewerbung; bewirb dich für die anderen.
+1160|Warten, bis alle schlafen ({0}/{1})
+1161|Aufstehen
+1162|E SCHLAFEN · LEERTASTE AUFSTEHEN
+1163|E AUFSTEHEN

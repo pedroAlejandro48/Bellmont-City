@@ -274,6 +274,10 @@ export type GameState = {
   stairGround: ((x: number, z: number) => number) | null;
   /** On the stairs' steps: the legs reaching the feet planted tread to tread (null: the usual walk). */
   stairFeet: { hipL: number; kneeL: number; rollL: number; hipR: number; kneeR: number; rollR: number; drop: number } | null;
+  /** Asleep in bed now (a room shares it); the "Get up" button pressed; in a room, how many are asleep of all. */
+  asleep: boolean;
+  bedGetUp: boolean;
+  sleepWait: { asleep: number; total: number } | null;
   /** The body's ground velocity (Player keeps it). */
   bodyVel: { x: number; z: number } | null;
   venueSeatLeave: boolean;
@@ -389,7 +393,7 @@ export function createState(save: SaveData): GameState {
     inCar: false, liftView: null, liftPress: [], liftShown: null, liftShut: null, liftBridge: null, aptHere: null,
     uiLock: null, fridgeLoad: [], camLock: null, ladder: null, ladderPrompt: false, noJump: false, kitchenAsk: null, meal: null, kitchenQ: false,
     keys: new Set(),
-    jumpQueued: false, venueSeat: null, venueSeatLeave: false, hospital: null, hospitalPeers: [], stairGround: null, stairFeet: null, bodyVel: null,
+    jumpQueued: false, venueSeat: null, venueSeatLeave: false, hospital: null, hospitalPeers: [], stairGround: null, stairFeet: null, bodyVel: null, asleep: false, bedGetUp: false, sleepWait: null,
     simulationTime: 0,
     accident: save.accident ? { phase: save.accident.phase, startedAt: -(KNOCKDOWN_SECONDS - save.accident.remaining), riseStartedAt: save.accident.phase === "rising" ? -(GET_UP_SECONDS - save.accident.remaining) : null, vehicleId: null, direction: save.accident.direction, launchSpeed: 0, seed: save.accident.seed } : null,
     incidents: [],

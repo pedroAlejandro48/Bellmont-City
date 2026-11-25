@@ -1105,3 +1105,7 @@
 1157|Candidature acceptée !
 1158|Vous avez le poste : {0}. Commencez-le depuis l'app Emplois du téléphone.
 1159|Jouer de la musique au parc ne demande pas de candidature ; postulez pour les autres.
+1160|En attente que tout le monde dorme ({0}/{1})
+1161|Se lever
+1162|E DORMIR · ESPACE SE LEVER
+1163|E SE LEVER

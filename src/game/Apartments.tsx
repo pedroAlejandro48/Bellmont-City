@@ -813,7 +813,7 @@ function RoomChairs({ fl, m }: { fl: AptFloor; m: FMats }) {
 
 // ---------- moving about: the elevator, the apartment door, bed and fridge ----------
 type Seat = { x: number; z: number; yaw: number; approach: [number, number]; surface: { x: number; z: number; y: number; lx: number; lz: number } };
-type Move = { kind: "board" | "alight" | "keyIn" | "push" | "pull" | "fridge" | "closet" | "sit" | "bed" | "wash" | "toilet" | "shower" | "switch"; plan: Plan | null; t0: number; which?: "apartment" | "bedroom" | "bathroom"; from?: [number, number]; fromYaw?: number; keyT?: number; /** The key only locks or unlocks (no going in). */ lockOnly?: boolean; /** …from inside the apartment. */ inside?: boolean; phase?: "open" | "held" | "close" | "down" | "seated" | "up" | "in" | "asleep" | "out"; seat?: Seat; slept?: number; /** The sheet point a hand lifts it by. */ flap?: [number, number] | null };
+type Move = { kind: "board" | "alight" | "keyIn" | "push" | "pull" | "fridge" | "closet" | "sit" | "bed" | "wash" | "toilet" | "shower" | "switch"; plan: Plan | null; t0: number; which?: "apartment" | "bedroom" | "bathroom"; from?: [number, number]; fromYaw?: number; keyT?: number; /** The key only locks or unlocks (no going in). */ lockOnly?: boolean; /** …from inside the apartment. */ inside?: boolean; phase?: "open" | "held" | "close" | "down" | "seated" | "up" | "in" | "asleep" | "out" | "sitting"; /** Getting up only as far as sitting on the bed's edge. */ sitStop?: boolean; seat?: Seat; slept?: number; /** The sheet point a hand lifts it by. */ flap?: [number, number] | null };
 /**
  * The bed, step by step (seconds). Getting in: beside it facing it, the left hand takes the sheet's top corner and
  * folds it back diagonally (baring the mattress there), let go; turn round and sit on the bare edge; the left hand
@@ -1289,6 +1289,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     }
     // ---------- the bed: getting in, asleep, getting out, making it ----------
     const link = floor ? sheetLink(floor.key) : null;
+    let bedPrompt: string | null = null;
     if (!eRide && mv && floor && mv.kind === "bed" && link) {
       const t = now - mv.t0, grips = sheetGrips(floor);
       // A hand on the sheet: at that point of it (where the sheet has it now).
@@ -1313,20 +1314,38 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
             mv.phase = "asleep"; mv.t0 = now; state.uiLock = "sleep"; state.keys.clear();
             // Energy by the hours slept (to 6 AM): an hour or less +10%, eight or more full.
             const slept = hoursTo6(timeInfo(state.elapsed).hours);
-            if (!state.npcLink) state.elapsed = wakeElapsed(state.elapsed);
-            state.energy = sleepEnergy(state.energy, slept); mv.slept = slept;
+            // (On your own the night passes at once; in a room only once everyone's asleep — RoomClockSync moves the
+            // clock on, and you wake when morning comes.)
+            if (!state.npcLink) { state.elapsed = wakeElapsed(state.elapsed); state.energy = sleepEnergy(state.energy, slept); }
+            mv.slept = slept;
           }
         }
       } else if (mv.phase === "asleep") {
         play({ ...bedIn(floor, BI.release), left: null, right: null });
-        if (t >= ASLEEP) {
+        // Morning: on your own after a moment (the night's already passed); in a room when the clock reaches it.
+        const morning = !state.npcLink ? t >= ASLEEP : !canSleepAt(timeInfo(state.elapsed).hours);
+        if (morning) {
           state.uiLock = null; mv.phase = "out"; mv.t0 = now; mv.flap = null;
+          if (state.npcLink) state.energy = sleepEnergy(state.energy, mv.slept ?? 8);
           const h = Math.round((mv.slept ?? 8) * 10) / 10;
-          toast(state, "Good morning!", "info", `${state.npcLink ? "Rested" : "It's 6 AM"}: you slept ${h} h, energy ${Math.round(state.energy)}%.`);
+          toast(state, "Good morning!", "info", `It's 6 AM: you slept ${h} h, energy ${Math.round(state.energy)}%.`);
+        } else if (state.bedGetUp) {
+          // "Get up": sitting up on the bed's edge (and staying there).
+          state.uiLock = null; mv.phase = "out"; mv.t0 = now; mv.flap = null; mv.sitStop = true;
         }
+      } else if (mv.phase === "sitting") {
+        // Sat on the bed's edge: Space (or Jump) stands up; E lies back down to sleep while it's still night
+        // (before 5 AM) — after that, E stands up too.
+        play(bedOut(floor, BO.rise));
+        const night = canSleepAt(timeInfo(state.elapsed).hours);
+        bedPrompt = night ? "E SLEEP · SPACE GET UP" : "E GET UP";
+        if (state.jumpQueued || state.standQueued || (state.interactQueued && !night)) { mv.phase = "out"; mv.t0 = now - BO.rise; mv.sitStop = false; }
+        else if (state.interactQueued && night) { mv.phase = "in"; mv.t0 = now - (mv.plan!.total + BI.sit); }
+        state.interactQueued = false; state.jumpQueued = false; state.standQueued = false;
       } else if (mv.phase === "out") {
-        play(bedOut(floor, Math.min(t, BO.done)));
-        if (t >= BO.done) { const P = bedSpots(floor), [x, z] = toW(P.M[0], P.M[1]); state.pos.x = x; state.pos.z = z; state.rotY = worldYaw(floor.frame, -Math.PI / 2); link.from = link.to = "made"; link.k = 1; move.current = null; script = null; }
+        if (mv.sitStop && t >= BO.rise) { mv.phase = "sitting"; mv.t0 = now; play(bedOut(floor, BO.rise)); }
+        else play(bedOut(floor, Math.min(t, BO.done)));
+        if (mv.phase === "out" && t >= BO.done) { const P = bedSpots(floor), [x, z] = toW(P.M[0], P.M[1]); state.pos.x = x; state.pos.z = z; state.rotY = worldYaw(floor.frame, -Math.PI / 2); link.from = link.to = "made"; link.k = 1; move.current = null; script = null; }
       }
     }
     // ---------- the bathroom: washing the hands, the toilet, the shower ----------
@@ -1544,6 +1563,8 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     }
     if (!(mv?.kind === "sit" && mv.phase === "seated")) state.seatSurface = null;
     // This building's moves drive the body; when they end it's the player's again.
+    state.asleep = move.current?.kind === "bed" && move.current.phase === "asleep";
+    state.bedGetUp = false;
     // Going to bed in first person: the camera steps out behind (third person) till you're up again, then back.
     const inBed = move.current?.kind === "bed";
     if (inBed && state.firstPerson) { bedFp.current = state.camDistance; state.firstPerson = false; state.camDistance = 3.4; state.camPitch = 0.35; }
@@ -1553,6 +1574,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
 
     // ---------- E: what can be done here ----------
     const pr = prompt.current; pr.visible = false; pr.label = undefined;
+    if (bedPrompt && floor) { const [bx, bz] = toW(floor.bed.x, floor.bed.z); Object.assign(pr, { visible: true, x: bx, y: yNow + 1.5, z: bz, label: bedPrompt }); }
     if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") (window as unknown as { __aptPrompt?: () => string | undefined }).__aptPrompt = () => (pr.visible ? pr.label : undefined);
     if (eRide || move.current || kr.busy || state.ladder || state.ladderPrompt || state.accident || state.health <= 0 || sleeping.current) { if (eRide || move.current || kr.busy) state.interactQueued = false; return; }
     // Calling the car (to this floor); the label says where it is.

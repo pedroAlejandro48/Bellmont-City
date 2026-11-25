@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { RoomClockSync } from "./RoomClock";
+import { serverNow } from "@/lib/serverTime";
 import { useBack } from "@/lib/useBack";
 import { useFrame } from "@react-three/fiber";
 import { ChevronDown, Crown, User } from "lucide-react";
@@ -121,7 +123,12 @@ function RoomGame({ account, session, onExit }: { account: Account; session: Ses
   const world = useMemo<WorldSlot>(() => ({
     slot: `room-${room.code}`,
     seed: room.seed,
-    elapsed: () => DEFAULT_SAVE.elapsed + (Date.now() - room.createdAt) / 1000,
+    // The room's own clock: on from where it was kept while someone's here; still where it stopped if nobody is
+    // (an empty room's time stands still). (Rooms from before it kept a clock: as they always ran.)
+    elapsed: () => {
+      const c = room.clock ?? { base: DEFAULT_SAVE.elapsed + (Date.now() - room.createdAt) / 1000, at: serverNow() };
+      return remotePeers(channel.peers()).length > 0 ? c.base + (serverNow() - c.at) / 1000 : c.base;
+    },
     place: (save) => {
       const standing = remotePeers(channel.peers()).flatMap((p): Standing[] => {
         const pose = p.presence["pose"];
@@ -139,6 +146,7 @@ function RoomGame({ account, session, onExit }: { account: Account; session: Ses
       <RoomBikes state={state} code={room.key} uid={account.id} channel={live} />
       <RoomThumb uid={account.id} code={room.code} />
       <RoomWorldSync state={state} code={room.code} uid={account.id} />
+      <RoomClockSync state={state} channel={live} code={room.code} />
     </>,
     Overlay: () => <OnlinePanel account={account} channel={live} meta={meta} code={room.code} />,
     Actions: () => <MenuWithAdmin account={account} code={room.code} meta={meta} onDelete={async () => { deletingHere.current = true; await deleteRoom(room); }} />,

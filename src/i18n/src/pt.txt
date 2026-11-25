@@ -1105,3 +1105,7 @@
 1157|Candidatura aceita!
 1158|Você conseguiu o emprego: {0}. Comece pelo app Empregos do celular.
 1159|Tocar música no parque não precisa de candidatura; candidate-se aos outros.
+1160|Esperando todos dormirem ({0}/{1})
+1161|Levantar
+1162|E DORMIR · ESPAÇO LEVANTAR
+1163|E LEVANTAR
