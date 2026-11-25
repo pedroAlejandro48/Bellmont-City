@@ -31,6 +31,8 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
   const [unadding, setUnadding] = useState<string | null>(null);
   /** The friend whose chat is open in the list's place (or null). */
   const [chatting, setChatting] = useState<string | null>(null);
+  // (Join a room opening closes this list, and the chat in it.)
+  useEffect(() => { const close = () => { setOpen(false); setChatting(null); }; window.addEventListener("bellmont-join-open", close); return () => window.removeEventListener("bellmont-join-open", close); }, []);
   // The phone's back button: out of a chat (and the friends list) straight back to the menu.
   useBack(chatting !== null, () => { setChatting(null); setOpen(false); });
   const { friends, requests, sent } = data;
@@ -73,7 +75,7 @@ export function FriendsMenu({ account, data }: { account: Account; data: ReturnT
     <div className="flex gap-2">
       {/* The list drops down from the Friends button over the page (nothing below moves), as one box with it. */}
       <div className={`friends-drop ${open ? "open" : ""}`}>
-        <Button type="button" variant={open ? "secondary" : "outline"} className="friends-toggle w-full justify-between" aria-expanded={open} onClick={() => { setOpen((v) => !v); setUnadding(null); setChatting(null); }}>
+        <Button type="button" variant={open ? "secondary" : "outline"} className="friends-toggle w-full justify-between" aria-expanded={open} onClick={() => { if (!open) window.dispatchEvent(new Event("bellmont-friends-open")); setOpen((v) => !v); setUnadding(null); setChatting(null); }}>
           <span>Friends{requests.length ? <span className="friends-badge">{requests.length}</span> : null}</span>
           <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
         </Button>

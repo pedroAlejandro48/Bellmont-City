@@ -253,3 +253,4 @@ Done on our side: CI builds Bellmont-City.aab (release "latest"), targetSdk 36, 
 - Loading / error pages (Loading…, Loading your city…, room joining, load failures): .fit-screen — 100dvh, nothing scrolls (min-h-screen was 100vh, taller than a phone browser's visible part).
 - The sign-in / menu titles (Bellmont city + its line) have the light theme's soft dark text-shadow in every theme.
 - Upright: the title + line are shifted (position: relative; top: --title-drop) so they sit centred between the top row (ends 3.375rem down) and the box; the box doesn't move; identical on sign-in pages and the menu (measured: equal gaps at 360×640, 411×736, 390×844).
+- Only one menu list open at a time: Join a room dispatches bellmont-join-open (FriendsMenu closes, chat too); opening Friends dispatches bellmont-friends-open (MainMenu closes Join).
