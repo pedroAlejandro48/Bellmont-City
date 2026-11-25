@@ -187,6 +187,11 @@ export type GameState = {
   level: { building: string; floor: number; y: number } | null;
   /** In an apartment building's elevator car (riding, or standing in it). */
   inCar: boolean;
+  /** While in a car: its building and the car's height (world) this frame — sent with the pose, so the others can
+   *  draw this player standing in their own copy of the car rather than a little behind or ahead of it. */
+  carRide: { b: string; y: number } | null;
+  /** The height (world) of a building's car as this player sees it now (null: not known here). */
+  carYOf: ((b: string) => number | null) | null;
   /** The elevator's buttons open: that car (its floor, way, the floors asked for). */
   liftView: { b: string; floor: number; dir: number; stops: number[] } | null;
   /** Floors pressed on those buttons, for the elevator to take. */
@@ -311,6 +316,8 @@ export type GameState = {
   doorLink: DoorLink | null;
   /** In a room: everyone's use of the apartment elevators. */
   liftLink: LiftLink | null;
+  /** In a room: the grocery's shopper and everyone's checkout (null playing alone). */
+  groceryLink: GroceryLink | null;
   /** Restaurant chairs other players are sitting on (or sitting down on), as `roomKey#index`. */
   takenChairs: Set<string>;
   /** Slow pushes this player's bike gave to other bikes this frame, by bike id: a world velocity (m/s). */
@@ -356,6 +363,20 @@ export type GameState = {
 
 /** A thing from the grocery store in a hand. */
 export type StoreHeld = { kind: ItemKind; paid: boolean; src?: number };
+/** The grocery's shopper as sent around a room: who, which part of their visit and when it started (server ms),
+ * where they were then (room frame x, z, yaw), what they still want (sources), and what they carry. */
+export type GroceryShopperWire = { id: number; fem: boolean; stage: string; k: number; t0: number; at: [number, number, number]; wants: number[]; basket: { kind: string; x: number; y: number; z: number; rot: number }[] | null; bag: string[] | null; holding: string | null };
+export type GroceryWire = { n: number; sh: GroceryShopperWire | null };
+/** A player's checkout: when their basket went down on the belt (server ms), and what was in it. */
+export type GroceryCheckoutWire = { t0: number; items: { kind: string; x: number; y: number; z: number; rot: number }[] };
+export type GroceryLink = {
+  isHost: () => boolean;
+  publish: (sh: GroceryShopperWire | null) => void;
+  latest: () => (GroceryWire & { from: string }) | null;
+  myCheckout: (c: GroceryCheckoutWire | null) => void;
+  checkouts: () => (GroceryCheckoutWire & { id: string })[];
+};
+
 export function createState(save: SaveData): GameState {
   const s: GameState = {
     health: Math.max(0, Math.min(100, save.health ?? 100)),
@@ -390,7 +411,7 @@ export function createState(save: SaveData): GameState {
     extraDoorUses: [],
     level: save.apt && save.apt.floor >= 2 ? { building: save.apt.building, floor: save.apt.floor, y: floorY(save.apt.floor) } : null,
     seatSurface: null,
-    inCar: false, liftView: null, liftPress: [], liftShown: null, liftShut: null, liftBridge: null, aptHere: null,
+    inCar: false, carRide: null, carYOf: null, liftView: null, liftPress: [], liftShown: null, liftShut: null, liftBridge: null, aptHere: null,
     uiLock: null, fridgeLoad: [], camLock: null, ladder: null, ladderPrompt: false, noJump: false, kitchenAsk: null, meal: null, kitchenQ: false,
     keys: new Set(),
     jumpQueued: false, venueSeat: null, venueSeatLeave: false, hospital: null, hospitalPeers: [], stairGround: null, stairFeet: null, bodyVel: null, asleep: false, bedGetUp: false, sleepWait: null,
@@ -411,7 +432,7 @@ export function createState(save: SaveData): GameState {
     life: readLife(save.life, timeInfo(save.elapsed).day),
     toasts: [], waypoint: null, phone: { open: false, app: null, atm: false }, job: null, home: null, busking: null,
     npcs: [], npcLink: null,
-    trafficLink: null, doorLink: null, liftLink: null, bikePushes: new Map(), takenChairs: new Set(),
+    trafficLink: null, doorLink: null, liftLink: null, groceryLink: null, bikePushes: new Map(), takenChairs: new Set(),
     foodLink: null, hands: { left: null, right: null }, grab: null, drop: null, dropQueued: false, staffBodies: [], liftBodies: [], put: null, eating: null, foodScript: null, foodSend: null, doorUsesNow: null, npcDoorUses: [], npcAdopt: [], foodHandle: null, foodTransfer: null, pedHolders: new Set(), foodView: null, foodUi: { open: false, key: null, kind: null, note: null }, foodOrder: null, remoteRigs: new Map(),
     seatOccupants: new Map(save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? [[save.benchSeat, "player"]] : []),
     bench: save.benchSeat != null && BENCH_SEATS[save.benchSeat] ? { seat: save.benchSeat, phase: "seated", startedAt: 0, origin: new THREE.Vector3(...save.pos), originYaw: save.rotY } : null,

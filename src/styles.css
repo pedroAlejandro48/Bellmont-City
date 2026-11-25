@@ -447,7 +447,7 @@
 .inventory-button:hover { filter: brightness(1.2); }
 .inventory-button:active { transform: scale(0.94); }
 .inventory-button.on { box-shadow: 0 0 0 2px #ffb547 inset; }
-.inventory-button-icon { font-size: 1.15rem; line-height: 1; display: grid; place-items: center; height: 1.3rem; }
+.inventory-button-icon { font-size: 1.25rem; line-height: 1; display: grid; place-items: center; height: 1.3rem; }
 .inventory-anchor { position: static; }
 .inventory-grid { position: absolute; left: 50%; bottom: calc(100% + 0.5rem); display: flex; flex-direction: column; align-items: center; gap: 0.35rem; transform: translate(-50%, 0.8rem) scale(0.94); transform-origin: bottom center; opacity: 0; pointer-events: none !important; transition: transform 0.28s cubic-bezier(0.2, 1.2, 0.4, 1), opacity 0.2s ease; }
 .inventory-grid.open { transform: translate(-50%, 0); opacity: 1; pointer-events: auto !important; }
@@ -492,6 +492,21 @@
 .fridge-wrap .home-panel { position: fixed; z-index: 40; }
 .home-sleep { position: fixed; inset: 0; z-index: 45; }
 
+/* ---------- The HUD on a computer: the money, the level and the inventory are squares as tall as the bars, their
+   icons big; the bike's speed sits small above them all. ---------- */
+.hud-bottom .hud-square { width: 7rem; flex: 0 0 7rem; }
+.hud-bottom .hud-cash-icon { font-size: 2.3rem; }
+.hud-bottom .hud-cash-amount { font-size: 1.15rem; }
+.hud-bottom .hud-cash-amount.long { font-size: 0.9rem; }
+.hud-bottom .level-badge { font-size: 12px; gap: 0.4rem; }
+.hud-bottom .level-badge .ring { width: 3.4rem; height: 3.4rem; }
+.hud-bottom .level-badge .ring b { font-size: 1.25rem; }
+.hud-bottom .inventory-button { font-size: 12px; gap: 0.45rem; }
+.hud-bottom .inventory-button-icon { font-size: 2.3rem; height: 2.4rem; }
+.hud-speed { bottom: calc(1.5rem + 7rem + 0.5rem); height: 2.6rem; padding: 0 0.9rem; align-items: center; }
+.hud-speed > span:first-child { font-size: 1.35rem; line-height: 1; }
+.hud-speed > span:last-child { font-size: 0.62rem; }
+
 /* ---------- The HUD on phones (upright, and on their side: the same sizes) ---------- */
 .hud-cash-icon { font-size: 1.35rem; }
 .hud-cash-amount { font-size: 0.9rem; }
@@ -510,6 +525,11 @@
   .hud-cash-amount { font-size: 0.8rem; }
   .hud-cash-amount.long { font-size: 0.62rem; }
   .level-badge .ring { width: 2.3rem; height: 2.3rem; }
+  .hud-bottom .level-badge { font-size: 10px; gap: 0.2rem; }
+  .hud-bottom .level-badge .ring b { font-size: 0.95rem; }
+  .hud-bottom .inventory-button { font-size: 10px; gap: 0.2rem; }
+  .hud-bottom .inventory-button-icon { font-size: 1.25rem; height: 1.3rem; }
+  .hud-speed { bottom: calc(0.75rem + env(safe-area-inset-bottom) + 3.75rem + 0.5rem); }
 }
 /* A phone on its side: the same as upright (the small day box, small buttons). */
 @media (orientation: landscape) and (max-height: 560px) {

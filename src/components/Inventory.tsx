@@ -34,5 +34,5 @@ export function InventoryButton({ state }: { state: GameState }) {
 }
 
 function GridIcon() {
-  return <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden>{[3, 10, 17].flatMap((x) => [3, 10, 17].map((y) => <rect key={`${x}-${y}`} x={x} y={y} width="5" height="5" rx="1.2" fill="currentColor" />))}</svg>;
+  return <svg viewBox="0 0 24 24" width="1em" height="1em" aria-hidden>{[3, 10, 17].flatMap((x) => [3, 10, 17].map((y) => <rect key={`${x}-${y}`} x={x} y={y} width="5" height="5" rx="1.2" fill="currentColor" />))}</svg>;
 }

@@ -1032,6 +1032,8 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     const inDoor = !!sh && !!meLocal && inDoorAt(sh, meLocal[0], meLocal[1]);
     state.noJump = !!meLocal && !!L0 && Math.abs(meLocal[0] - (L0.bounds.minX + SHAFT / 2)) < SHAFT / 2 && meLocal[1] < L0.bounds.minZ + SHAFT + 0.1;
     state.inCar = insideCar;
+    state.carRide = insideCar && bHere ? { b: bHere, y: carY(bHere) } : null;
+    state.carYOf = (b) => (byKey.has(b) ? carY(b) : null);
     {
       let near = bHere;
       if (!near) { let best = 90; for (const [k, bb] of byKey) { const d = Math.hypot(bb.x - p.x, bb.z - p.z); if (d < best) { best = d; near = k; } } }

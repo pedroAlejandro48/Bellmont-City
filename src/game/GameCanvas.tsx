@@ -335,7 +335,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
           {extras?.exitNote && <span className="text-[11px] font-bold tracking-wide text-white sm:text-sm">{extras.exitNote}</span>}
         </div>
         {Overlay && <Overlay state={state} />}
-        {riding && <div className="hud-panel absolute bottom-24 left-1/2 flex h-16 w-40 -translate-x-1/2 items-baseline justify-center gap-2 px-4 py-3" aria-label="Scooter speed"><span className="font-display text-3xl tabular-nums">{speed}</span><span className="text-xs text-muted-foreground">MPH</span></div>}
+        {riding && <div className="hud-speed hud-panel absolute left-1/2 flex -translate-x-1/2 items-baseline justify-center gap-1.5" aria-label="Scooter speed"><span className="font-display tabular-nums">{speed}</span><span className="text-muted-foreground">MPH</span></div>}
         <div className="hud-bottom absolute bottom-6 left-1/2 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-stretch justify-center gap-2">
           <div className="hud-needs hud-panel w-64 min-w-0 space-y-1.5 px-4 py-2.5">
             {([["HEALTH", health, "health"], ["HUNGER", needs.hunger, "hunger"], ["THIRST", needs.thirst, "thirst"], ["ENERGY", needs.energy, "energy"]] as const).map(([label, value, kind]) => (

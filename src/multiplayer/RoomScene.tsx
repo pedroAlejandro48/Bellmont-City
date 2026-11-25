@@ -18,6 +18,7 @@ import { makeDoorLink } from "./doorLink";
 import { makeLiftLink } from "./liftLink";
 import { FurnitureSync } from "./FurnitureSync";
 import { HospitalSync } from "./HospitalSync";
+import { GrocerySync } from "./GrocerySync";
 import { GroceryBagModel, heldWire, ItemModel, useLooks, type HeldWire, type Thing } from "@/game/InventoryWorld";
 import { Basket, type InBasket } from "@/game/Grocery";
 import { handWorld } from "@/game/arms";
@@ -91,9 +92,11 @@ export function RoomScene({ state, channel, remotes, joinedAt, creator }: { stat
     const now = Date.now();
     // Send at SEND_HZ, and only when something moved (an idle player costs nothing).
     if (now - lastSent.current.at >= 1000 / SEND_HZ) {
-      const pose = capturePose(state.avatar, state.scooter, now);
+      // (The car's height as it is now, after this frame's step: the one the body stands on.)
+      const ride = state.carRide, carNow = ride ? { b: ride.b, y: state.carYOf?.(ride.b) ?? ride.y } : null;
+      const pose = capturePose(state.avatar, state.scooter, now, carNow);
       if (pose) {
-        const body = JSON.stringify([pose.b, pose.bv, pose.r, pose.s, pose.sf]);
+        const body = JSON.stringify([pose.b, pose.bv, pose.r, pose.s, pose.sf, pose.lk]);
         if (body !== lastSent.current.body) {
           lastSent.current = { at: now, body };
           void channel.presence({ pose }).catch(() => {});
@@ -175,7 +178,7 @@ export function RoomScene({ state, channel, remotes, joinedAt, creator }: { stat
   });
   useEffect(() => () => { state.others = []; state.otherBikes = []; }, [state]);
 
-  return <><FurnitureSync state={state} channel={channel} /><HospitalSync state={state} channel={channel} />{ids.map((entry) => {
+  return <><FurnitureSync state={state} channel={channel} /><HospitalSync state={state} channel={channel} /><GrocerySync state={state} channel={channel} />{ids.map((entry) => {
     const [id = "", uid = ""] = entry.split(" ");
     return <RemoteAvatar key={entry} id={id} uid={uid} creator={uid !== "" && uid === creator} remotes={remotes} state={state} />;
   })}</>;
@@ -213,6 +216,16 @@ const RemoteAvatar = memo(function RemoteAvatar({ id, uid, creator, remotes, sta
     if (!at) return;
     rig.current.body = BODY_PARTS.map((part) => body[part].current);
     applyPose(rig.current, at.a, at.b, at.t);
+    // In an elevator car: standing in this player's own copy of it (the same height above its floor as they sent),
+    // so everyone in it moves together with it here, however late their poses arrive.
+    const root = rig.current.body[0];
+    if (root && at.b.lk !== undefined && at.b.ly !== undefined) {
+      const here = state.carYOf?.(at.b.lk) ?? null;
+      if (here !== null) {
+        const sentCar = at.a.lk === at.b.lk && at.a.ly !== undefined ? THREE.MathUtils.lerp(at.a.ly, at.b.ly, at.t) : at.b.ly;
+        root.position.y += here - sentCar;
+      }
+    }
     look.darkness = state.darkness;
     look.scooter.riding = (at.b.sf & 1) === 1;
     look.scooter.braking = (at.b.sf & 2) === 2;

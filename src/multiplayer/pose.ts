@@ -6,10 +6,11 @@ import type { AvatarRig } from "@/game/state";
  * Each transform is 7 numbers: position xyz then quaternion xyzw.
  * - `b`: the animated body, one transform per BODY_PARTS group (root first); `bv` 0 while it is hidden.
  * - `r`: the ragdoll's part transforms, only while it is shown (knocked down / getting up).
+ * - `lk`/`ly`: in an elevator car: its building and its height then (others draw the body in their own car).
  * - `s`: the controlled bike's root transform, then its front wheel's steering angle; `sf` bits: 1 riding,
  *   2 braking, 4 controls a bike (else `s` is meaningless and no bike is drawn with this player).
  */
-export type PoseWire = { ts: number; b: number[]; bv: 0 | 1; r?: number[]; s: number[]; sf: number };
+export type PoseWire = { ts: number; b: number[]; bv: 0 | 1; r?: number[]; s: number[]; sf: number; lk?: string; ly?: number };
 
 export const SEND_HZ = 30;
 /** Remote players are drawn this far in the past so there is almost always a newer pose to blend toward. */
@@ -22,7 +23,7 @@ function pushTransform(out: number[], o: THREE.Object3D) {
   out.push(round(p.x), round(p.y), round(p.z), round(q.x), round(q.y), round(q.z), round(q.w));
 }
 
-export function capturePose(rig: AvatarRig, scooter: { riding: boolean; braking: boolean; id: string | null }, ts: number): PoseWire | null {
+export function capturePose(rig: AvatarRig, scooter: { riding: boolean; braking: boolean; id: string | null }, ts: number, car: { b: string; y: number } | null = null): PoseWire | null {
   const root = rig.body[0];
   const bike = rig.scooter[0];
   if (!root || !bike) return null;
@@ -35,6 +36,7 @@ export function capturePose(rig: AvatarRig, scooter: { riding: boolean; braking:
   // close-up — unless the ragdoll is shown instead.)
   const ragdollShown = !!rig.ragdoll[1]?.visible;
   const pose: PoseWire = { ts, b, bv: ragdollShown ? 0 : 1, s, sf: (scooter.riding ? 1 : 0) | (scooter.braking ? 2 : 0) | (scooter.id !== null ? 4 : 0) };
+  if (car) { pose.lk = car.b; pose.ly = round(car.y); }
   if (ragdollShown) {
     const r: number[] = [];
     for (const part of rig.ragdoll) pushTransform(r, part);
@@ -47,7 +49,7 @@ export function isPoseWire(value: unknown): value is PoseWire {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
   return typeof v["ts"] === "number" && Array.isArray(v["b"]) && Array.isArray(v["s"]) && v["b"].every((n) => typeof n === "number")
-    && v["s"].every((n) => typeof n === "number") && (v["r"] === undefined || (Array.isArray(v["r"]) && v["r"].every((n) => typeof n === "number")));
+    && v["s"].every((n) => typeof n === "number") && (v["lk"] === undefined || typeof v["lk"] === "string") && (v["ly"] === undefined || typeof v["ly"] === "number") && (v["r"] === undefined || (Array.isArray(v["r"]) && v["r"].every((n) => typeof n === "number")));
 }
 
 const qa = new THREE.Quaternion(), qb = new THREE.Quaternion();
