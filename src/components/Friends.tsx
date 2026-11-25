@@ -212,7 +212,7 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
         el.style.top = `${top}px`;
         // (A phone on its side leaves only a strip above the keyboard: the chat shrinks to it — no minimum height that would
         // push the box under the keyboard — and in a very short strip the header steps aside for the messages and box.)
-        const h = Math.max(72, bottom - top - (kbUp ? (sideways ? (sideButtons ? -6 : 14) : vk && !braveBar ? 14 : braveBar ? 11 : swipeBrowser ? 12 : 0) : 0));
+        const h = Math.max(72, bottom - top - (kbUp ? (sideways ? (sideButtons ? -16 : 14) : vk && !braveBar ? 14 : braveBar ? 11 : swipeBrowser ? 12 : 0) : 0));
         el.style.height = `${h}px`;
         el.classList.toggle("kb-tight", kbUp && h < 240);
         el.classList.toggle("kb-up", kbUp);
