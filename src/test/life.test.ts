@@ -77,3 +77,16 @@ describe("life: progress", () => {
     expect(readLife({ bank: "lots", credit: 9999 }).credit).toBe(850);
   });
 });
+import { applyForJob, jobStatus, settleApplications } from "@/game/life";
+describe("job applications", () => {
+  it("busking is open; the others are applied for and accepted a game day later", () => {
+    const life = newLife(1);
+    expect(jobStatus(life, "busker")).toBe("open");
+    expect(jobStatus(life, "courier")).toBe("none");
+    applyForJob(life, "courier", 1000);
+    expect(jobStatus(life, "courier")).toBe("pending");
+    expect(settleApplications(life, 1000 + 59_000, 60_000)).toEqual([]);
+    expect(settleApplications(life, 1000 + 60_000, 60_000)).toEqual(["courier"]);
+    expect(jobStatus(life, "courier")).toBe("hired");
+  });
+});

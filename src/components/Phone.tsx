@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Banknote, Briefcase, CircleUser, ListChecks, Map as MapIcon, X } from "lucide-react";
 import { HALF, blockCenter, formatClock, generateCity, timeInfo, BLOCK } from "@/game/config";
-import { FINE_DAYS, finesOwed, payFines, GUIDE, JOBS, QUEST_TEXT, SKILLS, SKILL_NAMES, borrow, deposit, levelOf, loanLimit, repay, skillLevel, withdraw, type JobId } from "@/game/life";
+import { FINE_DAYS, finesOwed, payFines, GUIDE, JOBS, QUEST_TEXT, SKILLS, SKILL_NAMES, applyForJob, borrow, deposit, jobStatus, levelOf, loanLimit, repay, skillLevel, withdraw, type JobId } from "@/game/life";
 import { canStart, quitJob, startJob } from "@/game/jobs";
 import { ATMS, BUSK_SPOT, doorOf } from "@/game/places";
-import { guideDone, lifeEvent } from "@/game/lifeRuntime";
+import { APPLY_WAIT_MS, guideDone, lifeEvent } from "@/game/lifeRuntime";
 import { toast, type GameState } from "@/game/state";
 import { WEATHER_NAME } from "@/game/weather";
 import { SHOPS, shopPlaces } from "@/game/shops";
@@ -112,16 +112,26 @@ function BankApp({ state, atm }: { state: GameState; atm: boolean }) {
 
 function JobsApp({ state, onDone }: { state: GameState; onDone: () => void }) {
   const [msg, setMsg] = useState<string | null>(null);
+  const [, setTick] = useState(0);
   const { level } = levelOf(state.life.xp);
   return <>
     {state.job && <div className="phone-card"><b>Now: {JOBS[state.job.id].name}</b><span>{state.waypoint?.label}</span><button type="button" className="phone-btn ghost" onClick={() => { quitJob(state); setMsg(null); }}>Quit job</button></div>}
     {(Object.keys(JOBS) as JobId[]).map((id) => {
-      const j = JOBS[id], why = canStart(state, id);
+      const j = JOBS[id], why = canStart(state, id), st = jobStatus(state.life, id);
+      // (The shop clerk's job is applied for at Fresh Market's counter: it shows here once applied.)
+      if (id === "clerk" && st === "none") return null;
+      const wait = st === "pending" ? Math.max(1, Math.ceil((APPLY_WAIT_MS - (Date.now() - (state.life.applied[id] ?? 0))) / (APPLY_WAIT_MS / 24))) : 0;
       return <div key={id} className="phone-job">
-        <div><b>{j.name}</b> <small>{j.code}</small><p>{j.blurb}</p>{j.minLevel > level && <small className="bad">Unlocks at level {j.minLevel}</small>}</div>
-        <button type="button" className="phone-btn" disabled={!!why} title={why ?? ""} onClick={() => { const r = startJob(state, id); if (r) setMsg(r); else onDone(); }}>Start</button>
+        <div><b>{j.name}</b> <small>{j.code}</small><p>{j.blurb}</p>{j.minLevel > level && <small className="bad">Unlocks at level {j.minLevel}</small>}
+          {st === "pending" && <small className="muted">Application under review · about {wait} in-game hours left</small>}</div>
+        {st === "none"
+          ? <button type="button" className="phone-btn" onClick={() => { applyForJob(state.life, id, Date.now()); setMsg(null); setTick((n) => n + 1); }}>Apply</button>
+          : st === "pending"
+            ? <button type="button" className="phone-btn ghost" disabled>Applied</button>
+            : <button type="button" className="phone-btn" disabled={!!why} title={why ?? ""} onClick={() => { const r = startJob(state, id); if (r) setMsg(r); else onDone(); }}>Start</button>}
       </div>;
     })}
+    <p className="phone-note">Playing in the park needs no application. The others are applied for here (the shop clerk at Fresh Market's counter) and accepted after 24 in-game hours.</p>
     {msg && <p className="phone-note bad">{msg}</p>}
     <p className="phone-note">Pay goes into your bank, after 10% income tax. Tips are cash.</p>
   </>;

@@ -1,6 +1,6 @@
 // Jobs while playing: starting one (from the phone), its stops, finishing and being paid.
 import { generateCity, timeInfo } from "./config";
-import { JOBS, deliveryPay, gainSkill, gainXp, levelOf, type JobId } from "./life";
+import { JOBS, deliveryPay, gainSkill, gainXp, jobStatus, levelOf, type JobId } from "./life";
 import { lifeEvent, payJob } from "./lifeRuntime";
 import { BUSK_SPOT, pickAddress } from "./places";
 import { OUTSIDE, roomLayout, toWorld } from "./restaurantRoom";
@@ -13,6 +13,9 @@ export const STOP_REACH = 2.2;
 export function canStart(state: GameState, id: JobId): string | null {
   const job = JOBS[id], { level } = levelOf(state.life.xp);
   if (level < job.minLevel) return `Needs level ${job.minLevel}`;
+  const st = jobStatus(state.life, id);
+  if (st === "none") return id === "clerk" ? "Apply at Fresh Market's counter" : "Apply first";
+  if (st === "pending") return "Application under review";
   if (state.job) return "Finish or quit your current job first";
   if (state.home) return "Go outside first";
   return null;

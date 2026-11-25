@@ -63,6 +63,9 @@ export type Life = {
   kitchen: Kitchen;
   /** How things stand with the moon (talked to at night). */
   moon: MoonBond;
+  /** Job applications: when each was sent (ms, real time) — accepted a game day (CYCLE) later — and the jobs got. */
+  applied: Partial<Record<JobId, number>>;
+  hired: JobId[];
 };
 export type Clothing = { name: string; part: "upper" | "lower"; color: string };
 export const CLOSET_MAX = 10;
@@ -73,7 +76,7 @@ export function newLife(day = 1): Life {
     bank: 300, loan: 0, credit: 650, xp: 0,
     skills: { fitness: 0, riding: 0, work: 0, charm: 0 },
     quests: rollQuests(day), questDay: day, guide: 0, home: null, billedDay: day, fridge: [], ledger: [],
-    earned: 0, jobsDone: 0, fines: [], record: 0, insured: false, insuredDay: 0, outfit: null, bikePaint: null, workoutDay: 0, inventory: newInventory(), closet: [], kitchen: newKitchen(), moon: newMoonBond(),
+    earned: 0, jobsDone: 0, fines: [], record: 0, insured: false, insuredDay: 0, outfit: null, bikePaint: null, workoutDay: 0, inventory: newInventory(), closet: [], kitchen: newKitchen(), moon: newMoonBond(), applied: {}, hired: [],
   };
 }
 
@@ -105,6 +108,8 @@ export function readLife(value: unknown, day = 1): Life {
     closet: Array.isArray(v["closet"]) ? (v["closet"] as Clothing[]).filter((c) => c && typeof c.name === "string" && (c.part === "upper" || c.part === "lower") && typeof c.color === "string" && /^#[0-9a-f]{6}$/i.test(c.color)).slice(0, CLOSET_MAX) : [],
     kitchen: readKitchen(v["kitchen"]),
     moon: readMoonBond(v["moon"]),
+    applied: v["applied"] && typeof v["applied"] === "object" ? Object.fromEntries(Object.entries(v["applied"] as Record<string, unknown>).filter(([k, t]) => k in JOBS && typeof t === "number")) as Partial<Record<JobId, number>> : {},
+    hired: Array.isArray(v["hired"]) ? (v["hired"] as unknown[]).filter((j): j is JobId => typeof j === "string" && j in JOBS) : [],
   };
 }
 
@@ -323,7 +328,7 @@ export const GUIDE = [
   { text: "Take out your phone (P or 1, or from the inventory)", hint: "Everything you own and can do is in it." },
   { text: "Take cash out at an ATM (marked on the map)", hint: "Walk up to one and press E." },
   { text: "Buy something to eat at a restaurant", hint: "Restaurants face the park." },
-  { text: "Do a job from the Jobs app", hint: "Courier gigs are the easiest start." },
+  { text: "Do a job from the Jobs app", hint: "Playing music in the park needs no application; apply for the others." },
   { text: "Rent an apartment at an apartment building's reception", hint: "Choose a floor; the first week is free. Find them on the Map." },
 ] as const;
 
@@ -341,4 +346,23 @@ export function deliveryPay(job: JobId, metres: number, seconds: number) {
   const expected = metres / (job === "delivery" ? 6 : 1.6) + 20;
   const tip = seconds < expected ? Math.min(base * 0.5, (expected - seconds) * 0.2) : 0;
   return { base: round(base), tip: round(tip) };
+}
+
+// ---------- applying for jobs ----------
+/** Jobs anyone can just do (playing music in the park); the others are applied for and start a game day later. */
+export const OPEN_JOBS: readonly JobId[] = ["busker"];
+export type JobStatus = "open" | "hired" | "pending" | "none";
+export function jobStatus(life: Life, id: JobId): JobStatus {
+  if (OPEN_JOBS.includes(id)) return "open";
+  if (life.hired.includes(id)) return "hired";
+  return life.applied[id] !== undefined ? "pending" : "none";
+}
+export function applyForJob(life: Life, id: JobId, now: number) { if (jobStatus(life, id) === "none") life.applied[id] = now; }
+/** Applications a game day old (`wait` ms) are accepted: returns the jobs just got. */
+export function settleApplications(life: Life, now: number, wait: number): JobId[] {
+  const got: JobId[] = [];
+  for (const [id, at] of Object.entries(life.applied) as [JobId, number][]) {
+    if (now - at >= wait) { delete life.applied[id]; if (!life.hired.includes(id)) { life.hired.push(id); got.push(id); } }
+  }
+  return got;
 }

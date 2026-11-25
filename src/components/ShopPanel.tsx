@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { timeInfo } from "@/game/config";
 import { isDrinkName } from "@/game/food";
-import { FINE_DAYS, HEALTH_PLAN, HOME_NAME, canMoveOut, finesOwed, gainSkill, gainXp, moveOut, payFines, record, rentApartment, spend } from "@/game/life";
+import { FINE_DAYS, HEALTH_PLAN, HOME_NAME, applyForJob, canMoveOut, finesOwed, jobStatus, gainSkill, gainXp, moveOut, payFines, record, rentApartment, spend } from "@/game/life";
 import { APT_FLOORS, freeFloors, rentFor } from "@/game/apartments";
 import { guideDone, lifeEvent, payJob } from "@/game/lifeRuntime";
 import { canConsume, consume } from "@/game/needs";
@@ -66,14 +66,19 @@ function pay(state: GameState, amount: number, label: string) {
 
 function Grocery({ state, refresh }: Props) {
   const [shift, setShift] = useState(false);
-  const life = state.life, home = !!life.home, full = life.fridge.length >= 12;
+  const life = state.life, home = !!life.home, full = life.fridge.length >= 12, clerk = jobStatus(life, "clerk");
   if (shift) return <ClerkShift state={state} onDone={() => { setShift(false); refresh(); }} />;
   if (state.groceryBasket?.length || handItems(state).length) return <Checkout state={state} refresh={refresh} />;
   return <>
     <p className="phone-note">To shop, take a basket by the door, fill it (E), and pay here (E).</p>
     <p className="phone-label">Work here</p>
-    <div className="phone-job"><div><b>Shop clerk</b> <small>J10</small><p>Restock the shelves for 40 seconds. Paid per shelf filled.</p></div>
-      <button type="button" className="phone-btn" disabled={!!state.job} title={state.job ? "Finish your current job first" : ""} onClick={() => setShift(true)}>Work a shift</button></div>
+    <div className="phone-job"><div><b>Shop clerk</b> <small>J10</small><p>Restock the shelves for 40 seconds. Paid per shelf filled.</p>
+      {clerk === "pending" && <small className="muted">Application under review: you'll hear back within 24 in-game hours.</small>}</div>
+      {clerk === "none"
+        ? <button type="button" className="phone-btn" onClick={() => { applyForJob(life, "clerk", Date.now()); toast(state, "Application sent", "info", "Fresh Market will let you know within 24 in-game hours."); refresh(); }}>Apply</button>
+        : clerk === "pending"
+          ? <button type="button" className="phone-btn ghost" disabled>Applied</button>
+          : <button type="button" className="phone-btn" disabled={!!state.job} title={state.job ? "Finish your current job first" : ""} onClick={() => setShift(true)}>Work a shift</button>}</div>
   </>;
 }
 

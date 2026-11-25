@@ -946,3 +946,4 @@ html:has(.fit-screen), body:has(.fit-screen) { overflow: hidden; height: 100%; }
   .auth-split .auth-titles { position: relative; top: var(--title-drop); }
   .auth-split .auth-box { position: relative; }
 }
+.phone-job small.muted { display: block; margin-top: 0.2rem; color: #9aa3b5; }

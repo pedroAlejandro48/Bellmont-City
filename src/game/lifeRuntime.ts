@@ -1,7 +1,7 @@
 // Life while playing: daily bills and goals, distances walked and ridden, pay for work, and what each earns in
 // experience and skill, with a message on screen for each.
-import { timeInfo } from "./config";
-import { GUIDE, QUEST_TEXT, dailyBills, gainSkill, gainXp, payslip, progressQuest, record, rollQuests, SKILL_NAMES, type JobId, type QuestId, type Skill } from "./life";
+import { CYCLE, timeInfo } from "./config";
+import { GUIDE, JOBS, QUEST_TEXT, dailyBills, settleApplications, gainSkill, gainXp, payslip, progressQuest, record, rollQuests, SKILL_NAMES, type JobId, type QuestId, type Skill } from "./life";
 import { toast, type GameState } from "./state";
 
 const money = (n: number) => `$${n.toFixed(2)}`;
@@ -49,6 +49,9 @@ export function payJob(state: GameState, job: JobId, label: string, base: number
   if (job) guideDone(state, 3);
 }
 
+/** A job application's wait: one game day (24 in-game hours), in real milliseconds. */
+export const APPLY_WAIT_MS = CYCLE * 1000;
+
 /** Called every frame: the daily roll-over, distances, skills. */
 export function stepLife(state: GameState, dt: number, moved: { walked: number; ridden: number; ran: boolean }) {
   const { day } = timeInfo(state.elapsed), life = state.life;
@@ -57,8 +60,10 @@ export function stepLife(state: GameState, dt: number, moved: { walked: number; 
     const evicted = lines.find((l) => l.label.startsWith("Evicted"));
     if (evicted) toast(state, "You've been evicted", "warn", "Your rent couldn't be paid from the bank. The key was taken and everything in the apartment is gone.");
     const paid = lines.filter((l) => l.amount < 0).reduce((s, l) => s - l.amount, 0), unpaid = lines.some((l) => l.label.includes("unpaid"));
-    if (paid > 0 || unpaid) toast(state, unpaid ? "Some bills went unpaid" : `Bills paid: ${money(paid)}`, unpaid ? "warn" : "money", unpaid ? "They were added to your loan and your credit score dropped." : "Rent, utilities and phone, from your bank.");
+    if (paid > 0 || unpaid) toast(state, unpaid ? "Some bills went unpaid" : `Bills paid: ${money(paid)}`, unpaid ? "warn" : "money", unpaid ? "They were added to your loan and your credit score dropped." : "Rent and your health plan, from your bank.");
   }
+  // Job applications: accepted one game day (24 in-game hours) after applying, with a notice.
+  for (const id of settleApplications(life, Date.now(), APPLY_WAIT_MS)) toast(state, "Application accepted!", "money", `You got the job: ${JOBS[id].name}. Start it from the phone's Jobs app.`);
   if (day !== life.questDay) { life.quests = rollQuests(day); life.questDay = day; toast(state, "New day, new goals", "quest", "See them in the phone's Goals app."); }
   if (moved.walked > 0) {
     lifeEvent(state, "walk", moved.walked);
