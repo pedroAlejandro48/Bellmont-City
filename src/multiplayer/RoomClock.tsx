@@ -16,8 +16,9 @@ import { pickHost } from "./host";
 const KEEP_MS = 15_000;
 
 export function RoomClockSync({ state, channel, code }: { state: GameState; channel: NamedRoom; code: string }) {
-  const clock = useRef<RoomClock | null>(null), kept = useRef(0), sentAsleep = useRef<boolean | null>(null), skipped = useRef(0);
-  useEffect(() => watchRoomClock(code, (c) => { clock.current = c; }), [code]);
+  const clock = useRef<RoomClock | null>(null), heard = useRef<RoomClock | null>(null), kept = useRef(0), sentAsleep = useRef<boolean | null>(null), skipped = useRef(0);
+  // (Only a newer clock than the one followed: an empty room's old clock never runs on over the time it was empty.)
+  useEffect(() => watchRoomClock(code, (c) => { if (!clock.current) heard.current = c; else if (c.at >= clock.current.at) clock.current = c; }), [code]);
   // Leaving (the page closing, or out to the menu) as the last one in: the clock stops where it is.
   useEffect(() => {
     const keep = () => {
@@ -32,12 +33,17 @@ export function RoomClockSync({ state, channel, code }: { state: GameState; chan
     // Asleep or not, for everyone to see.
     const asleep = !!state.asleep;
     if (asleep !== sentAsleep.current) { sentAsleep.current = asleep; void channel.presence({ asleep }).catch(() => {}); }
-    // Following the kept clock.
-    const c = clock.current;
-    if (c && !amHost) {
-      const want = c.base + (now - c.at) / 1000;
-      if (Math.abs(state.elapsed - want) > 2) state.elapsed = want;
+    // Everyone (the host too) reads the time straight off the room's clock — so every timer (a pot on the stove, the
+    // time of day) is exactly the same for all, however fast each device draws. (Till the kept one comes in: from here.)
+    if (!clock.current) {
+      // Arriving: the time as the game started it (an empty room's where it stood) — kept from now, if no one else
+      // is here to keep it.
+      const others = peers.some((p) => p.kind === "viewer" && !p.sameTab && p.presence["away"] !== true);
+      clock.current = others && heard.current ? heard.current : { base: state.elapsed, at: now };
+      if (amHost) { kept.current = now; void setRoomClock(code, clock.current).catch(() => {}); }
     }
+    const c = clock.current;
+    state.elapsed = c.base + (now - c.at) / 1000;
     // Everyone asleep (at night): on to 6 AM — the host moves the clock, everyone follows it.
     const viewers = peers.filter((p) => p.kind === "viewer" && p.presence["away"] !== true);
     const others = viewers.filter((p) => !p.sameTab), sleeping = others.filter((p) => p.presence["asleep"] === true).length + (asleep ? 1 : 0);
@@ -46,10 +52,11 @@ export function RoomClockSync({ state, channel, code }: { state: GameState; chan
       skipped.current = now;
       state.elapsed = wakeElapsed(state.elapsed);
       kept.current = now;
-      void setRoomClock(code, { base: state.elapsed, at: now }).catch(() => {});
+      clock.current = { base: state.elapsed, at: now };
+      void setRoomClock(code, clock.current).catch(() => {});
     }
     // The host keeps the clock.
-    if (amHost && now - kept.current > KEEP_MS) { kept.current = now; void setRoomClock(code, { base: state.elapsed, at: now }).catch(() => {}); }
+    if (amHost && now - kept.current > KEEP_MS) { kept.current = now; clock.current = { base: state.elapsed, at: now }; void setRoomClock(code, clock.current).catch(() => {}); }
   });
   return null;
 }

@@ -255,7 +255,10 @@ export class KitchenRun {
     // ---- the stove (two burners) ----
     // (Standing nearer the sink, it's the sink that E is for.)
     const dTo = (q: [number, number]) => Math.hypot(c.lx - q[0], c.lz - q[1]);
-    if (near(K.ovenStand, 0.85, K.burners[0]!.map((v, i) => (v + K.burners[1]![i]!) / 2)) && dTo(K.ovenStand) <= dTo(K.sinkStand) + 0.05) {
+    // (Measured from the burner stands — in front of each burner — not the stove's middle: standing at the burner on
+    // the sink's side is still the stove.)
+    const dStove = Math.min(dTo(burnerStand(fl, 0)), dTo(burnerStand(fl, 1)));
+    if (near(K.ovenStand, 1.15, K.burners[0]!.map((v, i) => (v + K.burners[1]![i]!) / 2)) && dStove <= dTo(K.sinkStand) + 0.05) {
       // One person at the stove at a time (both burners).
       const mid = K.burners.reduce((a2, b2) => [a2[0] + b2[0] / K.burners.length, 0, a2[2] + b2[2] / K.burners.length], [0, 0, 0] as [number, number, number]);
       if ([0, 1].some((i) => claimed(`stove${i}`))) return { at: [mid[0], 1.25, mid[2]], label: "SOMEONE'S AT THE STOVE", act: null };
