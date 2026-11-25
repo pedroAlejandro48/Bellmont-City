@@ -124,9 +124,8 @@ function downKeys(): { keys: Key[]; bottom: number } {
   const keys: Key[] = [];
   const stand: Key = { d: 0, z: -0.12, y: ROOF_UP, lean: 0.04, drop: 0, fL: { y: ROOF_UP, z: -0.2 }, fR: { y: ROOF_UP, z: -0.12 }, hL: null, hR: null };
   keys.push(stand);
-  // Squatting down, the hands going straight down (not up first) beside the legs, then onto the roof in front.
-  keys.push({ ...stand, d: 0.3, hL: { y: ROOF_UP + 0.72, z: stand.z }, hR: { y: ROOF_UP + 0.72, z: stand.z } });
-  keys.push({ ...stand, d: 0.6, lean: 0.85, drop: 0.55, hL: ROOF_HAND, hR: ROOF_HAND, z: -0.05 });
+  // Squatting down, the hands on the roof (in front, by the edge).
+  keys.push({ ...stand, d: 0.8, lean: 0.85, drop: 0.55, hL: ROOF_HAND, hR: ROOF_HAND, z: -0.05 });
   keys.push({ ...keys[keys.length - 1]!, d: 0.75, fR: rung(top), z: 0.24, y: ROOF_UP - 0.15, lean: 0.9, drop: 0.45 });
   keys.push({ ...bent, d: 0.75, hL: ROOF_HAND, hR: ROOF_HAND });
   // The climb up, backward from there.
@@ -134,8 +133,6 @@ function downKeys(): { keys: Key[]; bottom: number } {
   return { keys, bottom: 0 };
 }
 const THIGH = 0.46, SHIN = 0.46, HIP = 0.95, ANKLE = HIP - THIGH - SHIN;
-/** On the ladder, how far out from the wall the knees always stay (the rungs' front, and a knee's width). */
-const KNEE_CLEAR = 0.24;
 /** A leg reaching an ankle `f` ahead of the hips and `y` above their floor, the hips `drop` lower (as bathMoves'). */
 function legTo(f: number, y: number, drop: number): { hip: number; knee: number } {
   const dz = f, dy = (y + ANKLE) - (HIP - drop), d = Math.min(THIGH + SHIN - 1e-4, Math.max(0.05, Math.hypot(dz, dy)));
@@ -148,12 +145,12 @@ const lerpP = (a: P, b: P, e: number): P => ({ y: a.y + (b.y - a.y) * e, z: a.z 
 export type ClimbPose = {
   /** Ladder frame: x across the wall from the ladder's middle, z out from the wall, y above the top floor. */
   z: number; y: number; lean: number;
-  legs: { hipL: number; kneeL: number; hipR: number; kneeR: number; drop: number; spread: number };
+  legs: { hipL: number; kneeL: number; hipR: number; kneeR: number; drop: number };
   hands: { left: { at: [number, number, number]; blend: number } | null; right: { at: [number, number, number]; blend: number } | null };
 };
 const UP = upKeys(), DOWN = downKeys();
 const total = (ks: Key[]) => ks.reduce((a, q) => a + q.d, 0);
-export const CLIMB = { up: total(UP.keys), down: total(DOWN.keys), topOut: UP.topOut, downOff: total(DOWN.keys.slice(0, 5)) } as const;
+export const CLIMB = { up: total(UP.keys), down: total(DOWN.keys), topOut: UP.topOut, downOff: total(DOWN.keys.slice(0, 4)) } as const;
 /** Where the body and its holds are `t` seconds into climbing up (or down). */
 export function climbPose(dir: "up" | "down", t: number): ClimbPose {
   const ks = dir === "up" ? UP.keys : DOWN.keys;
@@ -161,29 +158,11 @@ export function climbPose(dir: "up" | "down", t: number): ClimbPose {
   while (i < ks.length - 1 && at + ks[i]!.d < t) { at += ks[i]!.d; i++; }
   const a = ks[i - 1]!, b = ks[i]!, e = smooth((t - at) / b.d), arc = Math.sin(Math.PI * e);
   const num = (x: number, y: number) => x + (y - x) * e;
-  let z = num(a.z, b.z);
-  const y = num(a.y, b.y), lean = num(a.lean, b.lean), drop = num(a.drop, b.drop);
+  const z = num(a.z, b.z), y = num(a.y, b.y), lean = num(a.lean, b.lean), drop = num(a.drop, b.drop);
   // A moving foot comes off its hold, out and up a little, and onto the next; a hand the same, less.
   const foot = (p: P, q: P) => { const m = lerpP(p, q, e); return p.y === q.y && p.z === q.z ? m : { y: m.y + 0.1 * arc, z: m.z + 0.12 * arc }; };
   const fL = foot(a.fL, b.fL), fR = foot(a.fR, b.fR);
-  let L = legTo(z - fL.z, fL.y - y, drop), R = legTo(z - fR.z, fR.y - y, drop);
-  // On the ladder the knees never go through it: where a knee would come closer to the wall than the rungs' front
-  // (and a little), the hips move back just as far — and the body leans in as much again, so the hands still reach.
-  const onLadder = (fL.z > 0.05 || fR.z > 0.05) && z > 0.25 && y < ROOF_UP - 0.6;
-  let lean2 = lean;
-  if (onLadder) {
-    const kneeZ = (h: number) => z - THIGH * Math.sin(-h);
-    const need = Math.max(0, KNEE_CLEAR - Math.min(kneeZ(L.hip), kneeZ(R.hip)));
-    if (need > 0) {
-      for (let i = 0; i < 3; i++) {
-        const zz = z + need * (1 + 0.35 * i);
-        L = legTo(zz - fL.z, fL.y - y, drop); R = legTo(zz - fR.z, fR.y - y, drop);
-        if (Math.min(zz - THIGH * Math.sin(-L.hip), zz - THIGH * Math.sin(-R.hip)) >= KNEE_CLEAR - 0.005 || i === 2) { lean2 = Math.asin(Math.min(0.85, Math.sin(lean) + (zz - z) / 0.55)); z = zz; break; }
-      }
-    }
-  }
-  // (Knees a little apart while on the ladder: they pass either side of the rungs, not into them.)
-  const spread = onLadder ? 0.16 : 0;
+  const L = legTo(z - fL.z, fL.y - y, drop), R = legTo(z - fR.z, fR.y - y, drop);
   const hand = (p: P | null, q: P | null, side: number) => {
     const x = side * (p && q && (p.y === ROOF_UP || q.y === ROOF_UP) ? 0.25 : 0.2);
     if (!p && !q) return null;
@@ -192,6 +171,6 @@ export function climbPose(dir: "up" | "down", t: number): ClimbPose {
     return { at: [x, h.y, h.z] as [number, number, number], blend: p ? 1 - e : e };
   };
   // (Facing the wall, the right hand is on the +x side.)
-  return { z, y, lean: lean2, legs: { hipL: L.hip, kneeL: L.knee, hipR: R.hip, kneeR: R.knee, drop, spread }, hands: { left: hand(a.hL, b.hL, -1), right: hand(a.hR, b.hR, 1) } };
+  return { z, y, lean, legs: { hipL: L.hip, kneeL: L.knee, hipR: R.hip, kneeR: R.knee, drop }, hands: { left: hand(a.hL, b.hL, -1), right: hand(a.hR, b.hR, 1) } };
 }
 void lowY;
