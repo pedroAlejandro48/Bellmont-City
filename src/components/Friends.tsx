@@ -207,7 +207,7 @@ function ChatPopup({ children }: { children: React.ReactNode }) {
           kbUp = baseH - vh > 80;
         }
         const dbg = el.querySelector<HTMLElement>(".kb-debug");
-        if (dbg) dbg.textContent = `H${Math.round(H)} b${baseH} vv${Math.round(vv?.height ?? -1)}+${Math.round(vv?.offsetTop ?? -1)} o${window.outerHeight} s${screen.height}/${screen.availHeight} br${"brave" in navigator ? 1 : 0} lift${lift} end${Math.round(bottom)} up${kbUp ? 1 : 0}`;
+        if (dbg) { const r = vkApi?.boundingRect; dbg.textContent = `H${Math.round(H)} W${window.innerWidth} b${baseH} vv${Math.round(vv?.height ?? -1)}+${Math.round(vv?.offsetTop ?? -1)} o${window.outerWidth}x${window.outerHeight} s${screen.width}x${screen.height} kb${r ? `${Math.round(r.y)}/${Math.round(r.height)}` : "-"} side${sideways ? 1 : 0}${sideButtons ? "B" : ""} br${braveBar ? 1 : 0} end${Math.round(bottom)} up${kbUp ? 1 : 0}`; }
         const top = vk ? 0 : vv?.offsetTop ?? 0;
         el.style.top = `${top}px`;
         // (A phone on its side leaves only a strip above the keyboard: the chat shrinks to it — no minimum height that would
