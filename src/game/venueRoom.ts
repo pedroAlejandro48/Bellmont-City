@@ -133,14 +133,14 @@ export function venueLayout(b: Building): VenueLayout {
     add("workbench", maxX - 1.4, minZ + 0.45, 0, 2.2, 0.7);
   } else if (venue === "apartments") {
     // The lobby: the reception desk along the left wall, the elevator's shaft in the back-left corner with its
-    // doors facing the reception, a sitting corner on the right, mailboxes by the door.
+    // doors facing the reception, a sitting corner on the right (a sofa and two armchairs round a rug, all to sit
+    // on), mailboxes by the door.
     const z = -4.2;
     add("desk", minX + 1.1, z, Math.PI / 2, 2.4, 0.8);
     service = { x: minX + 1.1 + 0.4 + 0.55, z, yaw: -Math.PI / 2 }; staff = { x: minX + 0.38, z, yaw: Math.PI / 2, sit: false };
     add("shaft", minX + SHAFT / 2, minZ + SHAFT / 2, 0, SHAFT, SHAFT);
     add("rug", maxX - 1.6, midZ, 0, 3.2, 2.6, false);
     add("sofa", maxX - 0.48, midZ, -Math.PI / 2, 2.2, 0.85);
-    add("coffeeTable", maxX - 1.7, midZ, 0, 0.6, 1.1);
     add("armchair", maxX - 1.7, midZ - 1.35, 0, 0.85, 0.8);
     add("armchair", maxX - 1.7, midZ + 1.35, Math.PI, 0.85, 0.8);
     add("mailboxes", maxX - 0.03, -2.2, -Math.PI / 2, 1.6, 0.05, false);

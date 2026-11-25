@@ -263,6 +263,9 @@ export type GameState = {
   seat: { room: string; plan: SitPlan; phase: "sit" | "seated" | "stand"; startedAt: number } | null;
   script: Script | null;
   standQueued: boolean;
+  /** Sitting (or on the way to sitting) on a venue's seat (VenueSeats), and a request to get up from it now. */
+  venueSeat: { key: string; x: number; z: number } | null;
+  venueSeatLeave: boolean;
   /** 0 clear .. 1 black: the fade between outside and inside. */
   fade: number;
   fadeInAt: number | null;
@@ -375,7 +378,7 @@ export function createState(save: SaveData): GameState {
     inCar: false, liftView: null, liftPress: [], liftShown: null, liftShut: null, liftBridge: null, aptHere: null,
     uiLock: null, fridgeLoad: [], camLock: null, ladder: null, ladderPrompt: false, noJump: false, kitchenAsk: null, meal: null, kitchenQ: false,
     keys: new Set(),
-    jumpQueued: false,
+    jumpQueued: false, venueSeat: null, venueSeatLeave: false,
     simulationTime: 0,
     accident: save.accident ? { phase: save.accident.phase, startedAt: -(KNOCKDOWN_SECONDS - save.accident.remaining), riseStartedAt: save.accident.phase === "rising" ? -(GET_UP_SECONDS - save.accident.remaining) : null, vehicleId: null, direction: save.accident.direction, launchSpeed: 0, seed: save.accident.seed } : null,
     incidents: [],
