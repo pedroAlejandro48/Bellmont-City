@@ -1,4 +1,6 @@
 import { fallHurt } from "./roofFall";
+import { APT_FLOORS } from "./apartments";
+import { FLOOR_CLEAR } from "./aptRoom";
 import { skillLevel } from "./life";
 import { USE_SECONDS } from "./invRuntime";
 import { useCharacterColor } from "./characterColor";
@@ -25,6 +27,8 @@ const RUN = 6.2;
 const ACCEL = 12;
 const GRAVITY = 22;
 const JUMP_V = 7.2;
+/** The top of the head above the feet (standing), and the elevator car's clear height. */
+const HEAD_TOP = 1.9, CAR_CLEAR = 2.4;
 const RADIUS = 0.35;
 /** Exhausted (hunger, thirst or energy at 0): a slow, struggling walk. */
 const TIRED_WALK = WALK * 0.5;
@@ -319,7 +323,11 @@ export function Player({ state, city }: { state: GameState; city: City }) {
         state.camOrbit = state.camYaw - state.rotY - Math.PI;
       }
       if (state.jumpQueued && !state.noJump) {
-        s.vy = JUMP_V;
+        // Under a ceiling (an apartment building's floors — hall and apartments — and its elevator), a jump only goes
+        // as high as leaves the top of the head just short of it.
+        const lv = state.level, clear = state.inCar ? p.y + CAR_CLEAR : lv && lv.floor >= 2 && lv.floor <= APT_FLOORS ? lv.y + FLOOR_CLEAR : Infinity;
+        const rise = Math.max(0.05, clear - 0.03 - (p.y + HEAD_TOP));
+        s.vy = Math.min(JUMP_V, Math.sqrt(2 * GRAVITY * rise));
         s.grounded = false;
         s.airStyle = Math.hypot(s.vel.x, s.vel.z) > 0.8 ? 1 : 0;
       }
