@@ -47,4 +47,15 @@ describe("one thing per hand", () => {
     consumeHeld(s); expect(s.invAct).toBe(null);
     s.groceryBag = null; consumeHeld(s); expect(s.invAct?.kind).toBe("eat");
   });
+  it("a drink with the left hand full; its empty keeps its looks and goes in the inventory", () => {
+    const s = createState(DEFAULT_SAVE);
+    const run = (secs: number) => { for (let i = 0; i < secs * 20; i++) { s.simulationTime += 0.05; stepInventory(s); } };
+    s.groceryBag = ["apple"]; s.thirst = 40;
+    s.life.inventory[1] = "appleJuice"; s.heldSlot = 1;
+    consumeHeld(s, "drink"); expect(s.invAct?.kind).toBe("drink");
+    run(3);
+    expect(s.heldTrash).toBe("empty:appleJuice");
+    pressInventorySlot(s, 2);
+    expect(s.heldTrash).toBe(null); expect(s.life.inventory[2]).toBe("empty:appleJuice");
+  });
 });

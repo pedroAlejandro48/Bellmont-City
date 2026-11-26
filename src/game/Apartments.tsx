@@ -241,7 +241,7 @@ const shaftHole = (minX: number, minZ: number): Rect => ({ x0: minX + 0.03, x1: 
 const SLOT = 0.7, SLOT_J = 0.03;
 /** The stairwell's way through a floor's slab (its walls stand in it; its landings are its own). */
 // (Its edges inside the stairwell's walls: they never show, and never share a plane with a wall's face.)
-const stairHole = (p: StairPlan): Rect => ({ x0: p.x0 - 0.06, x1: p.xe + 0.1, z0: p.z0 - 0.06, z1: p.z1 + SW + 0.02 });
+const stairHole = (p: StairPlan): Rect => ({ x0: p.x0 - 0.06, x1: p.xe + 0.1, z0: p.z0 - 0.06, z1: p.z1 + SW - 0.03 });
 /** The window slot's way through a floor's slab (from the outside face in to the shaft): no slab edge shows across
  * the car's window, only the slot's own metal bar at each floor. */
 const slotHole = (minX: number, minZ: number, outer: number): Rect => ({ x0: minX + SHAFT / 2 - SLOT / 2 - SLOT_J - 0.005, x1: minX + SHAFT / 2 + SLOT / 2 + SLOT_J + 0.005, z0: outer - 0.01, z1: minZ + 0.03 });
@@ -496,7 +496,8 @@ function ElevatorCar({ m, state, open, shown }: { m: FMats; state: GameState; op
     screen.t.needsUpdate = true;
   });
   return <group>
-    <mesh position={[0, 0.01, 0.06]} rotation-x={-Math.PI / 2} material={m.s("#3a3d44", 0.8)}><planeGeometry args={[s, s + 0.12]} /></mesh>
+    {/* (Its front edge stays behind the floors' own doors: passing a floor, no line of it shows in front of them.) */}
+    <mesh position={[0, 0.01, 0.0325]} rotation-x={-Math.PI / 2} material={m.s("#3a3d44", 0.8)}><planeGeometry args={[s, s + 0.065]} /></mesh>
     <mesh position={[0, 2.38, 0]} rotation-x={Math.PI / 2} material={m.lamp}><planeGeometry args={[s * 0.7, s * 0.7]} /></mesh>
     <mesh position={[0, 2.42, 0]} rotation-x={Math.PI / 2} material={m.steel}><planeGeometry args={[s, s]} /></mesh>
     {[-1, 1].map((k) => <mesh key={k} position={[k * (s / 2 - 0.02), 1.21, 0]} material={m.steel}>{B([0.04, 2.42, s])}</mesh>)}
@@ -624,8 +625,9 @@ function ClosetClothes({ state, closet, m }: { state: GameState; closet: AptFurn
 function DoorCasing({ at, rot, m, white = false }: { at: [number, number]; rot: number; m: FMats; white?: boolean }) {
   const mat = white ? m.doorWhite : m.frame, depth = INNER_WALL + 0.04;
   return <group position={[at[0], 0, at[1]]} rotation-y={rot}>
-    {[-1, 1].map((s) => <mesh key={s} position={[s * 0.53, 1.07, 0]} material={mat}>{B([0.07, 2.14, depth])}</mesh>)}
-    <mesh position={[0, 2.135, 0]} material={mat}>{B([1.13, 0.07, depth])}</mesh>
+    {/* (The posts end just inside the header, and the header's ends stick out past them: no two faces in one plane.) */}
+    {[-1, 1].map((s) => <mesh key={s} position={[s * 0.53, 1.0525, 0]} material={mat}>{B([0.07, 2.105, depth])}</mesh>)}
+    <mesh position={[0, 2.135, 0]} material={mat}>{B([1.136, 0.07, depth])}</mesh>
   </group>;
 }
 
@@ -745,7 +747,7 @@ function FloorInterior({ actorsAt, fl, state, m, door, bedDoor, fridgeDoor, clos
     </group>
     {/* The wall between the hallway and the apartment, with the apartment's door (opens into the apartment). */}
     {[[minX, fl.door.x - 1], [fl.door.x, maxX]].map(([a, c], i) => <mesh key={i} position={[(a! + c!) / 2, HT / 2, wallZ + INNER_WALL / 2]} material={m.hallWall} castShadow>{B([c! - a!, HT, INNER_WALL])}</mesh>)}
-    <mesh position={[fl.door.x - 0.5, (HT + 2.1) / 2, wallZ + INNER_WALL / 2]} material={m.hallWall}>{B([1, HT - 2.1, INNER_WALL])}</mesh>
+    <mesh position={[fl.door.x - 0.5, (HT + 2.12) / 2, wallZ + INNER_WALL / 2]} material={m.hallWall}>{B([1, HT - 2.12, INNER_WALL])}</mesh>
     <DoorCasing at={[fl.door.x - 0.5, wallZ + INNER_WALL / 2]} rot={0} m={m} />
     <group position={[fl.door.x - 1, 0, wallZ + INNER_WALL]}>
       <group ref={leaf}>
@@ -759,7 +761,7 @@ function FloorInterior({ actorsAt, fl, state, m, door, bedDoor, fridgeDoor, clos
     {/* The bedroom wall and its doorway; the white bedroom door stands open against it. */}
     <mesh position={[divX, HT / 2, (bedroomDoor[1] + maxZ) / 2]} material={m.wall} castShadow>{B([INNER_WALL, HT, maxZ - bedroomDoor[1]])}</mesh>
     <mesh position={[divX, HT / 2, (inside0 + bedroomDoor[0]) / 2]} material={m.wall}>{B([INNER_WALL, HT, bedroomDoor[0] - inside0])}</mesh>
-    <mesh position={[divX, (HT + 2.1) / 2, (bedroomDoor[0] + bedroomDoor[1]) / 2]} material={m.wall}>{B([INNER_WALL, HT - 2.1, bedroomDoor[1] - bedroomDoor[0]])}</mesh>
+    <mesh position={[divX, (HT + 2.12) / 2, (bedroomDoor[0] + bedroomDoor[1]) / 2]} material={m.wall}>{B([INNER_WALL, HT - 2.12, bedroomDoor[1] - bedroomDoor[0]])}</mesh>
     <DoorCasing at={[divX, (bedroomDoor[0] + bedroomDoor[1]) / 2]} rot={Math.PI / 2} m={m} white />
     {/* The bedroom door (white, panelled, a round knob): hinged at the doorway's back edge, opening into the bedroom. */}
     <group position={[fl.hinged.bedroom.ox, 0, bedroomDoor[0]]} rotation-y={fl.hinged.bedroom.theta}>
@@ -773,7 +775,7 @@ function FloorInterior({ actorsAt, fl, state, m, door, bedDoor, fridgeDoor, clos
         and everything in it. */}
     <mesh position={[fl.bath.x1 + INNER_WALL / 2, HT / 2, (fl.bath.wallZ + maxZ) / 2]} material={[m.wall, m.bathTile, m.wall, m.wall, m.wall, m.wall]} castShadow>{B([INNER_WALL, HT, maxZ - fl.bath.wallZ])}</mesh>
     {[[fl.bath.x0, fl.bath.door[0]], [fl.bath.door[1], fl.bath.x1]].map(([a, c], i) => <mesh key={i} position={[(a! + c!) / 2, HT / 2, fl.bath.wallZ + INNER_WALL / 2]} material={[m.wall, m.wall, m.wall, m.wall, m.bathTile, m.wall]}>{B([c! - a!, HT, INNER_WALL])}</mesh>)}
-    <mesh position={[(fl.bath.door[0] + fl.bath.door[1]) / 2, (HT + 2.1) / 2, fl.bath.wallZ + INNER_WALL / 2]} material={m.wall}>{B([fl.bath.door[1] - fl.bath.door[0], HT - 2.1, INNER_WALL])}</mesh>
+    <mesh position={[(fl.bath.door[0] + fl.bath.door[1]) / 2, (HT + 2.12) / 2, fl.bath.wallZ + INNER_WALL / 2]} material={m.wall}>{B([fl.bath.door[1] - fl.bath.door[0], HT - 2.12, INNER_WALL])}</mesh>
     <DoorCasing at={[(fl.bath.door[0] + fl.bath.door[1]) / 2, fl.bath.wallZ + INNER_WALL / 2]} rot={0} m={m} white />
     <group position={[fl.bath.door[0], 0, fl.bath.z0]}>
       <group ref={bathLeaf}>

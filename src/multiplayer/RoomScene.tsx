@@ -263,7 +263,7 @@ function RemoteHeld({ id, remotes, body }: { id: string; remotes: RemotePlayers;
       let tipX = 0;
       if (kind === "phone") { tipX = -0.55; turn = Math.PI; g.position.y += 0.05; }
       if (kind === "key") { tipX = Math.PI / 2; g.position.x += Math.sin(yaw) * 0.035; g.position.z += Math.cos(yaw) * 0.035; g.position.y -= 0.01; }
-      if (kind === "water" || kind === "bottle" || kind === "orangeJuice" || kind === "appleJuice") g.position.y -= 0.07;
+      if (kind === "water" || kind === "bottle" || kind === "orangeJuice" || kind === "appleJuice" || kind === "empty:orangeJuice" || kind === "empty:appleJuice") g.position.y -= 0.07;
       if (kind === "cola" || kind === "lemonSoda" || kind === "energy" || kind === "can") g.position.y -= 0.05;
       g.rotation.set(tipX, yaw + turn, 0, "YXZ");
       g.scale.setScalar(kind === "key" ? 1.7 : 1);

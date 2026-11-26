@@ -12,6 +12,7 @@ import { lifeEvent } from "./lifeRuntime";
 import { CAN_INFO, CAPACITY, COOK_MINUTES, canByName, isWare, mealEffect, type CanKind, type WareKind } from "./pantry";
 import { toast, type GameState } from "./state";
 import { fridgeOf, kitchenOf } from "./aptShare";
+import { isEmptyKind, trashShape, type EmptyKind } from "./inventory";
 
 /** What the kitchen's things show this moment (set by the moves; read by the drawing). */
 export type KView = {
@@ -247,11 +248,18 @@ export class KitchenRun {
     if (near(K.trashStand, 0.8, K.trash) && !claimed("bin")) {
       this.lastStand = K.trashStand;
       // An empty bottle or can in hand: into the bin.
-      const empty = s.heldTrash ?? s.heldTrashL;
+      // (Or one taken out of the inventory: it goes from there.)
+      const slotEmpty = s.heldSlot !== null && isEmptyKind(s.life.inventory[s.heldSlot]) ? s.heldSlot : null;
+      const empty = s.heldTrash ?? (slotEmpty !== null ? (s.life.inventory[slotEmpty] as EmptyKind) : null) ?? s.heldTrashL;
       if (empty) {
-        const what = empty === "can" ? "CAN" : "BOTTLE", hand = s.heldTrash ? "right" : "left";
+        const what = trashShape(empty) === "can" ? "CAN" : "BOTTLE", hand = s.heldTrash || slotEmpty !== null ? "right" : "left";
         return { at: [K.trash[0], 1.05, K.trash[2]], label: `E  THROW THE EMPTY ${what} AWAY`, act: () => {
-          this.go(c, tossInBin(fl, from, c.yaw, this.carry(s), hand), (e) => { if (e === "tossed") { if (hand === "right") s.heldTrash = null; else s.heldTrashL = null; } }, ["bin"]);
+          this.go(c, tossInBin(fl, from, c.yaw, this.carry(s), hand), (e) => {
+            if (e !== "tossed") return;
+            if (hand === "left") s.heldTrashL = null;
+            else if (s.heldTrash) s.heldTrash = null;
+            else if (slotEmpty !== null && s.heldSlot === slotEmpty) { s.life.inventory[slotEmpty] = null; s.heldSlot = null; }
+          }, ["bin"]);
         } };
       }
       const burnt = (["right", "left"] as const).find((x) => h[x]?.burnt && h[x]?.food);
@@ -362,6 +370,9 @@ export class KitchenRun {
   answer(c: Ctx) {
     const s = c.state, ask = s.kitchenAsk, k = this.k(s), h = k.hands, from: [number, number] = [c.lx, c.lz];
     if (!ask || this.mv) return;
+    // (Just which burner the cook panel is for, while it's open: left for the panel, whose answer brings the cans.
+    // Taken now, the panel would fall back to the first burner, and cooking on the other would do nothing.)
+    if (!ask.cans && !ask.stow && !ask.rack) return;
     s.kitchenAsk = null;
     if (ask.stow) {
       const bagRack = (s.groceryBag ?? []).filter((w): w is WareKind => isWare(w) && !isPotLike(w));

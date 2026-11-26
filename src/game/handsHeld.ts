@@ -1,6 +1,7 @@
 // What each hand is holding, whatever it is (pure): food from a restaurant, a thing out of the inventory or an
 // empty bottle, the grocery basket or bag, kitchen things. A hand holding one thing can't take another until it's
 // let go of (Q puts it down).
+import { trashShape } from "./inventory";
 import { toast, type GameState } from "./state";
 
 /** What's in a hand (a word for it), or null when it's free. */
@@ -10,13 +11,13 @@ export function holding(s: GameState, side: "left" | "right"): string | null {
   if (side === "left") {
     if (s.hands.left) return "food";
     if (s.groceryBag) return "the grocery bag";
-    if (s.heldTrashL) return s.heldTrashL === "can" ? "an empty can" : "an empty bottle";
+    if (s.heldTrashL) return trashShape(s.heldTrashL) === "can" ? "an empty can" : "an empty bottle";
     if (k) return k.ware;
     return null;
   }
   if (s.hands.right) return "food";
   if (s.heldSlot !== null) return "something";
-  if (s.heldTrash) return s.heldTrash === "can" ? "an empty can" : "an empty bottle";
+  if (s.heldTrash) return trashShape(s.heldTrash) === "can" ? "an empty can" : "an empty bottle";
   if (s.groceryBasket) return "the basket";
   if (k) return k.ware;
   return null;

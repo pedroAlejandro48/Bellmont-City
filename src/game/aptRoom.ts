@@ -131,7 +131,8 @@ export function aptFloor(b: Building, floor: number): AptFloor {
   // The table for two to the right of the kitchen. It and its chairs are the room's furniture (`items`), like a
   // restaurant's: solid, and sat at the same way (the chair pulled out, round it, down, shuffled in).
   const items: Item[] = [];
-  const tx = Math.max(bx1 + INNER_WALL + 1.05, maxX - 2.4), tz = maxZ - 2.1;
+  // (Well clear of the couch: a way past between them, and past its far chair.)
+  const tx = Math.max(bx1 + INNER_WALL + 1.05, maxX - 3.0), tz = maxZ - 2.1;
   add("table", tx, tz, 0, TABLE.half * 2, TABLE.half * 2, false);
   items.push({ kind: "table", x: tx, z: tz, f: [0, 1] });
   items.push({ kind: "chair", x: tx - 0.72, z: tz, f: [1, 0] }, { kind: "chair", x: tx + 0.72, z: tz, f: [-1, 0] });

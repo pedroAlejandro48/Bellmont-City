@@ -106,7 +106,13 @@ export function Hospital({ state, city }: { state: GameState; city: City }) {
         const r = planOf(mine.start, mine.spot), t = (now - mine.start) / 1000;
         // From the round's start on, this player keeps still for the nurse (whatever they were doing stops when she
         // gets there: up from the couch, any panel closed).
-        state.keys.clear(); state.jumpQueued = false; state.interactQueued = false;
+        // (The joystick too: held, it walks no more till it's all over.)
+        state.keys.clear(); state.stick = null; state.stickRun = false; state.jumpQueued = false; state.interactQueued = false;
+        // Not walking anywhere meanwhile: standing still where the nurse is coming to (or sitting on, till she's here).
+        if (t < r.go && !state.venueSeat) {
+          const [sx, sz] = toWorld(f, mine.spot[0], mine.spot[1]);
+          script = { x: sx, z: sz, yaw: state.rotY, walk: 0, sit: 0, shuffle: 0, lean: 0, left: null, right: null };
+        }
         if (t >= r.met - 0.2) { state.shop = null; if (state.venueSeat) leaveVenueSeat(state); }
         const pp = patientAt(r, t);
         if (pp && !state.venueSeat) {
@@ -138,7 +144,10 @@ export function Hospital({ state, city }: { state: GameState; city: City }) {
         // the treatment room's door from the reception.
         const camEnd = r.shut2 + 0.9;
         if (t >= r.met && t < camEnd) {
-          const [px, pz] = toWorld(f, Math.min(r.q.out[0] + 1.2, layout.bounds.maxX - 0.4), W.z + 3.4), [ax, az] = toWorld(f, W.doorX, W.z);
+          // (Behind where the nurse met you, away from the door: you and her in front, walking to it.)
+          const B = layout.bounds, ddx = mine.spot[0] - W.doorX, ddz = mine.spot[1] - W.z, dd = Math.hypot(ddx, ddz) || 1;
+          const cx = Math.max(B.minX + 0.4, Math.min(B.maxX - 0.4, mine.spot[0] + ddx / dd * 1.9)), cz = Math.max(W.z + 1.6, Math.min(B.maxZ - 0.4, mine.spot[1] + ddz / dd * 1.9));
+          const [px, pz] = toWorld(f, cx, cz), [ax, az] = toWorld(f, W.doorX, W.z);
           state.camLock = { pos: [px, SIDEWALK_H + 1.85, pz], at: [ax, SIDEWALK_H + 1.15, az], by: "hospital" };
         } else if (state.camLock?.by === "hospital") state.camLock = null;
         if (t >= r.end) {

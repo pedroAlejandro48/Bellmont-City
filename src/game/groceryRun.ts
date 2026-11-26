@@ -228,21 +228,75 @@ export function handSegs(from: [number, number], fromYaw: number, src: Source, h
     { dur: 0.5, pose: (k) => pose(1 - smooth(k), reach(1 - smooth(k))) },
   ];
 }
-/** Handing the things in one's hands over the counter to the cashier (event "give"), and taking them back paid for
- * after a moment (event "back"). */
-export function handPay(from: [number, number], fromYaw: number, layout: VenueLayout, bag: boolean): Plan {
-  const s = layout.service, meet = checkoutSpots(layout).meet, [x, z] = [s.x, s.z], yaw = s.yaw;
-  const hold = (side: 1 | -1, e: number): Reach => ({ at: [meet[0], meet[1], meet[2] + side * 0.12], blend: e, pole: "low" });
-  const pose = (e: number): GPose => ({ x, z, yaw, crouch: 0, lean: 0.1 * e, left: bag ? bagReach(x, z, yaw) : hold(1, e), right: hold(-1, e) });
-  return plan([
-    ...walkRoute(from, fromYaw, [x, z], yaw, { basket: false, bag }),
-    { dur: 0.6, end: "give", pose: (k) => pose(smooth(k)) },
-    { dur: 0.5, pose: (k) => pose(1 - smooth(k)) },
-    { dur: 1.4, pose: () => pose(0) },
-    { dur: 0.5, end: "back", pose: (k) => pose(smooth(k)) },
-    { dur: 0.5, pose: (k) => pose(1 - smooth(k)) },
-  ]);
+// ---------- paying for what's in the hands (no basket) ----------
+/** Each thing handed back takes this long: the clerk's hand to it on the belt, over to the customer's hand coming
+ * up for it, let go of (event "take:i" at HAND_TAKE), and the customer's hand back down (event "stow:i"). */
+export const HAND_PER = 1.5, HAND_TAKE = 1.05;
+/** The customer's left (+1) or right (−1) across the counter, room frame (for the register's facing). */
+const across = (yaw: number, side: 1 | -1): [number, number] => [Math.cos(yaw) * side, -Math.sin(yaw) * side];
+/** Where a thing goes down on the belt (room frame): the left hand's on the left, the right's on the right. As a spot
+ * in the basket's frame (x across, to the left), so the belt's things are drawn like a basket's. */
+export const beltOffset = (side: 1 | -1) => ({ x: side * 0.13, y: 0, z: 0 });
+export function beltSpot(layout: VenueLayout, side: 1 | -1): [number, number, number] {
+  const b = checkoutSpots(layout).basket, [ax, az] = across(layout.service.yaw, side);
+  return [b[0] + ax * 0.13, b[1] + 0.03, b[2] + az * 0.13];
 }
+/** Where the clerk puts a thing in the customer's hand on that side (over the counter). */
+export function handoffSpot(layout: VenueLayout, side: 1 | -1): [number, number, number] {
+  const m = checkoutSpots(layout).meet, [ax, az] = across(layout.service.yaw, side);
+  return [m[0] + ax * 0.12, m[1], m[2] + az * 0.12];
+}
+/**
+ * Paying for one or two things held (no basket): a few steps over to stand square to the belt, both hands put
+ * theirs down on it together, each on its own side (event "down"); back in front of the register; then, for each
+ * thing in turn, the hand it came from comes up and takes it from the clerk ("take:i") and goes back down
+ * ("stow:i"). `sides`: the hand each thing is in, in the order they're handed back. `back`: when (into the plan)
+ * the handing back starts — the clerk's side runs from then (clerkHandAt).
+ */
+export function handPay(from: [number, number], fromYaw: number, layout: VenueLayout, sides: ("left" | "right")[], bag: boolean): { plan: Plan; back: number } {
+  const s = layout.service, yaw = s.yaw, b = checkoutSpots(layout).basket, [lx, lz] = across(yaw, 1);
+  // Square to the belt: the register's spot moved sideways till the belt's straight ahead.
+  const d = (b[0] - s.x) * lx + (b[2] - s.z) * lz, belt: [number, number] = [s.x + lx * d, s.z + lz * d];
+  const has = (h: "left" | "right") => sides.includes(h);
+  const down = (h: "left" | "right", e: number): Reach | null => (has(h) ? { at: [beltSpot(layout, h === "left" ? 1 : -1)[0], b[1] + 0.08, beltSpot(layout, h === "left" ? 1 : -1)[2]], blend: e, pole: "low" } : null);
+  const leftOr = (r: Reach | null, x: number, z: number) => (bag ? bagReach(x, z, yaw) : r);
+  const segs: Seg[] = [
+    ...walkRoute(from, fromYaw, belt, yaw, { basket: false, bag }),
+    { dur: 0.7, end: "down", pose: (k) => { const e = smooth(k); return { x: belt[0], z: belt[1], yaw, crouch: 0, lean: 0.14 * e, left: leftOr(down("left", e), belt[0], belt[1]), right: down("right", e) }; } },
+    { dur: 0.45, pose: (k) => { const e = 1 - smooth(k); return { x: belt[0], z: belt[1], yaw, crouch: 0, lean: 0.14 * e, left: leftOr(down("left", e), belt[0], belt[1]), right: down("right", e) }; } },
+    ...walkRoute(belt, yaw, [s.x, s.z], yaw, { basket: false, bag }),
+  ];
+  const back = segs.reduce((a, g) => a + g.dur, 0);
+  sides.forEach((h, i) => {
+    const at = handoffSpot(layout, h === "left" ? 1 : -1);
+    const up = (e: number) => ({ x: s.x, z: s.z, yaw, crouch: 0, lean: 0.06 * e, left: h === "left" ? { at, blend: e, pole: "out" as const } : leftOr(null, s.x, s.z), right: h === "right" ? { at, blend: e, pole: "out" as const } : null });
+    segs.push(
+      { dur: 0.5, pose: () => up(0) },
+      { dur: 0.45, pose: (k) => up(smooth(k)) },
+      { dur: HAND_TAKE - 0.95, end: `take:${i}`, pose: () => up(1) },
+      { dur: 0.1, pose: () => up(1) },
+      { dur: HAND_PER - HAND_TAKE - 0.1, end: `stow:${i}`, pose: (k) => up(1 - smooth(k)) },
+    );
+  });
+  return { plan: plan(segs), back };
+}
+/**
+ * The clerk's side of it, `t` seconds after the handing back starts: the right hand to each thing on the belt in
+ * turn, over the counter with it to where the customer's hand comes up, held there till it's taken, then on to the
+ * next; at the end back to rest. `side(i)`: which of the customer's hands takes thing i.
+ */
+export function clerkHandAt(t: number, n: number, side: (i: number) => 1 | -1, layout: VenueLayout): { reach: Reach | null; holding: number | null; taken: number } {
+  const rest: [number, number, number] = [layout.staff.x - 0.35, 0.95, layout.staff.z];
+  if (t < 0 || n === 0) return { reach: null, holding: null, taken: 0 };
+  const i = Math.floor(t / HAND_PER), k = t - i * HAND_PER;
+  if (i >= n) { const last = handoffSpot(layout, side(n - 1)), e = smooth(Math.min(1, (t - n * HAND_PER) / 0.6)); return { reach: e < 1 ? { at: lerp3(last, rest, e), blend: 1 - e, pole: "out" } : null, holding: null, taken: n }; }
+  const item = beltSpot(layout, side(i)), give = handoffSpot(layout, side(i)), from = i === 0 ? rest : handoffSpot(layout, side(i - 1));
+  const over: [number, number, number] = [item[0], item[1] + 0.12, item[2]];
+  if (k < 0.45) return { reach: { at: lerp3(from, item, smooth(k / 0.45)), blend: i === 0 ? smooth(k / 0.45) : 1, pole: "out" }, holding: null, taken: i };
+  if (k < 0.95) return { reach: { at: lerp3(over, give, smooth((k - 0.45) / 0.5)), blend: 1, pole: "out" }, holding: i, taken: i };
+  return { reach: { at: give, blend: 1, pole: "out" }, holding: k < HAND_TAKE ? i : null, taken: k < HAND_TAKE ? i : i + 1 };
+}
+export const handCheckoutLength = (n: number) => n * HAND_PER + 0.6;
 
 /** Where a new thing lands in the basket (basket frame: x across, z along, y up from its floor), among those in it. */
 export function landingSpot(inBasket: { x: number; y: number; z: number }[], random: () => number): { x: number; y: number; z: number } {

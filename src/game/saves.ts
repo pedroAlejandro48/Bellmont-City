@@ -1,3 +1,4 @@
+import { isTrashKind } from "./inventory";
 import { BENCH_SEATS, DEFAULT_SAVE, type SaveData, type SavedApt, type SavedGround, type SavedHeld, type SavedPack } from "./config";
 
 export function saveRecord(value: unknown): Record<string, unknown> {
@@ -45,7 +46,7 @@ function readGround(list: unknown[]): SavedGround[] {
 function readHeld(value: unknown): SavedHeld | null {
   const h = saveRecord(value);
   const one = (v: unknown) => (typeof v === "string" ? v : null);
-  return { slot: fin(h['slot']) ? Math.trunc(h['slot']) : null, trash: h['trash'] === "bottle" || h['trash'] === "can" ? h['trash'] : null, bag: Array.isArray(h['bag']) ? strs(h['bag']) : null, left: one(h['left']), right: one(h['right']) };
+  return { slot: fin(h['slot']) ? Math.trunc(h['slot']) : null, trash: isTrashKind(h['trash']) ? h['trash'] : null, trashL: isTrashKind(h['trashL']) ? h['trashL'] : null, bag: Array.isArray(h['bag']) ? strs(h['bag']) : null, left: one(h['left']), right: one(h['right']) };
 }
 function readFood(list: unknown[]): SavedPack[] {
   const out: SavedPack[] = [];

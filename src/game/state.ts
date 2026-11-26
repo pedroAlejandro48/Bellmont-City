@@ -167,9 +167,9 @@ export type GameState = {
   /** The inventory slot whose thing is out in the right hand (the phone counts as out while it is open). */
   heldSlot: number | null;
   /** Trash in the right hand (an emptied bottle): it can't go in the inventory, only be put down (Q). */
-  heldTrash: "bottle" | "can" | null;
+  heldTrash: import("./inventory").TrashKind | null;
   /** An empty bottle or can in the left hand (picked up with the right hand full, or passed over). */
-  heldTrashL: "bottle" | "can" | null;
+  heldTrashL: import("./inventory").TrashKind | null;
   /** A thing to take out of the inventory once the hands are ready (after passing or putting down what was in the right). */
   invNext: number | null;
   /** Doing something with a thing from the inventory: eating or drinking it, putting it down, picking one up. */
@@ -374,7 +374,7 @@ export type StoreHeld = { kind: ItemKind; paid: boolean; src?: number };
 export type GroceryShopperWire = { id: number; fem: boolean; stage: string; k: number; t0: number; at: [number, number, number]; wants: number[]; basket: { kind: string; x: number; y: number; z: number; rot: number }[] | null; bag: string[] | null; holding: string | null };
 export type GroceryWire = { n: number; sh: GroceryShopperWire | null };
 /** A player's checkout: when their basket went down on the belt (server ms), and what was in it. */
-export type GroceryCheckoutWire = { t0: number; items: { kind: string; x: number; y: number; z: number; rot: number }[] };
+export type GroceryCheckoutWire = { t0: number; items: { kind: string; x: number; y: number; z: number; rot: number }[]; /** Paid from the hands (no basket). */ hand?: boolean };
 export type GroceryLink = {
   isHost: () => boolean;
   publish: (sh: GroceryShopperWire | null) => void;

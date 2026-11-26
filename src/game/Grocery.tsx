@@ -10,7 +10,7 @@ import { GAME_MINUTE, SIDEWALK_H, VENUE_HOURS, businessHours, clockHour, timeInf
 import { commutePath, commutePose, shiftAt, shiftWindow } from "./staffShift";
 import { OPENER_PASS } from "./doors";
 import {
-  BASKET_MAX, GRAB_BAG, GROCERY_PRICE, HOLD_OUT, baggingTime, handPay, handSegs, type Seg, checkoutLength, checkoutSpots, clerkAt, landingSpot, payPlan, pickItem, pileSpot, planAt, returnBasket,
+  BASKET_MAX, GRAB_BAG, GROCERY_PRICE, HOLD_OUT, baggingTime, beltOffset, clerkHandAt, handCheckoutLength, handPay, handSegs, type Seg, checkoutLength, checkoutSpots, clerkAt, landingSpot, payPlan, pickItem, pileSpot, planAt, returnBasket,
   sources, takeBasket, walkSeg, walkRoute, setGroceryObstacles, plan as makePlan, type GPose, type Plan, type Source,
 } from "./groceryRun";
 import { InteractionPrompt } from "./InteractionPrompt";
@@ -28,7 +28,8 @@ import { serverNow } from "@/lib/serverTime";
 export type InBasket = { kind: ItemKind; x: number; y: number; z: number; rot: number };
 /** Who's being served: this player, the shopper (their id), or another player in the room (`peer:` id); when the
  * basket went down (and, for this player's, the same in server time, for the others). */
-type Checkout = { who: "player" | number | `peer:${string}`; t0: number; items: InBasket[]; srv?: number };
+type Checkout = { who: "player" | number | `peer:${string}`; t0: number; items: InBasket[]; srv?: number; /** Things paid for from the hands (no basket): laid on the belt, handed back one by one; `t0` when that starts. */ hand?: boolean };
+const coLength = (c: Pick<Checkout, "hand" | "items">) => (c.hand ? handCheckoutLength(c.items.length) : checkoutLength(c.items.length));
 /** Outside the store's door, where a shopper walks up to it. */
 const SHOP_DOOR: [number, number] = [0.55, 2.3];
 /** A little random sequence from a seed (the same everywhere). */
@@ -113,7 +114,7 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
   const commute = useRef<{ key: string; path: ReturnType<typeof commutePath>; doorDone: boolean }>({ key: "", path: { pts: [], door: 0 }, doorDone: false });
 
   // ---- the player's own run ----
-  const run = useRef<{ plan: Plan | null; kind: string; t0: number; prev: number; src: Source | null; holding: ItemKind | null; exitAfter: boolean; hand?: "left" | "right"; given?: ItemKind[] | undefined }>({ plan: null, kind: "", t0: 0, prev: -1, src: null, holding: null, exitAfter: false });
+  const run = useRef<{ plan: Plan | null; kind: string; t0: number; prev: number; src: Source | null; holding: ItemKind | null; exitAfter: boolean; hand?: "left" | "right"; given?: ItemKind[] | undefined; back?: number; handItems?: { kind: ItemKind; side: "left" | "right" }[]; recv?: ("left" | "right" | null)[]; stowed?: number }>({ plan: null, kind: "", t0: 0, prev: -1, src: null, holding: null, exitAfter: false });
   const items = useRef<InBasket[]>([]);
   const falling = useRef<{ kind: ItemKind; from: THREE.Vector3; spot: InBasket; t0: number } | null>(null);
   const checkout = useRef<Checkout | null>(null);
@@ -161,27 +162,34 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
         if (ev === "basket") { state.groceryBasket = []; items.current = []; bump(); }
         if (ev === "take" && me.src && me.kind === "handPick" && me.hand) { state.storeHands[me.hand] = { kind: me.src.kind, paid: false, src: srcs.indexOf(me.src) }; continue; }
         if (ev === "put:left" || ev === "put:right") { state.storeHands[ev === "put:left" ? "left" : "right"] = null; continue; }
-        if (ev === "give" && me.kind === "handPay") {
-          // Over the counter to the cashier (it rings them up)…
-          me.given = (["left", "right"] as const).flatMap((sd) => { const h = state.storeHands[sd]; if (!h || h.paid) return []; state.storeHands[sd] = null; return [h.kind]; });
+        if (ev === "down" && me.kind === "handPay") {
+          // On the belt, each on its own side; the clerk hands them back one by one once we're at the register.
+          const its = (["left", "right"] as const).flatMap((sd) => { const h = state.storeHands[sd]; if (!h || h.paid) return []; state.storeHands[sd] = null; return [{ kind: h.kind, side: sd }]; });
+          me.handItems = its; me.recv = its.map(() => null); me.stowed = 0;
+          const t0 = me.t0 + (me.back ?? 0);
+          checkout.current = { who: "player", t0, items: its.map((x) => ({ kind: x.kind, ...beltOffset(x.side === "left" ? 1 : -1), rot: 0 })), srv: serverNow() + (t0 - now) * 1000, hand: true };
+          bump();
         }
-        if (ev === "back" && me.kind === "handPay" && me.given) {
-          // …and back, paid for: fruit, drinks and candy into the inventory (or, with no room, the hand); cans and
-          // kitchenware into a bag.
-          const keep: ItemKind[] = [], bag: ItemKind[] = [];
-          for (const k of me.given) {
-            const use = itemInfo(k).use;
-            if (use === "eat" || use === "drink") { if (addItem(state.life.inventory, k) < 0) keep.push(k); } else bag.push(k);
+        if (ev.startsWith("take:") && me.kind === "handPay" && me.handItems) {
+          // In the hand it came from (or the other, if that's full now; or, both full, the bag).
+          const i = Number(ev.slice(5)), it = me.handItems[i];
+          if (it) {
+            const other = it.side === "left" ? "right" : "left";
+            const sd = !state.storeHands[it.side] && handFree(state, it.side) ? it.side : !state.storeHands[other] && handFree(state, other) ? other : null;
+            if (sd) state.storeHands[sd] = { kind: it.kind, paid: true }; else state.groceryBag = [...(state.groceryBag ?? []), it.kind];
+            me.recv![i] = sd;
           }
-          if (bag.length) { state.groceryBag = [...(state.groceryBag ?? []), ...bag]; }
-          for (const k of keep) {
-            const side = !state.storeHands.right && handFree(state, "right") ? "right" : !state.storeHands.left && handFree(state, "left") ? "left" : null;
-            if (side) state.storeHands[side] = { kind: k, paid: true };
-            else state.groceryBag = [...(state.groceryBag ?? []), k];
+        }
+        if (ev.startsWith("stow:") && me.kind === "handPay" && me.handItems) {
+          // Then away: fruit, drinks and candy into the inventory (no room: it stays in the hand); cans and kitchenware
+          // into a bag.
+          const i = Number(ev.slice(5)), it = me.handItems[i], sd = me.recv?.[i] ?? null;
+          if (it && sd && state.storeHands[sd]?.kind === it.kind) {
+            const use = itemInfo(it.kind).use;
+            if (use === "eat" || use === "drink") { if (addItem(state.life.inventory, it.kind) >= 0) { state.storeHands[sd] = null; me.stowed = (me.stowed ?? 0) + 1; } }
+            else { state.storeHands[sd] = null; state.groceryBag = [...(state.groceryBag ?? []), it.kind]; }
           }
-          const inv = me.given.length - keep.length - bag.length;
-          if (inv > 0) toast(state, `${inv} in your inventory`, "info");
-          me.given = undefined;
+          if (i === me.handItems.length - 1 && me.stowed) toast(state, `${me.stowed} in your inventory`, "info");
         }
         if (ev === "take" && me.src) me.holding = me.src.kind;
         if (ev === "drop" && me.holding) {
@@ -281,7 +289,7 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
             else {
               const day = timeInfo(state.elapsed).day, paid = spend(state.life, state.cash, total, day, "Fresh Market");
               if (!paid.ok) toast(state, "Not enough money", "warn", `That comes to ${money(total)}.`);
-              else { state.cash = paid.cash; toast(state, `Paid ${money(total)}`, "money", `${n} item${n > 1 ? "s" : ""} at Fresh Market.`); start(handPay([lx, lz], yaw, layout, !!state.groceryBag), "handPay"); }
+              else { state.cash = paid.cash; toast(state, `Paid ${money(total)}`, "money", `${n} item${n > 1 ? "s" : ""} at Fresh Market.`); const hp = handPay([lx, lz], yaw, layout, unpaid, !!state.groceryBag); start(hp.plan, "handPay", { back: hp.back }); }
             }
           }
         }
@@ -420,7 +428,7 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
       }
     }
     // Anyone being served at the register (here, or another player in the room).
-    const busy = !!checkout.current || (me.kind === "pay" && !!me.plan);
+    const busy = !!checkout.current || ((me.kind === "pay" || me.kind === "handPay") && !!me.plan);
     if (sh) {
       const t = now - sh.t0;
       const next = (stage: Shopper["stage"]) => { const at: [number, number, number] = [sh!.pose.x, sh!.pose.z, sh!.pose.yaw]; sh!.stage = stage; sh!.k += 1; sh!.at = at; sh!.t0 = now; sh!.prev = -1; sh!.plan = planFor(stage, at, sh!.wants, sh!.basket?.length ?? 0); changed = true; };
@@ -554,32 +562,33 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
     // ---- the checkout, shared in a room: this player's sent; another's served here too (one at a time) ----
     if (link) {
       const c0 = checkout.current;
-      link.myCheckout(c0?.who === "player" ? { t0: c0.srv ?? toSrv(c0.t0), items: c0.items } : null);
+      link.myCheckout(c0?.who === "player" ? { t0: c0.srv ?? toSrv(c0.t0), items: c0.items, ...(c0.hand ? { hand: true } : {}) } : null);
       if (!c0) for (const rc of link.checkouts()) {
         const t0 = fromSrv(rc.t0);
-        if (now - t0 < checkoutLength(rc.items.length) - 0.1) { checkout.current = { who: `peer:${rc.id}`, t0, items: rc.items.map((i) => ({ ...i, kind: i.kind as ItemKind })) }; bump(); break; }
+        if (now - t0 < coLength({ hand: !!rc.hand, items: rc.items as InBasket[] }) - 0.1) { checkout.current = { who: `peer:${rc.id}`, t0, items: rc.items.map((i) => ({ ...i, kind: i.kind as ItemKind })), ...(rc.hand ? { hand: true } : {}) }; bump(); break; }
       }
     }
     const c = checkout.current;
     // Another player's basket on the belt till they take it back (their own hand shows it again after).
     const pb = peerBasket.current;
     if (pb) {
-      pb.visible = !!c && typeof c.who === "string" && c.who.startsWith("peer:") && now - c.t0 < baggingTime(c.items.length) + GRAB_BAG + HOLD_OUT + 0.75;
+      pb.visible = !!c && !c.hand && typeof c.who === "string" && c.who.startsWith("peer:") && now - c.t0 < baggingTime(c.items.length) + GRAB_BAG + HOLD_OUT + 0.75;
       if (pb.visible) { pb.position.copy(at3([spots.basket[0], spots.basket[1] + 0.27, spots.basket[2]])); pb.rotation.set(0, yawOf(layout.service.yaw), 0); }
     }
     let bagged = 0, bagInHand = false, holding: number | null = null;
     if (c) {
       const t = now - c.t0, n = c.items.length;
       const basketAt = (i: number): [number, number, number] => { const it = c.items[i]!; const cos = Math.cos(layout.service.yaw), sin = Math.sin(layout.service.yaw); return [spots.basket[0] + it.x * cos + it.z * sin, spots.basket[1] + 0.03 + it.y, spots.basket[2] - it.x * sin + it.z * cos]; };
-      const cl = clerkAt(t, n, basketAt, layout);
+      // (Paid from the hands: each thing straight from the belt into the customer's hand, no bag.)
+      const cl = c.hand ? (() => { const h = clerkHandAt(t, n, (i) => ((c.items[i]?.x ?? 0) > 0 ? 1 : -1), layout); return { reach: h.reach, holding: h.holding as number | "bag" | null, bagged: h.taken }; })() : clerkAt(t, n, basketAt, layout);
       bagged = cl.bagged; bagInHand = cl.holding === "bag"; holding = typeof cl.holding === "number" ? cl.holding : null;
       if (cl.reach && root) { clerk.head.current?.rotation.set(0.35, 0, 0); reachArm(clerk.armR.current, clerk.foreR.current, at3(cl.reach.at), POLES[cl.reach.pole](-1), cl.reach.blend); }
-      if (t > checkoutLength(n)) { checkout.current = null; bump(); }
+      if (t > coLength(c)) { checkout.current = null; bump(); }
     }
     // Things leave the basket as the clerk takes them; the bag on the counter fills; it goes over with the clerk's hand.
     const cb = counterBag.current;
     if (cb) {
-      cb.visible = !!c && !bagInHand && !(c && now - c.t0 > checkoutLength(c.items.length) - 0.6);
+      cb.visible = !!c && !c.hand && !bagInHand && !(c && now - c.t0 > checkoutLength(c.items.length) - 0.6);
       cb.position.copy(at3([spots.bag[0], spots.bag[1] + 0.4, spots.bag[2]])); cb.rotation.set(0, yawOf(layout.service.yaw), 0);
       cb.userData["n"] = bagged;
     }
@@ -602,6 +611,7 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
   const view = checkoutView.current;
   // What still shows in each basket while it's on the belt: only what the clerk hasn't taken yet.
   const visibleItems = (who: Checkout["who"], list: InBasket[]) => (view.who === who ? list.filter((_, i) => i >= view.bagged && i !== view.holding) : list);
+  const beltWorld = (it: InBasket): [number, number, number] => { const cos = Math.cos(layout.service.yaw), sin = Math.sin(layout.service.yaw), [x, z] = world(spots.basket[0] + it.x * cos + it.z * sin, spots.basket[2] - it.x * sin + it.z * cos); return [x, SIDEWALK_H + spots.basket[1] + 0.03, z]; };
   const pileCount = 6 - (state.groceryBasket ? 1 : 0) - (sh?.basket ? 1 : 0);
   const pileTop = pileSpot(pile);
   return <group>
@@ -612,6 +622,8 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
     <group ref={fallG} visible={false}>{falling.current && <ItemModel kind={falling.current.kind} looks={looks} />}</group>
     <group ref={counterBag} visible={false}><GroceryBagModel items={view.bagged} looks={looks} /></group>
     <group ref={clerkItem} visible={false}>{kinds.map((k) => <group key={k} userData={{ kind: k }} visible={false}><ItemModel kind={k} looks={looks} /></group>)}</group>
+    {/* Things paid for from the hands, on the belt till the clerk hands each back. */}
+    {co?.hand && co.items.map((it, i) => (view.who === co.who && (i < view.bagged || i === view.holding) ? null : <group key={`belt${i}`} position={beltWorld(it)} rotation-y={yawOf(layout.service.yaw)}><ItemModel kind={it.kind} looks={looks} /></group>))}
     <group ref={peerBasket} visible={false}>{co && typeof co.who === "string" && co.who.startsWith("peer:") && <Basket looks={looks} items={visibleItems(co.who, co.items)} />}</group>
     <CharacterBody rig={clerk} color="#2e9d5b" />
     {sh && <>

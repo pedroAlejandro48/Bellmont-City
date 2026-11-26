@@ -202,7 +202,7 @@ export function KitchenThings({ fl, state, view: ownView, m, actor, others }: { 
     // A pot or pan hangs from its handle (the body off toward the middle); a plate is held level; the rest upright.
     if (h.ware === "pot") return <group position={[0.14, -0.118, 0]}><group ref={side === "right" ? potInner : null} rotation-y={Math.PI}><WareModel kind="pot" food={food && food.level > 0.01 ? food : null} /></group></group>;
     if (h.ware === "pan") return <group position={[0.33, -0.07, 0]}><group ref={side === "right" ? potInner : null} rotation-y={Math.PI}><WareModel kind="pan" food={food && food.level > 0.01 ? food : null} /></group></group>;
-    if (h.ware === "plate" || h.ware === "bowl") return <group position={[side === "left" ? 0.04 : -0.04, -0.02, 0.07]}><WareModel kind={h.ware} food={food ?? filling} />{h.dirty && !h.food && <mesh position={[0, 0.019, 0]} rotation-x={-Math.PI / 2} material={mats.grime}><circleGeometry args={[0.045, 12]} /></mesh>}{h.silver && <group position={[0, 0.02, 0]}><WareModel kind="silverware" /></group>}</group>;
+    if (h.ware === "plate" || h.ware === "bowl") return <group position={[side === "left" ? 0.04 : -0.04, -0.02, 0.07]}><WareModel kind={h.ware} food={food ?? filling} />{h.dirty && !h.food && <mesh position={[0, 0.019, 0]} rotation-x={-Math.PI / 2} material={mats.grime}><circleGeometry args={[0.045, 12]} /></mesh>}{h.silver && <SilverOn ware={h.ware} />}</group>;
     if (h.ware === "silverware") return <group rotation-x={-1.1} position={[0, -0.01, 0.02]}><WareModel kind="silverware" /></group>;
     return <group position={[0, -0.05, 0.02]}><WareModel kind={h.ware} /></group>;
   };
@@ -279,7 +279,7 @@ export function KitchenThings({ fl, state, view: ownView, m, actor, others }: { 
         <WareModel kind={t.ware} food={level > 0.02 ? { ...foodColors(t.cans), level } : null} />
         {/* The stain left as it's eaten: fading in bit by bit, all there once it's finished. */}
         {(t.eaten || (ek !== null && ek > 0.02)) && <mesh position={[0.02, t.ware === "bowl" ? 0.03 : 0.0175, 0.01]} rotation-x={-Math.PI / 2}><circleGeometry args={[0.05, 12]} /><meshStandardMaterial color="#7a5a3a" roughness={0.8} transparent opacity={t.eaten ? 1 : Math.min(1, ek ?? 0)} depthWrite={false} /></mesh>}
-        {t.silver && <group position={[0, 0.02, 0]} rotation-y={0.6}><WareModel kind="silverware" /></group>}
+        {t.silver && <SilverOn ware={t.ware} turn={0.6} />}
       </group>;
     })}
     {/* The bin's lid, hinged at the back. */}
@@ -309,4 +309,12 @@ const IDLE_VIEW = newKView();
 function toWorld3(fl: AptFloor, p: THREE.Vector3) {
   const f = fl.frame, x = f.ox + p.x * f.c + p.z * f.s, z = f.oz - p.x * f.s + p.z * f.c;
   return new THREE.Vector3(x, fl.y + p.y, z);
+}
+
+/** The used silverware left in a plate or bowl. On a plate, laid flat on it; in a bowl (too short to lie in it),
+ * leaning: the handles resting on the rim, sticking out over it, the other ends down inside. */
+function SilverOn({ ware, turn = 0 }: { ware: string; turn?: number }) {
+  if (ware !== "bowl") return <group position={[0, 0.02, 0]} rotation-y={turn}><WareModel kind="silverware" /></group>;
+  // (Touching the rim — radius 0.08, 0.076 up — 2 cm along from the handles' ends side; tipped 0.45 rad down to the middle.)
+  return <group rotation-y={turn}><group position={[0.062, 0.067, 0]} rotation-y={-Math.PI / 2}><group rotation-x={0.45}><WareModel kind="silverware" /></group></group></group>;
 }

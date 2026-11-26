@@ -1,17 +1,33 @@
 // The inventory (pure): nine slots (3 × 3), the phone always in the first. Things that can be kept are listed in
-// ITEMS; trash (an empty bottle) can't go in. (Canned food and kitchenware are bought too, but kept at home: the
+// ITEMS; an empty bottle or can goes in too, till it's thrown away. (Canned food and kitchenware are bought too, but kept at home: the
 // fridge, the sink's cupboard; candy goes straight into the inventory.)
 import { CANDIES, CANDY_INFO, CANS, CAN_INFO, WARES, WARE_INFO, type CandyKind, type CanKind, type WareKind } from "./pantry";
 
 /** A meal or drink from a restaurant kept in the fridge and taken out: `meal:<its name>`. */
 export type MealKind = `meal:${string}`;
-export type ItemKind = MealKind | "phone" | "water" | "orangeJuice" | "appleJuice" | "cola" | "lemonSoda" | "energy" | "apple" | "banana" | "orange" | "pear" | "kiwi" | "plum" | "grape" | "peach" | "key" | CanKind | CandyKind | WareKind;
+/** The drinks sold in bottles and cans. */
+export type DrinkKind = "water" | "orangeJuice" | "appleJuice" | "cola" | "lemonSoda" | "energy";
+export const DRINKS: readonly DrinkKind[] = ["water", "orangeJuice", "appleJuice", "cola", "lemonSoda", "energy"];
+/** One of them drunk: its empty bottle or can (looking just as it did, without what was in it). Kept like anything
+ * else (in the inventory, in a hand, on the ground) till it's thrown away. */
+export type EmptyKind = `empty:${DrinkKind}`;
+/** An empty in hand: one of those, or (from before empties kept their looks) just a bottle or a can. */
+export type TrashKind = "bottle" | "can" | EmptyKind;
+export const isEmptyKind = (k: unknown): k is EmptyKind => typeof k === "string" && k.startsWith("empty:") && (DRINKS as readonly string[]).includes(k.slice(6));
+export const isTrashKind = (k: unknown): k is TrashKind => k === "bottle" || k === "can" || isEmptyKind(k);
+/** What an empty was (an old plain bottle: water; an old plain can: cola). */
+export const emptyBase = (t: TrashKind): DrinkKind => (t === "bottle" ? "water" : t === "can" ? "cola" : (t.slice(6) as DrinkKind));
+/** As an item (the inventory, the ground): always one of the drinks' own. */
+export const asEmpty = (t: TrashKind): EmptyKind => `empty:${emptyBase(t)}`;
+/** A bottle or a can (how it's held, how it falls, what the bin prompt says). */
+export const trashShape = (t: TrashKind): "bottle" | "can" => (t === "bottle" || t === "can" ? t : ITEMS[emptyBase(t)].trash!);
+export type ItemKind = MealKind | EmptyKind | "phone" | "water" | "orangeJuice" | "appleJuice" | "cola" | "lemonSoda" | "energy" | "apple" | "banana" | "orange" | "pear" | "kiwi" | "plum" | "grape" | "peach" | "key" | CanKind | CandyKind | WareKind;
 export type Inventory = (ItemKind | null)[];
 export const SLOTS = 9;
 
 type ItemInfo = { name: string; icon: string; use: "eat" | "drink" | "open" | "hold"; value?: number; trash?: "bottle" | "can" };
 /** The kinds of thing listed (everything but restaurant meals). */
-export type BaseKind = Exclude<ItemKind, MealKind>;
+export type BaseKind = Exclude<ItemKind, MealKind | EmptyKind>;
 export const ITEMS: Record<BaseKind, { name: string; icon: string; use: "eat" | "drink" | "open" | "hold"; value?: number; trash?: "bottle" | "can" }> = {
   phone: { name: "Phone", icon: "📱", use: "open" },
   water: { name: "Bottled Water", icon: "💧", use: "drink", trash: "bottle" },
@@ -33,12 +49,13 @@ export const ITEMS: Record<BaseKind, { name: string; icon: string; use: "eat" | 
   ...Object.fromEntries(CANDIES.map((k) => [k, { name: CANDY_INFO[k].name, icon: CANDY_INFO[k].shape === "pop" ? "🍭" : CANDY_INFO[k].shape === "bag" ? "🍬" : "🍫", use: "eat" as const }])),
   ...Object.fromEntries(WARES.map((k) => [k, { name: WARE_INFO[k].name, icon: k === "pot" || k === "pan" ? "🍳" : k === "cup" ? "☕" : k === "glass" ? "🥛" : k === "silverware" ? "🍴" : "🍽️", use: "hold" as const }])),
 } as Record<BaseKind, ItemInfo>;
-export const isItemKind = (k: unknown): k is ItemKind => typeof k === "string" && (k in ITEMS || (k.startsWith("meal:") && k.length > 5));
+export const isItemKind = (k: unknown): k is ItemKind => typeof k === "string" && (k in ITEMS || (k.startsWith("meal:") && k.length > 5) || isEmptyKind(k));
 const DRINK_WORDS = /(water|juice|cola|soda|shake|tea|coffee|lemonade|drink|latte|smoothie|milk)/i;
 /** What a thing is called, its icon and what it's for (restaurant meals and drinks too). */
 export function itemInfo(k: ItemKind): { name: string; icon: string; use: "eat" | "drink" | "open" | "hold"; value?: number; trash?: "bottle" | "can" } {
   const known = (ITEMS as Partial<Record<string, ItemInfo>>)[k];
   if (known) return known;
+  if (isEmptyKind(k)) { const b = ITEMS[emptyBase(k)]; return { name: `Empty ${b.name}`, icon: b.icon, use: "hold", trash: b.trash! }; }
   const name = k.slice(5), drink = DRINK_WORDS.test(name);
   return { name, icon: drink ? "🥤" : "🍱", use: drink ? "drink" : "eat" };
 }

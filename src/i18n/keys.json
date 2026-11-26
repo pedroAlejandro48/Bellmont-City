@@ -1169,5 +1169,8 @@
   "E THROW THE EMPTY BOTTLE AWAY",
   "E THROW THE EMPTY CAN AWAY",
   "Pay for it or put it back first",
-  "Things from the store go back where they came from until they're paid for."
+  "Things from the store go back where they came from until they're paid for.",
+  "Holding an empty can: Q puts it down, an empty slot keeps it.",
+  "Holding an empty bottle: Q puts it down, an empty slot keeps it.",
+  "Empty {0}"
 ]

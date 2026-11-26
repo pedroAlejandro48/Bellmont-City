@@ -1116,3 +1116,6 @@
 1168|E JOGAR FORA A LATA VAZIA
 1169|Pague ou devolva primeiro
 1170|Os itens da loja voltam ao lugar até serem pagos.
+1171|Segurando uma lata vazia: Q a deixa no chão, um espaço livre a guarda.
+1172|Segurando uma garrafa vazia: Q a deixa no chão, um espaço livre a guarda.
+1173|{0} vazio

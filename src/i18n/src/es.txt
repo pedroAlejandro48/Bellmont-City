@@ -1169,3 +1169,6 @@
 1168|E TIRAR LA LATA VACÍA
 1169|Págalo o devuélvelo primero
 1170|Lo de la tienda vuelve a su sitio hasta que lo pagues.
+1171|Llevas una lata vacía: Q la deja en el suelo, un hueco libre la guarda.
+1172|Llevas una botella vacía: Q la deja en el suelo, un hueco libre la guarda.
+1173|{0} vacío

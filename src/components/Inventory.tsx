@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ITEMS, itemInfo } from "@/game/inventory";
+import { ITEMS, asEmpty, itemInfo, trashShape } from "@/game/inventory";
 import { heldSlotOf, pressInventorySlot } from "@/game/invRuntime";
 import type { GameState } from "@/game/state";
 
@@ -15,7 +15,7 @@ export function InventoryButton({ state }: { state: GameState }) {
   const toggle = () => { state.inventoryOpen = !state.inventoryOpen; if (state.inventoryOpen) state.keys.clear(); tick((n) => n + 1); };
   return <div className="inventory-anchor">
     <button type="button" className={`hud-panel hud-square inventory-button pointer-events-auto ${state.inventoryOpen ? "on" : ""}`} aria-label="Inventory (I)" aria-expanded={state.inventoryOpen} onClick={toggle}>
-      <span className="inventory-button-icon" aria-hidden>{state.heldTrash ? (state.heldTrash === "can" ? "🥫" : "🧴") : kind ? itemInfo(kind).icon : <GridIcon />}</span>
+      <span className="inventory-button-icon" aria-hidden>{state.heldTrash ? itemInfo(asEmpty(state.heldTrash)).icon : kind ? itemInfo(kind).icon : <GridIcon />}</span>
       <span>I</span>
     </button>
     {/* All nine slots in a row above the health bars (no panel behind them). */}
@@ -28,7 +28,7 @@ export function InventoryButton({ state }: { state: GameState }) {
           {k && <span className="inventory-name">{itemInfo(k).name}</span>}
         </button>)}
       </div>
-      {(state.heldTrash ?? state.heldTrashL) && <p className="inventory-note">Holding an empty {(state.heldTrash ?? state.heldTrashL) === "can" ? "can" : "bottle"}: press Q to put it down.</p>}
+      {(state.heldTrash ?? state.heldTrashL) && <p className="inventory-note">{trashShape((state.heldTrash ?? state.heldTrashL)!) === "can" ? "Holding an empty can: Q puts it down, an empty slot keeps it." : "Holding an empty bottle: Q puts it down, an empty slot keeps it."}</p>}
     </div>
   </div>;
 }

@@ -1116,3 +1116,6 @@
 1168|E BUTTA LA LATTINA VUOTA
 1169|Prima pagalo o rimettilo a posto
 1170|Gli articoli del negozio tornano al loro posto finché non li paghi.
+1171|Hai in mano una lattina vuota: Q la posa, uno slot libero la tiene.
+1172|Hai in mano una bottiglia vuota: Q la posa, uno slot libero la tiene.
+1173|{0} vuoto

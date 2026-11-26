@@ -36,7 +36,7 @@ export function makeGroceryLink(channel: NamedRoom): GroceryLink {
       return v ? { ...v, from: h.peer } : null;
     },
     myCheckout: (c) => { const j = JSON.stringify(c); if (j !== mine) { mine = j; void channel.presence({ gco: c }).catch(() => {}); } },
-    checkouts: () => channel.peers().flatMap((p) => (p.sameTab || !isCheckout(p.presence["gco"]) ? [] : [{ id: p.peer, t0: (p.presence["gco"] as GroceryCheckoutWire).t0, items: (p.presence["gco"] as GroceryCheckoutWire).items ?? [] }])),
+    checkouts: () => channel.peers().flatMap((p) => (p.sameTab || !isCheckout(p.presence["gco"]) ? [] : [{ id: p.peer, t0: (p.presence["gco"] as GroceryCheckoutWire).t0, items: (p.presence["gco"] as GroceryCheckoutWire).items ?? [], ...((p.presence["gco"] as GroceryCheckoutWire).hand === true ? { hand: true } : {}) }])),
   };
 }
 

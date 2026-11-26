@@ -6,13 +6,18 @@ import * as THREE from "three";
 import { handWorld } from "./arms";
 import { canInteractScooter, floorHeight, nearestBenchSeat } from "./config";
 import { InteractionPrompt } from "./InteractionPrompt";
-import { ITEMS, itemInfo, type ItemKind } from "./inventory";
+import { ITEMS, emptyBase, isEmptyKind, isTrashKind, itemInfo, trashShape, type ItemKind } from "./inventory";
 import { INV_TIME, USE_SECONDS, dropHeld, heldKind, pickUpNear, stepInventory, consumeHeld } from "./invRuntime";
 import type { GameState } from "./state";
 
 export type Thing = ItemKind | "bottle" | "can" | "mealFood" | "mealDrink";
 /** What a thing is drawn as (a restaurant meal from the fridge: a take-out box, or a cup). */
-const shownAs = (k: Thing): Thing => (typeof k === "string" && k.startsWith("meal:") ? (itemInfo(k as ItemKind).use === "drink" ? "mealDrink" : "mealFood") : (CANS as readonly string[]).includes(k as string) ? "can" : k);
+// (An empty looks as it did full: a can just the same; the water bottle without its water; a juice bottle without
+// its juice — the same cap and label.)
+const shownAs = (k: Thing): Thing => (typeof k === "string" && k.startsWith("meal:") ? (itemInfo(k as ItemKind).use === "drink" ? "mealDrink" : "mealFood") : (CANS as readonly string[]).includes(k as string) ? "can" : isEmptyKind(k) ? (k === "empty:water" ? "bottle" : k === "empty:orangeJuice" || k === "empty:appleJuice" ? k : emptyBase(k)) : k);
+/** Held round its middle (a bottle) or lower (a can): how far down the hand's hold is. */
+const bottleLike = (k: Thing | null) => k === "water" || k === "bottle" || k === "orangeJuice" || k === "appleJuice" || k === "empty:orangeJuice" || k === "empty:appleJuice";
+const canLike = (k: Thing | null) => k === "cola" || k === "lemonSoda" || k === "energy" || k === "can";
 
 /**
  * A white plastic bag of groceries: a soft pear-shaped body, rounder at the bottom where the shopping sits, gathered
@@ -85,13 +90,13 @@ export function ItemModel({ kind, looks, empty = false }: { kind: Thing; looks: 
       <mesh material={looks.label} position={[0, 0.06, 0]}><cylinderGeometry args={[0.0335, 0.0335, 0.06, 14, 1, true]} /></mesh>
       {!empty && kind === "water" && <mesh material={looks.water} position={[0, 0.045, 0]}><cylinderGeometry args={[0.029, 0.029, 0.13, 12]} /></mesh>}
     </group>;
-    case "orangeJuice": case "appleJuice": {
-      const o = kind === "orangeJuice";
+    case "orangeJuice": case "appleJuice": case "empty:orangeJuice": case "empty:appleJuice": {
+      const o = kind === "orangeJuice" || kind === "empty:orangeJuice", none = empty || kind.startsWith("empty:");
       return <group>
         <mesh material={looks.bottle} position={[0, 0.06, 0]}><cylinderGeometry args={[0.032, 0.032, 0.17, 14]} /></mesh>
         <mesh material={looks.bottle} position={[0, 0.165, 0]}><cylinderGeometry args={[0.015, 0.032, 0.04, 14]} /></mesh>
         <mesh material={o ? looks.capOrange : looks.capApple} position={[0, 0.192, 0]}><cylinderGeometry args={[0.017, 0.017, 0.02, 10]} /></mesh>
-        <mesh material={o ? looks.juiceOrange : looks.juiceApple} position={[0, 0.055, 0]}><cylinderGeometry args={[0.029, 0.029, 0.15, 12]} /></mesh>
+        {!none && <mesh material={o ? looks.juiceOrange : looks.juiceApple} position={[0, 0.055, 0]}><cylinderGeometry args={[0.029, 0.029, 0.15, 12]} /></mesh>}
         <mesh material={o ? looks.labelOrange : looks.labelApple} position={[0, 0.06, 0]}><cylinderGeometry args={[0.0335, 0.0335, 0.07, 14, 1, true]} /></mesh>
         <mesh material={o ? looks.orange : looks.apple} position={[0, 0.06, 0.034]}><sphereGeometry args={[0.012, 8, 6]} /></mesh>
       </group>;
@@ -219,7 +224,7 @@ export function InventoryWorld({ state }: { state: GameState }) {
   const looks = useLooks();
   const held = useRef<THREE.Group>(null);
   const shown = useRef<Thing | null>(null);
-  const kinds = useMemo(() => ["phone", "water", "bottle", "can", "orangeJuice", "appleJuice", "cola", "lemonSoda", "energy", "apple", "banana", "orange", "pear", "kiwi", "plum", "grape", "peach", "key", ...CANDIES, ...WARES, "mealFood", "mealDrink"] as Thing[], []);
+  const kinds = useMemo(() => ["phone", "water", "bottle", "can", "orangeJuice", "appleJuice", "empty:orangeJuice", "empty:appleJuice", "cola", "lemonSoda", "energy", "apple", "banana", "orange", "pear", "kiwi", "plum", "grape", "peach", "key", ...CANDIES, ...WARES, "mealFood", "mealDrink"] as Thing[], []);
   const parts = useRef<Map<Thing, THREE.Group>>(new Map());
   // The left hand: something taken off the grocery store's shelves (or bought, with no room in the inventory).
   const heldL = useRef<THREE.Group>(null), partsL = useRef<Map<Thing, THREE.Group>>(new Map()), shownL = useRef<Thing | null>(null);
@@ -269,7 +274,7 @@ export function InventoryWorld({ state }: { state: GameState }) {
     const offFloor = !state.level || state.level.floor < 2, khr = state.life.kitchen.hands;
     let kind: Thing | null = state.heldTrash ?? heldKind(state) ?? (state.storeHands.right?.kind ?? null) ?? (offFloor && khr.right ? khr.right.ware as Thing : null);
     if (kind) kind = shownAs(kind);
-    if (act?.kind === "pickup" && act.done && act.item === "bottle" && !act.left) kind = "bottle";
+    if (act?.kind === "pickup" && act.done && isTrashKind(act.item) && !act.left) kind = shownAs(act.item);
     const fore = state.avatar.body[11];
     const g = held.current;
     if (g) {
@@ -293,8 +298,8 @@ export function InventoryWorld({ state }: { state: GameState }) {
         // The key's ring between the fingers, its blade out in front of the hand (not floating away from it).
         if (kind === "key") { g.position.x += Math.sin(state.rotY) * 0.035; g.position.z += Math.cos(state.rotY) * 0.035; g.position.y -= 0.01; }
         // A bottle is held round its middle; fruit and keys sit in the palm.
-        if (kind === "water" || kind === "bottle" || kind === "orangeJuice" || kind === "appleJuice") g.position.y -= 0.07;
-        if (kind === "cola" || kind === "lemonSoda" || kind === "energy" || kind === "can") g.position.y -= 0.05;
+        if (bottleLike(kind)) g.position.y -= 0.07;
+        if (canLike(kind)) g.position.y -= 0.05;
         if (kind === "phone") g.position.y += 0.05;
         // Candy: held up in the fingers, the wrapper toward the face (a bar stands on its end).
         if (kind && isCandy(kind)) { g.position.y -= 0.03; if (CANDY_INFO[kind].shape !== "pop" && CANDY_INFO[kind].shape !== "bag") { tmp.e.set(-Math.PI / 2 + 0.35, state.rotY, 0, "YXZ"); g.quaternion.setFromEuler(tmp.e); } }
@@ -307,8 +312,8 @@ export function InventoryWorld({ state }: { state: GameState }) {
       const khl = state.life.kitchen.hands.left, offF = !state.level || state.level.floor < 2;
       const gl = heldL.current, foreL0 = state.avatar.body[9];
       // (An empty picked up into the left hand shows once it's in hand.)
-      const actP = state.invAct, pickingL = actP?.kind === "pickup" && actP.left && actP.done ? (actP.item as Thing) : null;
-      const k = state.heldTrashL ?? pickingL ?? (state.storeHands.left ? shownAs(state.storeHands.left.kind) : offF && khl ? khl.ware as Thing : null);
+      const actP = state.invAct, pickingL = actP?.kind === "pickup" && actP.left && actP.done ? shownAs(actP.item as Thing) : null;
+      const k = (state.heldTrashL ? shownAs(state.heldTrashL) : null) ?? pickingL ?? (state.storeHands.left ? shownAs(state.storeHands.left.kind) : offF && khl ? khl.ware as Thing : null);
       if (gl) {
         const vis = !!k && !!foreL0 && !state.home && !state.accident && state.health > 0;
         gl.visible = vis;
@@ -316,8 +321,8 @@ export function InventoryWorld({ state }: { state: GameState }) {
           if (shownL.current !== k) { shownL.current = k; partsL.current.forEach((p, kk) => { p.visible = kk === k; }); }
           foreL0.updateWorldMatrix(true, false); handWorld(foreL0, gl.position);
           tmp.e.set(0, state.rotY, 0, "YXZ"); gl.quaternion.setFromEuler(tmp.e);
-          if (k === "water" || k === "bottle" || k === "orangeJuice" || k === "appleJuice") gl.position.y -= 0.07;
-          if (k === "cola" || k === "lemonSoda" || k === "energy" || k === "can") gl.position.y -= 0.05;
+          if (bottleLike(k)) gl.position.y -= 0.07;
+          if (canLike(k)) gl.position.y -= 0.05;
           if (isCandy(k)) gl.position.y -= 0.03;
           const actL = state.invAct, headL = state.avatar.body[3];
           if (actL && actL.kind === "drink" && actL.fromHand === "left" && headL) tipToMouth(gl, k, headL, state.rotY, drinkTip(state.simulationTime - actL.at));
@@ -348,7 +353,7 @@ export function InventoryWorld({ state }: { state: GameState }) {
           c.visible = !!it;
           if (!it) return;
           c.position.set(it.x, (it.y ?? floorHeight(it.x, it.z)) + (it.kind === "groceryBag" ? 0.4 : 0), it.z);
-          c.rotation.set(["bottle", "water", "can", "orangeJuice", "appleJuice", "cola", "lemonSoda", "energy"].includes(it.kind) ? Math.PI / 2 : 0, it.yaw, 0, "YXZ");
+          c.rotation.set(["bottle", "water", "can", "orangeJuice", "appleJuice", "cola", "lemonSoda", "energy"].includes(it.kind) || isTrashKind(it.kind) ? Math.PI / 2 : 0, it.yaw, 0, "YXZ");
           (c.children as THREE.Group[]).forEach((m) => { m.visible = m.userData["kind"] === shownAs(it.kind as Thing); });
         });
       }
@@ -377,7 +382,7 @@ export function InventoryWorld({ state }: { state: GameState }) {
       let best: GameState["groundItems"][number] | null = null, bd = 1.0;
       for (const g of state.groundItems) { const d = Math.hypot(g.x - state.pos.x, g.z - state.pos.z); if (d < bd) { bd = d; best = g; } }
       if (!best) return { visible: false, x: 0, y: 0, z: 0, time: 0 };
-      return { visible: true, x: best.x, y: (best.y ?? floorHeight(best.x, best.z)) + 0.45, z: best.z, time: state.simulationTime, label: `E  ${best.kind === "bottle" ? "EMPTY BOTTLE" : best.kind === "can" ? "EMPTY CAN" : best.kind === "groceryBag" ? "GROCERIES" : itemInfo(best.kind).name.toUpperCase()}` };
+      return { visible: true, x: best.x, y: (best.y ?? floorHeight(best.x, best.z)) + 0.45, z: best.z, time: state.simulationTime, label: `E  ${isTrashKind(best.kind) ? (trashShape(best.kind) === "can" ? "EMPTY CAN" : "EMPTY BOTTLE") : best.kind === "groceryBag" ? "GROCERIES" : itemInfo(best.kind).name.toUpperCase()}` };
     }} />
   </>;
 }
