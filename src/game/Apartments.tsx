@@ -1636,10 +1636,12 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     // Calling the car (to this floor); the label says where it is.
     const callLift = (bkey: string, here: number, button: [number, number, number], out: [number, number]) => {
       // (From where you are; a step closer first if the button's further than an arm's length.)
-      const d = Math.hypot(button[0] - p.x, button[2] - p.z), stand: [number, number] = d > 0.62 ? [button[0] + out[0] * 0.5, button[2] + out[1] * 0.5] : [p.x, p.z];
-      const yaw = Math.atan2(button[0] - stand[0], button[2] - stand[1]), lx = Math.cos(yaw), lz = -Math.sin(yaw);
+      // Always the right hand, whatever's in your hands: stepping up, you stand a little to the button's left,
+      // facing the wall, so the right arm goes straight out to it.
+      const on = Math.hypot(out[0], out[1]) || 1, fx = -out[0] / on, fz = -out[1] / on;
+      const d = Math.hypot(button[0] - p.x, button[2] - p.z), stand: [number, number] = d > 0.62 ? [button[0] + out[0] * 0.45 + fz * 0.17, button[2] + out[1] * 0.45 - fx * 0.17] : [p.x, p.z];
       const walk = d > 0.62 ? Math.min(0.9, Math.hypot(stand[0] - p.x, stand[1] - p.z) / 1.1 + 0.15) : 0;
-      press.current = { t0: now, walk, from: [p.x, p.z], stand, yaw: d > 0.62 ? yaw : state.rotY, at: new THREE.Vector3(...button), hand: (button[0] - stand[0]) * lx + (button[2] - stand[1]) * lz > 0 ? "left" : "right", done: false, call: () => myCalls.current.push({ b: bkey, floor: here }) };
+      press.current = { t0: now, walk, from: [p.x, p.z], stand, yaw: d > 0.62 ? Math.atan2(fx, fz) : state.rotY, at: new THREE.Vector3(...button), hand: "right", done: false, call: () => myCalls.current.push({ b: bkey, floor: here }) };
     };
     const liftLabel = (bkey: string, here: number) => {
       const c = lift().car(bkey), at = carFloor(c), name = at === 1 ? "L" : String(at);
