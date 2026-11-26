@@ -5,7 +5,7 @@ import { GAME_MINUTE } from "./config";
 import { handFree, handsFullMessage, holdingOther } from "./handsHeld";
 import { BURNERS, dirtyHeld, freePlace, isDish, isPotLike, putAway, stoveState, type Held, type Kitchen } from "./kitchen";
 import {
-  atRack, cansIn, dumpInBin, fromTable, intoCupboard, kplan, kplanAt, offStove, openCupboard, pourToPlate, rackSpot, takeFromCupboard, toSink, toStove, toTable, washUp,
+  atRack, cansIn, dumpInBin, fromTable, intoCupboard, kplan, kplanAt, offStove, openCupboard, pourToPlate, rackSpot, takeFromCupboard, toSink, toStove, toTable, tossInBin, washEach,
   type Carry, type KPlan, type KPose, type KSeg,
 } from "./kitchenMoves";
 import { lifeEvent } from "./lifeRuntime";
@@ -246,6 +246,13 @@ export class KitchenRun {
     const claimed = (st2: string) => !!c.claims?.has(st2);
     if (near(K.trashStand, 0.8, K.trash) && !claimed("bin")) {
       this.lastStand = K.trashStand;
+      // An empty bottle or can in hand: into the bin.
+      if (s.heldTrash) {
+        const what = s.heldTrash === "can" ? "CAN" : "BOTTLE";
+        return { at: [K.trash[0], 1.05, K.trash[2]], label: `E  THROW THE EMPTY ${what} AWAY`, act: () => {
+          this.go(c, tossInBin(fl, from, c.yaw, this.carry(s)), (e) => { if (e === "tossed") s.heldTrash = null; }, ["bin"]);
+        } };
+      }
       const burnt = (["right", "left"] as const).find((x) => h[x]?.burnt && h[x]?.food);
       if (burnt) return { at: [K.trash[0], 1.05, K.trash[2]], label: "E  THROW THE BURNT FOOD AWAY", act: () => {
         if (burnt === "left") { const r = h.right; h.right = h.left; h.left = r; }
@@ -312,6 +319,9 @@ export class KitchenRun {
       if (claimed("sink")) return { at, label: "SOMEONE'S AT THE SINK", act: null };
       this.lastStand = K.sinkStand;
       const dirty = dirtyHeld(k), n = k.sink.length + dirty.reduce((a, x) => a + (h[x]!.silver ? 2 : 1), 0);
+      // (Washing up needs both hands: anything else held — a drink, food, a clean dish — has to be put down first.)
+      const busyHand = (["left", "right"] as const).some((x) => !dirty.includes(x) && !handFree(s, x));
+      if (n > 0 && busyHand) return { at, label: "FREE YOUR HANDS TO WASH UP", act: null };
       if (n > 0) return { at, label: `E  WASH UP (${n})`, act: () => this.washAll(c) };
       // New pots and pans from the shop go in the cupboard here (plates and the rest go on the counter, beside it).
       const bagPots = (s.groceryBag ?? []).filter((w): w is WareKind => isWare(w) && isPotLike(w));
@@ -417,18 +427,14 @@ export class KitchenRun {
     const segs: KSeg[] = [];
     if (dirty.length) segs.push(...toSink(fl, from, c.yaw, this.carry(s)));
     const list = [...k.sink, ...dirty.flatMap((x) => (h[x]!.silver ? [h[x]!.ware, "silverware" as WareKind] : [h[x]!.ware]))];
-    segs.push(...washUp(fl, list.length));
-    const toRack = list.filter((w) => !isPotLike(w)), toCup = list.filter(isPotLike);
-    if (toRack.length) segs.push(...atRack(fl, fl.kitchen.sinkStand, 0, rackSpot(fl, toRack[0]!), "left", "racked", { left: false, right: false }, toRack[0]!));
-    if (toCup.length) segs.push(...intoCupboard(fl, toRack.length ? fl.kitchen.rackStand : fl.kitchen.sinkStand, 0, k.cupboard.length, toCup.length, { left: false, right: false }, toCup));
-    let cupIn = 0;
+    // Each one washed and then put where it belongs, one after another (the last put away, and that's it).
+    segs.push(...washEach(fl, list, k.cupboard.length));
     this.go(c, segs, (e) => {
       const [what, i] = e.split(":");
       if (e === "inSink") for (const x of dirty) { const it = h[x]!; k.sink.push(it.ware); if (it.silver) k.sink.push("silverware"); h[x] = null; }
       if (what === "wash") { const w = list[Number(i)]!; const j = k.sink.indexOf(w); if (j >= 0) k.sink.splice(j, 1); this.view.washing = w; }
       if (what === "washed") { this.view.drying.push(this.view.washing!); this.view.washing = null; }
-      if (e === "racked") { for (const w of toRack) { putAway(k, w); const j = this.view.drying.indexOf(w); if (j >= 0) this.view.drying.splice(j, 1); } }
-      if (e === "in") { const w = toCup[cupIn++]; if (w) { putAway(k, w); const j = this.view.drying.indexOf(w); if (j >= 0) this.view.drying.splice(j, 1); } }
+      if (what === "racked" || what === "in") { const w = list[Number(i)]!; putAway(k, w); const j = this.view.drying.indexOf(w); if (j >= 0) this.view.drying.splice(j, 1); }
     }, ["sink", "rack"]);
   }
   /** New kitchenware from the shop: pots and pans into the cupboard, the rest onto the counter. */

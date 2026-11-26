@@ -180,7 +180,8 @@ export function WareModel({ kind, food = null }: { kind: WareKind; food?: { a: s
     case "plate": return <group>
       <mesh position={[0, 0.008, 0]} material={L.porcelain} castShadow><cylinderGeometry args={[0.12, 0.085, 0.016, 28]} /></mesh>
       <mesh position={[0, 0.0165, 0]} rotation-x={-Math.PI / 2} material={L.rim}><ringGeometry args={[0.108, 0.115, 28]} /></mesh>
-      {food && <FoodFill r={0.08} y={0.018 + 0.012 * food.level} food={food} mound />}
+      {/* (The heap grows as it's poured on, and shrinks as it's eaten.) */}
+      {food && <FoodFill r={0.025 + 0.06 * Math.min(1, food.level)} y={0.018 + 0.006 * food.level} food={food} mound />}
     </group>;
     case "bowl": return <group>
       <mesh geometry={V.bowl} material={L.porcelain2} castShadow receiveShadow />

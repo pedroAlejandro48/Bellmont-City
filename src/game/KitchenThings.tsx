@@ -107,7 +107,12 @@ export function KitchenThings({ fl, state, view: ownView, m, actor, others }: { 
       const pot = hands.right, pan = pot?.ware === "pan";
       potInner.current.updateWorldMatrix(true, false);
       from = potInner.current.localToWorld(tmp.a.set(pan ? -0.13 : -0.11, pan ? 0.05 : 0.148, 0));
-      if (kind === "pot") { to = handAt(9, tmp.b); if (to) to.y += 0.03 + 0.012 * view.pourK; if (pot?.food) { const c = foodColors(pot.food); cols = [c.a, c.b]; } }
+      // (Into the middle of the plate or bowl in the left hand, landing on the food as it rises.)
+      if (kind === "pot") {
+        const dish = hands.left?.ware ?? "plate", hl = handL.current, lvl = Math.max(0.02, view.pourK) * (pot?.food?.length ?? 1) / 3;
+        if (hl) { hl.updateWorldMatrix(true, false); to = hl.localToWorld(tmp.b.set(0.04, -0.02 + (dish === "bowl" ? 0.016 + 0.045 * lvl : 0.02 + 0.016 * lvl), 0.07)); } else to = handAt(9, tmp.b);
+        if (pot?.food) { const c = foodColors(pot.food); cols = [c.a, c.b]; }
+      }
       else { to = toWorld3(fl, new THREE.Vector3(K.trash[0], 0.42, K.trash[2])); cols = ["#151210", "#2a1d14"]; }
     }
     const sm = stream.current;
@@ -272,7 +277,8 @@ export function KitchenThings({ fl, state, view: ownView, m, actor, others }: { 
       const ek = eatOf(t.chair), level = t.eaten ? 0 : ek !== null ? 1 - ek : 1;
       return <group key={`t${i}`} position={pl.at}>
         <WareModel kind={t.ware} food={level > 0.02 ? { ...foodColors(t.cans), level } : null} />
-        {t.eaten && <mesh position={[0.02, 0.018, 0.01]} rotation-x={-Math.PI / 2} material={mats.grime}><circleGeometry args={[0.05, 12]} /></mesh>}
+        {/* The stain left as it's eaten: fading in bit by bit, all there once it's finished. */}
+        {(t.eaten || (ek !== null && ek > 0.02)) && <mesh position={[0.02, t.ware === "bowl" ? 0.03 : 0.0175, 0.01]} rotation-x={-Math.PI / 2}><circleGeometry args={[0.05, 12]} /><meshStandardMaterial color="#7a5a3a" roughness={0.8} transparent opacity={t.eaten ? 1 : Math.min(1, ek ?? 0)} depthWrite={false} /></mesh>}
         {t.silver && <group position={[0, 0.02, 0]} rotation-y={0.6}><WareModel kind="silverware" /></group>}
       </group>;
     })}
