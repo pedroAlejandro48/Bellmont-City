@@ -36,8 +36,12 @@ export function pressInventorySlot(state: GameState, slot: number) {
   if (r.kind === "hide") { if (slot === 0) state.phone = { open: false, app: null, atm: false }; else state.heldSlot = null; return; }
   if (r.kind === "show") {
     if (slot === 0) { state.phone = { open: true, app: null, atm: false }; state.keys.clear(); guideDone(state, 0); return; }
-    // (Swapping one inventory thing for another is fine: it goes back in the inventory.)
-    if (state.heldSlot === null && !handFree(state, "right")) { const m = handsFullMessage("right"); toast(state, m.title, "warn", m.body); return; }
+    // (Swapping one inventory thing for another is fine: it goes back in the inventory.) Something else in the right
+    // hand: over to the left hand if that's free, or else put down on the floor — then this one comes out.
+    if (state.heldSlot === null && !handFree(state, "right")) {
+      if (makeRoomRight(state)) { state.invNext = slot; state.phone = { open: false, app: null, atm: false }; }
+      return;
+    }
     state.phone = { open: false, app: null, atm: false };
     state.heldSlot = slot;
     return;
@@ -69,6 +73,29 @@ export function pressInventorySlot(state: GameState, slot: number) {
 export function drinkInHand(state: GameState): boolean {
   if (state.heldSlot !== null) { const k = state.life.inventory[state.heldSlot]; return !!k && itemInfo(k).use === "drink"; }
   return (["right", "left"] as const).some((h) => { const x = state.storeHands[h]; return !!x?.paid && itemInfo(x.kind).use === "drink"; });
+}
+/** How long passing a thing from the right hand to the left takes (it changes hands halfway). */
+export const PASS_TIME = 0.7;
+/**
+ * The right hand freed for a thing out of the inventory: what's in it passed over to the left hand (if that's free),
+ * or put down on the floor in front (if not). False (and told why) when it can't be: food in a pot, a restaurant's
+ * food, the store basket, something not paid for yet.
+ */
+function makeRoomRight(state: GameState): boolean {
+  if (busy(state)) return false;
+  const kh = state.life.kitchen.hands, sh = state.storeHands;
+  const what: "trash" | "store" | "kitchen" | null = state.heldTrash ? "trash" : sh.right ? "store" : kh.right && !state.hands.right && !state.groceryBasket ? "kitchen" : null;
+  const stuck = () => { const m = handsFullMessage("right"); toast(state, m.title, "warn", m.body); return false; };
+  if (!what) return stuck();
+  if (handFree(state, "left")) { state.invAct = { kind: "pass", at: state.simulationTime, item: state.heldTrash ?? (sh.right?.kind ?? (kh.right!.ware as ItemKind)), target: null, done: false }; return true; }
+  // The left hand's full too: what's in the right goes down on the floor (only what can be put down).
+  if (what === "store" && !sh.right!.paid) { toast(state, "Pay for it or put it back first", "warn", "Things from the store go back where they came from until they're paid for."); return false; }
+  if (what === "kitchen" && kh.right!.food) return stuck();
+  const kind = what === "trash" ? state.heldTrash! : what === "store" ? sh.right!.kind : (kh.right!.ware as ItemKind);
+  const f = new THREE.Vector3(Math.sin(state.rotY), 0, Math.cos(state.rotY)), l = new THREE.Vector3(Math.cos(state.rotY), 0, -Math.sin(state.rotY));
+  const at = state.pos.clone().addScaledVector(f, 0.36).addScaledVector(l, -0.24);
+  state.invAct = { kind: "drop", at: state.simulationTime, item: kind, target: at, done: false, ...(what === "store" ? { fromHand: "right" as const } : what === "kitchen" ? { kitchenHand: "right" as const } : {}) };
+  return true;
 }
 /** E (eating) or the DRINK button (drinking) with that in hand: starts it. True if the press was used. */
 export function consumeHeld(state: GameState, only: "eat" | "drink" = "eat") {
@@ -108,14 +135,17 @@ export function dropHeld(state: GameState) {
   if (!state.heldTrash && state.heldSlot === null && !kSide && (kh.left || kh.right)) return false;
   // (Things from the grocery store not paid for yet can't be put down: only back where they came from.)
   const sh = state.storeHands, hSide = !state.heldTrash && state.heldSlot === null ? (sh.right?.paid ? "right" : sh.left?.paid ? "left" : null) : null;
-  const kind = state.heldTrash ?? (state.heldSlot !== null ? state.life.inventory[state.heldSlot] : null) ?? (hSide ? sh[hSide]!.kind : null) ?? (kSide ? kh[kSide]!.ware : null) ?? (state.groceryBag && !state.groceryBasket ? "groceryBag" : null);
+  let kind: NonNullable<GameState["invAct"]>["item"] | null = state.heldTrash ?? (state.heldSlot !== null ? state.life.inventory[state.heldSlot] : null) ?? (hSide ? sh[hSide]!.kind : null) ?? (kSide ? kh[kSide]!.ware : null) ?? (state.groceryBag && !state.groceryBasket ? "groceryBag" : null);
+  // (An empty in the left hand, nothing else to put down: that.)
+  const leftTrash = !kind && !!state.heldTrashL;
+  if (leftTrash) kind = state.heldTrashL;
   if (!kind) return false;
   const f = new THREE.Vector3(Math.sin(state.rotY), 0, Math.cos(state.rotY)), l = new THREE.Vector3(Math.cos(state.rotY), 0, -Math.sin(state.rotY));
-  let at = state.pos.clone().addScaledVector(f, 0.36).addScaledVector(l, kind === "groceryBag" ? 0.26 : -0.24), topY: number | undefined;
+  let at = state.pos.clone().addScaledVector(f, 0.36).addScaledVector(l, kind === "groceryBag" || leftTrash ? 0.26 : -0.24), topY: number | undefined;
   // A table within reach in front: onto it instead (its near edge, toward you).
   const table = kind !== "groceryBag" ? tableNear(state) : null;
   if (table) { at = new THREE.Vector3(table.x, state.pos.y, table.z); topY = table.y; }
-  state.invAct = { kind: "drop", at: state.simulationTime, item: kind, target: at, done: false, ...(hSide ? { fromHand: hSide } : state.heldTrash || state.heldSlot !== null || !kSide ? {} : { kitchenHand: kSide }), ...(topY !== undefined ? { topY } : {}) };
+  state.invAct = { kind: "drop", at: state.simulationTime, item: kind, target: at, done: false, ...(leftTrash ? { left: true } : hSide ? { fromHand: hSide } : state.heldTrash || state.heldSlot !== null || !kSide ? {} : { kitchenHand: kSide }), ...(topY !== undefined ? { topY } : {}) };
   return true;
 }
 /** The table in front within reach (a room's tables, the apartment's dining table and desk): where on it. */
@@ -143,12 +173,14 @@ export function pickUpNear(state: GameState) {
   if (!best) return false;
   // Can't take it (hand or inventory full): the press is left for something else (eating what's in the hand).
   const trash = best.kind === "bottle" || best.kind === "can";
-  const blocked = best.kind === "groceryBag" ? !handFree(state, "left") : trash ? !handFree(state, "right") : !state.life.inventory.some((x, i) => i > 0 && x === null);
+  // (An empty bottle or can: in the right hand, or the left if the right's full.)
+  const intoLeft = trash && !handFree(state, "right") && handFree(state, "left");
+  const blocked = best.kind === "groceryBag" ? !handFree(state, "left") : trash ? !handFree(state, "right") && !intoLeft : !state.life.inventory.some((x, i) => i > 0 && x === null);
   if (blocked) {
-    if (state.heldSlot === null) { toast(state, best.kind === "groceryBag" ? "Your left hand is full" : trash ? "Your right hand is full" : "Your inventory is full", "warn"); return true; }
+    if (state.heldSlot === null) { toast(state, best.kind === "groceryBag" ? "Your left hand is full" : trash ? "Your hands are full" : "Your inventory is full", "warn"); return true; }
     return false;
   }
-  state.invAct = { kind: "pickup", at: state.simulationTime, item: best.kind, target: new THREE.Vector3(best.x, state.pos.y, best.z), done: false, ground: best.id };
+  state.invAct = { kind: "pickup", at: state.simulationTime, item: best.kind, target: new THREE.Vector3(best.x, state.pos.y, best.z), done: false, ground: best.id, ...(intoLeft ? { left: true } : {}) };
   return true;
 }
 
@@ -167,10 +199,22 @@ export function stepInventory(state: GameState) {
       else if (state.heldSlot !== null) removeItem(state.life.inventory, state.heldSlot);
       state.heldSlot = null;
       // The bottle is empty now: trash in the hand, to put down (Q).
-      if (a.kind === "drink" && itemInfo(kind).trash) state.heldTrash = itemInfo(kind).trash!;
+      if (a.kind === "drink" && itemInfo(kind).trash) { if (a.fromHand === "left") state.heldTrashL = itemInfo(kind).trash!; else state.heldTrash = itemInfo(kind).trash!; }
       lifeEvent(state, "eat", 1);
     }
     if (t >= USE_SECONDS) state.invAct = null;
+    return;
+  }
+  if (a.kind === "pass") {
+    // Halfway: it's in the left hand now.
+    if (!a.done && t >= PASS_TIME * 0.5) {
+      a.done = true;
+      const kh = state.life.kitchen.hands, sh = state.storeHands;
+      if (state.heldTrash) { state.heldTrashL = state.heldTrash; state.heldTrash = null; }
+      else if (sh.right) { sh.left = sh.right; sh.right = null; }
+      else if (kh.right) { kh.left = kh.right; kh.right = null; }
+    }
+    if (t >= PASS_TIME) { state.invAct = null; takeNext(state); }
     return;
   }
   if (a.kind === "drop") {
@@ -180,6 +224,7 @@ export function stepInventory(state: GameState) {
       state.groundItems.push({ id: Math.max(nextGround++, ...state.groundItems.map((g) => g.id + 1)), kind: a.item, x: a.target.x, z: a.target.z, ...(a.topY !== undefined ? { y: a.topY } : state.level ? { y: state.level.y } : {}), yaw: state.rotY, at: state.simulationTime, ...(contents ? { contents } : {}) });
       if (a.fromHand) state.storeHands[a.fromHand] = null;
       else if (a.kitchenHand) state.life.kitchen.hands[a.kitchenHand] = null;
+      else if (a.left) state.heldTrashL = null;
       else if (a.item === "bottle" || a.item === "can") state.heldTrash = null;
       else if (a.item === "groceryBag") state.groceryBag = null;
       else if (state.heldSlot !== null) { removeItem(state.life.inventory, state.heldSlot); state.heldSlot = null; }
@@ -192,13 +237,19 @@ export function stepInventory(state: GameState) {
       const g = state.groundItems.find((x) => x.id === a.ground);
       if (g) {
         state.groundItems = state.groundItems.filter((x) => x !== g);
-        if (g.kind === "bottle" || g.kind === "can") state.heldTrash = g.kind;
+        if (g.kind === "bottle" || g.kind === "can") { if (a.left) state.heldTrashL = g.kind; else state.heldTrash = g.kind; }
         else if (g.kind === "groceryBag") state.groceryBag = g.contents ?? [];
         else { const slot = addItem(state.life.inventory, g.kind); if (slot > 0) toast(state, `${itemInfo(g.kind).name} → slot ${slot + 1}`, "info"); }
       }
     }
   }
-  if (t >= DROP_TIME) state.invAct = null;
+  if (t >= DROP_TIME) { state.invAct = null; takeNext(state); }
+}
+/** The thing waiting to come out of the inventory, now the right hand's free. */
+function takeNext(state: GameState) {
+  const slot = state.invNext;
+  state.invNext = null;
+  if (slot !== null && handFree(state, "right") && state.life.inventory[slot]) state.heldSlot = slot;
 }
 
 /** Buying something that keeps (fruit, water) puts it in the inventory: false when there's no room. */

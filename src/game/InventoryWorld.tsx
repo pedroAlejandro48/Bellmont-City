@@ -206,7 +206,7 @@ export function heldWire(state: GameState): HeldWire {
   if (state.home || state.accident || state.health <= 0) return { r: null, l: null, bag: -1, bk: null };
   const offFloor = !state.level || state.level.floor < 2, kh = state.life.kitchen.hands;
   const r0 = state.heldTrash ?? heldKind(state) ?? (state.storeHands.right?.kind ?? null) ?? (offFloor && kh.right ? kh.right.ware as Thing : null);
-  const l0 = state.storeHands.left?.kind ?? (offFloor && kh.left ? kh.left.ware as Thing : null);
+  const l0 = state.heldTrashL ?? state.storeHands.left?.kind ?? (offFloor && kh.left ? kh.left.ware as Thing : null);
   const r2 = (n: number) => Math.round(n * 100) / 100;
   return {
     r: r0 ? shownAs(r0 as Thing) : null, l: l0 ? shownAs(l0 as Thing) : null,
@@ -242,7 +242,7 @@ export function InventoryWorld({ state }: { state: GameState }) {
     void atHome;
     // (The kitchen's own Q — pour, to the sink, to the table — came first; if it did nothing, Q puts it down.)
     const kitchenEmpty = !!((kh.right && !kh.right.food) || (kh.left && !kh.left.food));
-    if (state.dropQueued && (state.heldTrash || state.heldSlot !== null || kitchenEmpty || state.storeHands.left?.paid || state.storeHands.right?.paid || (state.groceryBag && !state.groceryBasket))) { if (dropHeld(state)) state.dropQueued = false; }
+    if (state.dropQueued && (state.heldTrash || state.heldTrashL || state.heldSlot !== null || kitchenEmpty || state.storeHands.left?.paid || state.storeHands.right?.paid || (state.groceryBag && !state.groceryBasket))) { if (dropHeld(state)) state.dropQueued = false; }
     if (state.interactQueued && !state.scooter.riding && pickUpNear(state)) state.interactQueued = false;
     stepInventory(state);
   }, -0.8);
@@ -269,7 +269,7 @@ export function InventoryWorld({ state }: { state: GameState }) {
     const offFloor = !state.level || state.level.floor < 2, khr = state.life.kitchen.hands;
     let kind: Thing | null = state.heldTrash ?? heldKind(state) ?? (state.storeHands.right?.kind ?? null) ?? (offFloor && khr.right ? khr.right.ware as Thing : null);
     if (kind) kind = shownAs(kind);
-    if (act?.kind === "pickup" && act.done && act.item === "bottle") kind = "bottle";
+    if (act?.kind === "pickup" && act.done && act.item === "bottle" && !act.left) kind = "bottle";
     const fore = state.avatar.body[11];
     const g = held.current;
     if (g) {
@@ -305,7 +305,10 @@ export function InventoryWorld({ state }: { state: GameState }) {
     }
     {
       const khl = state.life.kitchen.hands.left, offF = !state.level || state.level.floor < 2;
-      const gl = heldL.current, foreL0 = state.avatar.body[9], k = state.storeHands.left ? shownAs(state.storeHands.left.kind) : offF && khl ? khl.ware as Thing : null;
+      const gl = heldL.current, foreL0 = state.avatar.body[9];
+      // (An empty picked up into the left hand shows once it's in hand.)
+      const actP = state.invAct, pickingL = actP?.kind === "pickup" && actP.left && actP.done ? (actP.item as Thing) : null;
+      const k = state.heldTrashL ?? pickingL ?? (state.storeHands.left ? shownAs(state.storeHands.left.kind) : offF && khl ? khl.ware as Thing : null);
       if (gl) {
         const vis = !!k && !!foreL0 && !state.home && !state.accident && state.health > 0;
         gl.visible = vis;
@@ -313,8 +316,8 @@ export function InventoryWorld({ state }: { state: GameState }) {
           if (shownL.current !== k) { shownL.current = k; partsL.current.forEach((p, kk) => { p.visible = kk === k; }); }
           foreL0.updateWorldMatrix(true, false); handWorld(foreL0, gl.position);
           tmp.e.set(0, state.rotY, 0, "YXZ"); gl.quaternion.setFromEuler(tmp.e);
-          if (k === "water" || k === "orangeJuice" || k === "appleJuice") gl.position.y -= 0.07;
-          if (k === "cola" || k === "lemonSoda" || k === "energy") gl.position.y -= 0.05;
+          if (k === "water" || k === "bottle" || k === "orangeJuice" || k === "appleJuice") gl.position.y -= 0.07;
+          if (k === "cola" || k === "lemonSoda" || k === "energy" || k === "can") gl.position.y -= 0.05;
           if (isCandy(k)) gl.position.y -= 0.03;
           const actL = state.invAct, headL = state.avatar.body[3];
           if (actL && actL.kind === "drink" && actL.fromHand === "left" && headL) tipToMouth(gl, k, headL, state.rotY, drinkTip(state.simulationTime - actL.at));

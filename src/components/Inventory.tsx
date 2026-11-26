@@ -28,7 +28,7 @@ export function InventoryButton({ state }: { state: GameState }) {
           {k && <span className="inventory-name">{itemInfo(k).name}</span>}
         </button>)}
       </div>
-      {state.heldTrash && <p className="inventory-note">Holding an empty {state.heldTrash === "can" ? "can" : "bottle"}: press Q to put it down.</p>}
+      {(state.heldTrash ?? state.heldTrashL) && <p className="inventory-note">Holding an empty {(state.heldTrash ?? state.heldTrashL) === "can" ? "can" : "bottle"}: press Q to put it down.</p>}
     </div>
   </div>;
 }

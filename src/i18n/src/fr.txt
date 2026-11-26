@@ -1114,3 +1114,5 @@
 1166|LIBÈRE TES MAINS POUR FAIRE LA VAISSELLE
 1167|E JETER LA BOUTEILLE VIDE
 1168|E JETER LA CANETTE VIDE
+1169|Paie-le ou repose-le d'abord
+1170|Les articles du magasin retournent à leur place tant qu'ils ne sont pas payés.

@@ -247,10 +247,11 @@ export class KitchenRun {
     if (near(K.trashStand, 0.8, K.trash) && !claimed("bin")) {
       this.lastStand = K.trashStand;
       // An empty bottle or can in hand: into the bin.
-      if (s.heldTrash) {
-        const what = s.heldTrash === "can" ? "CAN" : "BOTTLE";
+      const empty = s.heldTrash ?? s.heldTrashL;
+      if (empty) {
+        const what = empty === "can" ? "CAN" : "BOTTLE", hand = s.heldTrash ? "right" : "left";
         return { at: [K.trash[0], 1.05, K.trash[2]], label: `E  THROW THE EMPTY ${what} AWAY`, act: () => {
-          this.go(c, tossInBin(fl, from, c.yaw, this.carry(s)), (e) => { if (e === "tossed") s.heldTrash = null; }, ["bin"]);
+          this.go(c, tossInBin(fl, from, c.yaw, this.carry(s), hand), (e) => { if (e === "tossed") { if (hand === "right") s.heldTrash = null; else s.heldTrashL = null; } }, ["bin"]);
         } };
       }
       const burnt = (["right", "left"] as const).find((x) => h[x]?.burnt && h[x]?.food);

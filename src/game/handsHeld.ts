@@ -10,6 +10,7 @@ export function holding(s: GameState, side: "left" | "right"): string | null {
   if (side === "left") {
     if (s.hands.left) return "food";
     if (s.groceryBag) return "the grocery bag";
+    if (s.heldTrashL) return s.heldTrashL === "can" ? "an empty can" : "an empty bottle";
     if (k) return k.ware;
     return null;
   }
@@ -24,7 +25,7 @@ export const handFree = (s: GameState, side: "left" | "right") => holding(s, sid
 /** Something other than kitchen things in a hand. */
 export function holdingOther(s: GameState, side: "left" | "right") {
   const k = s.life.kitchen.hands[side];
-  return !k && holding(s, side) !== null || (!!k && (side === "left" ? !!(s.hands.left || s.groceryBag) : !!(s.hands.right || s.heldSlot !== null || s.heldTrash || s.groceryBasket)));
+  return !k && holding(s, side) !== null || (!!k && (side === "left" ? !!(s.hands.left || s.groceryBag || s.heldTrashL) : !!(s.hands.right || s.heldSlot !== null || s.heldTrash || s.groceryBasket)));
 }
 /** Anything in either hand. */
 export const handsBusy = (s: GameState) => holding(s, "left") !== null || holding(s, "right") !== null;

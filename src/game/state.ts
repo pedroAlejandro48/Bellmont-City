@@ -168,8 +168,12 @@ export type GameState = {
   heldSlot: number | null;
   /** Trash in the right hand (an emptied bottle): it can't go in the inventory, only be put down (Q). */
   heldTrash: "bottle" | "can" | null;
+  /** An empty bottle or can in the left hand (picked up with the right hand full, or passed over). */
+  heldTrashL: "bottle" | "can" | null;
+  /** A thing to take out of the inventory once the hands are ready (after passing or putting down what was in the right). */
+  invNext: number | null;
   /** Doing something with a thing from the inventory: eating or drinking it, putting it down, picking one up. */
-  invAct: { kind: "eat" | "drink" | "drop" | "pickup"; at: number; /** Eaten or put down from a hand (bought, not in the inventory). */ fromHand?: "left" | "right"; item: ItemKind | "bottle" | "can" | "groceryBag"; target: THREE.Vector3 | null; done: boolean; ground?: number; /** Put down from a kitchen hand (an empty pot, plate…), not the inventory. */ kitchenHand?: "left" | "right"; /** Onto a table: the top's height (world). */ topY?: number } | null;
+  invAct: { kind: "eat" | "drink" | "drop" | "pickup" | "pass"; at: number; /** Picked up into (or put down from) the left hand. */ left?: boolean; /** Eaten or put down from a hand (bought, not in the inventory). */ fromHand?: "left" | "right"; item: ItemKind | "bottle" | "can" | "groceryBag"; target: THREE.Vector3 | null; done: boolean; ground?: number; /** Put down from a kitchen hand (an empty pot, plate…), not the inventory. */ kitchenHand?: "left" | "right"; /** Onto a table: the top's height (world). */ topY?: number } | null;
   /** Things from inventories lying on the ground (this player's world only); a grocery bag keeps what's in it. */
   groundItems: { id: number; kind: ItemKind | "bottle" | "can" | "groceryBag"; x: number; z: number; y?: number; yaw: number; at: number; contents?: ItemKind[] }[];
   /** A shopping basket in the right hand (what's in it), or null. */
@@ -405,7 +409,7 @@ export function createState(save: SaveData): GameState {
     shop: null,
     inventoryOpen: false,
     heldSlot: null,
-    heldTrash: null,
+    heldTrash: null, heldTrashL: null, invNext: null,
     invAct: null,
     groundItems: [],
     groceryBasket: null, groceryAsk: null, storeHands: { left: null, right: null },
@@ -456,7 +460,7 @@ export function createState(save: SaveData): GameState {
   const h = save.held;
   if (h) {
     if (h.slot !== null && h.slot > 0 && s.life.inventory[h.slot]) s.heldSlot = h.slot;
-    s.heldTrash = h.trash;
+    s.heldTrash = h.trash; s.heldTrashL = h.trashL ?? null;
     if (h.bag) s.groceryBag = h.bag.filter(isItemKind);
     for (const side of ["left", "right"] as const) { const k = side === "left" ? h.left : h.right; if (k && isItemKind(k)) s.storeHands[side] = { kind: k, paid: true }; }
   }
@@ -505,7 +509,7 @@ export function toSave(s: GameState): SaveData {
     benchSeat: s.bench?.phase === "stand" ? null : s.bench?.seat ?? null,
     apt: aptSave(s),
     ground: s.groundItems.map((g) => ({ kind: g.kind, x: r3(g.x), z: r3(g.z), ...(g.y !== undefined ? { y: r3(g.y) } : {}), yaw: r3(g.yaw), ...(g.contents ? { contents: g.contents } : {}) })),
-    held: { slot: s.heldSlot, trash: s.heldTrash, bag: s.groceryBag, left: s.storeHands.left?.paid ? s.storeHands.left.kind : null, right: s.storeHands.right?.paid ? s.storeHands.right.kind : null },
+    held: { slot: s.heldSlot, trash: s.heldTrash, trashL: s.heldTrashL, bag: s.groceryBag, left: s.storeHands.left?.paid ? s.storeHands.left.kind : null, right: s.storeHands.right?.paid ? s.storeHands.right.kind : null },
     food: foodSave(s),
     scooter: { pos: [s.scooter.pos.x, s.scooter.pos.y, s.scooter.pos.z], yaw: s.scooter.yaw, fallen: s.scooter.fallen, riding: s.scooter.riding },
     ...(s.accident ? { accident: { phase: s.accident.phase, remaining: Math.max(0, s.accident.phase === "rising" ? GET_UP_SECONDS - (s.simulationTime - (s.accident.riseStartedAt ?? 0)) : KNOCKDOWN_SECONDS - (s.simulationTime - s.accident.startedAt)), direction: s.accident.direction, seed: s.accident.seed } } : { accident: null }),

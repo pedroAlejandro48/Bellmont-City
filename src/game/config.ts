@@ -571,7 +571,7 @@ export type SaveData = {
   food?: SavedPack[];
 };
 export type SavedGround = { kind: string; x: number; z: number; y?: number; yaw: number; contents?: string[] };
-export type SavedHeld = { slot: number | null; trash: "bottle" | "can" | null; bag: string[] | null; left?: string | null; right?: string | null };
+export type SavedHeld = { slot: number | null; trash: "bottle" | "can" | null; trashL?: "bottle" | "can" | null; bag: string[] | null; left?: string | null; right?: string | null };
 export type SavedPack = { where: "held" | "ground"; hand: "left" | "right"; key: string; kind: "bag" | "cup" | "big"; bags: number; cups: number; items: string[]; bottle?: boolean; x: number; y: number; z: number; yaw: number };
 export type SavedApt = { building: string; floor: number; x: number; z: number; yaw: number; outside: [number, number]; outsideYaw: number };
 /** Every character starts with this much money. */

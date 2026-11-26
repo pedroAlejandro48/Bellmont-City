@@ -1167,3 +1167,5 @@
 1166|LIBERA LAS MANOS PARA FREGAR
 1167|E TIRAR LA BOTELLA VACÍA
 1168|E TIRAR LA LATA VACÍA
+1169|Págalo o devuélvelo primero
+1170|Lo de la tienda vuelve a su sitio hasta que lo pagues.

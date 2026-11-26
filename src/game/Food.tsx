@@ -318,7 +318,7 @@ export function Food({ state }: { state: GameState }) {
     const startEating = (pk: FoodPack) => {
       if (mm.justAte) return "wait";
       // Nothing else in hand (a thing from the inventory, the grocery bag, kitchen things): put it down first.
-      if (state.heldSlot !== null || state.heldTrash || state.groceryBag || state.groceryBasket || state.life.kitchen.hands.left || state.life.kitchen.hands.right) {
+      if (state.heldSlot !== null || state.heldTrash || state.heldTrashL || state.groceryBag || state.groceryBasket || state.life.kitchen.hands.left || state.life.kitchen.hands.right) {
         if (st - (mm.handsNagAt ?? -99) > 6) { mm.handsNagAt = st; toast(state, "Your hands are full", "warn", "Put down what you're holding (Q) before eating."); }
         return "wait";
       }

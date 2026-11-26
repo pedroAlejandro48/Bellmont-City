@@ -262,6 +262,8 @@ function GroceryStore({ state, layout }: { state: GameState; layout: VenueLayout
           const src = srcs.find((sr) => Math.hypot(lx - sr.stand[0], lz - sr.stand[1]) < 1.25 && facesAt(yaw, lx, lz, sr.take[0], sr.take[2]));
           // A free hand takes one (no basket): the right first, then the left. Both full: nothing more.
           const hand = !state.storeHands.right && handFree(state, "right") ? "right" : !state.storeHands.left && handFree(state, "left") ? "left" : null;
+          // (Both hands full, no basket: nothing more until a hand's free.)
+          if (src && !hand) { const [x, z] = world(src.take[0], src.take[2]); Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: "YOUR HANDS ARE FULL" }); if (state.interactQueued) state.interactQueued = false; }
           if (src && hand) {
             const [x, z] = world(src.take[0], src.take[2]); Object.assign(p, { visible: true, x, y: SIDEWALK_H + src.take[1] + 0.45, z, label: `E  ${SIGN_NAME}${itemInfo(src.kind).name}` });
             if (state.interactQueued) { state.interactQueued = false; start(makePlan(handSegs([lx, lz], yaw, src, hand, !!state.groceryBag)), "handPick", { src, hand }); }

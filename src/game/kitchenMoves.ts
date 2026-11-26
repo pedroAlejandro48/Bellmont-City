@@ -277,14 +277,15 @@ export function dumpInBin(fl: AptFloor, from: [number, number], fromYaw: number,
 }
 /** At the bin: the lid lifts, the right hand goes out over it and lets go of the empty bottle or can in it (event
  * "tossed"), the hand comes back and the lid drops. */
-export function tossInBin(fl: AptFloor, from: [number, number], fromYaw: number, c: Carry): KSeg[] {
-  const [x, z] = fl.kitchen.trashStand, t = fl.kitchen.trash, hold = carryAt(x, z, 0, 1), over: V3 = [t[0] + 0.02, t[1] + 0.52, t[2] - 0.05];
-  const left = c.left ? R(carryAt(x, z, 0, -1), 1, "low") : null;
+export function tossInBin(fl: AptFloor, from: [number, number], fromYaw: number, c: Carry, hand: "left" | "right" = "right"): KSeg[] {
+  const [x, z] = fl.kitchen.trashStand, t = fl.kitchen.trash, side = hand === "right" ? 1 : -1, hold = carryAt(x, z, 0, side), over: V3 = [t[0] + 0.02, t[1] + 0.52, t[2] - 0.05];
+  const other = hand === "right" ? (c.left ? R(carryAt(x, z, 0, -1), 1, "low") : null) : (c.right ? R(carryAt(x, z, 0, 1), 1, "low") : null);
+  const pose = (lean: number, r: Reach | null, lid: number): KPose => ({ x, z, yaw: 0, crouch: 0, lean, left: hand === "left" ? r : other, right: hand === "right" ? r : other, lid });
   return [
     walk(from, fromYaw, [x, z], 0, c),
-    { dur: 0.55, pose: (k) => { const e = smooth(k); return { x, z, yaw: 0, crouch: 0, lean: 0.15 * e, left, right: R(lerp3(hold, over, e), 1, "out"), lid: e }; } },
-    { dur: 0.3, end: "tossed", pose: () => ({ x, z, yaw: 0, crouch: 0, lean: 0.15, left, right: R(over, 1, "out"), lid: 1 }) },
-    { dur: 0.6, pose: (k) => { const e = smooth(k); return { x, z, yaw: 0, crouch: 0, lean: 0.15 * (1 - e), left, right: R(lerp3(over, hold, e), 1 - e, e > 0.5 ? "low" : "out"), lid: 1 - e }; } },
+    { dur: 0.55, pose: (k) => { const e = smooth(k); return pose(0.15 * e, R(lerp3(hold, over, e), 1, "out"), e); } },
+    { dur: 0.3, end: "tossed", pose: () => pose(0.15, R(over, 1, "out"), 1) },
+    { dur: 0.6, pose: (k) => { const e = smooth(k); return pose(0.15 * (1 - e), R(lerp3(over, hold, e), 1 - e, e > 0.5 ? "low" : "out"), 1 - e); } },
   ];
 }
 export { still };

@@ -1114,3 +1114,5 @@
 1166|HÄNDE FREI MACHEN ZUM SPÜLEN
 1167|E LEERE FLASCHE WEGWERFEN
 1168|E LEERE DOSE WEGWERFEN
+1169|Erst bezahlen oder zurücklegen
+1170|Dinge aus dem Laden kommen an ihren Platz zurück, bis sie bezahlt sind.

@@ -1114,3 +1114,5 @@
 1166|LIBERA LE MANI PER LAVARE I PIATTI
 1167|E BUTTA LA BOTTIGLIA VUOTA
 1168|E BUTTA LA LATTINA VUOTA
+1169|Prima pagalo o rimettilo a posto
+1170|Gli articoli del negozio tornano al loro posto finché non li paghi.

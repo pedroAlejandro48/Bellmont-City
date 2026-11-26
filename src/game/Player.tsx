@@ -2,7 +2,7 @@ import { fallHurt } from "./roofFall";
 import { APT_FLOORS } from "./apartments";
 import { FLOOR_CLEAR } from "./aptRoom";
 import { skillLevel } from "./life";
-import { USE_SECONDS } from "./invRuntime";
+import { PASS_TIME, USE_SECONDS } from "./invRuntime";
 import { useCharacterColor } from "./characterColor";
 import { ATMS } from "./places";
 import { useFrame } from "@react-three/fiber";
@@ -689,7 +689,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       // Full packs ride at the waist; an empty one (or a number sign) just hangs from a relaxed arm.
       const heavy = (h: typeof state.hands.left) => !!h && h.kind !== "sign" && (h.items?.length ?? 1) > 0;
       const kh = state.life.kitchen.hands;
-      if (heavy(state.hands.left) || grab?.hand === "left" || state.groceryBag || kh.left || state.storeHands.left) { armL.current?.rotation.set(shL, 0, 0.2); foreL.current?.rotation.set(carryElbow(shL), 0, 0); }
+      if (heavy(state.hands.left) || grab?.hand === "left" || state.groceryBag || kh.left || state.storeHands.left || state.heldTrashL) { armL.current?.rotation.set(shL, 0, 0.2); foreL.current?.rotation.set(carryElbow(shL), 0, 0); }
       // A thing from the inventory (or an emptied bottle) is carried the same way in the right hand.
       if (heavy(state.hands.right) || grab?.hand === "right" || state.heldSlot !== null || state.heldTrash || state.groceryBasket || kh.right || state.storeHands.right) { armR.current?.rotation.set(shR, 0, -0.2); foreR.current?.rotation.set(carryElbow(shR), 0, 0); }
       // The phone out: held up in front of the chest, the screen toward the face.
@@ -701,8 +701,9 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       // Setting a thing down on the ground, or picking one up: the right hand goes down to it.
       if (invLow && inv?.target) {
         root.current?.updateMatrixWorld(true);
-        // A bag of groceries is set down (and picked up) with the left hand; everything else with the right.
-        const bag = inv.item === "groceryBag";
+        // A bag of groceries is set down (and picked up) with the left hand, and so is an empty going into (or out of)
+        // the left hand; everything else with the right.
+        const bag = inv.item === "groceryBag" || !!inv.left;
         const at = new THREE.Vector3(inv.target.x, groundAt(state, inv.target.x, inv.target.z) + (bag ? 0.38 : 0.2), inv.target.z);
         if (bag) reachArm(armL.current, foreL.current, at, POLES.low(1), dropReach(invT));
         else reachArm(armR.current, foreR.current, at, POLES.low(-1), dropReach(invT));
@@ -719,8 +720,15 @@ export function Player({ state, city }: { state: GameState; city: City }) {
           else reachArm(armR.current, foreR.current, at, POLES.low(-1), dropReach(dropT));
         }
       }
-      const carryL = heavy(state.hands.left) || grab?.hand === "left" || !!state.groceryBag || !!kh.left || !!state.storeHands.left || (invLow && inv?.item === "groceryBag");
-      const carryR = heavy(state.hands.right) || grab?.hand === "right" || state.heldSlot !== null || !!state.heldTrash || !!state.groceryBasket || !!kh.right || !!state.storeHands.right || state.phone.open || (invLow && inv?.item !== "groceryBag");
+      // Passing something from the right hand to the left: both hands meet in front of the chest, and part again.
+      if (inv?.kind === "pass" && root.current) {
+        root.current.updateMatrixWorld(true);
+        const k = Math.sin(Math.PI * Math.min(1, invT / PASS_TIME));
+        reachArm(armR.current, foreR.current, root.current.localToWorld(new THREE.Vector3(-0.02, 1.05, 0.32)), POLES.low(-1), k);
+        reachArm(armL.current, foreL.current, root.current.localToWorld(new THREE.Vector3(0.02, 1.05, 0.32)), POLES.low(1), k);
+      }
+      const carryL = heavy(state.hands.left) || grab?.hand === "left" || !!state.groceryBag || !!kh.left || !!state.storeHands.left || !!state.heldTrashL || (invLow && (inv?.item === "groceryBag" || !!inv?.left));
+      const carryR = heavy(state.hands.right) || grab?.hand === "right" || state.heldSlot !== null || !!state.heldTrash || !!state.groceryBasket || !!kh.right || !!state.storeHands.right || state.phone.open || (invLow && inv?.item !== "groceryBag" && !inv?.left);
       if (tk > 0.01 && !dropping && root.current) tiredArms(carryL, carryR, tk, dt);
       else s.plant = null;
     } else s.plant = null;
