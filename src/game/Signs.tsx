@@ -23,34 +23,39 @@ export function exitTexture() {
   return (EXIT = finish(c));
 }
 
-/** The green stairs sign: a figure running down a flight of stairs, EXIT, an arrow down to the right. */
+/** The green stairs sign (3:2): a figure running down to the right — leaning into the run, the leg behind lifted
+ * straight back, the leg ahead straight down onto the first of three steps — EXIT, and a block arrow down to the
+ * right. */
 export function stairsTexture() {
   if (STAIRS) return STAIRS;
-  const c = document.createElement("canvas"); c.width = 512; c.height = 512;
+  const c = document.createElement("canvas"); c.width = 600; c.height = 400;
   const g = c.getContext("2d")!, W = "#f4fbf6";
-  g.fillStyle = "#ffffff"; g.fillRect(0, 0, 512, 512);
-  g.fillStyle = "#0f7f55"; rounded(g, 8, 8, 496, 496, 44); g.fill();
-  g.strokeStyle = W; g.lineWidth = 10; rounded(g, 26, 26, 460, 460, 30); g.stroke();
-  // EXIT.
-  g.fillStyle = W; g.font = "900 120px 'Arial Narrow', Arial, sans-serif"; g.textAlign = "left"; g.textBaseline = "alphabetic";
-  g.save(); g.scale(0.85, 1); g.fillText("EXIT", 238 / 0.85, 160); g.restore();
-  // The stairs: a line stepping down to the right.
-  g.lineWidth = 14; g.lineJoin = "miter"; g.lineCap = "butt";
-  g.beginPath(); g.moveTo(50, 300); g.lineTo(150, 300);
-  for (let i = 0; i < 4; i++) { g.lineTo(150 + i * 48, 345 + i * 45); g.lineTo(198 + i * 48, 345 + i * 45); }
-  g.lineTo(342, 480); g.stroke();
-  // The figure, running down: head, body leaning back, arms out, one leg forward down a step, one behind.
-  g.lineCap = "round"; g.lineJoin = "round";
-  g.beginPath(); g.arc(178, 112, 34, 0, Math.PI * 2); g.fill();
-  const limb = (pts: [number, number][], w: number) => { g.lineWidth = w; g.beginPath(); g.moveTo(pts[0]![0], pts[0]![1]); for (const [x, y] of pts.slice(1)) g.lineTo(x, y); g.stroke(); };
-  limb([[168, 160], [200, 250]], 44);                          // the body
-  limb([[176, 170], [128, 196], [102, 230]], 24);              // the arm behind
-  limb([[184, 172], [236, 200], [282, 196]], 24);              // the arm ahead
-  limb([[200, 250], [158, 276], [92, 276]], 28);               // the leg behind
-  limb([[200, 250], [244, 300], [252, 342]], 28);              // the leg ahead, down a step
-  // The arrow, down to the right.
-  g.lineCap = "butt"; limb([[320, 300], [420, 400]], 30);
-  g.beginPath(); g.moveTo(448, 428); g.lineTo(448, 330); g.lineTo(350, 428); g.closePath(); g.fill();
+  g.fillStyle = "#ffffff"; g.fillRect(0, 0, 600, 400);
+  g.fillStyle = "#0f7f55"; rounded(g, 6, 6, 588, 388, 36); g.fill();
+  g.strokeStyle = W; g.lineWidth = 8; rounded(g, 20, 20, 560, 360, 24); g.stroke();
+  // EXIT, top right.
+  g.fillStyle = W; g.font = "900 112px 'Arial Narrow', Arial, sans-serif"; g.textAlign = "left"; g.textBaseline = "alphabetic";
+  g.save(); g.scale(0.82, 1); g.fillText("EXIT", 300 / 0.82, 135); g.restore();
+  // Three steps down to the right from a landing.
+  g.lineWidth = 11; g.lineJoin = "miter"; g.lineCap = "butt";
+  g.beginPath(); g.moveTo(34, 262); g.lineTo(178, 262);
+  for (let i = 0; i < 3; i++) { g.lineTo(178 + i * 62, 262 + (i + 1) * 36); g.lineTo(240 + i * 62, 262 + (i + 1) * 36); }
+  g.lineTo(364, 372); g.stroke();
+  // The figure.
+  const limb = (pts: [number, number][], w: number) => { g.lineCap = "round"; g.lineJoin = "round"; g.lineWidth = w; g.beginPath(); g.moveTo(pts[0]![0], pts[0]![1]); for (const [x, y] of pts.slice(1)) g.lineTo(x, y); g.stroke(); };
+  g.beginPath(); g.arc(196, 66, 27, 0, Math.PI * 2); g.fill();                 // the head, ahead of the hips
+  const neck: [number, number] = [176, 112], hip: [number, number] = [138, 196];
+  limb([neck, hip], 40);                                                         // the body, leaning forward (right)
+  limb([[170, 120], [128, 132], [92, 160]], 20);                                 // the arm behind
+  limb([[178, 122], [218, 150], [262, 146]], 20);                                // the arm ahead
+  limb([hip, [100, 222], [56, 236]], 24);                                        // the leg behind, lifted back
+  limb([hip, [200, 290]], 24);                                                   // the leg ahead, straight, on the first step
+  g.fillRect(186, 284, 34, 12);                                                  // its foot on the step
+  // The arrow, down to the right: a shaft and a big triangular head.
+  g.save(); g.translate(392, 214); g.rotate(Math.PI / 4);
+  g.fillRect(0, -15, 96, 30);
+  g.beginPath(); g.moveTo(88, -52); g.lineTo(150, 0); g.lineTo(88, 52); g.closePath(); g.fill();
+  g.restore();
   return (STAIRS = finish(c));
 }
 

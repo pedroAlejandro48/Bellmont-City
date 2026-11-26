@@ -641,6 +641,19 @@ function FloorInterior({ actorsAt, fl, state, m, door, bedDoor, fridgeDoor, clos
   const inside0 = wallZ + INNER_WALL;
   const floorGeos = useMemo(() => ({ main: scaledPlane(maxX - divX, maxZ - inside0, FLOORS().planks.size), bed: scaledPlane(divX - minX, maxZ - inside0, FLOORS().carpet.size) }), [minX, maxX, divX, maxZ, inside0]);
   useEffect(() => () => { floorGeos.main.dispose(); floorGeos.bed.dispose(); }, [floorGeos]);
+  // The hallway's wall on the shaft's side: one piece end to end, with the elevator's doorway and the stairwell's in it
+  // (just proud of the stairwell's own wall there, and just inside its doorway: only this one shows from the hallway).
+  const hallWallGeo = useMemo(() => {
+    const e0 = minX + SHAFT / 2 - LIFT_DOOR / 2, e1 = minX + SHAFT / 2 + LIFT_DOOR / 2, [o0, o1] = landingOpening(fl.stairs), i = 0.004;
+    const sh = new THREE.Shape();
+    sh.moveTo(minX, 0); sh.lineTo(e0, 0); sh.lineTo(e0, 2.3); sh.lineTo(e1, 2.3); sh.lineTo(e1, 0);
+    sh.lineTo(o0 + i, 0); sh.lineTo(o0 + i, 2.3 - i); sh.lineTo(o1 - i, 2.3 - i); sh.lineTo(o1 - i, 0);
+    sh.lineTo(maxX, 0); sh.lineTo(maxX, HT); sh.lineTo(minX, HT); sh.closePath();
+    const depth = SW - 0.01 + 0.005, g = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: false });
+    g.translate(0, 0, hallZ[0] + 0.005 - depth);
+    return g;
+  }, [minX, maxX, HT, hallZ, fl.stairs]);
+  useEffect(() => () => hallWallGeo.dispose(), [hallWallGeo]);
   const panels = (pieces: { a0: number; a1: number; y0: number; y1: number }[], place: (a: number) => [number, number], ry: number, mat: THREE.Material) => pieces.map((r, i) => {
     const [x, z] = place((r.a0 + r.a1) / 2);
     return <mesh key={i} position={[x, (r.y0 + r.y1) / 2, z]} rotation-y={ry} material={mat} receiveShadow><planeGeometry args={[r.a1 - r.a0, r.y1 - r.y0]} /></mesh>;
@@ -698,9 +711,7 @@ function FloorInterior({ actorsAt, fl, state, m, door, bedDoor, fridgeDoor, clos
     {/* The shaft and the storage behind the hallway: their walls to the hallway. */}
     {/* (Side by side with no overlap, and up into the slab above, so no two faces share a plane.) */}
     {/* (Past the stairwell: the stairwell draws its own wall to the hallway, with the doorway onto its landing.) */}
-    <mesh position={[(fl.stairs.xe + 0.15 + maxX) / 2, HT / 2, hallZ[0] - 0.06]} material={m.hallWall}>{B([maxX - fl.stairs.xe - 0.15, HT, 0.12])}</mesh>
-    {[-1, 1].map((s) => <mesh key={s} position={[minX + SHAFT / 2 + s * (LIFT_DOOR / 2 + (SHAFT / 2 - LIFT_DOOR / 2) / 2), HT / 2, hallZ[0] - 0.06]} material={m.hallWall}>{B([SHAFT / 2 - LIFT_DOOR / 2, HT, 0.12])}</mesh>)}
-    <mesh position={[minX + SHAFT / 2, (HT + 2.3) / 2, hallZ[0] - 0.06]} material={m.hallWall}>{B([LIFT_DOOR, HT - 2.3, 0.12])}</mesh>
+    <mesh geometry={hallWallGeo} material={m.hallWall} receiveShadow />
     <group position={[minX + SHAFT / 2, 0, hallZ[0]]}>
       {/* The steel frame lines the doorway right through the wall, overlapping it; a steel sill on the floor. */}
       {/* (The posts stop where the header starts: no two faces overlap.) */}

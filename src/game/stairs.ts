@@ -168,12 +168,16 @@ export function stepFeet(p: StairPlan, feet: Feet, body: { x: number; y: number;
       // Up or down (forward or backward): the foot that's furthest behind goes onto the next tread ahead of the body.
       const behind = (f: FootPlant) => -((f.x - body.x) * ux + (f.z - body.z) * uz);
       const bl = behind(L), br = behind(R), last = bl > br ? "L" : "R";
+      // (Going down: the foot behind leaves its step as the body comes over it, and goes out onto the next one ahead,
+      // so the feet stay under the body rather than trailing behind it.)
+      const gAhead = stairGround(p, body.x + ux * 0.2, body.z + uz * 0.2, body.y + 0.35, true), down = gAhead !== null && gAhead < body.y - 0.02;
       // (Going up with the hips on the slope: the foot behind also goes as soon as it can no longer reach them.)
       const lost = hipY !== undefined && footReach(body, last === "L" ? L : R, last === "L" ? 1 : -1) < hipY + 0.005;
-      if (Math.max(bl, br) > TREAD * 0.45 || lost) {
+      if (Math.max(bl, br) > TREAD * (down ? 0.05 : 0.45) || lost) {
         const which = last, side = which === "L" ? 1 : -1, [hx, hz] = hipAt(side);
         // (Climbing: a little further ahead and quicker, so the foot that stays keeps up with the hips.)
-        const reach = hipY !== undefined ? 0.95 : 0.75, dur = hipY !== undefined ? Math.max(0.26, Math.min(0.4, TREAD / Math.max(0.25, speed))) : Math.max(0.3, Math.min(0.55, (TREAD * 1.4) / Math.max(0.25, speed)));
+        const quick = hipY !== undefined || down;
+        const reach = hipY !== undefined ? 0.95 : down ? 1.0 : 0.75, dur = quick ? Math.max(0.26, Math.min(0.4, TREAD / Math.max(0.25, speed))) : Math.max(0.3, Math.min(0.55, (TREAD * 1.4) / Math.max(0.25, speed)));
         plant(which, hx + ux * TREAD * reach, hz + uz * TREAD * reach, dur);
       }
     }

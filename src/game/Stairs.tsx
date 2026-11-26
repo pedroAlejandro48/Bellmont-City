@@ -105,8 +105,8 @@ function Stairwell({ b }: { b: Building }) {
     <mesh geometry={geo.rails} material={mats.rails} />
     <mesh geometry={geo.lights} material={mats.lights} />
     {/* Over the doorway onto the stairs, on the hallway's side of floors 2–15: the green stairs sign. */}
-    {Array.from({ length: APT_FLOORS - 1 }, (_, i) => <mesh key={`s${i}`} position={[plan.x0 + LAND_W / 2, floorY(i + 2) + 2.56, plan.z1 + SW + 0.006]}>
-      <planeGeometry args={[0.4, 0.4]} /><meshBasicMaterial map={stairsTexture()} toneMapped={false} />
+    {Array.from({ length: APT_FLOORS - 1 }, (_, i) => <mesh key={`s${i}`} position={[plan.x0 + LAND_W / 2, floorY(i + 2) + 2.56, plan.z1 + SW + 0.011]}>
+      <planeGeometry args={[0.54, 0.36]} /><meshBasicMaterial map={stairsTexture()} toneMapped={false} />
     </mesh>)}
     {/* Each floor's number on a plate on the shaft's wall, by its landing (lit a little). */}
     {Array.from({ length: APT_FLOORS }, (_, i) => <mesh key={i} position={[plan.x0 + 0.012, floorY(i + 1) + 1.65, (plan.z0 + plan.z1) / 2]} rotation-y={Math.PI / 2}>
@@ -180,6 +180,10 @@ export function Stairs({ state, city }: { state: GameState; city: City }) {
     const sp = Math.hypot(lv.x, lv.z), ahead = sp > 0.12 ? stairGround(plan, lx + (lv.x / sp) * 0.2, lz + (lv.z / sp) * 0.2, p.y + 0.35, true) : null;
     const up = ahead !== null && ahead > p.y + 0.02, slope = p.y + 0.95 - CLIMB_CROUCH;
     feet.current = stepFeet(plan, feet.current, body, dt, up ? slope : undefined);
+    if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") {
+      const fx = Math.sin(ly), fz = Math.cos(ly), fwd = (q: { x: number; z: number }) => +((q.x - lx) * fx + (q.z - lz) * fz).toFixed(2);
+      (window as unknown as { __stair?: unknown }).__stair = { L: fwd(feet.current.L), R: fwd(feet.current.R), up };
+    }
     const legs = legsToFeet({ x: lx, z: lz, yaw: ly }, footNow(feet.current.L), footNow(feet.current.R));
     // The hips (eased). Going up: on the slope, as far as the planted feet still reach. Otherwise as high as the
     // lower-reaching foot allows — that leg straight, the other bent as its step needs (on one step both straight).
