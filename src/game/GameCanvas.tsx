@@ -32,7 +32,7 @@ import { OrderMenu } from "@/components/OrderMenu";
 import { PhysicsGround, RestaurantWalls } from "./PhysicsGround";
 import type { GameExtras } from "./CloudGame";
 import { lookSupport } from "./mouseLook";
-import { TouchControls } from "./TouchControls";
+import { DrinkPill, TouchControls } from "./TouchControls";
 import { LifeWorld } from "./LifeWorld";
 import { Billboards } from "./Billboards";
 import { RoofAccess } from "./Roof";
@@ -285,6 +285,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
       if (e.code === "KeyE" && !e.repeat) { state.interactQueued = true; e.preventDefault(); }
       // Q: put down whatever is in the hands.
       if (e.code === "KeyQ" && !e.repeat) { state.dropQueued = true; state.kitchenQ = true; e.preventDefault(); }
+      if (e.code === "KeyF" && !e.repeat) { state.drinkQueued = true; e.preventDefault(); }
       // Seated at a restaurant table, Space stands up; during a scripted movement nothing else applies.
       if (state.seat || state.script) { if (e.code === "Space" && !e.repeat) state.standQueued = true; return; }
       if (state.bench) return;
@@ -363,6 +364,7 @@ export function GameCanvas({ state, onSignOut, onDeath, onReset, saving, exitLab
       </div>}
       {fpHint && <div className="pointer-events-none fixed left-1/2 top-1/2 z-20 -translate-x-1/2 translate-y-10 rounded-md bg-black/55 px-3 py-1.5 text-xs font-semibold text-white">Press any key or click to look around freely</div>}
       {!dead && <TouchControls state={state} />}
+      {!dead && <DrinkPill state={state} />}
       <OrderMenu state={state} />
       <MiniMap state={state} />
       <Toasts state={state} />

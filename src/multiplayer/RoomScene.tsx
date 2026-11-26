@@ -19,7 +19,7 @@ import { makeLiftLink } from "./liftLink";
 import { FurnitureSync } from "./FurnitureSync";
 import { HospitalSync } from "./HospitalSync";
 import { GrocerySync } from "./GrocerySync";
-import { GroceryBagModel, heldWire, ItemModel, useLooks, type HeldWire, type Thing } from "@/game/InventoryWorld";
+import { GroceryBagModel, drinkTip, heldWire, tipToMouth, ItemModel, useLooks, type HeldWire, type Thing } from "@/game/InventoryWorld";
 import { Basket, type InBasket } from "@/game/Grocery";
 import { handWorld } from "@/game/arms";
 import { bodyColor, playerOf, type Gender } from "@/platform/account";
@@ -248,7 +248,7 @@ function RemoteHeld({ id, remotes, body }: { id: string; remotes: RemotePlayers;
   const looks0 = useLooks();
   const looks = useMemo(() => Object.assign({}, looks0, { basket: new THREE.MeshStandardMaterial({ color: "#d62f3a", roughness: 0.55 }) }), [looks0]);
   const [held, setHeld] = useState<HeldWire>({ r: null, l: null, bag: -1, bk: null });
-  const raw = useRef("");
+  const raw = useRef(""), drinkStart = useRef<number | null>(null);
   const rG = useRef<THREE.Group>(null), lG = useRef<THREE.Group>(null), bagG = useRef<THREE.Group>(null), bkG = useRef<THREE.Group>(null);
   const tmp = useMemo(() => ({ e: new THREE.Euler(), q: new THREE.Quaternion() }), []);
   useFrame(() => {
@@ -270,6 +270,10 @@ function RemoteHeld({ id, remotes, body }: { id: string; remotes: RemotePlayers;
     };
     place(rG.current, foreR, held.r);
     place(lG.current, foreL, held.l);
+    // Drinking: tipped back to their face, the opening at the lips (timed from when it started here).
+    if (held.dr) { drinkStart.current ??= performance.now() / 1000; } else drinkStart.current = null;
+    const head = body.head.current, dg = held.dr === "l" ? lG.current : held.dr === "r" ? rG.current : null, dk = held.dr === "l" ? held.l : held.r;
+    if (dg && head && dk && drinkStart.current !== null) tipToMouth(dg, dk, head, yaw, drinkTip(performance.now() / 1000 - drinkStart.current));
     if (bagG.current && foreL) { foreL.updateWorldMatrix(true, false); handWorld(foreL, bagG.current.position); bagG.current.rotation.set(0, yaw, 0); }
     if (bkG.current && foreR) { foreR.updateWorldMatrix(true, false); handWorld(foreR, bkG.current.position); bkG.current.rotation.set(0, yaw + Math.PI / 2, 0); }
   });

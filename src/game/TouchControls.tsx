@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { GameState } from "./state";
 import { watchTouchMode } from "./touchMode";
+import { drinkInHand } from "./invRuntime";
 
 /** The joystick's travel (px from its centre to the edge the knob can reach). */
 const REACH = 46;
@@ -13,6 +14,7 @@ const REACH = 46;
 export function TouchControls({ state }: { state: GameState }) {
   const [show, setShow] = useState(false);
   useEffect(() => watchTouchMode(setShow), []);
+  const drink = useDrinkInHand(state);
   useEffect(() => { if (!show) state.stick = null; }, [show, state]);
   useEffect(() => () => { state.stick = null; }, [state]);
   if (!show) return null;
@@ -26,6 +28,7 @@ export function TouchControls({ state }: { state: GameState }) {
         if (state.bench || state.scooter.riding || state.scooter.action) return;
         state.jumpQueued = true;
       }} />
+      {drink && <ActionButton label="DRINK" title="Drink (F)" small onPress={() => { if (state.health > 0 && !state.accident) state.drinkQueued = true; }} />}
       <ActionButton label="Q" title="Put down (Q)" onPress={() => { if (state.health > 0 && !state.accident) { state.dropQueued = true; state.kitchenQ = true; } }} />
       <ActionButton label="E" title="Interact (E)" primary onPress={() => {
         if (state.health === 0 || state.accident) return;
@@ -36,10 +39,29 @@ export function TouchControls({ state }: { state: GameState }) {
   </>;
 }
 
-function ActionButton({ label, title, primary, onPress }: { label: string; title: string; primary?: boolean; onPress: () => void }) {
+/** On a computer (no touch controls): a DRINK button above the HUD while there's a drink in hand (F does the same). */
+export function DrinkPill({ state }: { state: GameState }) {
+  const [touch, setTouch] = useState(false);
+  useEffect(() => watchTouchMode(setTouch), []);
+  const drink = useDrinkInHand(state);
+  if (touch || !drink) return null;
+  return <button type="button" className="drink-pill hud-panel pointer-events-auto fixed z-20 flex items-center gap-2 px-4 font-bold tracking-wide text-white"
+    onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); state.drinkQueued = true; }}>
+    <kbd className="rounded bg-white/15 px-1.5 py-0.5 text-xs">F</kbd><span>DRINK</span>
+  </button>;
+}
+
+/** Whether there's a drink in hand (checked a few times a second): the DRINK button shows. */
+export function useDrinkInHand(state: GameState) {
+  const [drink, setDrink] = useState(false);
+  useEffect(() => { const id = window.setInterval(() => setDrink(drinkInHand(state) && !state.invAct), 200); return () => window.clearInterval(id); }, [state]);
+  return drink;
+}
+
+function ActionButton({ label, title, primary, small, onPress }: { label: string; title: string; primary?: boolean; small?: boolean; onPress: () => void }) {
   const [down, setDown] = useState(false);
   return <button type="button" aria-label={title}
-    className={`pointer-events-auto flex h-16 w-16 select-none items-center justify-center rounded-full border-2 font-sans text-2xl font-extrabold shadow-lg transition-transform ${primary ? "border-[#ffb547] bg-[#ffb547]/85 text-[#1b1206]" : "border-white/70 bg-black/45 text-white"} ${down ? "scale-90" : ""}`}
+    className={`pointer-events-auto flex h-16 w-16 select-none items-center justify-center rounded-full border-2 font-sans text-2xl font-extrabold shadow-lg transition-transform ${small ? "!text-xs tracking-wide" : ""} ${primary ? "border-[#ffb547] bg-[#ffb547]/85 text-[#1b1206]" : small ? "border-[#7fd3ff] bg-[#0e5f8a]/80 text-white" : "border-white/70 bg-black/45 text-white"} ${down ? "scale-90" : ""}`}
     style={{ touchAction: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
     onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); setDown(true); onPress(); }}
     onPointerUp={() => setDown(false)} onPointerCancel={() => setDown(false)} onPointerLeave={() => setDown(false)}

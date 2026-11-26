@@ -14,7 +14,7 @@ import { InteractionPrompt } from "./InteractionPrompt";
 import { heldKind } from "./invRuntime";
 import { FRIDGE_DRINKS, FRIDGE_FOOD, fridgeSplit } from "@/components/FridgePanel";
 import { CEILING, CHAIR, ENTER, LEAVE, TABLE, enterLead, enterPose, leaveLead, leavePose, planSit, toLocal, toWorld, worldYaw, type Reach } from "./restaurantRoom";
-import { toast, type GameState, type LiftRiderWire, type Script } from "./state";
+import { toast, type GameState, type LiftRiderWire, type Script, type WorldReach } from "./state";
 import { handWorld } from "./arms";
 import { makeCarpet, makePlanks, scaledPlane } from "./floorTextures";
 import { BathroomThings, newBathLink, type BathLink } from "./Bathroom";
@@ -403,6 +403,25 @@ function Furniture({ f, m }: { f: AptFurniture; m: FMats }) {
  * into the steel frame at the sides). Opening, each folds away into its side of the frame, getting narrower until
  * it's gone; closing is the same, reversed. `open` (0..1) eases both ways.
  */
+/** How long a hand takes to go out to an elevator's call button and back. */
+const PRESS_T = 0.9;
+/** The call button beside an elevator's doors: a steel plate, a white button, and a ring round it — gold while the
+ * car's been called to this floor, grey otherwise (back to grey when it gets here). */
+const RING_GOLD = new THREE.Color("#f2b33d"), RING_GREY = new THREE.Color("#8d9096");
+function CallButton({ called, m }: { called: () => boolean; m: FMats }) {
+  const ring = useRef<THREE.MeshStandardMaterial>(null);
+  useFrame(() => {
+    const r = ring.current; if (!r) return;
+    const on = called();
+    r.color.copy(on ? RING_GOLD : RING_GREY); r.emissive.copy(on ? RING_GOLD : RING_GREY); r.emissiveIntensity = on ? 0.9 : 0;
+  });
+  return <group>
+    <mesh position={[0, 0, 0.01]}>{B([0.12, 0.2, 0.03])}<meshStandardMaterial color="#7d8289" roughness={0.45} metalness={0.5} /></mesh>
+    <mesh position={[0, 0, 0.0255]}><ringGeometry args={[0.026, 0.036, 28]} /><meshStandardMaterial ref={ring} color="#8d9096" roughness={0.4} /></mesh>
+    <mesh position={[0, 0, 0.026]}><circleGeometry args={[0.026, 28]} /><meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={0.15} roughness={0.35} /></mesh>
+  </group>;
+}
+
 function ElevatorDoors({ open, m, inside = false }: { open: () => number; m: FMats; inside?: boolean }) {
   const l = useRef<THREE.Group>(null), r = useRef<THREE.Group>(null);
   // Two steel panels meeting exactly in the middle (a rubber edge on each), each sliding sideways into the wall
@@ -611,7 +630,7 @@ function DoorCasing({ at, rot, m, white = false }: { at: [number, number]; rot: 
 }
 
 /** The floor the player is on: hallway, apartment (two rooms), the walls with real windows, the doors, the furniture. */
-function FloorInterior({ actorsAt, fl, state, m, door, bedDoor, fridgeDoor, closetDoor, elevatorOpen, sheet, lift, bathDoor, bath, kview, lightsOf }: { actorsAt: (key: string) => KitchenActor[]; lightsOf: (key: string) => Lights; kview: KView; bathDoor: () => number; bath: BathLink; lift: () => { floor: number; dir: number }; sheet: SheetLink; fl: AptFloor; state: GameState; m: FMats; door: () => number; bedDoor: () => number; fridgeDoor: () => number; closetDoor: () => number; elevatorOpen: () => number }) {
+function FloorInterior({ actorsAt, fl, state, m, door, bedDoor, fridgeDoor, closetDoor, elevatorOpen, called, sheet, lift, bathDoor, bath, kview, lightsOf }: { called: () => boolean; actorsAt: (key: string) => KitchenActor[]; lightsOf: (key: string) => Lights; kview: KView; bathDoor: () => number; bath: BathLink; lift: () => { floor: number; dir: number }; sheet: SheetLink; fl: AptFloor; state: GameState; m: FMats; door: () => number; bedDoor: () => number; fridgeDoor: () => number; closetDoor: () => number; elevatorOpen: () => number }) {
   const { frame, bounds, windowSide: ws, hallZ, wallZ, divX, bedroomDoor } = fl;
   const { minX, maxX, minZ, maxZ } = bounds;
   const bathLeaf = useRef<THREE.Group>(null), bedLamp = useRef<THREE.Mesh>(null), bedToggle = useRef<THREE.Mesh>(null), bathToggle = useRef<THREE.Mesh>(null);
@@ -719,7 +738,7 @@ function FloorInterior({ actorsAt, fl, state, m, door, bedDoor, fridgeDoor, clos
       <mesh position={[0, 2.33, -0.06]} material={m.steel}>{B([LIFT_DOOR + 0.18, 0.1, 0.18])}</mesh>
       <mesh position={[0, 0.006, -0.06]} material={m.steel}>{B([LIFT_DOOR, 0.012, 0.16])}</mesh>
       <ElevatorDoors open={elevatorOpen} m={m} />
-      <mesh position={[LIFT_DOOR / 2 + 0.3, 1.15, 0.01]} material={m.steel}>{B([0.12, 0.2, 0.03])}</mesh>
+      <group position={[LIFT_DOOR / 2 + 0.3, 1.15, 0]}><CallButton called={called} m={m} /></group>
       {/* Where the car is: a little screen above the doors. */}
       <mesh position={[0, 2.58, 0.012]} material={m.black}>{B([0.44, 0.2, 0.025])}</mesh>
       <group position={[0, 2.58, 0.026]}><LiftDisplay shown={lift} /></group>
@@ -949,6 +968,9 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   /** Every building's elevator (shared in a room), and the floors this player called/pressed this frame. */
   const liftSys = useRef<LiftSystem | null>(null);
   const myCalls = useRef<{ b: string; floor: number }[]>([]);
+  /** Pressing an elevator's call button: when, the step there (from, to, how long), the facing, the button (world)
+   *  and the hand; the call goes in once, as the hand gets there. */
+  const press = useRef<{ t0: number; walk: number; from: [number, number]; stand: [number, number]; yaw: number; at: THREE.Vector3; hand: "left" | "right"; done: boolean; call: () => void } | null>(null);
   const doorsDone = useRef(new WeakSet<object>());
   const aptShare = useRef(new AptShare());
   /** The other players at work in kitchens (by peer): what to draw of them, the places they're using. */
@@ -977,6 +999,8 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
   /** The car's height now (world). */
   const carY = (bkey: string) => carWorldY(lift().shownY(bkey));
   // Every floor's (and the lobby's) elevator doors: open while the car is stopped there with its doors open.
+  /** Whether the car's been called to that floor and isn't there yet (the call button's ring lit). */
+  const calledTo = (bkey: string, fl: number) => () => { const c = lift().car(bkey); return c.stops.includes(fl) && !(atFloor(c, fl) && doorsOf(c) > 0.05); };
   const elevatorOpen = (bkey: string, fl: number) => () => { const c = lift().car(bkey); return atFloor(c, fl) ? doorsOf(c) : 0; };
 
   useFrame((_, raw) => {
@@ -1585,6 +1609,22 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     const inBed = move.current?.kind === "bed";
     if (inBed && state.firstPerson) { bedFp.current = state.camDistance; state.firstPerson = false; state.camDistance = 3.4; state.camPitch = 0.35; }
     else if (!inBed && bedFp.current !== null) { state.firstPerson = true; state.camDistance = bedFp.current; bedFp.current = null; }
+    // Calling the elevator: a step up to the button if it's out of reach, a hand out to press it (the call goes in
+    // as the finger touches it), and the hand back.
+    const pz = press.current;
+    if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") (window as unknown as { __press?: unknown }).__press = pz && { t: now - pz.t0, walk: pz.walk, hand: pz.hand, script: !!script };
+    if (pz && !script) {
+      const t = now - pz.t0, end = pz.walk + PRESS_T;
+      if (t >= pz.walk + PRESS_T * 0.5 && !pz.done) { pz.done = true; pz.call(); }
+      if (t >= end) press.current = null;
+      else {
+        const w = pz.walk > 0 ? Math.min(1, t / pz.walk) : 1, e = w * w * (3 - 2 * w);
+        const x = pz.from[0] + (pz.stand[0] - pz.from[0]) * e, z = pz.from[1] + (pz.stand[1] - pz.from[1]) * e;
+        const u = Math.max(0, t - pz.walk) / PRESS_T, k = Math.sin(Math.PI * Math.min(1, u)), reach: WorldReach = { at: pz.at, blend: Math.min(1, k * 1.25), pole: "out" };
+        script = { x, z, yaw: pz.yaw, walk: w < 1 ? 1 : 0, sit: 0, shuffle: 0, lean: 0.05 * k, left: pz.hand === "left" ? reach : null, right: pz.hand === "right" ? reach : null };
+        state.keys.clear(); state.interactQueued = false;
+      }
+    }
     if (script) { state.foodScript = script; ownScript.current = true; }
     else if (ownScript.current) { state.foodScript = null; ownScript.current = false; }
 
@@ -1592,9 +1632,15 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     const pr = prompt.current; pr.visible = false; pr.label = undefined;
     if (bedPrompt && floor) { const [bx, bz] = toW(floor.bed.x, floor.bed.z); Object.assign(pr, { visible: true, x: bx, y: yNow + 1.5, z: bz, label: bedPrompt }); }
     if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") (window as unknown as { __aptPrompt?: () => string | undefined }).__aptPrompt = () => (pr.visible ? pr.label : undefined);
-    if (eRide || move.current || kr.busy || state.ladder || state.ladderPrompt || state.accident || state.health <= 0 || sleeping.current) { if (eRide || move.current || kr.busy) state.interactQueued = false; return; }
+    if (eRide || move.current || kr.busy || press.current || state.ladder || state.ladderPrompt || state.accident || state.health <= 0 || sleeping.current) { if (eRide || move.current || kr.busy || press.current) state.interactQueued = false; return; }
     // Calling the car (to this floor); the label says where it is.
-    const callLift = (bkey: string, here: number) => { myCalls.current.push({ b: bkey, floor: here }); };
+    const callLift = (bkey: string, here: number, button: [number, number, number], out: [number, number]) => {
+      // (From where you are; a step closer first if the button's further than an arm's length.)
+      const d = Math.hypot(button[0] - p.x, button[2] - p.z), stand: [number, number] = d > 0.62 ? [button[0] + out[0] * 0.5, button[2] + out[1] * 0.5] : [p.x, p.z];
+      const yaw = Math.atan2(button[0] - stand[0], button[2] - stand[1]), lx = Math.cos(yaw), lz = -Math.sin(yaw);
+      const walk = d > 0.62 ? Math.min(0.9, Math.hypot(stand[0] - p.x, stand[1] - p.z) / 1.1 + 0.15) : 0;
+      press.current = { t0: now, walk, from: [p.x, p.z], stand, yaw: d > 0.62 ? yaw : state.rotY, at: new THREE.Vector3(...button), hand: (button[0] - stand[0]) * lx + (button[2] - stand[1]) * lz > 0 ? "left" : "right", done: false, call: () => myCalls.current.push({ b: bkey, floor: here }) };
+    };
     const liftLabel = (bkey: string, here: number) => {
       const c = lift().car(bkey), at = carFloor(c), name = at === 1 ? "L" : String(at);
       if (atFloor(c, here) && doorsOf(c) > 0.5) return lift().occupancy(bkey, [...(state.liftLink?.others() ?? [])]) >= CAPACITY ? "ELEVATOR FULL" : "ELEVATOR HERE";
@@ -1620,7 +1666,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
       const L = lobby.layout, [lx, lz] = toLocal(L.frame, p.x, p.z), ex = L.bounds.minX + SHAFT / 2, ez = L.bounds.minZ + SHAFT;
       if (Math.abs(lx - ex) < 1.1 && lz - ez > 0 && lz - ez < 1.6 && facesAt(state.rotY - L.frame.rot, lx, lz, ex, ez)) {
         show(ex, ez + 0.3, 2.2, liftLabel(aptKey(lobby.b), 1));
-        act = () => callLift(aptKey(lobby.b), 1);
+        act = () => { const [bx, bz] = toW(ex + LIFT_DOOR / 2 + 0.3, ez + 0.03), [ox, oz] = toW(ex + LIFT_DOOR / 2 + 0.3, ez + 1.03); callLift(aptKey(lobby.b), 1, [bx, yNow + 1.15, bz], [ox - bx, oz - bz]); };
       }
     } else if (floor && lvl) {
       const [lx, lz] = toLocal(floor.frame, p.x, p.z), ex = floor.bounds.minX + SHAFT / 2, hz0 = floor.hallZ[0];
@@ -1636,7 +1682,7 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
         if (kp.act) act = kp.act;
       } else if (Math.abs(lx - ex) < 1.1 && lz - hz0 > 0 && lz - hz0 < 1.5 && sees(ex, hz0)) {
         show(ex, hz0 + 0.3, 2.2, liftLabel(lvl.building, lvl.floor));
-        act = () => callLift(lvl.building, lvl.floor);
+        act = () => { const [bx, bz] = toW(ex + LIFT_DOOR / 2 + 0.3, hz0 + 0.03), [ox, oz] = toW(ex + LIFT_DOOR / 2 + 0.3, hz0 + 1.03); callLift(lvl.building, lvl.floor, [bx, yNow + 1.15, bz], [ox - bx, oz - bz]); };
       } else if (lx > dx - 1.7 && lx < dx + 0.3 && lz < wz && lz > wz - 1.4 && sees(dx - 0.5, wz)) {
         // At the apartment's door, in the hallway. The key (its number) locks or unlocks it; unlocked, anyone
         // opens it, whatever they're carrying — yours, or anyone's whose door is unlocked.
@@ -1794,11 +1840,11 @@ export function Apartments({ state, city }: { state: GameState; city: City }) {
     {buildings.map((b) => <AptExterior key={aptKey(b)} b={b} state={state} />)}
     {/* The lobby elevators' doors (and the car, while someone's in it at the lobby). */}
     {lobbies.map(({ b, layout }) => <group key={aptKey(b)} position={[layout.frame.ox, SIDEWALK_H, layout.frame.oz]} rotation-y={layout.frame.rot}>
-      <group position={[layout.bounds.minX + SHAFT / 2, 0, layout.bounds.minZ + SHAFT]}><ElevatorDoors open={elevatorOpen(aptKey(b), 1)} m={m} /><group position={[0, 2.55, 0.035]}><LiftDisplay shown={() => carShown(aptKey(b))} /></group></group>
+      <group position={[layout.bounds.minX + SHAFT / 2, 0, layout.bounds.minZ + SHAFT]}><ElevatorDoors open={elevatorOpen(aptKey(b), 1)} m={m} /><group position={[LIFT_DOOR / 2 + 0.3, 1.15, 0]}><CallButton called={calledTo(aptKey(b), 1)} m={m} /></group><group position={[0, 2.55, 0.035]}><LiftDisplay shown={() => carShown(aptKey(b))} /></group></group>
       <LobbyCar state={state} bkey={aptKey(b)} at={[layout.bounds.minX + SHAFT / 2, layout.bounds.minZ + SHAFT / 2]} m={m} />
       <LobbyVisitor state={state} layout={layout} />
     </group>)}
-    {shown.map((fl) => <FloorInterior key={fl.key} actorsAt={(k3) => [...actors.current.values()].filter((a) => a.key === k3)} lift={() => carShown(fl.key.split("#")[0]!)} sheet={sheetLink(fl.key)} bath={bathLink(fl.key)} kview={kitchen.current.view} lightsOf={lightsOf} bathDoor={() => swingOf(fl.key, "ba", bathAngle.current)} fl={fl} state={state} m={m} door={() => swingOf(fl.key, "d", Math.max(here(fl.key) ? doorAngle.current : 0, lift().aptDoors.get(fl.key) ?? 0))} bedDoor={() => swingOf(fl.key, "bd", bedAngle.current)} fridgeDoor={() => swingOf(fl.key, "fr", fridgeAngle.current)} closetDoor={() => swingOf(fl.key, "cl", closetAngle.current)} elevatorOpen={elevatorOpen(fl.key.split("#")[0]!, fl.upper)} />)}
+    {shown.map((fl) => <FloorInterior key={fl.key} actorsAt={(k3) => [...actors.current.values()].filter((a) => a.key === k3)} lift={() => carShown(fl.key.split("#")[0]!)} sheet={sheetLink(fl.key)} bath={bathLink(fl.key)} kview={kitchen.current.view} lightsOf={lightsOf} bathDoor={() => swingOf(fl.key, "ba", bathAngle.current)} fl={fl} state={state} m={m} door={() => swingOf(fl.key, "d", Math.max(here(fl.key) ? doorAngle.current : 0, lift().aptDoors.get(fl.key) ?? 0))} bedDoor={() => swingOf(fl.key, "bd", bedAngle.current)} fridgeDoor={() => swingOf(fl.key, "fr", fridgeAngle.current)} closetDoor={() => swingOf(fl.key, "cl", closetAngle.current)} elevatorOpen={elevatorOpen(fl.key.split("#")[0]!, fl.upper)} called={calledTo(fl.key.split("#")[0]!, fl.upper)} />)}
     <CarAt state={state} buildings={byKey} m={m} carY={carY} light={carLight} doors={(bkey) => doorsOf(lift().car(bkey))} shown={carShown} />
     {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => <LiftRider key={i} state={state} get={() => lift().riders[i] ?? null} buildings={byKey} carY={carY} />)}
     <pointLight ref={bathLight} intensity={0} distance={3.4} decay={1.4} color="#fff4e6" />

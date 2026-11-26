@@ -1,5 +1,5 @@
 import { PantryShelf } from "./PantryModels";
-import { stairPlan } from "./stairs";
+import { landingOpening, stairPlan } from "./stairs";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
@@ -298,8 +298,7 @@ function FixtureModel({ f, m, kind }: { f: Fixture; m: VMats; kind: VenueKind })
         <mesh position={[0, 0.006, d / 2 - 0.06]} material={m.steel}>{box([LIFT_DOOR, 0.012, 0.16])}</mesh>
         <mesh position={[0, 2.55, d / 2 + 0.01]} material={m.black}>{box([0.42, 0.18, 0.03])}</mesh>
         <mesh position={[0, 2.55, d / 2 + 0.027]} material={m.screen}><planeGeometry args={[0.36, 0.13]} /></mesh>
-        <mesh position={[half + 0.3, 1.15, d / 2 + 0.01]} material={m.steel}>{box([0.12, 0.2, 0.03])}</mesh>
-        <mesh position={[half + 0.3, 1.15, d / 2 + 0.03]} material={m.lamp}><circleGeometry args={[0.025, 12]} /></mesh>
+        {/* (Its call button is drawn by Apartments, lit while the car's been called.) */}
       </group>;
     }
     case "sofa": { const [c1, c2] = f.tag === "teal" ? ["#2f7f86", "#3b9aa1"] : ["#5a4a6e", "#6d5a85"]; return <group>
@@ -599,6 +598,13 @@ export function Venue({ b, mats, state }: { b: Building; mats: Materials; state:
         const parts: [number, number, number, number][] = [[x0, x1, z0, hz0], [x0, x1, hz1, z1], [x0, hx0, hz0, hz1], [hx1, x1, hz0, hz1]];
         return parts.filter(([a0, a1, b0, b1]) => a1 - a0 > 0.001 && b1 - b0 > 0.001).map(([a0, a1, b0, b1], i) => <mesh key={`c${i}`} position={[(a0 + a1) / 2, CEILING, (b0 + b1) / 2]} rotation-x={Math.PI / 2} material={own.ceiling}><planeGeometry args={[a1 - a0, b1 - b0]} /></mesh>);
       })()}
+      {(() => {
+        // An apartment lobby: the wall with the elevator and the stairwell's doorway in it is one piece end to end.
+        const sh = fixtures.find((f) => f.type === "shaft");
+        if (!sh) return null;
+        const plan = stairPlan(bounds), [o0, o1] = landingOpening(plan);
+        return <OneWall x0={sh.x - sh.w / 2} x1={plan.xe + 0.15} face={sh.z + sh.d / 2 + 0.01} depth={0.13} height={CEILING} doors={[[sh.x - LIFT_DOOR / 2, sh.x + LIFT_DOOR / 2, 2.3], [o0, o1, 2.3]]} mat={own.wall} />;
+      })()}
       <Wall a0={minX} a1={maxX} place={(a) => [a, -WALL]} ry={Math.PI} low={own.trim} high={own.wall} holes={frontHoles} />
       <Wall a0={minZ} a1={maxZ} place={(a) => [ws * maxX, a]} ry={-ws * Math.PI / 2} low={own.trim} high={own.wall} holes={sideHoles} />
       <Wall a0={minZ} a1={maxZ} place={(a) => [plainX, a]} ry={-plain * Math.PI / 2} low={own.trim} high={own.wall} />
@@ -627,4 +633,20 @@ export function Venue({ b, mats, state }: { b: Building; mats: Materials; state:
       })()}
     </group>
   </group>;
+}
+
+/** A wall in one piece, from x0 to x1 (its face toward +z at `face`), with doorways cut up from the floor
+ * ([from, to, height] each; cut a few millimetres narrower than the openings behind, so its edges cover theirs). */
+function OneWall({ x0, x1, face, depth, height, doors, mat }: { x0: number; x1: number; face: number; depth: number; height: number; doors: [number, number, number][]; mat: THREE.Material }) {
+  const geo = useMemo(() => {
+    const sh = new THREE.Shape(), i = 0.004;
+    sh.moveTo(x0, 0);
+    for (const [a, b, h] of [...doors].sort((p, q) => p[0] - q[0])) { sh.lineTo(a + i, 0); sh.lineTo(a + i, h - i); sh.lineTo(b - i, h - i); sh.lineTo(b - i, 0); }
+    sh.lineTo(x1, 0); sh.lineTo(x1, height); sh.lineTo(x0, height); sh.closePath();
+    const g = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: false });
+    g.translate(0, 0, face - depth);
+    return g;
+  }, [x0, x1, face, depth, height, doors]);
+  useEffect(() => () => geo.dispose(), [geo]);
+  return <mesh geometry={geo} material={mat} receiveShadow />;
 }

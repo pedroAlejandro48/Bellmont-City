@@ -1162,5 +1162,7 @@
   "Waiting for everyone to sleep ({0}/{1})",
   "Get up",
   "E SLEEP · SPACE GET UP",
-  "E GET UP"
+  "E GET UP",
+  "DRINK",
+  "Drink (F)"
 ]

@@ -43,14 +43,17 @@ export function stairsTexture() {
   g.lineTo(364, 372); g.stroke();
   // The figure.
   const limb = (pts: [number, number][], w: number) => { g.lineCap = "round"; g.lineJoin = "round"; g.lineWidth = w; g.beginPath(); g.moveTo(pts[0]![0], pts[0]![1]); for (const [x, y] of pts.slice(1)) g.lineTo(x, y); g.stroke(); };
-  g.beginPath(); g.arc(196, 66, 27, 0, Math.PI * 2); g.fill();                 // the head, ahead of the hips
-  const neck: [number, number] = [176, 112], hip: [number, number] = [138, 196];
+  // (Shifted right of the steps' edge: the leg ahead comes down clear of it, onto the first step.)
+  const X = 30;
+  g.beginPath(); g.arc(196 + X, 66, 27, 0, Math.PI * 2); g.fill();             // the head, ahead of the hips
+  const neck: [number, number] = [176 + X, 112], hip: [number, number] = [138 + X, 196];
   limb([neck, hip], 40);                                                         // the body, leaning forward (right)
-  limb([[170, 120], [128, 132], [92, 160]], 20);                                 // the arm behind
-  limb([[178, 122], [218, 150], [262, 146]], 20);                                // the arm ahead
-  limb([hip, [100, 222], [56, 236]], 24);                                        // the leg behind, lifted back
-  limb([hip, [200, 290]], 24);                                                   // the leg ahead, straight, on the first step
-  g.fillRect(186, 284, 34, 12);                                                  // its foot on the step
+  limb([[170 + X, 120], [128 + X, 132], [92 + X, 160]], 20);                     // the arm behind
+  limb([[178 + X, 122], [218 + X, 150], [262 + X, 146]], 20);                    // the arm ahead
+  limb([hip, [100 + X, 222], [60 + X, 238]], 24);                                // the leg behind, lifted back…
+  limb([[60 + X, 236], [52 + X, 258]], 17);                                      // …its foot pointing down
+  limb([hip, [188 + X, 280]], 24);                                               // the leg ahead, straight…
+  limb([[181 + X, 284], [203 + X, 286]], 16);                                    // …its foot flat on the first step
   // The arrow, down to the right: a shaft and a big triangular head.
   g.save(); g.translate(392, 214); g.rotate(Math.PI / 4);
   g.fillRect(0, -15, 96, 30);

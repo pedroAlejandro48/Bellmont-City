@@ -11,6 +11,7 @@ import { DROP_TIME, EAT_SECONDS, GRAB_TIME, PACK_SIZE, dropReach, grabReach } fr
 import { FOOD_SCALE, biteCount } from "./dishes";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import { drinkHeight } from "./InventoryWorld";
 import { SIGNAL_POLES, benchJoints, benchPose, floorHeight, cameraRelativeVelocity, SCOOTER_MOUNT_SECONDS, SCOOTER_PICKUP_SECONDS, type City, PARK_SOLIDS, circleBoxPush, bikePushShare, scooterFootprint, scooterSide, SCOOTER_TIP, BENCH_SEATS, BENCH_SIT_SECONDS, BENCH_STAND_SECONDS, benchStandHeight, BENCH_SEAT_TOP, BENCH_BACK_TOP, BENCH_BACKRESTS, FALLEN_BIKE_TOP, fallenBikeStandHeight, PARK_BINS, BIN } from "./config";
 import { groundAt } from "./state";
 import type { GameState } from "./state";
@@ -782,7 +783,7 @@ export function Player({ state, city }: { state: GameState; city: City }) {
     // Eating and drinking (at a table or on a bench): the right hand brings the food up to the mouth for each bite;
     // a drink is lifted once and sipped with the head tipped back.
     // (Eating or drinking a thing from the inventory works the same way, over its own time.)
-    const invUse = inv && (inv.kind === "eat" || inv.kind === "drink") ? { at: inv.at, drink: inv.kind === "drink", T: USE_SECONDS } : null;
+    const invUse = inv && (inv.kind === "eat" || inv.kind === "drink") ? { at: inv.at, drink: inv.kind === "drink", T: USE_SECONDS, bottle: inv.kind === "drink" ? String(inv.item) : undefined, left: inv.fromHand === "left" } : null;
     const mealEat = state.meal ? { at: state.meal.at, drink: false, T: state.meal.T, bites: state.meal.bites } : null;
     const eat = state.eating ? { at: state.eating.at, drink: state.eating.drink, T: EAT_SECONDS, bites: biteCount(state.eating.item), cup: true } : mealEat ?? invUse;
     if (eat && !dead && !incapacitated && root.current && head.current) {
@@ -800,7 +801,14 @@ export function Player({ state, city }: { state: GameState; city: City }) {
         const h = 0.15 * FOOD_SCALE, th = 1.15 * tip, fx = Math.sin(state.rotY), fz = Math.cos(state.rotY), k = 0.5;
         mouth.add(new THREE.Vector3(fx * h * Math.sin(th) * k, -h * (Math.cos(th) * k + (1 - tip) * 0.1), fz * h * Math.sin(th) * k));
       }
-      reachArm(armR.current, foreR.current, mouth, POLES.low(-1), up);
+      // A bottle or can out of the inventory or bought: the same, round its middle (InventoryWorld tips it there).
+      const bottle = (eat as { bottle?: string }).bottle;
+      if (eat.drink && bottle) {
+        const h = drinkHeight(bottle), th = 1.15 * tip, fx = Math.sin(state.rotY), fz = Math.cos(state.rotY), k = 0.5;
+        mouth.add(new THREE.Vector3(fx * h * Math.sin(th) * k, -h * (Math.cos(th) * k + (1 - tip) * 0.1), fz * h * Math.sin(th) * k));
+      }
+      if ((eat as { left?: boolean }).left) reachArm(armL.current, foreL.current, mouth, POLES.low(1), up);
+      else reachArm(armR.current, foreR.current, mouth, POLES.low(-1), up);
       // A home meal: the knife stays down by the plate in the left hand.
       const kl = state.meal?.left;
       if (kl && state.meal) reachArm(armL.current, foreL.current, new THREE.Vector3(kl[0], kl[1], kl[2]), POLES.low(1), Math.min(1, t / 0.6));

@@ -65,12 +65,18 @@ export function pressInventorySlot(state: GameState, slot: number) {
 }
 
 /** E with something to eat or drink out: starts using it. True if it did. */
-export function consumeHeld(state: GameState) {
-  if (state.heldSlot === null) return consumeFromHand(state);
+/** What's in hand to drink (out of the inventory, or bought and held), if anything: the DRINK button shows for it. */
+export function drinkInHand(state: GameState): boolean {
+  if (state.heldSlot !== null) { const k = state.life.inventory[state.heldSlot]; return !!k && itemInfo(k).use === "drink"; }
+  return (["right", "left"] as const).some((h) => { const x = state.storeHands[h]; return !!x?.paid && itemInfo(x.kind).use === "drink"; });
+}
+/** E (eating) or the DRINK button (drinking) with that in hand: starts it. True if the press was used. */
+export function consumeHeld(state: GameState, only: "eat" | "drink" = "eat") {
+  if (state.heldSlot === null) return consumeFromHand(state, only);
   const slot = state.heldSlot, kind = slot === null ? null : state.life.inventory[slot];
   if (!kind || busy(state)) return false;
   const use = itemInfo(kind).use;
-  if (use !== "eat" && use !== "drink") return false;
+  if (use !== only) return false;
   const name = itemInfo(kind).name;
   // (Only the thing being eaten in hand: anything in the other hand has to be put down first.)
   if (holding(state, "left") !== null) { toast(state, "Your left hand is full", "warn", `Put it down (Q) before ${use === "drink" ? "drinking" : "eating"}.`); return true; }
@@ -81,14 +87,14 @@ export function consumeHeld(state: GameState) {
 
 /** A thing bought and held (it didn't fit in the inventory): E eats or drinks it, from the right hand (one in the left
  * moves over to the right first, if that's free). */
-function consumeFromHand(state: GameState) {
+function consumeFromHand(state: GameState, only: "eat" | "drink") {
   if (busy(state)) return false;
-  const sh = state.storeHands;
-  if (!sh.right?.paid && sh.left?.paid && !sh.right && handFree(state, "right")) { sh.right = sh.left; sh.left = null; }
-  const side = sh.right?.paid ? "right" : sh.left?.paid ? "left" : null;
+  const sh = state.storeHands, fits = (h: "left" | "right") => !!sh[h]?.paid && itemInfo(sh[h]!.kind).use === only;
+  if (!fits("right") && fits("left") && !sh.right && handFree(state, "right")) { sh.right = sh.left; sh.left = null; }
+  const side = fits("right") ? "right" : fits("left") ? "left" : null;
   if (!side) return false;
   const kind = sh[side]!.kind, use = itemInfo(kind).use, name = itemInfo(kind).name;
-  if (use !== "eat" && use !== "drink") return false;
+  if (use !== only) return false;
   if (!canConsume(state, name)) { toast(state, use === "drink" ? "Not thirsty" : "You're full", "warn"); return true; }
   state.invAct = { kind: use, at: state.simulationTime, item: kind, target: null, done: false, fromHand: side };
   return true;

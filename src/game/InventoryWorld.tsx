@@ -167,7 +167,41 @@ export function ItemModel({ kind, looks, empty = false }: { kind: Thing; looks: 
  * and the store basket (with what's in it). Restaurant food is shared by the restaurant itself; kitchenware up on
  * an apartment floor by the kitchen.
  */
-export type HeldWire = { r: string | null; l: string | null; bag: number; bk: [string, number, number, number, number][] | null };
+export type HeldWire = { r: string | null; l: string | null; bag: number; bk: [string, number, number, number, number][] | null; /** Drinking from that hand right now. */ dr?: "l" | "r" };
+
+/** How far a drink is tipped up to the mouth `t` seconds into drinking it (0..1): lifted upright first, tipped while
+ * sipping, upright again before it comes down — as in the restaurants. */
+export function drinkTip(t: number, T = USE_SECONDS) {
+  // (The same timing as the arm's lift in Player: up over 0.6 s, tipped from 0.5 s, down over the last 0.6 s.)
+  const sm = (x: number) => { const c = Math.max(0, Math.min(1, x)); return c * c * (3 - 2 * c); };
+  const up = Math.min(sm(t / 0.6), 1 - sm((t - (T - 0.6)) / 0.6));
+  return up * Math.min(1, Math.max(0, (t - 0.5) / 0.5));
+}
+const heights = new Map<string, number>();
+/** A drink's height (its opening above its base), as measured once it's been drawn; a guess until then. */
+export const drinkHeight = (kind: string) => heights.get(kind) ?? (kind === "cola" || kind === "lemonSoda" || kind === "energy" || kind === "can" ? 0.12 : 0.24);
+/**
+ * A bottle or can (`g`, its base at its origin, already at the hand and upright) tipped back toward the face by
+ * `tip`: its opening at the lips, the bottom out in front — exactly the restaurants' way of drinking.
+ */
+export function tipToMouth(g: THREE.Object3D, kind: string, head: THREE.Object3D, yaw: number, tip: number) {
+  let h = heights.get(kind);
+  if (h === undefined) {
+    // (Only what shows: a hand's group can hold every kind of thing, all but one hidden.)
+    g.updateMatrixWorld(true);
+    const b = new THREE.Box3(), seen = (o: THREE.Object3D) => { for (let q: THREE.Object3D | null = o; q && q !== g.parent; q = q.parent) if (!q.visible) return false; return true; };
+    g.traverse((o) => { if (o instanceof THREE.Mesh && seen(o)) b.expandByObject(o, true); });
+    h = b.isEmpty() ? 0.2 : Math.max(0.05, b.max.y - g.position.y); heights.set(kind, h);
+  }
+  if (tip <= 0) return;
+  const th = 1.15 * tip, fx = Math.sin(yaw), fz = Math.cos(yaw);
+  g.quaternion.setFromEuler(new THREE.Euler(-th, yaw, 0, "YXZ"));
+  head.updateWorldMatrix(true, false);
+  const mouth = head.localToWorld(new THREE.Vector3(0, -0.06, 0.15));
+  const top = new THREE.Vector3(0, h * Math.cos(th), -h * Math.sin(th)).applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
+  const atMouth = mouth.add(new THREE.Vector3(fx * 0.015, 0, fz * 0.015)).sub(top);
+  g.position.lerp(atMouth, tip);
+}
 export function heldWire(state: GameState): HeldWire {
   if (state.home || state.accident || state.health <= 0) return { r: null, l: null, bag: -1, bk: null };
   const offFloor = !state.level || state.level.floor < 2, kh = state.life.kitchen.hands;
@@ -178,6 +212,7 @@ export function heldWire(state: GameState): HeldWire {
     r: r0 ? shownAs(r0 as Thing) : null, l: l0 ? shownAs(l0 as Thing) : null,
     bag: state.groceryBag ? state.groceryBag.length : -1,
     bk: state.basketShown ? state.basketShown.map((i) => [i.kind, r2(i.x), r2(i.y), r2(i.z), r2(i.rot)]) : null,
+    ...(state.invAct?.kind === "drink" ? { dr: state.invAct.fromHand === "left" ? "l" as const : "r" as const } : {}),
   };
 }
 export function InventoryWorld({ state }: { state: GameState }) {
@@ -218,8 +253,14 @@ export function InventoryWorld({ state }: { state: GameState }) {
     const seat = nearestBenchSeat(state.pos.x, state.pos.z, state.seatOccupants);
     const bike = canInteractScooter([state.pos.x, state.pos.z], [state.scooter.pos.x, state.scooter.pos.z], state.scooter.yaw, state.scooter.fallen, state.scooter.fallSide);
     if (seat || bike) return;
-    if (consumeHeld(state)) state.interactQueued = false;
+    if (consumeHeld(state, "eat")) state.interactQueued = false;
   }, -0.55);
+  // The DRINK button (F): the drink in hand, whatever's nearby.
+  useFrame(() => {
+    if (!state.drinkQueued) return;
+    state.drinkQueued = false;
+    if (!state.scooter.riding) consumeHeld(state, "drink");
+  });
 
   useFrame(() => {
     // What the right hand shows: the thing out, or trash, or (while picking up) nothing until it's in hand.
@@ -242,7 +283,6 @@ export function InventoryWorld({ state }: { state: GameState }) {
         // mouth while sipping.
         let tipX = 0;
         if (kind === "phone") tipX = -0.55;
-        if (act && act.kind === "drink") { const t = (state.simulationTime - act.at) / USE_SECONDS; tipX = Math.sin(Math.min(1, Math.max(0, (t - 0.2) / 0.6)) * Math.PI) * 1.6; }
         // The phone's screen faces the character (turned round); the key points forward, out of the hand.
         let turn = 0;
         if (kind === "phone") turn = Math.PI;
@@ -258,6 +298,9 @@ export function InventoryWorld({ state }: { state: GameState }) {
         if (kind === "phone") g.position.y += 0.05;
         // Candy: held up in the fingers, the wrapper toward the face (a bar stands on its end).
         if (kind && isCandy(kind)) { g.position.y -= 0.03; if (CANDY_INFO[kind].shape !== "pop" && CANDY_INFO[kind].shape !== "bag") { tmp.e.set(-Math.PI / 2 + 0.35, state.rotY, 0, "YXZ"); g.quaternion.setFromEuler(tmp.e); } }
+        // Drinking: tipped back to the face, the opening at the lips (as in the restaurants).
+        const head = state.avatar.body[3];
+        if (act && act.kind === "drink" && act.fromHand !== "left" && kind && head) tipToMouth(g, kind, head, state.rotY, drinkTip(state.simulationTime - act.at));
       }
     }
     {
@@ -273,6 +316,8 @@ export function InventoryWorld({ state }: { state: GameState }) {
           if (k === "water" || k === "orangeJuice" || k === "appleJuice") gl.position.y -= 0.07;
           if (k === "cola" || k === "lemonSoda" || k === "energy") gl.position.y -= 0.05;
           if (isCandy(k)) gl.position.y -= 0.03;
+          const actL = state.invAct, headL = state.avatar.body[3];
+          if (actL && actL.kind === "drink" && actL.fromHand === "left" && headL) tipToMouth(gl, k, headL, state.rotY, drinkTip(state.simulationTime - actL.at));
         }
       }
     }
