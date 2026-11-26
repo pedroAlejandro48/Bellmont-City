@@ -2,15 +2,13 @@ import { InstallApp, listenForInstall } from "@/components/InstallApp";
 import { guardBackButton } from "@/lib/backGuard";
 import { loadLang } from "@/i18n";
 import { watchNotifications } from "@/platform/push";
-import { StrictMode, useCallback, useEffect, useState } from "react";
+import { lazy, StrictMode, Suspense, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Button } from "@/components/ui/button";
 import { AuthForm } from "@/components/AuthForm";
 import { UsernameForm } from "@/components/UsernameForm";
 import { MainMenu } from "@/components/MainMenu";
-import { CloudGame } from "@/game/CloudGame";
-import { GuestGame } from "@/game/GuestGame";
-import { RoomEntry, type RoomRequest } from "@/multiplayer/RoomGame";
+import type { RoomRequest } from "@/multiplayer/RoomGame";
 import { setInGame, watchForUpdates } from "@/lib/updates";
 import { appKind, backgroundPage } from "@/lib/appKind";
 import { syncServerTime } from "@/lib/serverTime";
@@ -18,6 +16,19 @@ import { isSignedIn, signOutAccount, watchAccount, type Account } from "@/platfo
 import { normalizeRoomCode } from "@/platform/rooms";
 import "./styles.css";
 import { startCityBackdrop } from "@/lib/cityBackdrop";
+
+// The game itself (the 3D city, physics, multiplayer) is its own download: the start page comes up without waiting for
+// it, and it loads in the background meanwhile (gameCode), so it's usually there by the time Play is pressed.
+const loadCloud = () => import("@/game/CloudGame"), loadGuest = () => import("@/game/GuestGame"), loadRoom = () => import("@/multiplayer/RoomGame");
+const CloudGame = lazy(() => loadCloud().then((m) => ({ default: m.CloudGame })));
+const GuestGame = lazy(() => loadGuest().then((m) => ({ default: m.GuestGame })));
+const RoomEntry = lazy(() => loadRoom().then((m) => ({ default: m.RoomEntry })));
+function gameCode() {
+  void loadCloud().catch(() => {}); void loadRoom().catch(() => {}); void loadGuest().catch(() => {});
+  // The physics engine (WebAssembly) made ready too: the game waits for it before anyone can move.
+  void import("@dimforge/rapier3d-compat").then((r) => r.init()).catch(() => {});
+}
+const GameLoading = () => <div className="auth-bg fit-screen flex items-center justify-center font-display text-2xl text-foreground">Loading…</div>;
 
 type View = { name: "menu" | "city" | "guest" } | { name: "room"; request: RoomRequest };
 
@@ -62,7 +73,7 @@ function App() {
     setView({ name: "menu" });
   }, []);
 
-  if (view.name === "guest") return <GuestGame onExit={() => setView({ name: "menu" })} />;
+  if (view.name === "guest") return <Suspense fallback={<GameLoading />}><GuestGame onExit={() => setView({ name: "menu" })} /></Suspense>;
   if (loading) return <div className="auth-bg fit-screen flex items-center justify-center font-display text-2xl text-foreground">Loading…</div>;
   if (loadFailed) return <div className="auth-bg fit-screen flex flex-col items-center justify-center gap-4 text-foreground">
     <p>Could not reach the Bellmont server.</p>
@@ -81,8 +92,8 @@ function App() {
   </>);
   if (!account.username || !account.gender) return <UsernameForm account={account} password={password} onSignOut={() => void signOut()} onComplete={(named) => { setAccount(named); setPassword(null); toMenu(); }} />;
 
-  if (view.name === "city") return <CloudGame account={account} onExit={() => toMenu()} />;
-  if (view.name === "room") return <RoomEntry account={account} request={view.request} onExit={toMenu} />;
+  if (view.name === "city") return <Suspense fallback={<GameLoading />}><CloudGame account={account} onExit={() => toMenu()} /></Suspense>;
+  if (view.name === "room") return <Suspense fallback={<GameLoading />}><RoomEntry account={account} request={view.request} onExit={toMenu} /></Suspense>;
   return <><InstallApp /><MainMenu account={account} onAccount={setAccount} username={account.username} message={menuMessage} onSignOut={() => void signOut()} onCity={() => setView({ name: "city" })} onRoom={(request) => { setMenuMessage(undefined); setView({ name: "room", request }); }} /></>;
 }
 
@@ -95,7 +106,9 @@ function Background() {
 }
 
 syncServerTime();
-if (!backgroundPage()) startCityBackdrop();
+// (The backdrop's drawing waits till the page is up: the picture that stands in for it shows meanwhile.)
+const idle = (f: () => void, timeout: number) => { if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(f, { timeout }); else setTimeout(f, 200); };
+if (!backgroundPage()) idle(() => startCityBackdrop(), 600);
 listenForInstall();
 guardBackButton();
 watchForUpdates();
@@ -106,4 +119,8 @@ if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => { navigator.serviceWorker.register("/sw.js").catch(() => {}); });
 }
 // (The chosen language's words first, so the page is drawn in it from the start.)
-void loadLang().catch(() => {}).finally(() => createRoot(document.getElementById("root")!).render(<StrictMode>{backgroundPage() ? <Background /> : <App />}</StrictMode>));
+void loadLang().catch(() => {}).finally(() => {
+  createRoot(document.getElementById("root")!).render(<StrictMode>{backgroundPage() ? <Background /> : <App />}</StrictMode>);
+  // Then the game's code, quietly, once the page is drawn.
+  if (!backgroundPage()) idle(gameCode, 1500);
+});

@@ -32,10 +32,22 @@ const WINDOW_STYLES = [
   { cols: 4, w: 34, h: 22 },
 ];
 export function wallColor(variant: number) { return (FACADES[variant % 4] ?? { wall: "#c9c0b1" }).wall; }
+/** A wall's grain (faint dark specks) on its own, drawn once per size and seed: every wall with it just lays it over
+ * its colour (thousands of specks drawn one by one, for each texture, slowed the game's start). */
+const grains = new Map<string, HTMLCanvasElement>();
+function grain(W: number, H: number, seed: number) {
+  const key = `${W}x${H}:${seed}`;
+  let c = grains.get(key);
+  if (!c) {
+    const [cv, g] = canvas(W, H), r = rng(seed);
+    for (let i = 0; i < (W * H) / 44; i++) { g.fillStyle = `rgba(0,0,0,${r() * 0.06})`; g.fillRect(r() * W, r() * H, 2, 2); }
+    c = cv; grains.set(key, c);
+  }
+  return c;
+}
 export function paintWall(g: CanvasRenderingContext2D, wall: string, W: number, H: number, seed: number) {
-  const r = rng(seed);
   g.fillStyle = wall; g.fillRect(0, 0, W, H);
-  for (let i = 0; i < (W * H) / 44; i++) { g.fillStyle = `rgba(0,0,0,${r() * 0.06})`; g.fillRect(r() * W, r() * H, 2, 2); }
+  g.drawImage(grain(W, H, seed), 0, 0);
 }
 export function makeFacade(variant: number, style = 0) {
   const { wall, glass } = FACADES[variant % 4] ?? FACADES[0] ?? { wall: "#c9c0b1", glass: "#2c3c4d" };

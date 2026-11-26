@@ -15,7 +15,11 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="description" content="Open-world 3D downtown with a day and night cycle." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Cinzel:wght@700&family=Lobster&family=Manrope:wght@400;600;700&family=Pacifico&family=Special+Elite&family=Syne:wght@600;700;800&display=swap" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- The fonts don't hold the page up: it's drawn straight away, and the text takes them on as they arrive. -->
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Bungee&family=Cinzel:wght@700&family=Lobster&family=Manrope:wght@400;600;700&family=Pacifico&family=Special+Elite&family=Syne:wght@600;700;800&display=swap" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Cinzel:wght@700&family=Lobster&family=Manrope:wght@400;600;700&family=Pacifico&family=Special+Elite&family=Syne:wght@600;700;800&display=swap" media="print" onload="this.media='all'" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Cinzel:wght@700&family=Lobster&family=Manrope:wght@400;600;700&family=Pacifico&family=Special+Elite&family=Syne:wght@600;700;800&display=swap" /></noscript>
   </head>
   <body>
     <div id="root"></div>

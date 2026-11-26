@@ -108,12 +108,14 @@ function PerformanceGuard() {
  */
 function Precompile() {
   const gl = useThree((t) => t.gl), scene = useThree((t) => t.scene), camera = useThree((t) => t.camera);
-  const done = useRef(false), since = useRef(performance.now());
+  // (Once everything's there — the last of the scene arrives a few seconds in — and one lighting at a time, a second
+  // and a half apart: each is a lot of work at once, and all three together held the game up for a moment.)
+  const step = useRef(0), next = useRef(performance.now() + 7000);
   useFrame(() => {
-    if (done.current || performance.now() - since.current < 4000) return;
-    let traffic = false; scene.traverse((o) => { if (o.name === "perf:traffic") traffic = true; });
-    if (!traffic) return;
-    done.current = true;
+    if (step.current >= 3 || performance.now() < next.current) return;
+    let traffic = false, life = false; scene.traverse((o) => { if (o.name === "perf:traffic") traffic = true; if (o.name === "perf:life") life = true; });
+    if (!traffic || !life) return;
+    next.current = performance.now() + 1500;
     const hidden: THREE.Object3D[] = [];
     scene.traverse((o) => { if (!o.visible && !(o as THREE.Light).isLight) { hidden.push(o); o.visible = true; } });
     const lights: THREE.Light[] = [];
@@ -121,14 +123,33 @@ function Precompile() {
     const was = lights.map((l) => l.visible);
     const restaurant = lights.filter((l) => (l as THREE.PointLight).isPointLight && (l as THREE.PointLight).distance === 11);
     const variants: ((l: THREE.Light) => boolean)[] = [() => false, (l) => restaurant.includes(l), () => true];
-    for (const on of variants) {
-      lights.forEach((l) => { l.visible = on(l); });
-      void gl.compileAsync(scene, camera).catch(() => {});
-    }
+    const on = variants[step.current++]!;
+    lights.forEach((l) => { l.visible = on(l); });
+    void gl.compileAsync(scene, camera).catch(() => {});
     lights.forEach((l, i) => { l.visible = was[i] ?? l.visible; });
     hidden.forEach((o) => { o.visible = false; });
   });
   return null;
+}
+
+/**
+ * The game starts with what's needed to play straight away — the sky, the streets and buildings round you, you, the
+ * camera — and brings in the rest a few frames apart (`at`: frames after the start), so the first picture comes up
+ * fast and no single frame does everything. (Started inside somewhere: all of it at once, as it's needed there.)
+ */
+function Later({ at, now = false, children }: { at: number; now?: boolean; children: React.ReactNode }) {
+  const [on, setOn] = useState(now);
+  const n = useRef(0), t0 = useRef(performance.now());
+  if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") ((window as unknown as { __later?: Record<string, number> }).__later ??= {})[`m${at}`] ??= Math.round(t0.current);
+  // (On a slow device a frame takes long: then a little time — 0.12 s a frame — is enough too.)
+  useFrame(() => {
+    if (on) return;
+    if (++n.current >= at || performance.now() - t0.current >= at * 120) {
+      setOn(true);
+      if (import.meta.env["VITE_TRAFFIC_AUDIT"] === "1") ((window as unknown as { __later?: Record<string, number> }).__later ??= {})[at] = Math.round(performance.now());
+    }
+  });
+  return on ? <>{children}</> : null;
 }
 
 // HUD ticks never reconcile the physics/scene tree. Only a streamed cell does.
@@ -139,6 +160,8 @@ const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameS
   // (On low, none: less to build, hold in memory and draw.)
   const whole = useMemo(() => (q.farCity ? wholeCity(state.worldSeed) : { buildings: [], lamps: [] }), [state.worldSeed, q]);
   const far = useMemo(() => farCity(whole, x, z), [whole, x, z]);
+  // (Started indoors — a restaurant, a shop, an apartment floor — nothing's held back.)
+  const indoors = useMemo(() => !!state.interior || !!state.level, [state]);
   return <Canvas shadows={q.shadows} dpr={q.dpr} gl={{ antialias: q.antialias, powerPreference: "high-performance", stencil: false }} camera={{ fov: 60, near: 0.1, far: q.far }}>
     <PerformanceGuard />
     <Precompile />
@@ -149,22 +172,25 @@ const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameS
     <SceneHook />
     <group name="perf:roads"><WorldRoads x={x} z={z} seed={state.worldSeed} /></group>
     <group name="perf:city"><City city={city} far={far} state={state} /></group>
-    <group name="perf:lamplights"><LampLights city={city} state={state} /></group>
-    <group name="perf:park"><ParkLights state={state} /></group>
-    <group name="perf:billboards"><Billboards state={state} /></group>
+    <Later at={8} now={indoors}>
+      <group name="perf:lamplights"><LampLights city={city} state={state} /></group>
+      <group name="perf:park"><ParkLights state={state} /></group>
+      <group name="perf:billboards"><Billboards state={state} /></group>
+    </Later>
     <Suspense fallback={null}>
       <Physics gravity={[0, -9.81, 0]} timeStep={1 / 60} interpolate>
         <PhysicsGround city={city} x={x} z={z} state={state} /><RestaurantWalls city={city} state={state} />
-        <group name="perf:signals"><TrafficSignals state={state} /></group>
-        <group name="perf:npcs"><Pedestrians state={state} city={city} /></group>
+        <Later at={3} now={indoors}><group name="perf:signals"><TrafficSignals state={state} /></group></Later>
+        <Later at={14} now={indoors}><group name="perf:npcs"><Pedestrians state={state} city={city} /></group></Later>
         <RestaurantInteraction state={state} city={city} />
         <BenchInteraction state={state} />
-        <group name="perf:traffic"><Traffic state={state} /></group>
+        <Later at={5} now={indoors}><group name="perf:traffic"><Traffic state={state} /></group></Later>
         <group name="perf:player"><Scooter state={state} /><Player state={state} city={city} /><Ragdoll state={state} /></group>
         <CameraRig state={state} />
         {Extra && <group name="perf:room"><Extra state={state} /></group>}
-        <group name="perf:food"><Food state={state} /></group>
-        <group name="perf:life"><LifeWorld state={state} /><VenueSeats state={state} /><Hospital state={state} city={city} /><InventoryWorld state={state} /><Grocery state={state} city={city} /><Apartments state={state} city={city} /><Stairs state={state} city={city} /><RoofAccess state={state} city={city} /></group>
+        <Later at={10} now={indoors}><group name="perf:food"><Food state={state} /></group></Later>
+        <group name="perf:inventory"><InventoryWorld state={state} /></group>
+        <Later at={18} now={indoors}><group name="perf:life"><LifeWorld state={state} /><VenueSeats state={state} /><Hospital state={state} city={city} /><Grocery state={state} city={city} /><Apartments state={state} city={city} /><Stairs state={state} city={city} /><RoofAccess state={state} city={city} /></group></Later>
       </Physics>
     </Suspense>
   </Canvas>;
