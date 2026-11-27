@@ -42,10 +42,9 @@ describe("one thing per hand", () => {
     s.groceryBag = ["apple"];
     expect(needFreeHands(s, "showering")).toBe(false);
     expect(s.toasts.some((t) => t.title === "Your hands are full")).toBe(true);
-    // Eating what's in the right hand: not with the bag in the left.
+    // Eating what's in the right hand: fine with the bag in the left.
     s.life.inventory[1] = "apple"; s.heldSlot = 1; s.hunger = 50;
-    consumeHeld(s); expect(s.invAct).toBe(null);
-    s.groceryBag = null; consumeHeld(s); expect(s.invAct?.kind).toBe("eat");
+    consumeHeld(s); expect(s.invAct?.kind).toBe("eat");
   });
   it("a drink with the left hand full; its empty keeps its looks and goes in the inventory", () => {
     const s = createState(DEFAULT_SAVE);

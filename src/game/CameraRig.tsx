@@ -4,7 +4,7 @@ import { touchMode } from "./touchMode";
 import { useRapier } from "@react-three/rapier";
 import * as THREE from "three";
 import type { GameState } from "./state";
-import { groundAt, uiCaptured } from "./state";
+import { groundAt, lookCaptured, uiCaptured } from "./state";
 import { floorHeight, recenterOrbit, cameraRecenterReady, SIDEWALK_H } from "./config";
 import { CEILING, toLocal } from "./restaurantRoom";
 
@@ -29,7 +29,7 @@ export function CameraRig({ state }: { state: GameState }) {
     const touches = new Map<number, { x: number; y: number }>();
     let pinch: { spread: number; out: number } | null = null;
     const unbind = bindMouseLook(element, (x, y) => {
-      if (pinch || uiCaptured(state)) return;
+      if (pinch || lookCaptured(state)) return;
       state.lastMouseLookAt = performance.now();
       state.camYaw -= x * 0.006;
       state.camOrbit = state.camYaw - state.rotY - Math.PI;

@@ -478,6 +478,11 @@ let toastId = 1;
 export function uiCaptured(s: GameState) {
   return s.phone.open || !!s.shop || s.foodUi.open || s.inventoryOpen || !!s.uiLock;
 }
+/** Panels that hold the view still too. (Not the inventory: it's only a row of slots, so fingers or a held mouse
+ * still look around while it's open, as the joystick still walks.) */
+export function lookCaptured(s: GameState) {
+  return s.phone.open || !!s.shop || s.foodUi.open || !!s.uiLock;
+}
 
 /** The height of the ground under (x, z): an apartment building's floor while up there, else the street's. */
 export const groundAt = (s: GameState, x: number, z: number) => (s.stairGround ? s.stairGround(x, z) : s.level ? s.level.y : floorHeight(x, z));
