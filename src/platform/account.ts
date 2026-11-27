@@ -241,7 +241,21 @@ export async function addPassword(account: Account, password: string): Promise<A
 }
 
 export function signOutAccount() {
+  rememberAccount(null);
   return signOut(auth);
+}
+
+// The account as last seen, kept on this device: the start page shows it at once (your menu, not a wait for the
+// server), while the sign-in and the profile are checked in the background — they replace it when they come.
+const ACCOUNT_KEY = "bellmont-account";
+export function cachedAccount(): Account | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(ACCOUNT_KEY) ?? "null") as Account | null;
+    return v && typeof v.id === "string" && typeof v.username === "string" && v.gender ? v : null;
+  } catch { return null; }
+}
+export function rememberAccount(a: Account | null) {
+  try { if (a && a.username && a.gender) localStorage.setItem(ACCOUNT_KEY, JSON.stringify(a)); else localStorage.removeItem(ACCOUNT_KEY); } catch { /* (private mode: no shortcut) */ }
 }
 
 /**

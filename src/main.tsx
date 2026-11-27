@@ -12,7 +12,7 @@ import type { RoomRequest } from "@/multiplayer/RoomGame";
 import { setInGame, watchForUpdates } from "@/lib/updates";
 import { appKind, backgroundPage } from "@/lib/appKind";
 import { syncServerTime } from "@/lib/serverTime";
-import { isSignedIn, signOutAccount, watchAccount, type Account } from "@/platform/account";
+import { cachedAccount, isSignedIn, rememberAccount, signOutAccount, watchAccount, type Account } from "@/platform/account";
 import { normalizeRoomCode } from "@/platform/rooms";
 import "./styles.css";
 import { startCityBackdrop } from "@/lib/cityBackdrop";
@@ -38,8 +38,10 @@ function linkedRoom() {
 }
 
 function App() {
-  const [account, setAccount] = useState<Account | null>(null);
-  const [loading, setLoading] = useState(true);
+  // (Signed in before on this device: straight to the menu, from what was remembered; the server's answer follows.)
+  const [account, setAccountNow] = useState<Account | null>(cachedAccount);
+  const setAccount = useCallback((a: Account | null) => { setAccountNow(a); rememberAccount(a); }, []);
+  const [loading, setLoading] = useState(() => !cachedAccount());
   const [loadFailed, setLoadFailed] = useState(false);
   // The password just typed, kept in memory only until the new account has chosen its username.
   const [password, setPassword] = useState<string | null>(null);
@@ -55,8 +57,9 @@ function App() {
 
   useEffect(() => watchAccount(
     (next) => { setAccount(next); setLoading(false); setLoadFailed(false); },
-    () => { setLoading(false); setLoadFailed(true); },
-  ), []);
+    // (Couldn't reach the server: with a remembered account the menu just stays up.)
+    () => { setLoading(false); if (!cachedAccount()) setLoadFailed(true); },
+  ), [setAccount]);
 
   // Once signed in with a username and gender, a shared link takes the player straight into its room.
   const ready = !!account?.username && !!account.gender;
@@ -122,5 +125,6 @@ if (import.meta.env.PROD && "serviceWorker" in navigator) {
 void loadLang().catch(() => {}).finally(() => {
   createRoot(document.getElementById("root")!).render(<StrictMode>{backgroundPage() ? <Background /> : <App />}</StrictMode>);
   // Then the game's code, quietly, once the page is drawn.
-  if (!backgroundPage()) idle(gameCode, 1500);
+  // (A few seconds in, so it doesn't slow down the page's own first look at the server.)
+  if (!backgroundPage()) setTimeout(() => idle(gameCode, 2000), 2500);
 });

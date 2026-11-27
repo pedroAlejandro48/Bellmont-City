@@ -22,7 +22,9 @@
     <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Cinzel:wght@700&family=Lobster&family=Manrope:wght@400;600;700&family=Pacifico&family=Special+Elite&family=Syne:wght@600;700;800&display=swap" /></noscript>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Before the code arrives: the start page's night backdrop, straight from the page (React replaces it). -->
+    <style>.boot{position:fixed;inset:0;background:#0b1230 url("/bg-city.webp") center bottom/cover no-repeat}@media (max-aspect-ratio:1/1){.boot{background-image:url("/bg-city-tall.webp")}}@media (min-aspect-ratio:2/1){.boot{background-image:url("/bg-city-wide.webp")}}</style>
+    <div id="root"><div class="boot"></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
