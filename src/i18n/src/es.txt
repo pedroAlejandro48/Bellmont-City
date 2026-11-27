@@ -1172,3 +1172,7 @@
 1171|Llevas una lata vacía: Q la deja en el suelo, un hueco libre la guarda.
 1172|Llevas una botella vacía: Q la deja en el suelo, un hueco libre la guarda.
 1173|{0} vacío
+1174|COMER
+1175|Comer (F)
+1176|Comer
+1177|Beber

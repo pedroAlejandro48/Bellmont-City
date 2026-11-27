@@ -42,7 +42,7 @@ export function FridgePanel({ state, onClose }: { state: GameState; onClose: () 
     tick((n) => n + 1);
   };
   const loading = state.fridgeLoad.length > 0;
-  // Taken out: into the inventory (hold it, E to eat or drink it, Q to put it down).
+  // Taken out: into the inventory (hold it, F (or EAT / DRINK) to eat or drink it, Q to put it down).
   const eat = (name: string) => {
     const slot = addItem(life.inventory, kindByName(name));
     if (slot < 0) { toast(state, "Your inventory is full", "warn", "Make room for it first."); return; }

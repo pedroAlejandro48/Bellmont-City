@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { ITEMS, asEmpty, itemInfo, trashShape } from "@/game/inventory";
+import { ITEMS, itemInfo, trashShape } from "@/game/inventory";
+import { ItemIcon } from "@/components/ItemIcon";
 import { heldSlotOf, pressInventorySlot } from "@/game/invRuntime";
 import type { GameState } from "@/game/state";
 
@@ -15,7 +16,7 @@ export function InventoryButton({ state }: { state: GameState }) {
   const toggle = () => { state.inventoryOpen = !state.inventoryOpen; if (state.inventoryOpen) state.keys.clear(); tick((n) => n + 1); };
   return <div className="inventory-anchor">
     <button type="button" className={`hud-panel hud-square inventory-button pointer-events-auto ${state.inventoryOpen ? "on" : ""}`} aria-label="Inventory (I)" aria-expanded={state.inventoryOpen} onClick={toggle}>
-      <span className="inventory-button-icon" aria-hidden>{state.heldTrash ? itemInfo(asEmpty(state.heldTrash)).icon : kind ? itemInfo(kind).icon : <GridIcon />}</span>
+      <span className="inventory-button-icon" aria-hidden>{state.heldTrash ? <ItemIcon kind={state.heldTrash} /> : kind ? <ItemIcon kind={kind} /> : <GridIcon />}</span>
       <span>I</span>
     </button>
     {/* All nine slots in a row above the health bars (no panel behind them). */}
@@ -24,7 +25,7 @@ export function InventoryButton({ state }: { state: GameState }) {
         {state.life.inventory.map((k, i) => <button key={i} type="button" className={`inventory-slot ${held === i ? "held" : ""} ${k ? "" : "empty"}`} aria-label={k ? `${i + 1}: ${itemInfo(k).name}` : `${i + 1}: empty`}
           onClick={() => { pressInventorySlot(state, i); state.inventoryOpen = false; tick((n) => n + 1); }}>
           <span className="inventory-num">{i + 1}</span>
-          {k && <span className="inventory-icon" aria-hidden>{itemInfo(k).icon}</span>}
+          {k && <span className="inventory-icon" aria-hidden><ItemIcon kind={k} /></span>}
           {k && <span className="inventory-name">{itemInfo(k).name}</span>}
         </button>)}
       </div>

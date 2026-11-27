@@ -1119,3 +1119,7 @@
 1171|Hai in mano una lattina vuota: Q la posa, uno slot libero la tiene.
 1172|Hai in mano una bottiglia vuota: Q la posa, uno slot libero la tiene.
 1173|{0} vuoto
+1174|MANGIA
+1175|Mangia (F)
+1176|Mangia
+1177|Bevi

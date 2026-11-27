@@ -1,6 +1,6 @@
 import { handFree, handsFullMessage, holding } from "./handsHeld";
 // The inventory in play: taking things out and putting them away (number keys), storing carried water, using
-// (E: eat, drink), putting down (Q) and picking up again. Animations read `state.invAct`.
+// (F: eat, drink), putting down (Q) and picking up again. Animations read `state.invAct`.
 import * as THREE from "three";
 import { floorHeight, timeInfo } from "./config";
 import { TABLE } from "./restaurantRoom";
@@ -79,6 +79,14 @@ export function pressInventorySlot(state: GameState, slot: number) {
 
 /** E with something to eat or drink out: starts using it. True if it did. */
 /** What's in hand to drink (out of the inventory, or bought and held), if anything: the DRINK button shows for it. */
+/** What the DRINK/EAT button (F) would do with what's in hand: drink it, eat it, or nothing (nothing on the bike). */
+export function inHandUse(state: GameState): "drink" | "eat" | null {
+  if (state.scooter.riding || state.scooter.action) return null;
+  const use = (k: ItemKind | null | undefined) => (k ? itemInfo(k).use : null);
+  if (state.heldSlot !== null) { const u = use(state.life.inventory[state.heldSlot]); return u === "drink" || u === "eat" ? u : null; }
+  for (const h of ["right", "left"] as const) { const x = state.storeHands[h]; const u = x?.paid ? use(x.kind) : null; if (u === "drink" || u === "eat") return u; }
+  return null;
+}
 export function drinkInHand(state: GameState): boolean {
   if (state.heldSlot !== null) { const k = state.life.inventory[state.heldSlot]; return !!k && itemInfo(k).use === "drink"; }
   return (["right", "left"] as const).some((h) => { const x = state.storeHands[h]; return !!x?.paid && itemInfo(x.kind).use === "drink"; });
@@ -108,6 +116,8 @@ function makeRoomRight(state: GameState): boolean {
 }
 /** E (eating) or the DRINK button (drinking) with that in hand: starts it. True if the press was used. */
 export function consumeHeld(state: GameState, only: "eat" | "drink" = "eat") {
+  // (Not riding: both hands are on the handlebars.)
+  if (state.scooter.riding || state.scooter.action) return false;
   if (state.heldSlot === null) return consumeFromHand(state, only);
   const slot = state.heldSlot, kind = slot === null ? null : state.life.inventory[slot];
   if (!kind || busy(state)) return false;
@@ -121,7 +131,7 @@ export function consumeHeld(state: GameState, only: "eat" | "drink" = "eat") {
   return true;
 }
 
-/** A thing bought and held (it didn't fit in the inventory): E eats or drinks it, from the right hand (one in the left
+/** A thing bought and held (it didn't fit in the inventory): F eats or drinks it, from the right hand (one in the left
  * moves over to the right first, if that's free). */
 function consumeFromHand(state: GameState, only: "eat" | "drink") {
   if (busy(state)) return false;

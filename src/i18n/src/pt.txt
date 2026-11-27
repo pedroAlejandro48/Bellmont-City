@@ -1119,3 +1119,7 @@
 1171|Segurando uma lata vazia: Q a deixa no chão, um espaço livre a guarda.
 1172|Segurando uma garrafa vazia: Q a deixa no chão, um espaço livre a guarda.
 1173|{0} vazio
+1174|COMER
+1175|Comer (F)
+1176|Comer
+1177|Beber

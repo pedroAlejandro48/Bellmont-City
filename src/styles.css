@@ -253,6 +253,18 @@
   .touch-stick { left: calc(24px + env(safe-area-inset-left)); bottom: calc(14px + env(safe-area-inset-bottom)); }
   .touch-buttons { right: calc(24px + env(safe-area-inset-right)); bottom: calc(46px + env(safe-area-inset-bottom)); }
 }
+/* EAT / DRINK: above the action row's right end (over E), clear of the joystick; the map moves up over it. */
+.touch-use { right: calc(16px + env(safe-area-inset-right)); bottom: calc(164px + 64px + 12px + env(safe-area-inset-bottom)); }
+body:has(.touch-use) .minimap.touch { bottom: calc(164px + 64px + 12px + 64px + 12px + env(safe-area-inset-bottom)); }
+@media (orientation: landscape) {
+  .touch-use { right: calc(24px + env(safe-area-inset-right)); bottom: calc(46px + 64px + 10px + env(safe-area-inset-bottom)); }
+  body:has(.touch-use) .minimap.touch { bottom: calc(46px + 64px + 10px + 64px + 10px + env(safe-area-inset-bottom)); }
+}
+@media (orientation: landscape) and (max-height: 560px) {
+  .touch-use { right: calc(12px + env(safe-area-inset-right)); bottom: calc(0.75rem + 2.75rem + 0.5rem + env(safe-area-inset-bottom)); }
+  .touch-use button { width: 2.75rem !important; height: 2.75rem !important; font-size: 0.6rem !important; border-width: 2px; }
+  body:has(.touch-use) .minimap.touch { bottom: calc(0.75rem + 2.75rem + 0.5rem + 2.75rem + 0.6rem + env(safe-area-inset-bottom)); }
+}
 /* Where a touch brings up the joystick: the bottom-left of the screen (clear of the health bars' middle). */
 .touch-zone { width: 45vw; height: 45vh; }
 @media (orientation: landscape) { .touch-zone { width: 34vw; height: 60vh; } }
@@ -976,3 +988,4 @@ html:has(.fit-screen), body:has(.fit-screen) { overflow: hidden; height: 100%; }
 /* The DRINK button on a computer: to the right of the HUD, level with its top. */
 .drink-pill { right: 1.5rem; bottom: calc(1.5rem + 7rem - 2.6rem); height: 2.6rem; border: 1px solid rgba(127, 211, 255, 0.6); }
 .drink-pill:hover { filter: brightness(1.2); }
+.drink-pill.eat { border-color: rgba(155, 227, 122, 0.7); }

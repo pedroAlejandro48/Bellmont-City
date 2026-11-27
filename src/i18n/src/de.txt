@@ -1119,3 +1119,7 @@
 1171|Du hältst eine leere Dose: Q stellt sie ab, ein freies Fach behält sie.
 1172|Du hältst eine leere Flasche: Q stellt sie ab, ein freies Fach behält sie.
 1173|{0} (leer)
+1174|ESSEN
+1175|Essen (F)
+1176|Essen
+1177|Trinken

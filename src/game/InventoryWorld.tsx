@@ -7,7 +7,7 @@ import { handWorld } from "./arms";
 import { canInteractScooter, floorHeight, nearestBenchSeat } from "./config";
 import { InteractionPrompt } from "./InteractionPrompt";
 import { ITEMS, emptyBase, isEmptyKind, isTrashKind, itemInfo, trashShape, type ItemKind } from "./inventory";
-import { INV_TIME, USE_SECONDS, dropHeld, heldKind, pickUpNear, stepInventory, consumeHeld } from "./invRuntime";
+import { INV_TIME, USE_SECONDS, dropHeld, heldKind, pickUpNear, stepInventory, consumeHeld, inHandUse } from "./invRuntime";
 import type { GameState } from "./state";
 
 export type Thing = ItemKind | "bottle" | "can" | "mealFood" | "mealDrink";
@@ -251,20 +251,12 @@ export function InventoryWorld({ state }: { state: GameState }) {
     if (state.interactQueued && !state.scooter.riding && pickUpNear(state)) state.interactQueued = false;
     stepInventory(state);
   }, -0.8);
-  // After the places' E (doors, ATMs, shops), before benches and the bike: E eats or drinks what's in the hand
-  // when nothing else nearby wants it.
-  useFrame(() => {
-    if (!state.interactQueued || (state.heldSlot === null && !state.storeHands.right?.paid && !state.storeHands.left?.paid) || state.doorPrompt) return;
-    const seat = nearestBenchSeat(state.pos.x, state.pos.z, state.seatOccupants);
-    const bike = canInteractScooter([state.pos.x, state.pos.z], [state.scooter.pos.x, state.scooter.pos.z], state.scooter.yaw, state.scooter.fallen, state.scooter.fallSide);
-    if (seat || bike) return;
-    if (consumeHeld(state, "eat")) state.interactQueued = false;
-  }, -0.55);
-  // The DRINK button (F): the drink in hand, whatever's nearby.
+  // The DRINK / EAT button (F): the drink or the food in hand, whatever's nearby (not on the bike). E doesn't eat.
   useFrame(() => {
     if (!state.drinkQueued) return;
     state.drinkQueued = false;
-    if (!state.scooter.riding) consumeHeld(state, "drink");
+    const u = inHandUse(state);
+    if (u) consumeHeld(state, u);
   });
 
   useFrame(() => {

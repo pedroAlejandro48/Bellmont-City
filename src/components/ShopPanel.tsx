@@ -1,4 +1,5 @@
 import { needFreeHands } from "@/game/handsHeld";
+import { ItemIcon } from "@/components/ItemIcon";
 import { queueAhead, requestTreatment } from "@/game/Hospital";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
@@ -90,7 +91,7 @@ function Checkout({ state, refresh }: Props) {
   const basket = state.groceryBasket?.length ? state.groceryBasket : handItems(state), total = basket.reduce((a, k) => a + (GROCERY_PRICE[k] ?? 1), 0);
   return <>
     <div className="checkout-list">{basket.map((k, i) => <div key={`${i}-${k}`} className="checkout-row">
-      <span>{itemInfo(k).icon} {itemInfo(k).name}</span><b>{money(GROCERY_PRICE[k] ?? 1)}</b>
+      <span className="inline-flex items-center gap-1.5"><span className="text-xl"><ItemIcon kind={k} /></span>{itemInfo(k).name}</span><b>{money(GROCERY_PRICE[k] ?? 1)}</b>
       <button type="button" aria-label={`Take the ${itemInfo(k).name} out`} onClick={() => { state.groceryAsk = { remove: i }; window.setTimeout(refresh, 60); }}><X size={14} /></button>
     </div>)}</div>
     <div className="checkout-total"><span>Total</span><b>{money(total)}</b></div>

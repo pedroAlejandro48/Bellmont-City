@@ -1119,3 +1119,7 @@
 1171|Vous tenez une canette vide : Q la pose, un emplacement libre la garde.
 1172|Vous tenez une bouteille vide : Q la pose, un emplacement libre la garde.
 1173|{0} vide
+1174|MANGER
+1175|Manger (F)
+1176|Manger
+1177|Boire
