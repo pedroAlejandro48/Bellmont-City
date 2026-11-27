@@ -14,9 +14,30 @@ import { acceptRequest, cancelRequest, discardInvite, discardRequest, findPlayer
 const kbDebug = (() => { try { if (new URLSearchParams(location.search).has("kbdebug")) sessionStorage.setItem("kbdebug", "1"); return sessionStorage.getItem("kbdebug") === "1"; } catch { return false; } })();
 
 /** This player's friends, requests and invitations, kept up to date. */
+type FriendsData = { friends: Friend[]; requests: FriendRequest[]; invites: RoomInvite[]; sent: FriendRequest[] };
+const EMPTY: FriendsData = { friends: [], requests: [], invites: [], sent: [] };
+// The lists as last seen, kept on this device per account: there the moment the menu opens, then kept up to date.
+const friendsKey = (id: string) => `bellmont-friends:${id}`;
+function cachedFriends(id: string | undefined): FriendsData | null {
+  if (!id) return null;
+  try { const v = JSON.parse(localStorage.getItem(friendsKey(id)) ?? "null") as FriendsData | null; return v && Array.isArray(v.friends) && Array.isArray(v.requests) && Array.isArray(v.invites) && Array.isArray(v.sent) ? v : null; } catch { return null; }
+}
+/** The account's friends, requests, invitations and sent requests; `ready` once there's something to show (kept on
+ * the device, or the first answer). */
 export function useFriends(account: Account | null) {
-  const [v, setV] = useState<{ friends: Friend[]; requests: FriendRequest[]; invites: RoomInvite[]; sent: FriendRequest[] }>({ friends: [], requests: [], invites: [], sent: [] });
-  useEffect(() => (account ? watchFriends(account, setV) : undefined), [account]);
+  const id = account?.id;
+  const [v, setV] = useState<FriendsData & { ready: boolean }>(() => { const c = cachedFriends(id); return c ? { ...c, ready: true } : { ...EMPTY, ready: false }; });
+  useEffect(() => {
+    if (!account) return undefined;
+    const c = cachedFriends(account.id);
+    setV(c ? { ...c, ready: true } : { ...EMPTY, ready: false });
+    return watchFriends(account, (next) => {
+      setV({ ...next, ready: true });
+      try { localStorage.setItem(friendsKey(account.id), JSON.stringify(next)); } catch { /* (no room: just not kept) */ }
+    });
+    // (Only a different account starts it again, not a new copy of the same one.)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
   return v;
 }
 

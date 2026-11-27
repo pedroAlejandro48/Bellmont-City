@@ -3,7 +3,7 @@
 // access is enforced by firestore.rules and database.rules.json.
 import { initializeApp } from "firebase/app";
 import { connectAuthEmulator, getAuth } from "firebase/auth";
-import { connectFirestoreEmulator, getFirestore } from "firebase/firestore";
+import { connectFirestoreEmulator, getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, type Firestore } from "firebase/firestore";
 import { connectDatabaseEmulator, getDatabase } from "firebase/database";
 
 const env = import.meta.env;
@@ -22,7 +22,14 @@ export const app = initializeApp({
 });
 
 export const auth = getAuth(app);
-export const firestore = getFirestore(app);
+// Firestore keeps what it has read on the device (IndexedDB): friends, chats, unread counts and the rest come up at
+// once from there when the app opens, and the server's newer copy follows. (No IndexedDB — a private window — or
+// another tab already set it up: the plain, in-memory one.)
+function makeFirestore(): Firestore {
+  try { return initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
+  catch { return getFirestore(app); }
+}
+export const firestore = makeFirestore();
 export const realtime = getDatabase(app);
 
 if (emulators) {

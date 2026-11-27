@@ -85,8 +85,14 @@ export function MainMenu({ account, username, message, onCity, onRoom, onSignOut
   useEffect(() => { const close = () => setJoining(false); window.addEventListener("bellmont-friends-open", close); return () => window.removeEventListener("bellmont-friends-open", close); }, []);
   useTitleBetweenObeliskAndForm();
   usePullToRefresh();
+  // The menu comes up with the friends already in it: until they're here (kept on the device, or from the server),
+  // a loading screen covers it — for 3 s at most.
+  const [waited, setWaited] = useState(false);
+  useEffect(() => { const id = window.setTimeout(() => setWaited(true), 3000); return () => window.clearTimeout(id); }, []);
+  const loadingCover = !friends.ready && !waited ? <div className="auth-bg fit-screen fixed inset-0 z-[100] flex items-center justify-center font-display text-2xl text-foreground">Loading…</div> : null;
   return (
     <div className="auth-bg auth-page menu-page flex items-center justify-center px-4">
+      {loadingCover}
       <QualityPicker />
       <PushPrompt account={account} />
       <AccountMenu account={account} friends={friends} onAccount={onAccount} onSignOut={onSignOut} />
