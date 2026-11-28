@@ -170,6 +170,8 @@ export type GameState = {
   heldTrash: import("./inventory").TrashKind | null;
   /** An empty bottle or can in the left hand (picked up with the right hand full, or passed over). */
   heldTrashL: import("./inventory").TrashKind | null;
+  /** Empties let go of over a bin, falling in (InventoryWorld draws them): what, from the hand, to the bin's bottom, when. */
+  trashDrops: { kind: import("./inventory").TrashKind; from: [number, number, number]; to: [number, number, number]; at: number }[];
   /** A thing to take out of the inventory once the hands are ready (after passing or putting down what was in the right). */
   invNext: number | null;
   /** Doing something with a thing from the inventory: eating or drinking it, putting it down, picking one up. */
@@ -409,7 +411,7 @@ export function createState(save: SaveData): GameState {
     shop: null,
     inventoryOpen: false,
     heldSlot: null,
-    heldTrash: null, heldTrashL: null, invNext: null,
+    heldTrash: null, heldTrashL: null, trashDrops: [], invNext: null,
     invAct: null,
     groundItems: [],
     groceryBasket: null, groceryAsk: null, storeHands: { left: null, right: null },

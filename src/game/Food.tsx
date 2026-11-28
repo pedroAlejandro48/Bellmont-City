@@ -1,4 +1,4 @@
-import { isEmptyKind } from "./inventory";
+import { isEmptyKind, isTrashKind } from "./inventory";
 import { InteractionPrompt } from "./InteractionPrompt";
 import { handFree } from "./handsHeld";
 import { guideDone, lifeEvent } from "./lifeRuntime";
@@ -410,11 +410,16 @@ export function Food({ state }: { state: GameState }) {
       let x = toss.front[0], z = toss.front[1], yaw = toss.yaw, speed = 0;
       if (t < walk) { const w = walkTo(t / walk, toss.from, toss.front, toss.fromYaw, toss.yaw); x = w.at[0]; z = w.at[1]; yaw = w.yaw; speed = Math.hypot(toss.front[0] - toss.from[0], toss.front[1] - toss.from[1]) / walk; }
       const k = Math.floor((t - walk) / each), u = t - walk - k * each, item = toss.items[k];
-      const over = new THREE.Vector3(toss.bin.x, floorHeight(toss.bin.x, toss.bin.z) + BIN.h + 0.14, toss.bin.z);
+      // (The hand goes well up over the bin's mouth, so what's let go of is seen dropping in.)
+      const over = new THREE.Vector3(toss.bin.x, floorHeight(toss.bin.x, toss.bin.z) + BIN.h + 0.3, toss.bin.z);
       const reach = item && t >= walk ? (u < 0.4 ? Math.sin(Math.PI / 2 * u / 0.4) : 1 - Math.max(0, Math.min(1, (u - 0.5) / 0.4))) : 0;
       if (item && t >= walk && u >= 0.42 && !toss.sent.has(item.id) && item.trash) {
         // An empty bottle or can from the inventory side: let go over the bin, gone.
         toss.sent.add(item.id);
+        // It falls from the hand to the bin's bottom (drawn by InventoryWorld).
+        const fore = state.avatar.body[item.hand === "left" ? 9 : 11], from = fore ? (fore.updateWorldMatrix(true, false), handWorld(fore, new THREE.Vector3())) : over.clone();
+        const kind = item.trash === "right" ? state.heldTrash : item.trash === "left" ? state.heldTrashL : state.heldSlot !== null ? state.life.inventory[state.heldSlot] : null;
+        if (kind && isTrashKind(kind)) state.trashDrops.push({ kind, from: [from.x, from.y, from.z], to: [toss.bin.x, floorHeight(toss.bin.x, toss.bin.z) + 0.1, toss.bin.z], at: st });
         if (item.trash === "right") state.heldTrash = null;
         else if (item.trash === "left") state.heldTrashL = null;
         else if (state.heldSlot !== null && isEmptyKind(state.life.inventory[state.heldSlot])) { state.life.inventory[state.heldSlot] = null; state.heldSlot = null; }

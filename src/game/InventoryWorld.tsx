@@ -252,6 +252,25 @@ export function InventoryWorld({ state }: { state: GameState }) {
     stepInventory(state);
   }, -0.8);
   // The DRINK / EAT button (F): the drink or the food in hand, whatever's nearby (not on the bike). E doesn't eat.
+  // Empties let go of over a bin: each falls from the hand into it (gravity, a little tumble), then is gone.
+  const drops = useRef<(THREE.Group | null)[]>([]);
+  const dropShown = useRef<(Thing | null)[]>([]);
+  useFrame(() => {
+    const now = state.simulationTime;
+    state.trashDrops = state.trashDrops.filter((d) => now - d.at < 2);
+    for (let i = 0; i < 2; i++) {
+      const g = drops.current[i], d = state.trashDrops[i];
+      if (!g) continue;
+      if (!d) { g.visible = false; continue; }
+      const kind = shownAs(d.kind), t = Math.max(0, now - d.at), fall = Math.sqrt(Math.max(0.02, 2 * (d.from[1] - d.to[1]) / 9.8)), k = Math.min(1, t / fall);
+      if (dropShown.current[i] !== kind) { dropShown.current[i] = kind; g.children.forEach((c) => { c.visible = c.userData["kind"] === kind; }); }
+      g.visible = t < fall + 0.8;
+      // Straight down, drawn in toward the middle of the bin's mouth; it lands on the bottom and lies there a moment.
+      g.position.set(d.from[0] + (d.to[0] - d.from[0]) * k, Math.max(d.to[1], d.from[1] - 0.07 - 4.9 * t * t), d.from[2] + (d.to[2] - d.from[2]) * k);
+      g.rotation.set(Math.min(1, t / fall) * 1.3, state.rotY, Math.min(1, t / fall) * 0.6, "YXZ");
+    }
+  });
+
   useFrame(() => {
     if (!state.drinkQueued) return;
     state.drinkQueued = false;
@@ -359,6 +378,9 @@ export function InventoryWorld({ state }: { state: GameState }) {
     <group ref={held} visible={false}>
       {kinds.map((k) => <group key={k} ref={(el) => { if (el) parts.current.set(k, el); }} visible={false}><ItemModel kind={k} looks={looks} empty={k === "bottle"} /></group>)}
     </group>
+    {[0, 1].map((i) => <group key={`drop${i}`} ref={(el) => { drops.current[i] = el; }} visible={false}>
+      {kinds.filter((k) => k !== "phone").map((k) => <group key={k} userData={{ kind: k }} visible={false}><ItemModel kind={k} looks={looks} empty={k === "bottle"} /></group>)}
+    </group>)}
     <group ref={heldL} visible={false}>
       {kinds.filter((k) => k !== "phone").map((k) => <group key={k} ref={(el) => { if (el) partsL.current.set(k, el); }} visible={false}><ItemModel kind={k} looks={looks} empty={k === "bottle"} /></group>)}
     </group>
