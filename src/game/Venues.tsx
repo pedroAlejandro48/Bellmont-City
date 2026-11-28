@@ -1,3 +1,4 @@
+import { PULLUP } from "./gym";
 import { PantryShelf } from "./PantryModels";
 import { landingOpening, stairPlan } from "./stairs";
 import { useFrame } from "@react-three/fiber";
@@ -215,11 +216,22 @@ function FixtureModel({ f, m, kind }: { f: Fixture; m: VMats; kind: VenueKind })
     case "weightBench": return <group>
       <mesh position={[0, 0.45, 0]} material={m.black} castShadow>{box([0.32, 0.1, d])}</mesh>
       {[-d / 2 + 0.1, d / 2 - 0.1].map((z) => <mesh key={z} position={[0, 0.22, z]} material={m.steel}>{box([0.28, 0.44, 0.05])}</mesh>)}
-      {[-1, 1].map((s) => <mesh key={s} position={[s * 0.3, 0.65, -d / 2 + 0.2]} material={m.steel}>{box([0.05, 1.3, 0.05])}</mesh>)}
-      <group position={[0, 1.15, -d / 2 + 0.25]} rotation-z={Math.PI / 2}>
-        <mesh material={m.steel}><cylinderGeometry args={[0.015, 0.015, 1.8, 8]} /></mesh>
-        {[-0.7, 0.7].map((y) => <mesh key={y} position={[0, y, 0]} material={m.black}><cylinderGeometry args={[0.2, 0.2, 0.06, 18]} /></mesh>)}
-      </group>
+      {[-1, 1].map((s) => <group key={s} position={[s * 0.3, 0, -d / 2 + 0.2]}>
+        <mesh position={[0, 0.65, 0]} material={m.steel}>{box([0.05, 1.3, 0.05])}</mesh>
+        {/* (The rack's hooks the bar rests on; the bar itself is drawn by GymGear, in the rack or in the hands.) */}
+        <mesh position={[0, 1.12, 0.04]} material={m.steel}>{box([0.05, 0.03, 0.08])}</mesh>
+        <mesh position={[0, 0.02, 0]} material={m.steel}>{box([0.12, 0.04, 0.4])}</mesh>
+      </group>)}
+    </group>;
+    case "pullupBar": return <group>
+      {/* Two posts on wide feet, braced to the wall behind, with the bar across the top. */}
+      {[-1, 1].map((s) => <group key={s} position={[s * (w / 2 - 0.04), 0, 0]}>
+        <mesh position={[0, 1.22, 0]} material={m.black} castShadow>{box([0.07, 2.44, 0.07])}</mesh>
+        <mesh position={[0, 0.025, 0]} material={m.black}>{box([0.1, 0.05, d])}</mesh>
+        <mesh position={[0, 2.38, -d / 4]} material={m.black}>{box([0.06, 0.06, d / 2])}</mesh>
+      </group>)}
+      <mesh position={[0, PULLUP.barY, 0]} rotation-z={Math.PI / 2} material={m.steel} castShadow><cylinderGeometry args={[0.017, 0.017, w - 0.02, 12]} /></mesh>
+      {[-1, 1].map((s) => <mesh key={s} position={[s * PULLUP.grip, PULLUP.barY, 0]} rotation-z={Math.PI / 2} material={m.rubber}><cylinderGeometry args={[0.022, 0.022, 0.16, 12]} /></mesh>)}
     </group>;
     case "dumbbells": return <group>
       {[0.3, 0.65].map((y) => <mesh key={y} position={[0, y, 0]} rotation-x={-0.25} material={m.black}>{box([w, 0.04, d - 0.1])}</mesh>)}

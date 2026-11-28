@@ -1123,3 +1123,37 @@
 1175|Essen (F)
 1176|Essen
 1177|Trinken
+1178|Rechnungen
+1179|Fitnessstudio-Mitgliedschaft
+1180|Strafzettel
+1181|Heute fällig
+1182|Noch 1 Tag
+1183|Noch {0} Tage
+1184|Miete · Etage {0}
+1185|{0} alle {1} Tage
+1186|Strafzettel ({0})
+1187|{0} · unbezahlt +25 % auf den Kredit
+1188|{0} pro Tag bei {1} Kredit
+1189|Zahl ihn in der Bank-App zurück
+1190|Rechnung bezahlt
+1191|{0}: {1} Tage mehr.
+1192|Mitglied
+1193|Mitgliedschaft
+1194|Trainieren
+1195|Mitgliedschaft gekündigt
+1196|Willkommen im Iron Bell Gym
+1197|{0} alle 30 Tage von deinem Konto.
+1198|{0} alle 30 Tage von deinem Konto · noch {1} Tage.
+1199|{0} im Monat (alle 30 Tage, nach dem ersten vom Konto). Trainiere als Mitglied.
+1200|Beitreten · {0}
+1201|{0} im Monat vom Konto (der erste Monat bei der Anmeldung). Behandlung ist gratis, solange er läuft.
+1202|{0} im Monat vom Konto.
+1203|dem Training
+1204|Krankenversicherung (Monat)
+1205|Fitnessstudio (Monat)
+1206|Fitnessstudio beendet (unbezahlt)
+1207|Fitnessstudio (erster Monat)
+1208|Krankenversicherung (erster Monat)
+1209|Die Strafzettel kosten {0} vom Konto.
+1210|{0} (im Voraus bezahlt)
+1211|Keine Rechnungen. Miete, Krankenversicherung (Krankenhaus) und Fitnessstudio erscheinen hier.

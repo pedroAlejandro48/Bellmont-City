@@ -1123,3 +1123,37 @@
 1175|Manger (F)
 1176|Manger
 1177|Boire
+1178|Factures
+1179|Abonnement à la salle
+1180|Contraventions
+1181|À payer aujourd'hui
+1182|1 jour restant
+1183|{0} jours restants
+1184|Loyer · étage {0}
+1185|{0} tous les {1} jours
+1186|Contraventions ({0})
+1187|{0} · ajouté au prêt +25 % si impayé
+1188|{0} par jour sur un prêt de {1}
+1189|Rembourse-le dans l'app Banque
+1190|Facture payée
+1191|{0} : {1} jours de plus.
+1192|Membre
+1193|Abonnement
+1194|S'entraîner
+1195|Abonnement résilié
+1196|Bienvenue à Iron Bell Gym
+1197|{0} tous les 30 jours sur ton compte.
+1198|{0} tous les 30 jours sur ton compte · {1} jours restants.
+1199|{0} par mois (tous les 30 jours, sur ton compte après le premier). Entraîne-toi en tant que membre.
+1200|S'abonner · {0}
+1201|{0} par mois sur ton compte (le premier mois à l'inscription). Les soins sont gratuits tant qu'il est actif.
+1202|{0} par mois sur ton compte.
+1203|de t'entraîner
+1204|Assurance santé (mois)
+1205|Abonnement à la salle (mois)
+1206|Abonnement à la salle terminé (impayé)
+1207|Abonnement à la salle (premier mois)
+1208|Assurance santé (premier mois)
+1209|Les contraventions coûtent {0} sur ton compte.
+1210|{0} (payé d'avance)
+1211|Aucune facture. Le loyer d'un appartement, l'assurance santé (hôpital) et l'abonnement à la salle s'affichent ici.

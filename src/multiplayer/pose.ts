@@ -73,7 +73,10 @@ export type RemoteRig = { body: (THREE.Object3D | null)[]; ragdoll: (THREE.Objec
 
 /** Poses the remote player's scene objects between two received poses. */
 export function applyPose(rig: RemoteRig, a: PoseWire, b: PoseWire, t: number) {
-  rig.body.forEach((o, i) => { if (o) blendTransform(o, a.b, b.b, i, t); });
+  // (Put somewhere else at once — the gym's machines one after another — the body jumps there rather than sliding
+  // across the room: on foot, without a bike, nobody moves 1.2 m between two poses.)
+  const jump = (b.sf & 4) === 0 && a.b.length >= 3 && b.b.length >= 3 && Math.hypot(a.b[0]! - b.b[0]!, a.b[2]! - b.b[2]!) > 1.2;
+  rig.body.forEach((o, i) => { if (o) blendTransform(o, jump ? b.b : a.b, b.b, i, jump ? 1 : t); });
   const root = rig.body[0];
   if (root) root.visible = b.bv === 1;
   const ragdoll = b.r;

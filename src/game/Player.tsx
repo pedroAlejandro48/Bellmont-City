@@ -6,6 +6,9 @@ import { PASS_TIME, USE_SECONDS } from "./invRuntime";
 import { useCharacterColor } from "./characterColor";
 import { ATMS } from "./places";
 import { useFrame } from "@react-three/fiber";
+import { serverNow } from "@/lib/serverTime";
+import { poseAt, stageAt } from "./gym";
+import { applyJoints } from "./gymPose";
 import { POLES, carryElbow, reachArm } from "./arms";
 import { DROP_TIME, EAT_SECONDS, GRAB_TIME, PACK_SIZE, dropReach, grabReach } from "./food";
 import { FOOD_SCALE, biteCount } from "./dishes";
@@ -821,6 +824,9 @@ export function Player({ state, city }: { state: GameState; city: City }) {
       const kl = state.meal?.left;
       if (kl && state.meal) reachArm(armL.current, foreL.current, new THREE.Vector3(kl[0], kl[1], kl[2]), POLES.low(1), Math.min(1, t / 0.6));
     }
+    // Working out at the gym: the exercise's pose, every joint (see gym.ts).
+    const wk = state.workout ? stageAt(serverNow() - state.workout.start) : null;
+    if (wk && !dead && !incapacitated) applyJoints(rig, poseAt(wk.stage, wk.t));
 
   });
 

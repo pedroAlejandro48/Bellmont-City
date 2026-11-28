@@ -1,6 +1,7 @@
 import { MoonTalk } from "@/components/MoonTalk";
 import { Stairs } from "./Stairs";
 import { Hospital } from "./Hospital";
+import { Gym } from "./Gym";
 import { VenueSeats } from "./VenueSeats";
 import { useGameFullscreen } from "@/lib/gameFullscreen";
 import { useBack } from "@/lib/useBack";
@@ -190,7 +191,7 @@ const GameScene = memo(function GameScene({ state, x, z, Extra }: { state: GameS
         {Extra && <group name="perf:room"><Extra state={state} /></group>}
         <Later at={10} now={indoors}><group name="perf:food"><Food state={state} /></group></Later>
         <group name="perf:inventory"><InventoryWorld state={state} /></group>
-        <Later at={18} now={indoors}><group name="perf:life"><LifeWorld state={state} /><VenueSeats state={state} /><Hospital state={state} city={city} /><Grocery state={state} city={city} /><Apartments state={state} city={city} /><Stairs state={state} city={city} /><RoofAccess state={state} city={city} /></group></Later>
+        <Later at={18} now={indoors}><group name="perf:life"><LifeWorld state={state} /><VenueSeats state={state} /><Hospital state={state} city={city} /><Gym state={state} city={city} /><Grocery state={state} city={city} /><Apartments state={state} city={city} /><Stairs state={state} city={city} /><RoofAccess state={state} city={city} /></group></Later>
       </Physics>
     </Suspense>
   </Canvas>;

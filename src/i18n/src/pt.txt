@@ -1123,3 +1123,37 @@
 1175|Comer (F)
 1176|Comer
 1177|Beber
+1178|Contas
+1179|Mensalidade da academia
+1180|Multas de trânsito
+1181|Vence hoje
+1182|Falta 1 dia
+1183|Faltam {0} dias
+1184|Aluguel · andar {0}
+1185|{0} a cada {1} dias
+1186|Multas de trânsito ({0})
+1187|{0} · vai para o empréstimo +25% se não pagar
+1188|{0} por dia num empréstimo de {1}
+1189|Pague no app do Banco
+1190|Conta paga
+1191|{0}: mais {1} dias.
+1192|Sócio
+1193|Mensalidade
+1194|Treinar
+1195|Mensalidade cancelada
+1196|Bem-vindo à Iron Bell Gym
+1197|{0} a cada 30 dias do seu banco.
+1198|{0} a cada 30 dias do seu banco · faltam {1} dias.
+1199|{0} por mês (a cada 30 dias, do banco depois do primeiro). Treine como sócio.
+1200|Assinar · {0}
+1201|{0} por mês do seu banco (o primeiro mês ao assinar). O tratamento é grátis enquanto estiver ativo.
+1202|{0} por mês do seu banco.
+1203|treinar
+1204|Plano de saúde (mês)
+1205|Mensalidade da academia (mês)
+1206|Mensalidade da academia encerrada (não paga)
+1207|Mensalidade da academia (primeiro mês)
+1208|Plano de saúde (primeiro mês)
+1209|As multas custam {0} do seu banco.
+1210|{0} (pago adiantado)
+1211|Sem contas. Aluguel de apartamento, plano de saúde (hospital) e mensalidade da academia aparecem aqui.

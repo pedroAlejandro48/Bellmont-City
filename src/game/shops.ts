@@ -51,7 +51,6 @@ export const OUTFITS = ["#ffffff", "#2b2d33", "#d6455d", "#3d7bff", "#2e9d5b", "
 export const OUTFIT_PRICE = 25;
 export const PAINTS = ["#27877b", "#c9281f", "#1f5fbf", "#ffb547", "#1d1f24", "#f2f3f7", "#8a5cd6", "#ff6fae", "#4caf50"];
 export const PAINT_PRICE = 40;
-export const WORKOUT_PRICE = 8;
 export const TREATMENT_PRICE = 165;
 
 /** Pay for a stocking shift: a base plus per shelf filled, more with work skill (before tax). */

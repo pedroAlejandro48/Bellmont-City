@@ -196,7 +196,8 @@ export function CameraRig({ state }: { state: GameState }) {
       wasLocked.current = true; unlock.current = null;
       return;
     }
-    if (wasLocked.current) { wasLocked.current = false; unlock.current = { t: 0, pos: camera.position.clone(), look: lockLook.current.clone() }; }
+    if (wasLocked.current) { wasLocked.current = false; unlock.current = state.camSnapBack ? null : { t: 0, pos: camera.position.clone(), look: lockLook.current.clone() }; }
+    state.camSnapBack = false;
     lockLook.current.copy(camera.position).add(camera.getWorldDirection(vectors.direction));
     if (state.firstPerson && firstPerson(dt)) return;
     const riding = state.scooter.riding || state.scooter.action === "mount";

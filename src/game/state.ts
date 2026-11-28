@@ -281,6 +281,11 @@ export type GameState = {
   hospital: { key: string; req: number; start: number | null; spot: [number, number] | null; paid: number; h0?: number } | null;
   /** Others in the room at the hospital (from presence). */
   hospitalPeers: { id: string; key: string; req: number; start: number | null; spot: [number, number] | null }[];
+  /** A gym workout under way (gym.ts: which gym, when it started in server ms), and everyone else's in the room. */
+  workout: { key: string; start: number } | null;
+  gymPeers: { id: string; key: string; start: number }[];
+  /** Set when a camera lock ends: the view goes straight back behind the player (no easing). */
+  camSnapBack: boolean;
   /** On an apartment building's stairs: what's underfoot there (Stairs sets it each frame; null elsewhere). */
   stairGround: ((x: number, z: number) => number) | null;
   /** On the stairs' steps: the legs reaching the feet planted tread to tread (null: the usual walk). */
@@ -422,7 +427,7 @@ export function createState(save: SaveData): GameState {
     inCar: false, carRide: null, carYOf: null, liftView: null, liftPress: [], liftShown: null, liftShut: null, liftBridge: null, aptHere: null,
     uiLock: null, fridgeLoad: [], camLock: null, ladder: null, ladderPrompt: false, noJump: false, kitchenAsk: null, meal: null, kitchenQ: false,
     keys: new Set(),
-    jumpQueued: false, venueSeat: null, venueSeatLeave: false, hospital: null, hospitalPeers: [], stairGround: null, stairFeet: null, bodyVel: null, asleep: false, bedGetUp: false, sleepWait: null,
+    jumpQueued: false, venueSeat: null, venueSeatLeave: false, hospital: null, hospitalPeers: [], workout: null, gymPeers: [], camSnapBack: false, stairGround: null, stairFeet: null, bodyVel: null, asleep: false, bedGetUp: false, sleepWait: null,
     simulationTime: 0,
     accident: save.accident ? { phase: save.accident.phase, startedAt: -(KNOCKDOWN_SECONDS - save.accident.remaining), riseStartedAt: save.accident.phase === "rising" ? -(GET_UP_SECONDS - save.accident.remaining) : null, vehicleId: null, direction: save.accident.direction, launchSpeed: 0, seed: save.accident.seed } : null,
     incidents: [],

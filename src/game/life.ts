@@ -47,9 +47,13 @@ export type Life = {
   fines: Fine[];
   /** Convictions: overdue fines; each one lowers what the bank will lend. */
   record: number;
-  /** The health plan (a weekly premium; hospital care is free while it's on), and the day it was started. */
+  /** The health plan (a monthly premium; hospital care is free while it's on), the day it was started, and the
+   * day its next month is charged. */
   insured: boolean;
   insuredDay: number;
+  healthDue: number;
+  /** The gym's monthly subscription: the day the next month is charged (null: not a member). */
+  gymDue: number | null;
   /** The character's outfit colour and the bike's paint, once bought (null: as they came). */
   outfit: string | null;
   bikePaint: string | null;
@@ -76,7 +80,7 @@ export function newLife(day = 1): Life {
     bank: 300, loan: 0, credit: 650, xp: 0,
     skills: { fitness: 0, riding: 0, work: 0, charm: 0 },
     quests: rollQuests(day), questDay: day, guide: 0, home: null, billedDay: day, fridge: [], ledger: [],
-    earned: 0, jobsDone: 0, fines: [], record: 0, insured: false, insuredDay: 0, outfit: null, bikePaint: null, workoutDay: 0, inventory: newInventory(), closet: [], kitchen: newKitchen(), moon: newMoonBond(), applied: {}, hired: [],
+    earned: 0, jobsDone: 0, fines: [], record: 0, insured: false, insuredDay: 0, healthDue: 0, gymDue: null, outfit: null, bikePaint: null, workoutDay: 0, inventory: newInventory(), closet: [], kitchen: newKitchen(), moon: newMoonBond(), applied: {}, hired: [],
   };
 }
 
@@ -101,6 +105,9 @@ export function readLife(value: unknown, day = 1): Life {
     earned: num("earned", 0, 1e12, 0), jobsDone: num("jobsDone", 0, 1e9, 0),
     fines: Array.isArray(v["fines"]) ? (v["fines"] as Fine[]).filter((f) => f && typeof f.amount === "number" && typeof f.day === "number").slice(0, 20) : [],
     record: num("record", 0, 100, 0), insured: v["insured"] === true, insuredDay: num("insuredDay", 0, 1e9, day),
+    // (Older saves paid the plan weekly: their next month starts from the next week's day.)
+    healthDue: num("healthDue", 0, 1e9, v["insured"] === true ? Math.max(day + 1, num("insuredDay", 0, 1e9, day) + 7 * Math.ceil((day + 1 - num("insuredDay", 0, 1e9, day)) / 7)) : 0),
+    gymDue: typeof v["gymDue"] === "number" && Number.isFinite(v["gymDue"]) ? v["gymDue"] : null,
     outfit: typeof v["outfit"] === "string" && /^#[0-9a-f]{6}$/i.test(v["outfit"]) ? v["outfit"] : null,
     bikePaint: typeof v["bikePaint"] === "string" && /^#[0-9a-f]{6}$/i.test(v["bikePaint"]) ? v["bikePaint"] : null,
     workoutDay: num("workoutDay", 0, 1e9, 0),
@@ -194,7 +201,7 @@ export const HOME_NAME = "Small apartment";
 /** Rent is charged every RENT_DAYS days (the first FREE_DAYS are free). */
 export const RENT_DAYS = 30;
 
-/** Each new game day (at 6 am): rent (every 30 days), the health plan (every 7 days) and loan interest come out of
+/** Each new game day (at 6 am): rent, the health plan and the gym (every 30 days) and loan interest come out of
  * the bank, savings earn interest. (No phone or utility bills.) */
 export function dailyBills(life: Life, day: number) {
   const lines: Txn[] = [];
@@ -202,8 +209,14 @@ export function dailyBills(life: Life, day: number) {
     const interest = round(life.bank * SAVINGS_RATE);
     if (interest > 0) { life.bank = round(life.bank + interest); lines.push({ day: d, label: "Savings interest", amount: interest }); }
     const charges: [string, number][] = [];
-    // The health plan's week, every seventh day after signing up (the first week is paid when signing up).
-    if (life.insured && d > life.insuredDay && (d - life.insuredDay) % 7 === 0) charges.push(["Health plan (week)", HEALTH_PLAN]);
+    // The health plan's month and the gym's, on their due days (the first month is paid when signing up; paying
+    // ahead in the Bills app moves the day on).
+    if (life.insured && d >= life.healthDue) { charges.push(["Health plan (month)", HEALTH_PLAN]); life.healthDue += BILL_DAYS; }
+    if (life.gymDue !== null && d >= life.gymDue) {
+      // (The gym isn't put on the loan: without the money the membership just ends.)
+      if (life.bank >= GYM_PRICE) { life.bank = round(life.bank - GYM_PRICE); lines.push({ day: d, label: "Gym membership (month)", amount: -GYM_PRICE }); life.gymDue += BILL_DAYS; }
+      else { life.gymDue = null; lines.push({ day: d, label: "Gym membership ended (unpaid)", amount: 0 }); }
+    }
     // The rent, every 30 days (the first week was free) — from the bank only: if it can't be paid, you're
     // evicted, and everything in the apartment (the fridge's food, the kitchen, the closet) is lost.
     if (life.home && d >= life.home.nextRent) {
@@ -233,8 +246,31 @@ export function dailyBills(life: Life, day: number) {
   if (life.ledger.length > 30) life.ledger.length = 30;
   return lines;
 }
-/** The health plan's weekly premium, and how many days a ticket can wait before it goes on the record. */
+/** The health plan's monthly premium, and how many days a ticket can wait before it goes on the record. */
 export const HEALTH_PLAN = 45;
+/** Subscriptions and rent come round every BILL_DAYS; the gym's membership costs GYM_PRICE a month. */
+export const BILL_DAYS = 30;
+export const GYM_PRICE = 20;
+
+// ---------- the Bills app ----------
+export type BillId = "rent" | "health" | "gym";
+export type Bill = { id: BillId; amount: number; /** Days until it's charged next. */ days: number };
+/** Every bill that comes round: the rent, the health plan, the gym membership (only those on). */
+export function bills(life: Life, day: number): Bill[] {
+  const out: Bill[] = [];
+  if (life.home) out.push({ id: "rent", amount: life.home.weekly, days: life.home.nextRent - day });
+  if (life.insured) out.push({ id: "health", amount: HEALTH_PLAN, days: life.healthDue - day });
+  if (life.gymDue !== null) out.push({ id: "gym", amount: GYM_PRICE, days: life.gymDue - day });
+  return out;
+}
+/** A bill can be paid a month ahead once: only while it's due within BILL_DAYS − 1 days (29 or fewer). */
+export const canPayAhead = (b: Bill) => b.days <= BILL_DAYS - 1;
+/** Pays a month ahead (the money already taken): the due day moves on BILL_DAYS. */
+export function payAhead(life: Life, id: BillId) {
+  if (id === "rent" && life.home) { life.home.nextRent += BILL_DAYS; life.home.paid = (life.home.paid ?? 0) + 1; }
+  else if (id === "health" && life.insured) life.healthDue += BILL_DAYS;
+  else if (id === "gym" && life.gymDue !== null) life.gymDue += BILL_DAYS;
+}
 export const FINE_DAYS = 3;
 
 // ---------- law ----------

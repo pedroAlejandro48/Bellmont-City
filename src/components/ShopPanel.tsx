@@ -1,15 +1,16 @@
 import { needFreeHands } from "@/game/handsHeld";
 import { ItemIcon } from "@/components/ItemIcon";
 import { queueAhead, requestTreatment } from "@/game/Hospital";
+import { gymFree, startWorkout } from "@/game/Gym";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { timeInfo } from "@/game/config";
 import { isDrinkName } from "@/game/food";
-import { FINE_DAYS, HEALTH_PLAN, HOME_NAME, applyForJob, canMoveOut, finesOwed, jobStatus, gainSkill, gainXp, moveOut, payFines, record, rentApartment, spend } from "@/game/life";
+import { BILL_DAYS, FINE_DAYS, GYM_PRICE, HEALTH_PLAN, HOME_NAME, applyForJob, canMoveOut, finesOwed, jobStatus, gainSkill, gainXp, moveOut, payFines, record, rentApartment, spend } from "@/game/life";
 import { APT_FLOORS, freeFloors, rentFor } from "@/game/apartments";
 import { guideDone, lifeEvent, payJob } from "@/game/lifeRuntime";
 import { canConsume, consume } from "@/game/needs";
-import { GROCERIES, OUTFITS, OUTFIT_PRICE, PAINTS, PAINT_PRICE, SHOPS, TREATMENT_PRICE, WORKOUT_PRICE, clerkPay, foodValue, shopPlaces } from "@/game/shops";
+import { GROCERIES, OUTFITS, OUTFIT_PRICE, PAINTS, PAINT_PRICE, SHOPS, TREATMENT_PRICE, clerkPay, foodValue, shopPlaces } from "@/game/shops";
 import { toast, type GameState } from "@/game/state";
 import { giveItem } from "@/game/invRuntime";
 import { GROCERY_PRICE } from "@/game/groceryRun";
@@ -59,7 +60,7 @@ export function ShopPanel({ state }: { state: GameState }) {
 
 type Props = { state: GameState; refresh: () => void };
 const today = (state: GameState) => timeInfo(state.elapsed).day;
-function pay(state: GameState, amount: number, label: string) {
+export function pay(state: GameState, amount: number, label: string) {
   const r = spend(state.life, state.cash, amount, today(state), label);
   if (!r.ok) { toast(state, "Not enough money", "warn", `${label} costs ${money(amount)}.`); return false; }
   state.cash = r.cash;
@@ -162,22 +163,25 @@ function Swatches({ state, refresh, what }: Props & { what: "outfit" | "paint" }
 }
 
 function Gym({ state, refresh }: Props) {
-  const life = state.life, done = life.workoutDay === today(state);
-  const [busy, setBusy] = useState(false);
+  const life = state.life, day = today(state), done = life.workoutDay === day, member = life.gymDue !== null;
+  const key = state.interior?.key ?? "", free = gymFree(state, key), tired = state.hunger < 10 || state.thirst < 10;
   return <>
     <div className="bank-card" style={{ background: "linear-gradient(135deg,#33363f,#5a5f6b)" }}><span>Fitness</span><b>{Math.round(life.skills.fitness)} pts</b><span>Each fitness level makes you run 2.5% faster.</span></div>
-    <button type="button" className={`phone-btn ${busy ? "working" : ""}`} disabled={done || busy || state.hunger < 10 || state.thirst < 10} onClick={() => {
-      if (!pay(state, WORKOUT_PRICE, "Gym session")) return;
-      setBusy(true);
-      window.setTimeout(() => {
-        life.workoutDay = today(state); gainSkill(life, "fitness", 60);
-        const up = gainXp(life, 20); if (up) toast(state, `Level ${up}!`, "level");
-        state.hunger = Math.max(0, state.hunger - 8); state.thirst = Math.max(0, state.thirst - 12);
-        toast(state, "Great workout!", "info", "+60 fitness · +20 XP. You're hungry and thirsty now.");
-        setBusy(false); refresh();
-      }, 2500);
-    }}>{busy ? "Working out…" : done ? "Come back tomorrow" : `Work out · ${money(WORKOUT_PRICE)}`}</button>
-    <p className="phone-note">One session a day. Running anywhere trains fitness too.</p>
+    {member ? <>
+      {/* (Someone else still on the bench: the button waits, half faded, until they've moved on to the next machine.) */}
+      <button type="button" className={`phone-btn ${free ? "" : "waiting"}`} aria-disabled={!free} disabled={done || tired} onClick={() => {
+        if (!free || state.workout) return;
+        if (!needFreeHands(state, "working out")) return;
+        startWorkout(state, key); refresh();
+      }}>{done ? "Come back tomorrow" : "Work out"}</button>
+      <p className="phone-note">One session a day. Running anywhere trains fitness too.</p>
+      <div className="phone-job"><div><b>Member</b><p>{`${money(GYM_PRICE)} every 30 days from your bank · ${life.gymDue! - day} days left.`}</p></div>
+        <button type="button" className="phone-btn ghost" onClick={() => { life.gymDue = null; toast(state, "Membership cancelled", "info"); refresh(); }}>Cancel</button></div>
+    </> : <div className="phone-job"><div><b>Membership</b><p>{`${money(GYM_PRICE)} a month (every 30 days, from your bank after the first). Work out as a member.`}</p></div>
+      <button type="button" className="phone-btn" onClick={() => {
+        if (!pay(state, GYM_PRICE, "Gym membership (first month)")) return;
+        life.gymDue = day + BILL_DAYS; toast(state, "Welcome to Iron Bell Gym", "info", `${money(GYM_PRICE)} every 30 days from your bank.`); refresh();
+      }}>{`Join · ${money(GYM_PRICE)}`}</button></div>}
   </>;
 }
 
@@ -196,11 +200,11 @@ function Hospital({ state, refresh }: Props) {
         refresh();
       }}>Get treated · {cost ? money(cost) : "free with your plan"}</button>}
     <p className="phone-label">Health plan (B9)</p>
-    <div className="phone-job"><div><b>{life.insured ? "You're covered" : "Bellmont Care"}</b><p>{money(HEALTH_PLAN)} a week from your bank (the first week when you sign up). Treatment is free while it's on.</p></div>
+    <div className="phone-job"><div><b>{life.insured ? "You're covered" : "Bellmont Care"}</b><p>{`${money(HEALTH_PLAN)} a month from your bank (the first month when you sign up). Treatment is free while it's on.`}</p></div>
       <button type="button" className={`phone-btn ${life.insured ? "ghost" : ""}`} onClick={() => {
         if (life.insured) { life.insured = false; toast(state, "Health plan cancelled", "info"); refresh(); return; }
-        if (!pay(state, HEALTH_PLAN, "Health plan (first week)")) return;
-        life.insured = true; life.insuredDay = today(state); toast(state, "Health plan started", "info", `${money(HEALTH_PLAN)} a week from your bank.`); refresh();
+        if (!pay(state, HEALTH_PLAN, "Health plan (first month)")) return;
+        life.insured = true; life.insuredDay = today(state); life.healthDue = today(state) + BILL_DAYS; toast(state, "Health plan started", "info", `${money(HEALTH_PLAN)} a month from your bank.`); refresh();
       }}>{life.insured ? "Cancel" : "Sign up"}</button></div>
   </>;
 }

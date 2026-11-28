@@ -8,7 +8,7 @@ import { SW, landingOpening, stairPlan, stairWalls } from "./stairs";
 
 export type FixtureType =
   | "desk" | "chairOffice" | "bench" | "waitChair" | "flag" | "board" | "redCross" | "bed" | "curtain"
-  | "treadmill" | "weightBench" | "dumbbells" | "mirror" | "mats"
+  | "treadmill" | "weightBench" | "dumbbells" | "pullupBar" | "mirror" | "mats"
   | "rack" | "shelfClothes" | "fittingRoom"
   | "bikeDisplay" | "toolWall" | "tireRack" | "workbench"
   | "shelf" | "crate" | "baskets" | "checkout"
@@ -132,6 +132,8 @@ export function venueLayout(b: Building): VenueLayout {
     add("treadmill", minX + 0.75, -6.0, 0, 0.8, 1.8);
     add("weightBench", maxX - 2.6, -5.0, Math.PI / 2, 0.5, 1.4);
     add("dumbbells", maxX - 0.35, -3.6, -Math.PI / 2, 2.2, 0.5);
+    // A pull-up bar in a frame along the same wall, further in (its front toward the room).
+    add("pullupBar", maxX - 1.2, -7.6, -Math.PI / 2, 1.4, 0.9);
     add("mirror", minX + 0.03, -8.0, Math.PI / 2, 3.2, 0.04, false);
   } else if (venue === "clothing") {
     const z = minZ + 1.9;

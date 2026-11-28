@@ -18,6 +18,7 @@ import { makeDoorLink } from "./doorLink";
 import { makeLiftLink } from "./liftLink";
 import { FurnitureSync } from "./FurnitureSync";
 import { HospitalSync } from "./HospitalSync";
+import { GymSync } from "./GymSync";
 import { GrocerySync } from "./GrocerySync";
 import { GroceryBagModel, drinkTip, heldWire, tipToMouth, ItemModel, useLooks, type HeldWire, type Thing } from "@/game/InventoryWorld";
 import { Basket, type InBasket } from "@/game/Grocery";
@@ -178,7 +179,7 @@ export function RoomScene({ state, channel, remotes, joinedAt, creator }: { stat
   });
   useEffect(() => () => { state.others = []; state.otherBikes = []; }, [state]);
 
-  return <><FurnitureSync state={state} channel={channel} /><HospitalSync state={state} channel={channel} /><GrocerySync state={state} channel={channel} />{ids.map((entry) => {
+  return <><FurnitureSync state={state} channel={channel} /><HospitalSync state={state} channel={channel} /><GymSync state={state} channel={channel} /><GrocerySync state={state} channel={channel} />{ids.map((entry) => {
     const [id = "", uid = ""] = entry.split(" ");
     return <RemoteAvatar key={entry} id={id} uid={uid} creator={uid !== "" && uid === creator} remotes={remotes} state={state} />;
   })}</>;

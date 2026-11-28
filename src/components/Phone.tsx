@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Banknote, Briefcase, CircleUser, ListChecks, Map as MapIcon, X } from "lucide-react";
+import { ArrowLeft, Banknote, Briefcase, CircleUser, ListChecks, Map as MapIcon, ReceiptText, X } from "lucide-react";
+import { pay } from "@/components/ShopPanel";
+import { BILL_DAYS, LOAN_RATE, bills, canPayAhead, payAhead, type BillId } from "@/game/life";
 import { HALF, blockCenter, formatClock, generateCity, timeInfo, BLOCK } from "@/game/config";
 import { FINE_DAYS, finesOwed, payFines, GUIDE, JOBS, QUEST_TEXT, SKILLS, SKILL_NAMES, applyForJob, borrow, deposit, jobStatus, levelOf, loanLimit, repay, skillLevel, withdraw, type JobId } from "@/game/life";
 import { canStart, quitJob, startJob } from "@/game/jobs";
@@ -12,6 +14,7 @@ import { SHOPS, shopPlaces } from "@/game/shops";
 const money = (n: number) => `$${n.toFixed(2)}`;
 const APPS = [
   { id: "bank", name: "Bank", icon: Banknote, color: "#1f5fbf" },
+  { id: "bills", name: "Bills", icon: ReceiptText, color: "#7a4fd1" },
   { id: "jobs", name: "Jobs", icon: Briefcase, color: "#e07a1f" },
   { id: "map", name: "Map", icon: MapIcon, color: "#2e9d5b" },
   { id: "goals", name: "Goals", icon: ListChecks, color: "#d6455d" },
@@ -66,6 +69,7 @@ export function Phone({ state }: { state: GameState }) {
           <div className="phone-appbar"><button type="button" aria-label="Back" onClick={() => go(null)}><ArrowLeft size={18} /></button><b>{app.name}</b><span /></div>
           <div className="phone-body">
             {ph.app === "bank" && <BankApp state={state} atm={ph.atm} />}
+            {ph.app === "bills" && <BillsApp state={state} />}
             {ph.app === "jobs" && <JobsApp state={state} onDone={close} />}
             {ph.app === "map" && <MapApp state={state} onPick={close} />}
             {ph.app === "goals" && <GoalsApp state={state} />}
@@ -107,6 +111,60 @@ function BankApp({ state, atm }: { state: GameState; atm: boolean }) {
     <p className="phone-label">Recent</p>
     <ul className="phone-list">{life.ledger.slice(0, 12).map((t, i) => <li key={i}><span>{t.label}<small>Day {t.day}</small></span><b className={t.amount >= 0 ? "good" : "bad"}>{t.amount >= 0 ? "+" : "−"}{money(Math.abs(t.amount))}</b></li>)}
       {life.ledger.length === 0 && <li className="phone-note">Nothing yet.</li>}</ul>
+  </>;
+}
+
+/** Each bill's look: its name and a small picture on a coloured tile. */
+const BILL_LOOK: Record<BillId | "fines" | "loan", { name: string; color: string }> = {
+  rent: { name: "Rent", color: "#2f7d5b" },
+  health: { name: "Health plan", color: "#ffffff" },
+  gym: { name: "Gym membership", color: "#33363f" },
+  fines: { name: "Traffic tickets", color: "#2c3e66" },
+  loan: { name: "Loan interest", color: "#b5832a" },
+};
+function BillIcon({ id }: { id: keyof typeof BILL_LOOK }) {
+  const art = {
+    // A house: roof, walls, a door and a window.
+    rent: <><path d="M5 15.5 16 6l11 9.5" fill="none" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" /><path d="M8.5 14v11.5h15V14" fill="#e9f6ef" /><rect x="14" y="18.5" width="4.4" height="7" rx="0.8" fill="#2f7d5b" /><rect x="9.8" y="16" width="3.2" height="3.2" rx="0.5" fill="#7cc4a1" /></>,
+    // A red cross on white.
+    health: <path d="M12.8 6.5h6.4v6.3h6.3v6.4h-6.3v6.3h-6.4v-6.3H6.5v-6.4h6.3z" fill="#e23b3b" stroke="#b81f2a" strokeWidth="0.8" strokeLinejoin="round" />,
+    // A dumbbell: two plates either side of a handle.
+    gym: <><rect x="10" y="14.6" width="12" height="2.8" rx="1.2" fill="#c9ccd2" /><rect x="6.2" y="9.5" width="3.8" height="13" rx="1.4" fill="#ffb547" /><rect x="22" y="9.5" width="3.8" height="13" rx="1.4" fill="#ffb547" /><rect x="3.4" y="12" width="2.8" height="8" rx="1" fill="#e09a2f" /><rect x="25.8" y="12" width="2.8" height="8" rx="1" fill="#e09a2f" /></>,
+    // A ticket with a perforated tear-off.
+    fines: <><path d="M5 10h22v4a2 2 0 0 0 0 4v4H5v-4a2 2 0 0 0 0-4z" fill="#f2c94c" /><path d="M20 10.5v11" stroke="#2c3e66" strokeWidth="1.3" strokeDasharray="1.6 1.4" /><path d="M8.5 14h8M8.5 17.5h6" stroke="#2c3e66" strokeWidth="1.6" strokeLinecap="round" /></>,
+    // A coin stack.
+    loan: <><ellipse cx="16" cy="22" rx="8" ry="3" fill="#f2d27a" /><rect x="8" y="12" width="16" height="10" fill="#f2d27a" /><ellipse cx="16" cy="12" rx="8" ry="3" fill="#ffe7a3" /><path d="M8 16c0 1.7 3.6 3 8 3s8-1.3 8-3" fill="none" stroke="#c99a35" strokeWidth="1.1" /></>,
+  }[id];
+  return <span className="bill-icon" style={{ background: BILL_LOOK[id].color }}><svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">{art}</svg></span>;
+}
+
+/** Every bill that comes round: how much, how many days until it's paid again, and Pay (a month ahead, once). */
+function BillsApp({ state }: { state: GameState }) {
+  const [, refresh] = useState(0);
+  const life = state.life, day = timeInfo(state.elapsed).day, list = bills(life, day);
+  const owed = finesOwed(life), oldest = life.fines.reduce((a, f) => Math.min(a, f.day), Infinity);
+  const left = (n: number) => (n <= 0 ? "Due today" : n === 1 ? "1 day left" : `${n} days left`);
+  const label = (id: BillId) => (id === "rent" && life.home ? `Rent · floor ${life.home.floor}` : BILL_LOOK[id].name);
+  return <>
+    {list.length === 0 && owed <= 0 && life.loan <= 0 && <p className="phone-note">No bills. Renting an apartment, the health plan (hospital) and the gym's membership show here.</p>}
+    {list.map((b) => <div key={b.id} className="phone-job bill">
+      <BillIcon id={b.id} />
+      <div><b>{label(b.id)}</b><p>{`${money(b.amount)} every ${BILL_DAYS} days`}</p><small className={b.days <= 3 ? "bad" : ""}>{left(b.days)}</small></div>
+      <button type="button" className={`phone-btn ${canPayAhead(b) ? "" : "waiting"}`} aria-disabled={!canPayAhead(b)} onClick={() => {
+        if (!canPayAhead(b)) return;
+        if (!pay(state, b.amount, `${label(b.id)} (paid ahead)`)) return;
+        payAhead(life, b.id); toast(state, "Bill paid", "money", `${label(b.id)}: ${BILL_DAYS} more days.`); refresh((n) => n + 1);
+      }}>Pay</button>
+    </div>)}
+    {owed > 0 && <div className="phone-job bill">
+      <BillIcon id="fines" />
+      <div><b>{`Traffic tickets (${life.fines.length})`}</b><p>{`${money(owed)} · on the loan +25% if unpaid`}</p><small className="bad">{left(FINE_DAYS - (day - oldest))}</small></div>
+      <button type="button" className={`phone-btn ${life.bank >= owed ? "" : "waiting"}`} onClick={() => { if (payFines(life, day)) toast(state, "Fines paid", "money"); else toast(state, "Not enough money", "warn", `Tickets cost ${money(owed)} from your bank.`); refresh((n) => n + 1); }}>Pay</button>
+    </div>}
+    {life.loan > 0 && <div className="phone-job bill">
+      <BillIcon id="loan" />
+      <div><b>{BILL_LOOK.loan.name}</b><p>{`${money(Math.round(life.loan * LOAN_RATE * 100) / 100)} a day on a ${money(life.loan)} loan`}</p><small>Repay it in the Bank app</small></div>
+    </div>}
   </>;
 }
 
