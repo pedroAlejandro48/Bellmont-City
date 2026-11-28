@@ -14,9 +14,11 @@ import type { NamedRoom } from "@/platform/realtime";
 import { pickHost } from "./host";
 
 const KEEP_MS = 15_000;
+/** Everyone asleep: this long on the Zzz screen before the clock jumps to morning. */
+const ALL_ASLEEP_MS = 3_000;
 
 export function RoomClockSync({ state, channel, code }: { state: GameState; channel: NamedRoom; code: string }) {
-  const clock = useRef<RoomClock | null>(null), heard = useRef<RoomClock | null>(null), kept = useRef(0), sentAsleep = useRef<boolean | null>(null), skipped = useRef(0);
+  const clock = useRef<RoomClock | null>(null), heard = useRef<RoomClock | null>(null), kept = useRef(0), sentAsleep = useRef<boolean | null>(null), skipped = useRef(0), allSince = useRef<number | null>(null);
   // (Only a newer clock than the one followed: an empty room's old clock never runs on over the time it was empty.)
   useEffect(() => watchRoomClock(code, (c) => { if (!clock.current) heard.current = c; else if (c.at >= clock.current.at) clock.current = c; }), [code]);
   // Leaving (the page closing, or out to the menu) as the last one in: the clock stops where it is.
@@ -48,7 +50,12 @@ export function RoomClockSync({ state, channel, code }: { state: GameState; chan
     const viewers = peers.filter((p) => p.kind === "viewer" && p.presence["away"] !== true);
     const others = viewers.filter((p) => !p.sameTab), sleeping = others.filter((p) => p.presence["asleep"] === true).length + (asleep ? 1 : 0);
     state.sleepWait = asleep ? { asleep: sleeping, total: others.length + 1 } : null;
-    if (amHost && asleep && sleeping === others.length + 1 && canSleepAt(timeInfo(state.elapsed).hours) && now - skipped.current > 10_000) {
+    // (Once the last one's asleep, everyone stays on the Zzz screen another ALL_ASLEEP_MS before the morning comes —
+    // the last to lie down too, instead of waking the moment they're asleep.)
+    const allAsleep = amHost && asleep && sleeping === others.length + 1 && canSleepAt(timeInfo(state.elapsed).hours);
+    if (!allAsleep) allSince.current = null; else allSince.current ??= now;
+    if (allAsleep && now - allSince.current! >= ALL_ASLEEP_MS && now - skipped.current > 10_000) {
+      allSince.current = null;
       skipped.current = now;
       state.elapsed = wakeElapsed(state.elapsed);
       kept.current = now;
