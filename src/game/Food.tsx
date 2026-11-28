@@ -1,3 +1,5 @@
+import { isEmptyKind } from "./inventory";
+import { InteractionPrompt } from "./InteractionPrompt";
 import { handFree } from "./handsHeld";
 import { guideDone, lifeEvent } from "./lifeRuntime";
 import { Html } from "@react-three/drei";
@@ -67,7 +69,9 @@ export function Food({ state }: { state: GameState }) {
   /** Food this player has just put down, where (until the host shows it on the ground). */
   const dropped = useMemo(() => new Map<number, { x: number; z: number; yaw: number; until: number; y?: number }>(), []);
   /** A meal on a bench (once eaten or full, the packs are taken back up), and a trip to a bin. */
-  const meal = useRef({ handsNagAt: -99 as number | undefined, benchDone: false, leftTray: 0, justAte: null as null | { pack: number; item: string; left: number; until: number }, toss: null as null | { bin: { x: number; z: number }; from: [number, number]; fromYaw: number; at: number; front: [number, number]; yaw: number; items: { id: number; hand: "left" | "right" }[]; sent: Set<number> } });
+  /** The bin you face with empties in hand (its E sign shows). */
+  const binSign = useRef<{ x: number; z: number } | null>(null);
+  const meal = useRef({ handsNagAt: -99 as number | undefined, benchDone: false, leftTray: 0, justAte: null as null | { pack: number; item: string; left: number; until: number }, toss: null as null | { bin: { x: number; z: number }; from: [number, number]; fromYaw: number; at: number; front: [number, number]; yaw: number; items: { id: number; hand: "left" | "right"; trash?: "right" | "left" | "slot" }[]; sent: Set<number> } });
   const mine = useRef({ greeted: "" as string, greetAt: 0, wasHost: true, published: "", publishedAt: 0, inside: null as string | null, sessionSeenAt: 0 });
 
   useFrame(() => {
@@ -375,15 +379,28 @@ export function Food({ state }: { state: GameState }) {
       }
     }
     if (!surface) mm.benchDone = false;
-    // E by a bin with empties: walk up to it and drop them in, one at a time.
-    const empties = (["left", "right"] as const).filter((h) => { const x = hands[h]; return !!x && x.kind !== "sign" && x.kind !== "tray" && (x.items?.length ?? 0) === 0; });
-    if (state.interactQueued && empties.length && !mm.toss && onFoot && !state.grab && !state.drop && !state.interior) {
-      const bin = PARK_BINS.find((b) => Math.hypot(b.x - state.pos.x, b.z - state.pos.z) < 1.8);
-      if (bin) {
+    // E facing a bin with empties — a restaurant's (cups, bags, boxes) or an empty bottle or can, in either hand or
+    // both: walk up to it and drop them in, one hand after the other. Whatever still has food or drink in it stays
+    // in its hand.
+    const empties: { id: number; hand: "left" | "right"; trash?: "right" | "left" | "slot" }[] = [];
+    for (const h of ["right", "left"] as const) {
+      const x = hands[h];
+      if (x && x.kind !== "sign" && x.kind !== "tray" && (x.items?.length ?? 0) === 0) { empties.push({ id: x.id, hand: h }); continue; }
+      if (h === "right" && state.heldTrash) empties.push({ id: -1, hand: "right", trash: "right" });
+      else if (h === "right" && state.heldSlot !== null && isEmptyKind(state.life.inventory[state.heldSlot])) empties.push({ id: -3, hand: "right", trash: "slot" });
+      if (h === "left" && state.heldTrashL) empties.push({ id: -2, hand: "left", trash: "left" });
+    }
+    const canToss = empties.length && !mm.toss && onFoot && !state.grab && !state.drop && !state.interior && !state.invAct;
+    const fx = Math.sin(state.rotY), fz = Math.cos(state.rotY);
+    const faced = canToss ? PARK_BINS.find((b) => { const dx = b.x - state.pos.x, dz = b.z - state.pos.z, d = Math.hypot(dx, dz); return d < 1.8 && (d < 0.45 || (dx * fx + dz * fz) / d > 0.45); }) ?? null : null;
+    binSign.current = faced;
+    if (state.interactQueued && faced) {
+      const bin = faced;
+      {
         state.interactQueued = false;
         const dx = state.pos.x - bin.x, dz = state.pos.z - bin.z, d = Math.hypot(dx, dz) || 1;
         const front: [number, number] = [bin.x + dx / d * 0.62, bin.z + dz / d * 0.62];
-        mm.toss = { bin, from: [state.pos.x, state.pos.z], fromYaw: state.rotY, at: st, front, yaw: Math.atan2(-dx, -dz), items: empties.map((h) => ({ id: hands[h]!.id, hand: h })), sent: new Set() };
+        mm.toss = { bin, from: [state.pos.x, state.pos.z], fromYaw: state.rotY, at: st, front, yaw: Math.atan2(-dx, -dz), items: empties, sent: new Set() };
       }
     }
     const toss = mm.toss;
@@ -395,6 +412,13 @@ export function Food({ state }: { state: GameState }) {
       const k = Math.floor((t - walk) / each), u = t - walk - k * each, item = toss.items[k];
       const over = new THREE.Vector3(toss.bin.x, floorHeight(toss.bin.x, toss.bin.z) + BIN.h + 0.14, toss.bin.z);
       const reach = item && t >= walk ? (u < 0.4 ? Math.sin(Math.PI / 2 * u / 0.4) : 1 - Math.max(0, Math.min(1, (u - 0.5) / 0.4))) : 0;
+      if (item && t >= walk && u >= 0.42 && !toss.sent.has(item.id) && item.trash) {
+        // An empty bottle or can from the inventory side: let go over the bin, gone.
+        toss.sent.add(item.id);
+        if (item.trash === "right") state.heldTrash = null;
+        else if (item.trash === "left") state.heldTrashL = null;
+        else if (state.heldSlot !== null && isEmptyKind(state.life.inventory[state.heldSlot])) { state.life.inventory[state.heldSlot] = null; state.heldSlot = null; }
+      }
       if (item && t >= walk && u >= 0.42 && !toss.sent.has(item.id)) {
         toss.sent.add(item.id);
         link.send({ type: "trash", pack: item.id, x: cents(over.x), y: cents(over.y - 0.1), z: cents(over.z) });
@@ -419,6 +443,7 @@ export function Food({ state }: { state: GameState }) {
     <EatenFood state={state} live={live} byKey={byKey} />
     <Diners state={state} live={live} byKey={byKey} staffAt={staffAt} />
     <Bins />
+    <InteractionPrompt sample={() => { const b = binSign.current; return b ? { visible: true, x: b.x, y: floorHeight(b.x, b.z) + BIN.h + 0.45, z: b.z, time: state.simulationTime, label: "E" } : { visible: false, x: 0, y: 0, z: 0, time: 0 }; }} />
   </>;
 }
 
